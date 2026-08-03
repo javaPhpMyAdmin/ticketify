@@ -9,6 +9,9 @@
  *   - mode switch: signed out → sign-in flow, signed in → promote (spec
  *     scenarios "Switch to authenticated while signed out" / "Switch to demo
  *     while authenticated"),
+ *   - mode-switch wiring: the profile handler (`handleAuthenticatedPress`)
+ *     delegates to the decision function and fires exactly the side effect
+ *     the branch calls for,
  *   - fixtures consistency: the screens render the same numbers everywhere
  *     (the fixtures module's own docstring contract),
  *   - demo write boundary: `saveReceipt` stays a local no-op, so a write
@@ -100,6 +103,45 @@ async function run() {
 
   await test('signed in: switching to authenticated promotes the mode', () => {
     assert.equal(switchMod.authenticatedSwitchAction(true), 'promote');
+  });
+
+  console.log('\n[tests] profile mode-switch wiring (real handler)\n');
+
+  // `handleAuthenticatedPress` is the handler the profile screen actually
+  // delegates its onPress to (it calls `authenticatedSwitchAction` and
+  // dispatches to the injected side effects), so these tests exercise the
+  // shipped wiring — sign-in push vs mode promote — without a React renderer.
+
+  await test('handler wiring: signed out → sign-in pushed, mode never promoted', () => {
+    let promoted = 0;
+    let navigated = 0;
+    switchMod.handleAuthenticatedPress({
+      hasSession: false,
+      promote: () => {
+        promoted += 1;
+      },
+      navigateToSignIn: () => {
+        navigated += 1;
+      },
+    });
+    assert.equal(navigated, 1, 'sign-in flow must be opened');
+    assert.equal(promoted, 0, 'mode must stay demo when signed out');
+  });
+
+  await test('handler wiring: signed in → mode promoted, no sign-in navigation', () => {
+    let promoted = 0;
+    let navigated = 0;
+    switchMod.handleAuthenticatedPress({
+      hasSession: true,
+      promote: () => {
+        promoted += 1;
+      },
+      navigateToSignIn: () => {
+        navigated += 1;
+      },
+    });
+    assert.equal(promoted, 1, 'mode must promote when a session exists');
+    assert.equal(navigated, 0, 'no sign-in push when already signed in');
   });
 
   console.log('\n[tests] demo fixtures consistency\n');

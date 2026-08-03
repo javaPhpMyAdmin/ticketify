@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 
 import { Card, Divider, Icon, Pressable, ProfileHeader, Spinner, Text, View } from '@/components';
 import {
@@ -11,7 +11,7 @@ import {
   type AccountSettingRow,
 } from '@/features/profile';
 import { useSessionStore } from '@/features/auth';
-import { authenticatedSwitchAction } from '@/lib/auth/mode-switch';
+import { handleAuthenticatedPress } from '@/lib/auth/mode-switch';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -36,6 +36,19 @@ export default function ProfileScreen() {
 
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  // Press guard for the Authenticated row (same pattern as `signingOut`): a
+  // rapid double-tap must not stack two sign-in screens. The demo row needs
+  // no guard — setMode is idempotent.
+  const [pressing, setPressing] = useState(false);
+
+  // Re-arm the guard whenever this screen regains focus (e.g. back from the
+  // sign-in flow), so the row is never left disabled for the rest of the
+  // session.
+  useFocusEffect(
+    useCallback(() => {
+      setPressing(false);
+    }, []),
+  );
 
   const settings: AccountSettingRow[] = [
     { id: 'export', label: 'Export Data', icon: 'square.and.arrow.up', trailing: { type: 'chevron' } },
@@ -77,11 +90,18 @@ export default function ProfileScreen() {
       icon: 'person.fill',
       active: mode === 'authenticated',
       onPress: () => {
-        if (authenticatedSwitchAction(session != null) === 'promote') {
-          setMode('authenticated');
-        } else {
-          router.push('/sign-in');
-        }
+        if (pressing) return;
+        // The decision lives in the pure `handleAuthenticatedPress` (harness
+        // covers both branches); this closure only injects the screen's side
+        // effects.
+        handleAuthenticatedPress({
+          hasSession: session != null,
+          promote: () => setMode('authenticated'),
+          navigateToSignIn: () => {
+            setPressing(true);
+            router.push('/sign-in');
+          },
+        });
       },
     },
   ];
@@ -95,15 +115,15 @@ export default function ProfileScreen() {
       // mode stays 'authenticated', and the root gate closes to the sign-in
       // screen (user-auth spec: sign out on demand → back to sign-in).
       await signOut();
-    } catch (err) {
+    } catch {
       // Only a genuine sign-out failure surfaces here (the local session is
       // still intact). An offline/5xx server revoke clears the local session
       // and fires SIGNED_OUT first, so the store treats it as success — the
       // user IS signed out on this device, and a "could not sign out" message
-      // would be dead the moment the gate unmounts this screen.
-      setSignOutError(
-        err instanceof Error ? err.message : 'Could not sign out. Please try again.',
-      );
+      // would be dead the moment the gate unmounts this screen. The copy is
+      // deliberately generic: a raw supabase-js/GoTrue message must never
+      // reach the UI (same posture as sign-in and sign-up).
+      setSignOutError('Could not sign out. Please try again.');
     } finally {
       setSigningOut(false);
     }
@@ -131,6 +151,7 @@ export default function ProfileScreen() {
                 <Pressable
                   style={styles.modeRow}
                   onPress={row.onPress}
+                  disabled={row.id === 'authenticated' ? pressing : undefined}
                   accessibilityRole="button"
                   accessibilityLabel={row.label}
                   accessibilityState={{ selected: row.active }}

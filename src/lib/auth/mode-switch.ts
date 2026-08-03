@@ -22,3 +22,30 @@ export function authenticatedSwitchAction(
 ): AuthenticatedSwitchAction {
   return hasSession ? 'promote' : 'sign-in';
 }
+
+/** The side effects the profile screen injects into `handleAuthenticatedPress`. */
+export interface AuthenticatedPressDeps {
+  /** Whether a session exists — the Authenticated row's decision input. */
+  hasSession: boolean;
+  /** Signed in: promotes the mode; feature reads switch to Supabase data. */
+  promote: () => void;
+  /** Signed out: opens the sign-in flow; the mode stays demo (back → fixtures). */
+  navigateToSignIn: () => void;
+}
+
+/**
+ * The profile screen's Authenticated-row handler, extracted so the node
+ * harness can exercise the REAL wiring — not just `authenticatedSwitchAction`
+ * — without a React renderer. `profile.tsx` delegates its onPress here, so
+ * this is exactly the decision the shipped screen runs:
+ *   - signed out → `navigateToSignIn()` only: the mode is untouched, the gate
+ *     stays open, and back returns to the fixture app,
+ *   - signed in  → `promote()` only: no gate flash, reads switch to Supabase.
+ */
+export function handleAuthenticatedPress(deps: AuthenticatedPressDeps): void {
+  if (authenticatedSwitchAction(deps.hasSession) === 'promote') {
+    deps.promote();
+  } else {
+    deps.navigateToSignIn();
+  }
+}
