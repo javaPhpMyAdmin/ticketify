@@ -52,3 +52,63 @@ export const settingsDefaults: {
   tier: 'free',
   household_sharing: false,
 };
+
+// ---------------------------------------------------------------------------
+// Home screen (kept demo-only by design; purchase-list reads are out of scope)
+// ---------------------------------------------------------------------------
+
+/** One entry in the home screen's "Recent Receipts" card. */
+export interface ReceiptSummary {
+  id: string;
+  name: string;
+  date: string; // ISO
+  amount: number;
+}
+
+/** The demo user's recent receipts, shown on the home screen. */
+export const recentReceipts: ReceiptSummary[] = [
+  { id: 'r1', name: 'Whole Foods Market', date: '2026-08-02', amount: 42.18 },
+  { id: 'r2', name: 'Café Martinez', date: '2026-08-01', amount: 7.5 },
+  { id: 'r3', name: 'Kiosco 24hs', date: '2026-07-30', amount: 3.2 },
+];
+
+/** One spending-category card in the home screen's horizontal strip. */
+export interface HomeCategory {
+  name: string;
+  amount: number;
+  icon: 'sparkles';
+}
+
+/** The home screen's category cards. Amounts mirror `categoryBreakdownRows`. */
+export const homeCategories: HomeCategory[] = [
+  { name: 'Groceries', amount: 450, icon: 'sparkles' },
+  { name: 'Drinks', amount: 85, icon: 'sparkles' },
+  { name: 'Snacks', amount: 142, icon: 'sparkles' },
+];
+
+/** The "wants" total the budget card compares against snacks spending. */
+export const wantsSnacksTotal = 142;
+
+// ---------------------------------------------------------------------------
+// History screen
+// ---------------------------------------------------------------------------
+
+/** One transaction row in the history screen. */
+export interface HistoryEntry {
+  id: string;
+  merchant: string;
+  date: string; // ISO
+  category: string;
+  needs: number;
+  wants: number;
+  income: number;
+}
+
+/** The demo user's transaction history. Mirrors `recentReceipts` amounts. */
+export const historyEntries: HistoryEntry[] = [
+  { id: '1', merchant: 'Whole Foods Market', date: '2026-08-03T12:30:00', category: 'Groceries', needs: 42.18, wants: 0, income: 0 },
+  { id: '2', merchant: 'Café Martinez', date: '2026-08-03T09:15:00', category: 'Drinks', needs: 0, wants: 7.5, income: 0 },
+  { id: '3', merchant: 'Kiosco 24hs', date: '2026-08-02T20:00:00', category: 'Snacks', needs: 0, wants: 3.2, income: 0 },
+  { id: '4', merchant: 'Salary', date: '2026-08-01T08:00:00', category: 'Income', needs: 0, wants: 0, income: 2200 },
+  { id: '5', merchant: 'Carrefour', date: '2026-07-31T18:30:00', category: 'Cleaning', needs: 18.4, wants: 0, income: 0 },
+];

@@ -5,21 +5,8 @@ import { router } from 'expo-router';
 import { Card, CategoryCard, Divider, Fab, ReceiptRow, Text, View } from '@/components';
 import { MonthlyBudgetCard, useBudget } from '@/features/budget';
 import { useSettingsStore } from '@/stores/use-settings-store';
+import { homeCategories, recentReceipts, wantsSnacksTotal } from '@/lib/fixtures/demo';
 import { colors, spacing, typography } from '@/theme';
-
-const wantsSnacksTotal = 142;
-
-const categories = [
-  { name: 'Groceries', amount: 450, icon: 'sparkles' as const },
-  { name: 'Drinks', amount: 85, icon: 'sparkles' as const },
-  { name: 'Snacks', amount: 142, icon: 'sparkles' as const },
-];
-
-const recentReceipts = [
-  { id: 'r1', name: 'Whole Foods Market', date: '2026-08-02', amount: 42.18 },
-  { id: 'r2', name: 'Café Martinez', date: '2026-08-01', amount: 7.5 },
-  { id: 'r3', name: 'Kiosco 24hs', date: '2026-07-30', amount: 3.2 },
-];
 
 export default function HomeScreen() {
   const currency = useSettingsStore((s) => s.currency);
@@ -51,7 +38,7 @@ export default function HomeScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.categoryStrip}
           >
-            {categories.map((c) => (
+            {homeCategories.map((c) => (
               <CategoryCard
                 key={c.name}
                 name={c.name}

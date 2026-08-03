@@ -13,32 +13,15 @@ import {
   type TransactionKind,
 } from '@/components';
 import { useTransactionBreakdown } from '@/features/transactions';
+import { historyEntries, type HistoryEntry } from '@/lib/fixtures/demo';
 import { colors, radii, spacing, typography } from '@/theme';
 import { formatRelativeDay } from '@/lib/format';
-
-interface HistoryEntry {
-  id: string;
-  merchant: string;
-  date: string; // ISO
-  category: string;
-  needs: number;
-  wants: number;
-  income: number;
-}
 
 const filters: { key: TransactionKind; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'needs', label: 'Needs' },
   { key: 'wants', label: 'Wants' },
   { key: 'income', label: 'Income' },
-];
-
-const mockEntries: HistoryEntry[] = [
-  { id: '1', merchant: 'Whole Foods Market', date: '2026-08-03T12:30:00', category: 'Groceries', needs: 42.18, wants: 0, income: 0 },
-  { id: '2', merchant: 'Café Martinez', date: '2026-08-03T09:15:00', category: 'Drinks', needs: 0, wants: 7.5, income: 0 },
-  { id: '3', merchant: 'Kiosco 24hs', date: '2026-08-02T20:00:00', category: 'Snacks', needs: 0, wants: 3.2, income: 0 },
-  { id: '4', merchant: 'Salary', date: '2026-08-01T08:00:00', category: 'Income', needs: 0, wants: 0, income: 2200 },
-  { id: '5', merchant: 'Carrefour', date: '2026-07-31T18:30:00', category: 'Cleaning', needs: 18.4, wants: 0, income: 0 },
 ];
 
 /**
@@ -75,7 +58,7 @@ export default function HistoryScreen() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return mockEntries.filter((e) => {
+    return historyEntries.filter((e) => {
       if (q && !e.merchant.toLowerCase().includes(q)) return false;
       if (filter === 'needs' && e.needs <= 0) return false;
       if (filter === 'wants' && e.wants <= 0) return false;
