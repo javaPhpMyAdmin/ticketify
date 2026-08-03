@@ -11,7 +11,8 @@
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "test:adapter": "node scripts/test-storage-adapter.mjs",
-    "test:auth": "node scripts/test-auth.mjs"
+    "test:auth": "node scripts/test-auth.mjs",
+    "test:demo": "node scripts/test-demo.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
