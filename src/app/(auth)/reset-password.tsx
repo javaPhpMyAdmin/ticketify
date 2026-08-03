@@ -10,6 +10,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FieldGroup, Pressable, Spinner, Text, View } from '@/components';
+import { exchangeRecoveryCode } from '@/lib/auth/reset-exchange';
 import { supabase } from '@/lib/supabase';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -18,14 +19,21 @@ type ExchangeState = 'exchanging' | 'ready' | 'invalid';
 /**
  * Deep-link target for password-recovery emails (user-auth spec).
  *
- * The email carries a PKCE auth code in the URL (?code=...). On mount the
- * code is exchanged for a session (auth-js resolves the /recovery
- * verifier automatically, ADR-3), then the user picks a new password via
- * updateUser. Links without a valid code show an invalid-link state.
+ * The email carries a PKCE auth code (?code=...) and, when GoTrue appended
+ * it, the flow id (?sb_flow_id=...) so the exchange uses that flow's stored
+ * verifier (ADR-3). On mount the code is exchanged for a session, then the
+ * user picks a new password via updateUser. Invalid/expired links show an
+ * invalid-link state.
  */
 export default function ResetPasswordScreen() {
-  const params = useLocalSearchParams<{ code?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    code?: string | string[];
+    sb_flow_id?: string | string[];
+  }>();
   const code = Array.isArray(params.code) ? params.code[0] : params.code;
+  const flowId = Array.isArray(params.sb_flow_id)
+    ? params.sb_flow_id[0]
+    : params.sb_flow_id;
 
   const [exchangeState, setExchangeState] = useState<ExchangeState>(
     code ? 'exchanging' : 'invalid',
@@ -37,10 +45,12 @@ export default function ResetPasswordScreen() {
   useEffect(() => {
     if (!code || exchangeState !== 'exchanging') return;
     let cancelled = false;
-    supabase.auth
-      .exchangeCodeForSession(code)
-      .then(() => {
-        if (!cancelled) setExchangeState('ready');
+    // auth-js RESOLVES (never rejects) when the code is invalid or expired, so
+    // an exchange error or a missing session means the link is invalid; the
+    // catch below only handles thrown storage/network exceptions.
+    exchangeRecoveryCode(code, flowId)
+      .then(({ ok }) => {
+        if (!cancelled) setExchangeState(ok ? 'ready' : 'invalid');
       })
       .catch(() => {
         if (!cancelled) setExchangeState('invalid');
