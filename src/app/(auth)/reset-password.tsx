@@ -14,7 +14,7 @@ import { exchangeRecoveryCode } from '@/lib/auth/reset-exchange';
 import { supabase } from '@/lib/supabase';
 import { colors, radii, spacing, typography } from '@/theme';
 
-type ExchangeState = 'exchanging' | 'ready' | 'invalid';
+type ExchangeState = 'exchanging' | 'ready' | 'invalid' | 'error';
 
 /**
  * Deep-link target for password-recovery emails (user-auth spec).
@@ -22,8 +22,13 @@ type ExchangeState = 'exchanging' | 'ready' | 'invalid';
  * The email carries a PKCE auth code (?code=...) and, when GoTrue appended
  * it, the flow id (?sb_flow_id=...) so the exchange uses that flow's stored
  * verifier (ADR-3). On mount the code is exchanged for a session, then the
- * user picks a new password via updateUser. Invalid/expired links show an
- * invalid-link state.
+ * user picks a new password via updateUser.
+ *
+ * The exchange distinguishes two failure kinds (see reset-exchange.ts):
+ * resolved-with-error → the code is genuinely invalid/expired ("invalid link"
+ * state); thrown storage/network exception → a transient failure, shown as a
+ * retryable "something went wrong" state instead of a misleading invalid-link
+ * message.
  */
 export default function ResetPasswordScreen() {
   const params = useLocalSearchParams<{
@@ -38,6 +43,7 @@ export default function ResetPasswordScreen() {
   const [exchangeState, setExchangeState] = useState<ExchangeState>(
     code ? 'exchanging' : 'invalid',
   );
+  const [retryNonce, setRetryNonce] = useState(0);
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,20 +53,28 @@ export default function ResetPasswordScreen() {
     let cancelled = false;
     // auth-js RESOLVES (never rejects) when the code is invalid or expired, so
     // an exchange error or a missing session means the link is invalid; the
-    // catch below only handles thrown storage/network exceptions.
+    // catch below only handles thrown storage/network exceptions, which are
+    // transient (retryable) rather than a broken link.
     exchangeRecoveryCode(code, flowId)
       .then(({ ok }) => {
         if (!cancelled) setExchangeState(ok ? 'ready' : 'invalid');
       })
       .catch(() => {
-        if (!cancelled) setExchangeState('invalid');
+        if (!cancelled) setExchangeState('error');
       });
     return () => {
       cancelled = true;
     };
-    // Run once per code; the exchange decides the next state.
+    // Run once per code (and again after a manual retry); the exchange
+    // decides the next state. flowId is stable per code, so it is intentionally
+    // not a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code]);
+  }, [code, retryNonce]);
+
+  const handleRetry = () => {
+    setExchangeState('exchanging');
+    setRetryNonce((n) => n + 1);
+  };
 
   const canSubmit = password.length >= 8 && !pending;
 
@@ -92,6 +106,30 @@ export default function ResetPasswordScreen() {
             <>
               <Spinner size="md" />
               <Text style={styles.subtitle}>Checking your reset link…</Text>
+            </>
+          ) : exchangeState === 'error' ? (
+            <>
+              <Text style={styles.kicker}>TICKETIFY</Text>
+              <Text style={styles.title}>Something went wrong</Text>
+              <Text style={styles.subtitle}>
+                We could not verify your reset link. Check your connection and
+                try again.
+              </Text>
+              <Pressable
+                style={styles.primaryButton}
+                onPress={handleRetry}
+                accessibilityRole="button"
+                accessibilityLabel="Try checking the reset link again"
+              >
+                <Text style={styles.primaryButtonText}>Try Again</Text>
+              </Pressable>
+              <Pressable
+                style={styles.secondaryButton}
+                onPress={() => router.replace('/forgot-password')}
+                accessibilityRole="link"
+              >
+                <Text style={styles.secondaryButtonText}>New Reset Link</Text>
+              </Pressable>
             </>
           ) : (
             <>
@@ -242,5 +280,19 @@ const styles = StyleSheet.create({
     ...typography.labelSm,
     color: colors.onPrimary,
     fontWeight: '700',
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    alignSelf: 'stretch',
+  },
+  secondaryButtonText: {
+    ...typography.labelSm,
+    color: colors.textPrimary,
+    fontWeight: '600',
   },
 });
