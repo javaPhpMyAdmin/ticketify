@@ -7,7 +7,7 @@
  * values are split into chunks of at most `CHUNK_MAX_BYTES` UTF-8 bytes and
  * stored under derived keys:
  *
- *   <storageKey>.meta  -> { count, length } chunk metadata
+ *   <storageKey>.meta  -> { count, length, hash } chunk metadata
  *   <storageKey>.0..n  -> the value chunks
  *
  * supabase-js storage keys look like `sb-<ref>-auth-token` (letters, digits,
@@ -26,6 +26,11 @@
  * fails, the old chunks are restored (or, as a last resort, wiped) so getItem
  * returns the previous valid session or null — never truncated garbage. This
  * matters because auto-refresh rewrites the session on a timer.
+ *
+ * Meta also carries an FNV-1a content hash of the joined value, so getItem
+ * rejects equal-length tears — old and new sessions whose total lengths
+ * coincide but whose content differs (common when auto-refresh swaps token
+ * strings of near-identical size) — which a length check alone would miss.
  *
  * `removeItem` deletes meta and sweeps a bounded range of chunk keys — not
  * just the ones meta references — so orphan chunks (from a crash between the
@@ -78,6 +83,7 @@ export type StorageAdapter = {
 type ChunkMeta = {
   count: number;
   length: number;
+  hash: number;
 };
 
 /**
@@ -122,18 +128,36 @@ export function splitIntoChunks(
   return chunks;
 }
 
+/**
+ * FNV-1a 32-bit hash over UTF-16 code units. Deterministic across JS engines
+ * and platforms, cheap to compute, and dependency-free. It is not
+ * cryptographic — it only needs to catch torn reads (mixed chunks from an
+ * interrupted write, including equal-length tears), not adversarial tampering.
+ */
+function fnv1a(value: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
 function parseMeta(raw: string | null): ChunkMeta | null {
   if (raw == null) return null;
   try {
     const parsed = JSON.parse(raw) as Partial<ChunkMeta>;
-    const { count, length } = parsed;
+    const { count, length, hash } = parsed;
     const countValid =
       Number.isSafeInteger(count) && (count ?? 0) > 0 && (count ?? 0) <= MAX_CHUNKS;
-    const lengthValid =
-      length == null ||
-      (Number.isSafeInteger(length) && (length as number) >= 0);
-    if (countValid && lengthValid) {
-      return { count: count as number, length: length ?? 0 };
+    const lengthValid = Number.isSafeInteger(length) && (length as number) >= 0;
+    const hashValid = Number.isSafeInteger(hash);
+    if (countValid && lengthValid && hashValid) {
+      return {
+        count: count as number,
+        length: length as number,
+        hash: hash as number,
+      };
     }
   } catch {
     // Corrupt meta is treated as absent; the next setItem rewrites it.
@@ -160,9 +184,12 @@ export function createSecureStoreAdapter(
       }
 
       const joined = parts.join('');
-      // meta.length validates the reconstruction: a mismatch means a torn or
-      // corrupt write, so behave like no session rather than return garbage.
-      if (meta.length > 0 && joined.length !== meta.length) return null;
+      // meta.length and meta.hash validate the reconstruction: a length
+      // mismatch OR a content-hash mismatch (equal-length torn reads) means a
+      // torn or corrupt write, so behave like no session rather than return
+      // garbage.
+      if (joined.length !== meta.length) return null;
+      if (fnv1a(joined) !== meta.hash) return null;
       return joined;
     },
 
@@ -197,7 +224,11 @@ export function createSecureStoreAdapter(
           await backend.setItemAsync(chunkKey(key, i), chunks[i]);
         }
         // Meta goes last so a torn write stays invisible to getItem.
-        const meta: ChunkMeta = { count: chunks.length, length: value.length };
+        const meta: ChunkMeta = {
+          count: chunks.length,
+          length: value.length,
+          hash: fnv1a(value),
+        };
         await backend.setItemAsync(metaKey(key), JSON.stringify(meta));
       } catch (error) {
         // Roll back: restore the chunks we overwrote and delete any new ones,
@@ -227,10 +258,20 @@ export function createSecureStoreAdapter(
         throw error; // fail loud — never silently fall back
       }
 
-      // Drop surplus chunks left by a previous, larger value.
+      // Best-effort cleanup of surplus chunks left by a previous, larger
+      // value. Meta is already committed, so a failed delete cannot corrupt
+      // reads: the orphans are never read (getItem only touches 0..count-1)
+      // and are swept by removeItem. Absorb the error instead of surfacing a
+      // spurious persistence failure to the supabase client on every
+      // auto-refresh while the session IS persisted.
       if (oldCount > chunks.length) {
-        for (let i = chunks.length; i < oldCount; i++) {
-          await backend.deleteItemAsync(chunkKey(key, i));
+        try {
+          for (let i = chunks.length; i < oldCount; i++) {
+            await backend.deleteItemAsync(chunkKey(key, i));
+          }
+        } catch {
+          // Best effort: data is committed and safe; the orphan chunks are
+          // invisible to reads and reclaimed on the next removeItem sweep.
         }
       }
     },
@@ -259,10 +300,16 @@ let availabilityResolved = false;
  * SecureStore backend exists (web, or a module build without the native API),
  * so callers can detect unsupported storage instead of hitting a TypeError on
  * an undefined method.
+ *
+ * Only a successful probe is cached: if `expo-secure-store` fails to import or
+ * `isAvailableAsync()` rejects, this call returns null but the NEXT call
+ * retries the probe. A transient failure must not permanently poison the
+ * adapter — that would lock the app into demo mode for its whole lifetime.
  */
 async function resolveAdapter(): Promise<StorageAdapter | null> {
-  if (!availabilityResolved) {
-    availabilityResolved = true;
+  if (sharedAdapter != null) return sharedAdapter;
+  if (availabilityResolved) return null;
+  try {
     const SecureStore = await import('expo-secure-store');
 
     const onWeb =
@@ -277,6 +324,10 @@ async function resolveAdapter(): Promise<StorageAdapter | null> {
       (typeof SecureStore.isAvailableAsync !== 'function' ||
         (await SecureStore.isAvailableAsync()));
 
+    // Probe succeeded: cache the verdict (an adapter, or a definitive null for
+    // unsupported platforms). This flag is only set on SUCCESS, so a rejected
+    // probe can be retried on a later call.
+    availabilityResolved = true;
     if (available) {
       sharedAdapter = createSecureStoreAdapter({
         getItemAsync: SecureStore.getItemAsync,
@@ -284,6 +335,9 @@ async function resolveAdapter(): Promise<StorageAdapter | null> {
         deleteItemAsync: SecureStore.deleteItemAsync,
       });
     }
+  } catch {
+    // Probe failed (transient). Do NOT set availabilityResolved: leave the
+    // module unresolved so the next call retries the probe.
   }
   return sharedAdapter;
 }
