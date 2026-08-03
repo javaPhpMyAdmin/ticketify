@@ -53,6 +53,13 @@ export interface OAuthResult {
   error: string | null;
 }
 
+/** Outcome of a standalone PKCE code exchange (see `exchangeOAuthCode`). */
+export interface OAuthExchangeResult {
+  ok: boolean;
+  /** User-displayable error message when `ok` is false (generic copy). */
+  error: string | null;
+}
+
 /** The PKCE auth code GoTrue puts in the callback URL's query string. */
 function codeFromCallbackUrl(url: string): string | null {
   try {
@@ -82,6 +89,58 @@ function flowIdFromCallbackUrl(url: string): string | null {
 }
 
 /**
+ * Exchanges a PKCE auth code for a session.
+ *
+ * Shared by the in-process flow (`signInWithProvider`) and the OAuth callback
+ * route (`src/app/oauth.tsx`), which consumes deep-link params on cold start
+ * when the in-process flow did not survive. `flowId` selects the stored
+ * verifier slot for THIS flow; when null the exchange falls back to the shared
+ * legacy key. A failed exchange surfaces generic copy — never the raw GoTrue
+ * message (no auth-internal leakage in the UI).
+ */
+export async function exchangeOAuthCode(
+  code: string,
+  flowId: string | null,
+): Promise<OAuthExchangeResult> {
+  try {
+    const { error } = await supabase.auth.exchangeCodeForSession(
+      code,
+      flowId ? { flowId } : undefined,
+    );
+    if (error) {
+      return {
+        ok: false,
+        error: 'Sign-in was interrupted. Please try again.',
+      };
+    }
+    return { ok: true, error: null };
+  } catch (err) {
+    // Network/storage failure: surface a readable message (same posture as
+    // signInWithProvider) and let the caller keep the user on sign-in.
+    return {
+      ok: false,
+      error:
+        err instanceof Error ? err.message : 'Sign-in was interrupted. Please try again.',
+    };
+  }
+}
+
+/**
+ * True while `signInWithProvider` is running — from the provider tap until
+ * the flow settles. The OAuth callback route reads this to resolve the warm
+ * race: when the deep link arrives while the in-process flow is still
+ * exchanging, the route defers to it instead of exchanging the same code
+ * twice (PKCE codes are single-use) or flashing the sign-in screen. A
+ * terminated process resets the flag, so a cold-start callback always sees
+ * `false` and exchanges the code itself.
+ */
+let providerFlowInFlight = false;
+
+export function isOAuthFlowInFlight(): boolean {
+  return providerFlowInFlight;
+}
+
+/**
  * Runs the full PKCE flow for a provider and returns the outcome. On success
  * the Supabase client holds the new session (SIGNED_IN / onAuthStateChange)
  * and `ensureProfile` runs; the caller should then navigate to the app.
@@ -89,6 +148,7 @@ function flowIdFromCallbackUrl(url: string): string | null {
 export async function signInWithProvider(
   provider: OAuthProvider,
 ): Promise<OAuthResult> {
+  providerFlowInFlight = true;
   try {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
@@ -125,11 +185,8 @@ export async function signInWithProvider(
     // newer PKCE flow overwrites. The callback-URL fallback only covers SDKs
     // that return no flow id.
     const flowId = data.flowId ?? flowIdFromCallbackUrl(result.url);
-    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(
-      code,
-      flowId ? { flowId } : undefined,
-    );
-    if (exchangeError) return { cancelled: false, error: exchangeError.message };
+    const exchange = await exchangeOAuthCode(code, flowId);
+    if (!exchange.ok) return { cancelled: false, error: exchange.error };
 
     return { cancelled: false, error: null };
   } catch (err) {
@@ -139,5 +196,7 @@ export async function signInWithProvider(
       cancelled: false,
       error: err instanceof Error ? err.message : 'Sign-in failed. Please try again.',
     };
+  } finally {
+    providerFlowInFlight = false;
   }
 }
