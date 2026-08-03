@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 
 import { parseTicket, uploadToStorage } from '../api';
+import { useAuthMode } from '@/features/auth';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { tempId } from '@/lib/format';
 
@@ -26,6 +27,7 @@ export interface UseScanTicketResult {
  * Returns a `draftId` callers can use to navigate to `/ticket/review/[id]`.
  */
 export function useScanTicket({ userId }: UseScanTicketArgs): UseScanTicketResult {
+  const { userId: sessionUserId } = useAuthMode();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -41,8 +43,12 @@ export function useScanTicket({ userId }: UseScanTicketArgs): UseScanTicketResul
       setIsLoading(true);
       setError(null);
       try {
-        // Step 1: upload (stubbed for now).
-        const { url } = await uploadToStorage(userId ?? 'anon', imageUri);
+        // Step 1: upload (stubbed for now) — scoped to the signed-in user's
+        // storage namespace when a session exists, 'anon' in demo mode.
+        const { url } = await uploadToStorage(
+          userId ?? sessionUserId ?? 'anon',
+          imageUri,
+        );
         // Step 2: parse.
         const parsed = await parseTicket(url);
         // Step 3: seed the store.
@@ -60,7 +66,7 @@ export function useScanTicket({ userId }: UseScanTicketArgs): UseScanTicketResul
         setIsLoading(false);
       }
     },
-    [userId, startDraft, setDraftStore, setDraftDate, setDraftTotal, setDraftItems],
+    [userId, sessionUserId, startDraft, setDraftStore, setDraftDate, setDraftTotal, setDraftItems],
   );
 
   const reset = useCallback(() => {
