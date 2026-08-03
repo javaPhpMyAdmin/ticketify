@@ -822,6 +822,60 @@ async function run() {
     assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
   });
 
+  console.log('\n[tests] passive events never override demo mode\n');
+
+  await test('TOKEN_REFRESHED updates the session but never flips an explicit demo choice', async () => {
+    resetAll();
+    // A signed-in user who explicitly tapped "Demo Mode": the session is live
+    // but the mode is the user's control. A silent token refresh must refresh
+    // the session object (the tokens it carries are newer) and NOT promote the
+    // mode back to 'authenticated' — otherwise the choice reverts at the next
+    // refresh (demo-mode spec: mode is a user control).
+    storeMod.useSessionStore.setState({ session: FAKE_SESSION });
+    settingsMod.useSettingsStore.setState({ mode: 'demo' });
+    const cb = supabaseMod.__lastAuthStateListener;
+    assert.ok(cb, 'listener is registered at module load');
+    cb('TOKEN_REFRESHED', FAKE_SESSION);
+    assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
+    assert.equal(settingsMod.useSettingsStore.getState().mode, 'demo');
+    assert.equal(
+      storageMod.__readStoredValue(MODE_KEY),
+      undefined,
+      'passive events must not persist an auth-mode override',
+    );
+  });
+
+  await test('USER_UPDATED keeps the user-chosen demo mode', async () => {
+    resetAll();
+    storeMod.useSessionStore.setState({ session: FAKE_SESSION });
+    settingsMod.useSettingsStore.setState({ mode: 'demo' });
+    const cb = supabaseMod.__lastAuthStateListener;
+    assert.ok(cb, 'listener is registered at module load');
+    cb('USER_UPDATED', FAKE_SESSION);
+    assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
+    assert.equal(settingsMod.useSettingsStore.getState().mode, 'demo');
+  });
+
+  await test('PASSWORD_RECOVERY does not override the user-chosen mode', async () => {
+    resetAll();
+    settingsMod.useSettingsStore.setState({ mode: 'demo' });
+    const cb = supabaseMod.__lastAuthStateListener;
+    assert.ok(cb, 'listener is registered at module load');
+    cb('PASSWORD_RECOVERY', FAKE_SESSION);
+    assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
+    assert.equal(settingsMod.useSettingsStore.getState().mode, 'demo');
+  });
+
+  await test('SIGNED_IN promotes the mode and persists it', async () => {
+    resetAll();
+    const cb = supabaseMod.__lastAuthStateListener;
+    assert.ok(cb, 'listener is registered at module load');
+    cb('SIGNED_IN', FAKE_SESSION);
+    assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
+    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
+    assert.equal(storageMod.__readStoredValue(MODE_KEY), 'authenticated');
+  });
+
   await test('registry re-registration replaces the listener, never stacks', async () => {
     resetAll();
     // Module load registered one listener (active === 1). Re-registering —

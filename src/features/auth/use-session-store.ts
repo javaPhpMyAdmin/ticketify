@@ -2,12 +2,15 @@
  * Auth session store (ADR-4).
  *
  * Owns the live `Session` and the bootstrapping flag; the data-source mode
- * itself lives in `useSettingsStore.mode` (single source of truth). Every
- * event that produces a session — restore, sign-in, OAuth exchange, password
- * recovery — promotes the mode to `'authenticated'` and runs `ensureProfile`.
- * Sign-out only clears the session and leaves the mode `'authenticated'`, so
- * the root gate routes the user to the sign-in screen instead of falling back
- * to demo fixtures.
+ * itself lives in `useSettingsStore.mode` (single source of truth). The mode
+ * is promoted to `'authenticated'` ONLY when identity changes — launch
+ * restore and the SIGNED_IN event (password sign-in, sign-up auto-sign-in,
+ * OAuth exchange). Passive events (TOKEN_REFRESHED, USER_UPDATED,
+ * PASSWORD_RECOVERY) refresh the session object but never override an
+ * explicit demo-mode choice: mode is a user control, and auth events that do
+ * not change identity must not flip it back. Sign-out only clears the session
+ * and leaves the mode `'authenticated'`, so the root gate routes the user to
+ * the sign-in screen instead of falling back to demo fixtures.
  *
  * The mode is persisted through the chunked SecureStore adapter (same backend
  * as the session), so after a relaunch the gate is reconciled BEFORE the
@@ -312,9 +315,12 @@ export const useSessionStore = create<SessionState>((set) => ({
 }));
 
 /**
- * Promotes state whenever supabase-js reports a session-bearing event
- * (SIGNED_IN, TOKEN_REFRESHED, USER_UPDATED, PASSWORD_RECOVERY) and clears it
- * on SIGNED_OUT.
+ * Keeps the store in sync with supabase-js auth events and clears it on
+ * SIGNED_OUT. The session object is applied for EVERY session-bearing event
+ * (the token/user data it carries is always newer), but the mode is promoted
+ * only on SIGNED_IN — passive events (TOKEN_REFRESHED, USER_UPDATED,
+ * PASSWORD_RECOVERY) must not override an explicit demo-mode choice, and
+ * `ensureProfile` (ADR-6) only runs when identity actually changed.
  *
  * The subscription goes through the shared listener registry instead of a
  * module-scope flag: a flag resets when Metro re-executes this module on Fast
@@ -333,10 +339,17 @@ function initAuthStateListener(): void {
         return;
       }
       if (session) {
+        // Always apply the refreshed session object: TOKEN_REFRESHED and
+        // USER_UPDATED carry newer token/user data the store must reflect
+        // even when the mode is not promoted.
         useSessionStore.setState({ session });
-        useSettingsStore.getState().setMode('authenticated');
-        void savePersistedAuthMode('authenticated');
-        if (session.user) void ensureProfile(session.user.id);
+        if (event === 'SIGNED_IN') {
+          // Identity changed: promote the mode (bootstrap restore handles
+          // the relaunch case separately) and ensure the profile row exists.
+          useSettingsStore.getState().setMode('authenticated');
+          void savePersistedAuthMode('authenticated');
+          if (session.user) void ensureProfile(session.user.id);
+        }
       }
     },
   );
