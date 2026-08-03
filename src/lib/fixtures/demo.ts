@@ -7,6 +7,28 @@
  */
 import type { CategoryMonthlyTotal, ScanTier, ScanUsage, User } from '@/types';
 
+/**
+ * Demo-read boundary (demo-mode spec: "no fixture leakage in authenticated
+ * reads").
+ *
+ * INTERIM STATE (Phase 3): returns `true` unconditionally — the Supabase
+ * reads are not wired yet, so every feature read (`profile`, `budget`,
+ * `analytics`) returns fixtures to BOTH modes and a signed-in profile
+ * currently renders the demo user. The demo harness asserts this interim
+ * state; screens must NOT be assumed to render real data in authenticated
+ * mode yet.
+ *
+ * PHASE 4 HARD REQUIREMENT (tasks 4.1-4.6): flip this seam to be mode-aware
+ * (`mode === 'demo'` via `useAuthMode()`) and make the feature APIs consult
+ * it before falling back to fixtures, so authenticated mode reads Supabase
+ * data and never renders demo fixtures. Do not remove this seam or make it
+ * return `false` before the reads are wired — that would silently promise
+ * authenticated reads that do not exist yet.
+ */
+export function isDemoFixturesOnly(): boolean {
+  return true;
+}
+
 /** The four analytics categories shared by the analytics hooks. */
 export const categoryBreakdownRows: CategoryMonthlyTotal[] = [
   { category_id: '1', category_name: 'Groceries', category_slug: 'groceries', total: 450, item_count: 24, percent_of_total: 0.5 },

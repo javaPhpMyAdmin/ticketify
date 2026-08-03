@@ -14,6 +14,9 @@
  *     the branch calls for,
  *   - fixtures consistency: the screens render the same numbers everywhere
  *     (the fixtures module's own docstring contract),
+ *   - demo read boundary: feature reads are still stubbed and return fixtures
+ *     in every mode — the documented interim state until Phase 4 wires
+ *     mode-aware reads behind the `isDemoFixturesOnly()` seam,
  *   - demo write boundary: `saveReceipt` stays a local no-op, so a write
  *     attempt in demo mode is refused with no backend mutation (ADR-8).
  *
@@ -94,6 +97,9 @@ async function run() {
   const switchMod = await load('src/lib/auth/mode-switch.js');
   const fixturesMod = await load('src/lib/fixtures/demo.js');
   const ticketsMod = await load('src/features/tickets/api.js');
+  const profileMod = await load('src/features/profile/api.js');
+  const budgetMod = await load('src/features/budget/api.js');
+  const analyticsMod = await load('src/features/analytics/api.js');
 
   console.log('\n[tests] mode switch decision (demo-mode spec)\n');
 
@@ -197,6 +203,31 @@ async function run() {
   await test('demo scan usage is limited to the current year-month shape', () => {
     assert.match(fixturesMod.demoScanUsage.year_month, /^\d{4}-\d{2}$/);
     assert.ok(fixturesMod.demoScanUsage.scans_used <= fixturesMod.demoScanUsage.scans_limit);
+  });
+
+  console.log('\n[tests] demo read boundary (interim state)\n');
+
+  await test('read-boundary seam documents the fixtures-only interim state', () => {
+    // Phase 3: reads are stubbed, so fixtures reach every mode. Phase 4 MUST
+    // flip this seam to be mode-aware (see the seam's docstring) before
+    // authenticated mode can be trusted to render real data.
+    assert.equal(fixturesMod.isDemoFixturesOnly(), true);
+  });
+
+  await test('profile read is still stubbed: fetchProfile returns the demo user', async () => {
+    const user = await profileMod.fetchProfile('any-user-id');
+    assert.equal(user?.id, fixturesMod.demoUser.id);
+  });
+
+  await test('budget read is still stubbed: fetchMonthlyBudget returns the demo budget', async () => {
+    const budget = await budgetMod.fetchMonthlyBudget('any-user-id');
+    assert.equal(budget.amount, fixturesMod.monthlyBudget.amount);
+    assert.equal(budget.currency, fixturesMod.monthlyBudget.currency);
+  });
+
+  await test('analytics reads are still stubbed: breakdown returns the fixture rows', async () => {
+    const rows = await analyticsMod.fetchCategoryBreakdown('any-user-id', '2026-08');
+    assert.equal(rows, fixturesMod.categoryBreakdownRows);
   });
 
   console.log('\n[tests] demo write boundary (tickets guard)\n');
