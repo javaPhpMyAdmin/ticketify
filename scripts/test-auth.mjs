@@ -776,6 +776,64 @@ async function run() {
     );
   });
 
+  console.log('\n[tests] sign-out\n');
+
+  await test('success: session cleared, mode stays authenticated (gate → sign-in)', async () => {
+    resetAll();
+    storeMod.useSessionStore.setState({ session: FAKE_SESSION, isBootstrapping: false });
+    settingsMod.useSettingsStore.setState({ mode: 'authenticated' });
+    let signOutCalls = 0;
+    supabaseMod.__setSupabaseBehavior({
+      signOut: async () => {
+        signOutCalls += 1;
+        return { error: null };
+      },
+    });
+    await assert.doesNotReject(() => storeMod.useSessionStore.getState().signOut());
+    // auth-js fires SIGNED_OUT on success; the listener clears the session.
+    const cb = supabaseMod.__lastAuthStateListener;
+    assert.ok(cb, 'listener is registered for SIGNED_OUT');
+    cb('SIGNED_OUT', null);
+    const s = storeMod.useSessionStore.getState();
+    assert.equal(s.session, null);
+    // The root gate (authenticated && !session) now routes to sign-in.
+    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
+    assert.equal(signOutCalls, 1);
+  });
+
+  await test('offline revoke failure: local session still cleared, no misleading throw', async () => {
+    resetAll();
+    storeMod.useSessionStore.setState({ session: FAKE_SESSION, isBootstrapping: false });
+    settingsMod.useSettingsStore.setState({ mode: 'authenticated' });
+    supabaseMod.__setSupabaseBehavior({
+      signOut: async () => {
+        // auth-js clears the local session and fires SIGNED_OUT BEFORE
+        // returning the revoke error (verified in GoTrueClient._signOut).
+        const cb = supabaseMod.__lastAuthStateListener;
+        cb('SIGNED_OUT', null);
+        return { error: { message: 'Network request failed' } };
+      },
+    });
+    await assert.doesNotReject(() => storeMod.useSessionStore.getState().signOut());
+    assert.equal(storeMod.useSessionStore.getState().session, null);
+    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
+  });
+
+  await test('genuine failure (session intact): the only surfaced error', async () => {
+    resetAll();
+    storeMod.useSessionStore.setState({ session: FAKE_SESSION, isBootstrapping: false });
+    supabaseMod.__setSupabaseBehavior({
+      signOut: async () => ({ error: { message: 'storage backend unavailable' } }),
+    });
+    await assert.rejects(
+      () => storeMod.useSessionStore.getState().signOut(),
+      /storage backend unavailable/,
+    );
+    // No SIGNED_OUT fired: the local session was NOT cleared, so the sign-out
+    // genuinely failed and the error is worth surfacing.
+    assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
+  });
+
   console.log('');
   if (failed > 0) {
     console.error(`[tests] ${failed} failed, ${passed} passed`);

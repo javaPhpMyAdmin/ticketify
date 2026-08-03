@@ -52,6 +52,11 @@ export default function ProfileScreen() {
       // screen (user-auth spec: sign out on demand → back to sign-in).
       await signOut();
     } catch (err) {
+      // Only a genuine sign-out failure surfaces here (the local session is
+      // still intact). An offline/5xx server revoke clears the local session
+      // and fires SIGNED_OUT first, so the store treats it as success — the
+      // user IS signed out on this device, and a "could not sign out" message
+      // would be dead the moment the gate unmounts this screen.
       setSignOutError(
         err instanceof Error ? err.message : 'Could not sign out. Please try again.',
       );

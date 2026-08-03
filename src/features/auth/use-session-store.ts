@@ -293,7 +293,18 @@ export const useSessionStore = create<SessionState>((set) => ({
 
   signOut: async () => {
     const { error } = await supabase.auth.signOut();
-    if (error) throw new Error(error.message);
+    if (error) {
+      // auth-js clears the local session and fires SIGNED_OUT BEFORE
+      // returning a server-revoke error (verified against GoTrueClient
+      // `_signOut`: `removeCurrentSession()` runs, then the revoke error is
+      // returned). An offline/5xx revoke is therefore NOT a sign-out failure
+      // — the user IS signed out on this device and the gate routes to
+      // sign-in. Only a failure that left the local session intact is a
+      // genuine error worth surfacing (the UI would otherwise show a dead
+      // "could not sign out" on a screen that is about to unmount).
+      if (!useSessionStore.getState().session) return;
+      throw new Error(error.message);
+    }
     // SIGNED_OUT fires through onAuthStateChange and clears the session. The
     // mode stays 'authenticated' (persisted) so the gate shows the sign-in
     // screen, including after a relaunch.
