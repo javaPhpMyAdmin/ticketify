@@ -12,6 +12,12 @@
  * the exchange reads that flow's stored PKCE verifier instead of the shared
  * legacy slot, which any later PKCE flow would have overwritten (intermittent
  * "invalid link" on recovery links otherwise).
+ *
+ * The link only carries `sb_flow_id` because the client enables
+ * `experimental.appendPkceFlowIdToRedirects` (see `src/lib/supabase.ts`):
+ * `resetPasswordForEmail` does not return its flow id, so the flag is the only
+ * channel for the recovery flow to reach its own verifier slot. The screen
+ * passes the deep-link param through to this helper.
  */
 import { supabase } from '@/lib/supabase';
 

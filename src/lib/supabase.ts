@@ -46,6 +46,25 @@ function isPlaceholder(value: string): boolean {
  * (`implicit`) redirects with tokens in the URL fragment instead, which the
  * custom-scheme redirect on native cannot use.
  *
+ * `experimental.appendPkceFlowIdToRedirects` makes GoTrue append the flow's
+ * `sb_flow_id` to redirect URLs (verified against the installed
+ * `@supabase/auth-js@2.111.0` source). It is REQUIRED for the password-
+ * recovery flow: `resetPasswordForEmail` does NOT return its flow id, so the
+ * recovery email link can only carry it through this flag — without it the
+ * exchange falls back to the shared legacy verifier key, which any newer PKCE
+ * flow overwrites (intermittent "invalid link" on recovery emails). The OAuth
+ * flow does not depend on the flag: `signInWithOAuth` returns its flow id
+ * directly (see `src/lib/auth/oauth.ts`).
+ *
+ * SIDE EFFECT (dashboard config, out of this repo's scope): with the flag on,
+ * EVERY redirect — including the OAuth one — gains `?sb_flow_id=…`. GoTrue
+ * matches redirect URLs against the dashboard allow list INCLUDING the query
+ * string, so exact (non-wildcard) entries stop matching and the redirect
+ * falls back to the Site URL. The dashboard entries for `ticketify://oauth`
+ * and the recovery redirect must tolerate the parameter (wildcard form, e.g.
+ * `ticketify://oauth/*`). signUp/signInWithOtp are unaffected because we
+ * never pass an `emailRedirectTo`.
+ *
  * Once we run `supabase gen types typescript` (gated on `supabase link`) we'll
  * parameterize this with the generated `Database` type for end-to-end type
  * safety; until then the client stays untyped and `src/types` carries the
@@ -61,6 +80,9 @@ export const supabase: SupabaseClient = createClient(
       detectSessionInUrl: false,
       flowType: 'pkce',
       storage: secureStoreAdapter,
+      experimental: {
+        appendPkceFlowIdToRedirects: true,
+      },
     },
   },
 );

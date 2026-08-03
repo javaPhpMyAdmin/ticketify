@@ -66,6 +66,12 @@ function codeFromCallbackUrl(url: string): string | null {
  * The PKCE flow id GoTrue appends to the callback URL (`sb_flow_id`) when the
  * flow is identifiable, so the exchange uses that flow's stored verifier
  * instead of the shared legacy slot (which any newer flow overwrites).
+ *
+ * PRIMARY SOURCE is the `flowId` that `signInWithOAuth` returns in its result
+ * (verified against auth-js 2.111.0: `OAuthResponse.data.flowId` is always set
+ * at runtime). The callback URL only carries `sb_flow_id` when
+ * `experimental.appendPkceFlowIdToRedirects` is enabled, so parsing it here is
+ * only a fallback for SDK versions that return no flow id.
  */
 function flowIdFromCallbackUrl(url: string): string | null {
   try {
@@ -96,8 +102,7 @@ export async function signInWithProvider(
 
     // `url` is the fully-formed Supabase authorize URL (already carries the
     // PKCE challenge). Open it in the system browser; on redirect the promise
-    // resolves with the callback URL carrying `code` (and `sb_flow_id` when
-    // GoTrue appended it).
+    // resolves with the callback URL carrying `code`.
     const result = await WebBrowser.openAuthSessionAsync(data.url, oauthRedirectUri);
 
     if (result.type === 'cancel') {
@@ -115,7 +120,11 @@ export async function signInWithProvider(
       return { cancelled: false, error: 'The sign-in response was missing its code.' };
     }
 
-    const flowId = flowIdFromCallbackUrl(result.url);
+    // The flow id returned by signInWithOAuth selects THIS flow's stored
+    // verifier slot for the exchange — never the shared legacy key, which any
+    // newer PKCE flow overwrites. The callback-URL fallback only covers SDKs
+    // that return no flow id.
+    const flowId = data.flowId ?? flowIdFromCallbackUrl(result.url);
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(
       code,
       flowId ? { flowId } : undefined,
