@@ -1,0 +1,88 @@
+import { StyleSheet, Switch } from 'react-native';
+
+import { Chip, Text, View } from '@/components';
+import { formatCurrency } from '@/lib/format';
+import { colors, spacing, typography } from '@/theme';
+import type { ReviewItem } from '@/types';
+
+export interface ReviewItemRowProps {
+  item: ReviewItem;
+  /** Called when the user toggles the "impulse" switch. */
+  onToggleImpulse: (isImpulse: boolean) => void;
+}
+
+/**
+ * One row inside the receipt review list. Top half: name + qty on
+ * the left, line price on the right. Bottom half: AI-suggested
+ * category chip + impulse-buy switch.
+ */
+export function ReviewItemRow({ item, onToggleImpulse }: ReviewItemRowProps) {
+  return (
+    <View style={styles.row}>
+      <View style={styles.top}>
+        <View style={styles.left}>
+          <Text style={styles.name} numberOfLines={1}>
+            {item.name}
+          </Text>
+          <Text style={styles.qty}>Qty {item.quantity}</Text>
+        </View>
+        <Text style={styles.price}>{formatCurrency(item.total_price, 'USD')}</Text>
+      </View>
+      <View style={styles.bottom}>
+        <Chip label={item.ai_suggested_category_id ?? 'UNCATEGORIZED'} selected />
+        <View style={styles.impulseWrap}>
+          <Text style={styles.impulseLabel}>Impulse Buy</Text>
+          <Switch
+            value={item.is_impulse}
+            onValueChange={onToggleImpulse}
+            trackColor={{ true: colors.primary, false: colors.divider }}
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    gap: spacing.md,
+  },
+  top: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  left: {
+    flex: 1,
+  },
+  name: {
+    ...typography.bodyLg,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  qty: {
+    ...typography.labelSm,
+    color: colors.textSecondary,
+  },
+  price: {
+    ...typography.headlineMd,
+    color: colors.textPrimary,
+  },
+  bottom: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  impulseWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  impulseLabel: {
+    ...typography.labelSm,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+});
