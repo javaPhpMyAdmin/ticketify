@@ -10,6 +10,7 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": "..",
     "paths": {
+      "@/lib/supabase": ["./scripts/test-stubs/supabase.ts"],
       "@/*": ["./src/*"]
     },
     "rootDir": ".."
@@ -17,11 +18,14 @@
   "include": [
     "../src/lib/auth/mode-switch.ts",
     "../src/lib/fixtures/demo.ts",
+    "../src/lib/supabase/feature-access.ts",
     "../src/features/tickets/api.ts",
     "../src/features/profile/api.ts",
     "../src/features/budget/api.ts",
     "../src/features/analytics/api.ts",
     "../src/lib/format.ts",
-    "../src/types/index.ts"
+    "../src/types/index.ts",
+    "../src/stores/use-settings-store.ts",
+    "../scripts/test-stubs/supabase.ts"
   ]
 }

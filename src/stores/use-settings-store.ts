@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 
 import type { ScanTier } from '@/types';
-import { settingsDefaults } from '@/lib/fixtures/demo';
 
 /**
  * The app's single source of truth for the data source (ADR-4):
@@ -20,6 +19,21 @@ import { settingsDefaults } from '@/lib/fixtures/demo';
  */
 export type AuthMode = 'demo' | 'authenticated';
 
+/**
+ * Defaults the settings store hydrates with. Lives HERE (not in the fixtures
+ * module) so the fixtures module — which re-exports this — can re-export the
+ * mode-aware read seam without creating an import cycle through the store.
+ */
+export const settingsDefaults: Pick<
+  SettingsState,
+  'monthly_budget' | 'currency' | 'tier' | 'household_sharing'
+> = {
+  monthly_budget: 1200,
+  currency: 'USD',
+  tier: 'free',
+  household_sharing: false,
+};
+
 interface SettingsState {
   monthly_budget: number;
   currency: string; // ISO 4217
@@ -34,13 +48,8 @@ interface SettingsState {
   hydrate: (next: Partial<SettingsState>) => void;
 }
 
-const defaults: Pick<
-  SettingsState,
-  'monthly_budget' | 'currency' | 'tier' | 'household_sharing'
-> = settingsDefaults;
-
 export const useSettingsStore = create<SettingsState>((set) => ({
-  ...defaults,
+  ...settingsDefaults,
   mode: 'demo',
   setBudget: (monthly_budget) => set({ monthly_budget }),
   setCurrency: (currency) => set({ currency }),

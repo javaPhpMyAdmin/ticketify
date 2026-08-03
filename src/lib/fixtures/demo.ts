@@ -1,37 +1,27 @@
 /**
  * Single source of truth for all demo / mock data.
  *
- * Every feature stub (see `src/features`) and the settings store
- * import from here so the app renders the same numbers everywhere.
- * Swap these values once the real Supabase wiring lands.
+ * Every demo-mode read (feature hooks, the settings store) pulls from here so
+ * the app renders the same numbers everywhere. Feature APIs never import these
+ * values: they read Supabase in authenticated mode and return `{ status:
+ * 'demo' }` without touching the network in demo mode (data-access spec).
  */
-import type { CategoryMonthlyTotal, ScanTier, ScanUsage, User } from '@/types';
+import type { CategoryMonthlyTotal, ScanUsage, User } from '@/types';
 
 /**
  * Demo-read boundary (demo-mode spec: "no fixture leakage in authenticated
  * reads").
  *
- * INTERIM STATE (Phase 3): returns `true` unconditionally — the Supabase
- * reads are not wired yet, so every feature read (`profile`, `budget`,
- * `analytics`) returns fixtures to BOTH modes and a signed-in profile
- * currently renders the demo user. The demo harness asserts this interim
- * state; screens must NOT be assumed to render real data in authenticated
- * mode yet.
- *
- * PHASE 4 HARD REQUIREMENT (tasks 4.1-4.6): flip this seam to be mode-aware
- * (`mode === 'demo'` via `useAuthMode()`) and make the feature APIs consult
- * it before falling back to fixtures, so authenticated mode reads Supabase
- * data and never renders demo fixtures. Do not remove this seam or make it
- * return `false` before the reads are wired — that would silently promise
- * authenticated reads that do not exist yet. The mode-aware seam must also
- * honor the RESTORE mode: `restore()` keeps an explicit demo choice across
- * relaunches even with a stored session, so the seam must read the live
- * store mode (already reconciled at bootstrap), never re-derive it from
- * session presence.
+ * Mode-aware seam: true when the live settings-store mode is `demo` (ADR-4).
+ * It reads the store at CALL time — the store is reconciled at bootstrap
+ * (ADR-5) and an explicit demo choice survives relaunch with a stored session
+ * — so it NEVER re-derives the mode from session presence. Feature APIs
+ * consult it before any Supabase call (demo mode stays offline) and hooks use
+ * the reactive `useAuthMode()` equivalent. The implementation lives in
+ * `@/lib/supabase/feature-access` (the data-access seam) and is re-exported
+ * here so the fixtures module keeps being the seam every consumer imports.
  */
-export function isDemoFixturesOnly(): boolean {
-  return true;
-}
+export { isDemoFixturesOnly } from '@/lib/supabase/feature-access';
 
 /** The four analytics categories shared by the analytics hooks. */
 export const categoryBreakdownRows: CategoryMonthlyTotal[] = [
@@ -66,18 +56,9 @@ export const demoScanUsage: ScanUsage = {
   scans_limit: 10,
 };
 
-/** Defaults for the settings store. */
-export const settingsDefaults: {
-  monthly_budget: number;
-  currency: string;
-  tier: ScanTier;
-  household_sharing: boolean;
-} = {
-  monthly_budget: 1200,
-  currency: 'USD',
-  tier: 'free',
-  household_sharing: false,
-};
+/** Defaults for the settings store. Defined in the store; re-exported here so
+ * the fixtures module remains the single source for every demo value. */
+export { settingsDefaults } from '@/stores/use-settings-store';
 
 // ---------------------------------------------------------------------------
 // Home screen (kept demo-only by design; purchase-list reads are out of scope)

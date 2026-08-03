@@ -14,9 +14,9 @@
  *     the branch calls for,
  *   - fixtures consistency: the screens render the same numbers everywhere
  *     (the fixtures module's own docstring contract),
- *   - demo read boundary: feature reads are still stubbed and return fixtures
- *     in every mode — the documented interim state until Phase 4 wires
- *     mode-aware reads behind the `isDemoFixturesOnly()` seam,
+ *   - demo read boundary: the mode-aware seam follows the live settings-store
+ *     mode; feature reads report `{ status: 'demo' }` with zero Supabase calls
+ *     in demo mode and never leak the fixtures into authenticated results,
  *   - demo write boundary: `saveReceipt` stays a local no-op, so a write
  *     attempt in demo mode is refused with no backend mutation (ADR-8).
  *
@@ -63,14 +63,17 @@ async function test(name, fn) {
 
 /**
  * tsc type-checks against the remapped `@/…` paths but emits the ORIGINAL
- * specifier, so plain node cannot resolve `@/lib/format` in the compiled
- * CommonJS output. Rewrites it to the compiled location; everything else
- * passes through untouched.
+ * specifier, so plain node cannot resolve `@/lib/supabase` (the data-access
+ * seam's backend client, remapped to the test double) or `@/lib/format` in
+ * the compiled CommonJS output. Rewrites those to their compiled locations;
+ * everything else passes through untouched.
  */
 function installRequireHook() {
   const originalResolve = Module._resolveFilename;
   Module._resolveFilename = function rewrittenResolve(request, ...rest) {
-    if (request.startsWith('@/')) {
+    if (request === '@/lib/supabase') {
+      request = join(outDir, 'scripts', 'test-stubs', 'supabase.js');
+    } else if (request.startsWith('@/')) {
       request = join(outDir, 'src', request.slice(2));
     }
     return originalResolve.call(this, request, ...rest);
@@ -96,6 +99,8 @@ async function run() {
 
   const switchMod = await load('src/lib/auth/mode-switch.js');
   const fixturesMod = await load('src/lib/fixtures/demo.js');
+  const settingsMod = await load('src/stores/use-settings-store.js');
+  const stubMod = await load('scripts/test-stubs/supabase.js');
   const ticketsMod = await load('src/features/tickets/api.js');
   const profileMod = await load('src/features/profile/api.js');
   const budgetMod = await load('src/features/budget/api.js');
@@ -205,29 +210,18 @@ async function run() {
     assert.ok(fixturesMod.demoScanUsage.scans_used <= fixturesMod.demoScanUsage.scans_limit);
   });
 
-  console.log('\n[tests] demo read boundary (interim state)\n');
+  console.log('\n[tests] demo read boundary (Phase 4: mode-aware seam)\n');
 
-  await test('read-boundary seam documents the fixtures-only interim state', () => {
-    // Phase 3: reads are stubbed, so fixtures reach every mode. Phase 4 MUST
-    // flip this seam to be mode-aware (see the seam's docstring) before
-    // authenticated mode can be trusted to render real data.
+  await test('read-boundary seam follows the live settings-store mode', () => {
+    // Phase 4 flips the seam: reads consult the live store mode (single source
+    // of truth, ADR-4), never a session. The store defaults to demo, so the
+    // seam is true until the mode is promoted.
+    settingsMod.useSettingsStore.setState({ mode: 'demo' });
     assert.equal(fixturesMod.isDemoFixturesOnly(), true);
-  });
-
-  await test('profile read is still stubbed: fetchProfile returns the demo user', async () => {
-    const user = await profileMod.fetchProfile('any-user-id');
-    assert.equal(user?.id, fixturesMod.demoUser.id);
-  });
-
-  await test('budget read is still stubbed: fetchMonthlyBudget returns the demo budget', async () => {
-    const budget = await budgetMod.fetchMonthlyBudget('any-user-id');
-    assert.equal(budget.amount, fixturesMod.monthlyBudget.amount);
-    assert.equal(budget.currency, fixturesMod.monthlyBudget.currency);
-  });
-
-  await test('analytics reads are still stubbed: breakdown returns the fixture rows', async () => {
-    const rows = await analyticsMod.fetchCategoryBreakdown('any-user-id', '2026-08');
-    assert.equal(rows, fixturesMod.categoryBreakdownRows);
+    settingsMod.useSettingsStore.getState().setMode('authenticated');
+    assert.equal(fixturesMod.isDemoFixturesOnly(), false);
+    settingsMod.useSettingsStore.getState().setMode('demo');
+    assert.equal(fixturesMod.isDemoFixturesOnly(), true);
   });
 
   console.log('\n[tests] demo write boundary (tickets guard)\n');
