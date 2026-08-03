@@ -4,13 +4,14 @@ import { router } from 'expo-router';
 
 import { Card, CategoryCard, Divider, Fab, ReceiptRow, Text, View } from '@/components';
 import { MonthlyBudgetCard, useBudget } from '@/features/budget';
+import { useHomeFeed } from '@/features/home';
 import { useSettingsStore } from '@/stores/use-settings-store';
-import { homeCategories, recentReceipts, wantsSnacksTotal } from '@/lib/fixtures/demo';
 import { colors, spacing, typography } from '@/theme';
 
 export default function HomeScreen() {
   const currency = useSettingsStore((s) => s.currency);
   const { budget, spent } = useBudget();
+  const { categories, receipts, wantsSnacksTotal } = useHomeFeed();
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -38,7 +39,7 @@ export default function HomeScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.categoryStrip}
           >
-            {homeCategories.map((c) => (
+            {categories.map((c) => (
               <CategoryCard
                 key={c.name}
                 name={c.name}
@@ -54,7 +55,7 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Receipts</Text>
           <Card padding={spacing.sm}>
-            {recentReceipts.map((r, idx) => (
+            {receipts.map((r, idx) => (
               <View key={r.id}>
                 <ReceiptRow
                   name={r.name}
@@ -62,7 +63,7 @@ export default function HomeScreen() {
                   amount={r.amount}
                   currency={currency}
                 />
-                {idx < recentReceipts.length - 1 ? <Divider /> : null}
+                {idx < receipts.length - 1 ? <Divider /> : null}
               </View>
             ))}
           </Card>

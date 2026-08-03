@@ -13,7 +13,7 @@ import {
   type TransactionKind,
 } from '@/components';
 import { useTransactionBreakdown } from '@/features/transactions';
-import { historyEntries, type HistoryEntry } from '@/lib/fixtures/demo';
+import { useHistoryEntries, type HistoryEntry } from '@/features/history';
 import { colors, radii, spacing, typography } from '@/theme';
 import { formatRelativeDay } from '@/lib/format';
 
@@ -55,6 +55,7 @@ function TransactionRow({
 export default function HistoryScreen() {
   const [filter, setFilter] = useState<TransactionKind>('all');
   const [query, setQuery] = useState('');
+  const historyEntries = useHistoryEntries();
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -65,7 +66,7 @@ export default function HistoryScreen() {
       if (filter === 'income' && e.income <= 0) return false;
       return true;
     });
-  }, [filter, query]);
+  }, [filter, query, historyEntries]);
 
   // Group by day for the SectionList feel.
   const sections = useMemo(() => {
