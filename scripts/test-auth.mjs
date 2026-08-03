@@ -119,6 +119,7 @@ let settingsMod;
 let oauthMod;
 let resetMod;
 let modeMod;
+let registryMod;
 let supabaseMod;
 let storageMod;
 let browserMod;
@@ -134,6 +135,7 @@ async function run() {
   oauthMod = await load('src/lib/auth/oauth.js');
   resetMod = await load('src/lib/auth/reset-exchange.js');
   modeMod = await load('src/lib/auth/auth-mode-storage.js');
+  registryMod = await load('src/lib/auth/auth-listener-registry.js');
   supabaseMod = await load('scripts/test-stubs/supabase.js');
   storageMod = await load('scripts/test-stubs/storage-adapter.js');
   browserMod = await load('scripts/test-stubs/web-browser.js');
@@ -248,6 +250,21 @@ async function run() {
     assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
   });
 
+  await test('hung mode read: settle keeps the sign-in gate, never forces demo', async () => {
+    resetAll();
+    storageMod.__setStorageReadHang(true);
+    storeMod.__setAuthRestoreTimeout(25);
+    await storeMod.useSessionStore.getState().restore();
+    const s = storeMod.useSessionStore.getState();
+    assert.equal(s.session, null);
+    assert.equal(s.isBootstrapping, false);
+    // The mode is unknowable, so the only safe gate is 'authenticated':
+    // an existing user must NEVER land in demo fixtures because a storage
+    // read hung (W-2). No demo path, no 'guest' path.
+    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
+    assert.equal(storeMod.__lastModeReadOutcome(), 'timed-out');
+  });
+
   console.log('\n[tests] sign-up enumeration guard\n');
 
   await test('duplicate account: same confirmation state as a fresh sign-up', async () => {
@@ -355,6 +372,56 @@ async function run() {
     const result = await oauthMod.signInWithProvider('google');
     assert.deepEqual(result, { cancelled: false, error: null });
     assert.deepEqual(exchanges[0], { code: 'abc123', options: { flowId: 'flow-42' } });
+  });
+
+  await test('flowId from the signInWithOAuth result reaches the exchange', async () => {
+    resetAll();
+    const exchanges = [];
+    supabaseMod.__setSupabaseBehavior({
+      signInWithOAuth: async () => ({
+        data: { url: 'https://auth.example/authorize', flowId: 'flow-returned' },
+        error: null,
+      }),
+      exchangeCodeForSession: async (code, options) => {
+        exchanges.push({ code, options });
+        return { data: { session: FAKE_SESSION }, error: null };
+      },
+    });
+    browserMod.__setNextBrowserResult({
+      type: 'success',
+      url: 'ticketify://oauth?code=abc123',
+    });
+    const result = await oauthMod.signInWithProvider('google');
+    assert.deepEqual(result, { cancelled: false, error: null });
+    assert.deepEqual(exchanges[0], {
+      code: 'abc123',
+      options: { flowId: 'flow-returned' },
+    });
+  });
+
+  await test('returned flowId wins over the callback URL param', async () => {
+    resetAll();
+    const exchanges = [];
+    supabaseMod.__setSupabaseBehavior({
+      signInWithOAuth: async () => ({
+        data: { url: 'https://auth.example/authorize', flowId: 'flow-returned' },
+        error: null,
+      }),
+      exchangeCodeForSession: async (code, options) => {
+        exchanges.push({ code, options });
+        return { data: { session: FAKE_SESSION }, error: null };
+      },
+    });
+    browserMod.__setNextBrowserResult({
+      type: 'success',
+      url: 'ticketify://oauth?code=abc123&sb_flow_id=flow-from-url',
+    });
+    const result = await oauthMod.signInWithProvider('google');
+    assert.deepEqual(result, { cancelled: false, error: null });
+    assert.deepEqual(exchanges[0], {
+      code: 'abc123',
+      options: { flowId: 'flow-returned' },
+    });
   });
 
   await test('cancel: reported as cancelled, no exchange, no error', async () => {
@@ -508,6 +575,27 @@ async function run() {
     cb('SIGNED_IN', FAKE_SESSION);
     assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
     assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
+  });
+
+  await test('registry re-registration replaces the listener, never stacks', async () => {
+    resetAll();
+    // Module load registered one listener (active === 1). Re-registering —
+    // exactly what Fast Refresh does when Metro re-executes the store module —
+    // must unsubscribe the previous handle, so the active count stays at one
+    // instead of stacking duplicate callbacks (S-1).
+    const before = supabaseMod.__listenerStats();
+    assert.equal(before.active, 1, 'exactly one subscription after module load');
+    registryMod.registerAuthStateListener(
+      supabaseMod.supabase.auth.onAuthStateChange.bind(supabaseMod.supabase.auth),
+      () => {},
+    );
+    const after = supabaseMod.__listenerStats();
+    assert.equal(after.active, 1, 're-registration must not stack listeners');
+    assert.equal(
+      after.unsubscribed,
+      before.unsubscribed + 1,
+      'the previous handle must have been unsubscribed',
+    );
   });
 
   console.log('');
