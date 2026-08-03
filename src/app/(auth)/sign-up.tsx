@@ -62,8 +62,8 @@ export default function SignUpScreen() {
           <Text style={styles.kicker}>TICKETIFY</Text>
           <Text style={styles.title}>Check your inbox</Text>
           <Text style={styles.subtitle}>
-            We sent a confirmation link to {email.trim()}. Open it to activate your
-            account, then come back and sign in.
+            If this address is new, we sent a confirmation link. Open it to
+            activate your account, then come back and sign in.
           </Text>
           <Pressable
             style={styles.primaryButton}
