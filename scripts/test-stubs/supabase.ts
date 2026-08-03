@@ -73,10 +73,16 @@ const defaultBehavior = (): SupabaseBehavior => ({
 
 let behavior = defaultBehavior();
 
-/** The last callback `onAuthStateChange` was registered with (harness seam). */
-export let __lastAuthStateListener:
+let _lastAuthStateListener:
   | ((event: AuthChangeEvent, session: Session | null) => void)
   | undefined;
+
+/** The last callback `onAuthStateChange` was registered with (harness seam). */
+export function __getLastAuthStateListener():
+  | ((event: AuthChangeEvent, session: Session | null) => void)
+  | undefined {
+  return _lastAuthStateListener;
+}
 
 /**
  * Builds a subscription that matches auth-js's `Subscription` shape (it
@@ -115,9 +121,15 @@ export function __listenerStats(): { active: number; unsubscribed: number } {
   return { active: listenerCount, unsubscribed: unsubscribedCount };
 }
 
+/**
+ * Resets the double's swappable behavior only. The app's listener subscription
+ * is NOT part of that behavior: the store module registers it once at import
+ * (mirroring the real app), so it survives resets — `__getLastAuthStateListener`
+ * keeps returning the app callback across tests, exactly as a live app keeps
+ * its subscription across restores and sign-outs.
+ */
 export function __resetSupabaseBehavior(): void {
   behavior = defaultBehavior();
-  __lastAuthStateListener = undefined;
 }
 
 export function __setSupabaseBehavior(next: Partial<SupabaseBehavior>): void {
@@ -142,7 +154,7 @@ export const supabase = {
     onAuthStateChange: (
       ...args: Parameters<SupabaseBehavior['onAuthStateChange']>
     ) => {
-      __lastAuthStateListener = args[0];
+      _lastAuthStateListener = args[0];
       listenerCount += 1;
       return { data: { subscription: makeSubscription(args[0]) } };
     },

@@ -884,7 +884,7 @@ async function run() {
     // session and a session-bearing event promotes the mode, exactly once
     // each, through the single subscription created at module load.
     storeMod.useSessionStore.setState({ session: FAKE_SESSION });
-    const cb = supabaseMod.__lastAuthStateListener;
+    const cb = supabaseMod.__getLastAuthStateListener();
     assert.ok(cb, 'a listener subscription was registered at module load');
     cb('SIGNED_OUT', null);
     assert.equal(storeMod.useSessionStore.getState().session, null);
@@ -904,7 +904,7 @@ async function run() {
     // refresh (demo-mode spec: mode is a user control).
     storeMod.useSessionStore.setState({ session: FAKE_SESSION });
     settingsMod.useSettingsStore.setState({ mode: 'demo' });
-    const cb = supabaseMod.__lastAuthStateListener;
+    const cb = supabaseMod.__getLastAuthStateListener();
     assert.ok(cb, 'listener is registered at module load');
     cb('TOKEN_REFRESHED', FAKE_SESSION);
     assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
@@ -920,7 +920,7 @@ async function run() {
     resetAll();
     storeMod.useSessionStore.setState({ session: FAKE_SESSION });
     settingsMod.useSettingsStore.setState({ mode: 'demo' });
-    const cb = supabaseMod.__lastAuthStateListener;
+    const cb = supabaseMod.__getLastAuthStateListener();
     assert.ok(cb, 'listener is registered at module load');
     cb('USER_UPDATED', FAKE_SESSION);
     assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
@@ -930,7 +930,7 @@ async function run() {
   await test('PASSWORD_RECOVERY does not override the user-chosen mode', async () => {
     resetAll();
     settingsMod.useSettingsStore.setState({ mode: 'demo' });
-    const cb = supabaseMod.__lastAuthStateListener;
+    const cb = supabaseMod.__getLastAuthStateListener();
     assert.ok(cb, 'listener is registered at module load');
     cb('PASSWORD_RECOVERY', FAKE_SESSION);
     assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
@@ -939,7 +939,7 @@ async function run() {
 
   await test('SIGNED_IN promotes the mode and persists it', async () => {
     resetAll();
-    const cb = supabaseMod.__lastAuthStateListener;
+    const cb = supabaseMod.__getLastAuthStateListener();
     assert.ok(cb, 'listener is registered at module load');
     cb('SIGNED_IN', FAKE_SESSION);
     assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
@@ -949,15 +949,20 @@ async function run() {
 
   await test('registry re-registration replaces the listener, never stacks', async () => {
     resetAll();
-    // Module load registered one listener (active === 1). Re-registering —
-    // exactly what Fast Refresh does when Metro re-executes the store module —
-    // must unsubscribe the previous handle, so the active count stays at one
-    // instead of stacking duplicate callbacks (S-1).
+    // Module load registered the app's listener (active === 1). Re-registering
+    // — exactly what Fast Refresh does when Metro re-executes the store
+    // module — must unsubscribe the previous handle, so the active count stays
+    // at one instead of stacking duplicate callbacks (S-1). The re-registered
+    // callback is the app's own listener (the same one a re-executed store
+    // module would hand the registry), so the live seam keeps returning it
+    // for the sign-out tests that follow.
+    const appListener = supabaseMod.__getLastAuthStateListener();
+    assert.ok(appListener, 'the app listener is registered at module load');
     const before = supabaseMod.__listenerStats();
     assert.equal(before.active, 1, 'exactly one subscription after module load');
     registryMod.registerAuthStateListener(
       supabaseMod.supabase.auth.onAuthStateChange.bind(supabaseMod.supabase.auth),
-      () => {},
+      appListener,
     );
     const after = supabaseMod.__listenerStats();
     assert.equal(after.active, 1, 're-registration must not stack listeners');
@@ -965,6 +970,11 @@ async function run() {
       after.unsubscribed,
       before.unsubscribed + 1,
       'the previous handle must have been unsubscribed',
+    );
+    assert.equal(
+      supabaseMod.__getLastAuthStateListener(),
+      appListener,
+      'the live seam still returns the app listener after the swap',
     );
   });
 
@@ -983,7 +993,7 @@ async function run() {
     });
     await assert.doesNotReject(() => storeMod.useSessionStore.getState().signOut());
     // auth-js fires SIGNED_OUT on success; the listener clears the session.
-    const cb = supabaseMod.__lastAuthStateListener;
+    const cb = supabaseMod.__getLastAuthStateListener();
     assert.ok(cb, 'listener is registered for SIGNED_OUT');
     cb('SIGNED_OUT', null);
     const s = storeMod.useSessionStore.getState();
@@ -1001,7 +1011,7 @@ async function run() {
       signOut: async () => {
         // auth-js clears the local session and fires SIGNED_OUT BEFORE
         // returning the revoke error (verified in GoTrueClient._signOut).
-        const cb = supabaseMod.__lastAuthStateListener;
+        const cb = supabaseMod.__getLastAuthStateListener();
         cb('SIGNED_OUT', null);
         return { error: { message: 'Network request failed' } };
       },
