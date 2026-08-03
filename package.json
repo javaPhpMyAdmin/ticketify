@@ -10,7 +10,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "test:adapter": "node scripts/test-storage-adapter.mjs"
+    "test:adapter": "node scripts/test-storage-adapter.mjs",
+    "test:auth": "node scripts/test-auth.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",

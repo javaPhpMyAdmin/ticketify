@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020", "dom"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "..",
+    "paths": {
+      "@/lib/supabase": ["./scripts/test-stubs/supabase.ts"],
+      "@/lib/supabase/storage-adapter": ["./scripts/test-stubs/storage-adapter.ts"],
+      "expo-web-browser": ["./scripts/test-stubs/web-browser.ts"],
+      "expo-linking": ["./scripts/test-stubs/linking.ts"],
+      "@/*": ["./src/*"]
+    },
+    "rootDir": ".."
+  },
+  "include": [
+    "../src/lib/auth/oauth.ts",
+    "../src/lib/auth/reset-exchange.ts",
+    "../src/lib/auth/auth-mode-storage.ts",
+    "../src/lib/auth/profile-sync.ts",
+    "../src/features/auth/use-session-store.ts",
+    "../src/stores/use-settings-store.ts",
+    "../src/lib/fixtures/demo.ts",
+    "../scripts/test-stubs/supabase.ts",
+    "../scripts/test-stubs/storage-adapter.ts",
+    "../scripts/test-stubs/web-browser.ts",
+    "../scripts/test-stubs/linking.ts"
+  ]
+}
