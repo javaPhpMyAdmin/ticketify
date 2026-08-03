@@ -181,7 +181,14 @@ export const useSessionStore = create<SessionState>((set) => ({
 
     // Phase 2 — the session read, bounded by whatever time phase 1 left. A
     // timeout here keeps the already-reconciled mode (sign-in gate for a
-    // previously authenticated user, demo for a fresh install).
+    // previously authenticated user, demo for a fresh install). The read's
+    // continuation is GUARDED: once the store has reconciled — bootstrap
+    // finished on the bound, or a newer session appeared while the read was
+    // in flight (e.g. an OAuth cold-start exchange completing through the
+    // callback route) — late results must never destroy or clobber the
+    // reconciled state. Without this guard, a read that outlived the bound
+    // could `signOut()` over a fresh session or overwrite it with a stale one.
+    const sessionAtPhase2Start = useSessionStore.getState().session;
     await withTimeout(
       (async () => {
         try {
@@ -192,11 +199,20 @@ export const useSessionStore = create<SessionState>((set) => ({
             return;
           }
           const { data, error } = await supabase.auth.getSession();
+          // Late continuation guard (reliability re-gate): `withTimeout`
+          // cannot cancel the read, so after the bound fires the store keeps
+          // running this body. A late result is a no-op when bootstrap
+          // already completed (the gate settled on the bound outcome) or a
+          // newer session replaced the one present when phase 2 began.
+          const stale = (): boolean =>
+            !useSessionStore.getState().isBootstrapping ||
+            useSessionStore.getState().session !== sessionAtPhase2Start;
           const session = data.session;
           if (error) {
-            // The stored token could not be refreshed and its access token has
-            // expired: discard it and land on the sign-in screen (spec: expired
-            // stored session → session cleared → sign-in shown).
+            if (stale()) return;
+            // The stored token could not be refreshed and its access token
+            // has expired: discard it and land on the sign-in screen (spec:
+            // expired stored session → session cleared → sign-in shown).
             await supabase.auth.signOut().catch(() => {
               // Best effort — the client may already have cleared storage.
             });
@@ -205,6 +221,7 @@ export const useSessionStore = create<SessionState>((set) => ({
             return;
           }
           if (session) {
+            if (stale()) return;
             set({ session });
             useSettingsStore.getState().setMode('authenticated');
             await savePersistedAuthMode('authenticated');

@@ -265,6 +265,52 @@ async function run() {
     assert.equal(storeMod.__lastModeReadOutcome(), 'timed-out');
   });
 
+  await test('late restore read: never signs out over a newer session', async () => {
+    resetAll();
+    let resolveLate;
+    let signedOut = 0;
+    supabaseMod.__setSupabaseBehavior({
+      getSession: () => new Promise((resolve) => { resolveLate = resolve; }),
+      signOut: async () => {
+        signedOut += 1;
+        return { error: null };
+      },
+    });
+    storeMod.__setAuthRestoreTimeout(25);
+    await storeMod.useSessionStore.getState().restore();
+    // restore settled on the bound; bootstrapping finished with no session.
+    assert.equal(storeMod.useSessionStore.getState().isBootstrapping, false);
+    assert.equal(storeMod.useSessionStore.getState().session, null);
+    // Meanwhile the user signed in (e.g. an OAuth cold-start exchange set a
+    // fresh session through the callback route).
+    storeMod.useSessionStore.setState({ session: FAKE_SESSION });
+    // The hung read finally resolves with an ERROR (expired stored token).
+    // Without the guard this branch calls signOut() and destroys the fresh
+    // session; the late continuation must be a no-op instead.
+    resolveLate({ data: { session: null }, error: { message: 'invalid refresh token' } });
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(signedOut, 0, 'late error must not sign out over a newer session');
+    assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
+  });
+
+  await test('late restore read: stale session never clobbers a newer one', async () => {
+    resetAll();
+    let resolveLate;
+    const STALE_SESSION = { ...FAKE_SESSION, access_token: 'at-stale' };
+    supabaseMod.__setSupabaseBehavior({
+      getSession: () => new Promise((resolve) => { resolveLate = resolve; }),
+    });
+    storeMod.__setAuthRestoreTimeout(25);
+    await storeMod.useSessionStore.getState().restore();
+    storeMod.useSessionStore.setState({ session: FAKE_SESSION });
+    // The hung read resolves with a STALE session read from storage; the
+    // guard must refuse to overwrite the fresh session with it.
+    resolveLate({ data: { session: STALE_SESSION }, error: null });
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
+    assert.equal(storeMod.useSessionStore.getState().isBootstrapping, false);
+  });
+
   console.log('\n[tests] sign-up enumeration guard\n');
 
   await test('duplicate account: same confirmation state as a fresh sign-up', async () => {
