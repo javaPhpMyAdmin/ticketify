@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -6,7 +6,7 @@ import {
   StyleSheet,
   TextInput,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FieldGroup, Pressable, Spinner, Text, View } from '@/components';
@@ -17,19 +17,30 @@ import { colors, radii, spacing, typography } from '@/theme';
 /**
  * Email/password and OAuth sign-in (user-auth spec).
  *
- * Submit is disabled while a request is in flight; invalid credentials
- * surface the Supabase error message and keep the user on this screen.
+ * Submit is disabled while a request is in flight; every sign-in failure
+ * surfaces the same generic message (the store never returns a raw GoTrue
+ * message — anti-enumeration) and keeps the user on this screen. The route
+ * can arrive with an `error` param from the OAuth callback route (a
+ * cold-start exchange that failed), which is shown here.
  * OAuth runs the PKCE flow (ADR-3); a cancelled or failed flow leaves the
  * user here without a session.
  */
 export default function SignInScreen() {
   const signInWithEmail = useSessionStore((s) => s.signInWithEmail);
+  const params = useLocalSearchParams<{ error?: string | string[] }>();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
   const [providerPending, setProviderPending] = useState<OAuthProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // A failed cold-start OAuth exchange routes here with a user-readable
+  // error param (`src/app/oauth.tsx`); surface it once on arrival.
+  useEffect(() => {
+    const message = Array.isArray(params.error) ? params.error[0] : params.error;
+    if (message) setError(message);
+  }, [params.error]);
 
   const canSubmit = email.trim().length > 0 && password.length > 0 && !pending;
 
@@ -46,8 +57,11 @@ export default function SignInScreen() {
       // Session exists and mode is now 'authenticated' (SIGNED_IN event), so
       // the root gate exposes the app content.
       router.replace('/');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign-in failed. Please try again.');
+    } catch {
+      // signInWithEmail never rejects (every failure is mapped to the generic
+      // message in the store); this is a defensive fallback with the same
+      // anti-enumeration copy.
+      setError('Invalid email or password.');
     } finally {
       setPending(false);
     }

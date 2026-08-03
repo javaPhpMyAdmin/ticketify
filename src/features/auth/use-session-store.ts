@@ -117,6 +117,16 @@ const MODE_READ_TIMED_OUT = Symbol('mode-read-timed-out');
 /** Generic sign-up failure copy — never a raw GoTrue message (no enumeration). */
 const SIGN_UP_GENERIC_ERROR = 'Sign-up failed. Please try again.';
 
+/**
+ * Generic sign-in failure copy — never a raw GoTrue message (no
+ * enumeration). GoTrue distinguishes `email_not_confirmed` from
+ * `invalid_credentials`; surfacing that would reveal whether an address
+ * exists and whether it is confirmed. Every sign-in failure — wrong
+ * password, nonexistent account, unconfirmed email, network — maps to this
+ * single message, the same posture as sign-up and password reset.
+ */
+const SIGN_IN_GENERIC_ERROR = 'Invalid email or password.';
+
 /** GoTrue duplicate-account markers: message text and API error codes. */
 const DUPLICATE_ACCOUNT_MARKERS = [
   'already registered',
@@ -217,14 +227,27 @@ export const useSessionStore = create<SessionState>((set) => ({
   },
 
   signInWithEmail: async (email, password) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-    if (error) return error.message;
-    // SIGNED_IN fires through onAuthStateChange: session set, mode promoted,
-    // profile synced. Nothing else to do here.
-    return null;
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (error) {
+        // Anti-enumeration (user-auth spec): every sign-in failure — wrong
+        // password, nonexistent account, unconfirmed email — is
+        // indistinguishable, so a raw GoTrue message (which separates
+        // `email_not_confirmed` from `invalid_credentials`) never reaches the
+        // UI. Same posture as sign-up and password reset.
+        return SIGN_IN_GENERIC_ERROR;
+      }
+      // SIGNED_IN fires through onAuthStateChange: session set, mode promoted,
+      // profile synced. Nothing else to do here.
+      return null;
+    } catch {
+      // Network/storage failure: also generic — the UI must not render raw
+      // error text that could distinguish account state.
+      return SIGN_IN_GENERIC_ERROR;
+    }
   },
 
   signUpWithEmail: async (email, password) => {

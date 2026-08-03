@@ -334,6 +334,73 @@ async function run() {
     assert.deepEqual(result, { error: null, needsEmailConfirmation: false });
   });
 
+  console.log('\n[tests] sign-in anti-enumeration\n');
+
+  await test('invalid credentials: generic message, raw GoTrue never surfaced', async () => {
+    resetAll();
+    supabaseMod.__setSupabaseBehavior({
+      signInWithPassword: async () => ({
+        error: { message: 'Invalid login credentials', code: 'invalid_credentials' },
+      }),
+    });
+    const error = await storeMod.useSessionStore.getState().signInWithEmail(
+      'user@example.com',
+      'wrong-password',
+    );
+    assert.equal(error, 'Invalid email or password.');
+  });
+
+  await test('unconfirmed email: indistinguishable from invalid credentials', async () => {
+    resetAll();
+    supabaseMod.__setSupabaseBehavior({
+      signInWithPassword: async () => ({
+        error: { message: 'Email not confirmed', code: 'email_not_confirmed' },
+      }),
+    });
+    const error = await storeMod.useSessionStore.getState().signInWithEmail(
+      'user@example.com',
+      'right-password',
+    );
+    assert.equal(error, 'Invalid email or password.');
+  });
+
+  await test('nonexistent account: same generic message, no existence signal', async () => {
+    resetAll();
+    supabaseMod.__setSupabaseBehavior({
+      signInWithPassword: async () => ({
+        error: { message: 'Invalid login credentials' },
+      }),
+    });
+    const error = await storeMod.useSessionStore.getState().signInWithEmail(
+      'nobody@example.com',
+      'whatever',
+    );
+    assert.equal(error, 'Invalid email or password.');
+  });
+
+  await test('thrown network failure: also maps to generic copy, never rejects', async () => {
+    resetAll();
+    supabaseMod.__setSupabaseBehavior({
+      signInWithPassword: async () => {
+        throw new Error('Network request failed');
+      },
+    });
+    const error = await storeMod.useSessionStore.getState().signInWithEmail(
+      'user@example.com',
+      'right-password',
+    );
+    assert.equal(error, 'Invalid email or password.');
+  });
+
+  await test('sign-in success: null error, no throw', async () => {
+    resetAll();
+    const error = await storeMod.useSessionStore.getState().signInWithEmail(
+      'user@example.com',
+      'right-password',
+    );
+    assert.equal(error, null);
+  });
+
   console.log('\n[tests] OAuth PKCE helper\n');
 
   await test('success: exchanges code without flow id when callback has none', async () => {
