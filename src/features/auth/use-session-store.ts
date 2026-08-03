@@ -25,6 +25,7 @@
 import { create } from 'zustand';
 import type { Session } from '@supabase/supabase-js';
 
+import { registerAuthStateListener } from '@/lib/auth/auth-listener-registry';
 import {
   loadPersistedAuthMode,
   savePersistedAuthMode,
@@ -32,7 +33,7 @@ import {
 import { ensureProfile } from '@/lib/auth/profile-sync';
 import { supabase } from '@/lib/supabase';
 import { isSecureStoreAvailable } from '@/lib/supabase/storage-adapter';
-import { useSettingsStore } from '@/stores/use-settings-store';
+import { useSettingsStore, type AuthMode } from '@/stores/use-settings-store';
 
 /** A store action result: a user-displayable message, or null on success. */
 export type AuthActionError = string | null;
@@ -76,6 +77,43 @@ export function __setAuthRestoreTimeout(ms: number): void {
   AUTH_RESTORE_TIMEOUT_MS = ms;
 }
 
+/**
+ * Last restore() phase-1 outcome (mode read). Test seam: the harness asserts
+ * a hung mode read settles to 'timed-out' and forces the sign-in gate rather
+ * than leaving the mode untouched. Live through compiled CJS imports.
+ */
+let lastModeReadOutcome: 'resolved' | 'timed-out' | 'not-run' = 'not-run';
+
+export function __lastModeReadOutcome(): 'resolved' | 'timed-out' | 'not-run' {
+  return lastModeReadOutcome;
+}
+
+/**
+ * Races `promise` against a timer and ALWAYS cancels the timer once either
+ * side wins. Cancelling matters beyond hygiene: a restore that settles early
+ * must not leave a pending timeout keeping the process alive (the node test
+ * harness previously lingered ~10 s per restore test on leaked timers).
+ * `fallback` is the race result when the bound fires first.
+ */
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  fallback: T,
+): Promise<T> {
+  let handle: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => {
+      handle = setTimeout(() => resolve(fallback), ms);
+    }),
+  ]).finally(() => {
+    if (handle) clearTimeout(handle);
+  });
+}
+
+/** Signals that the mode read hit the restore bound (see restore()). */
+const MODE_READ_TIMED_OUT = Symbol('mode-read-timed-out');
+
 /** Generic sign-up failure copy — never a raw GoTrue message (no enumeration). */
 const SIGN_UP_GENERIC_ERROR = 'Sign-up failed. Please try again.';
 
@@ -102,22 +140,40 @@ export const useSessionStore = create<SessionState>((set) => ({
 
   restore: async () => {
     set({ isBootstrapping: true });
-    let settled = false;
-    const settle = () => {
-      if (!settled) {
-        settled = true;
-        set({ isBootstrapping: false });
-      }
-    };
+    const deadline = Date.now() + AUTH_RESTORE_TIMEOUT_MS;
+    const remaining = (): number => Math.max(0, deadline - Date.now());
 
-    await Promise.race([
+    // Phase 1 — reconcile the persisted mode FIRST (ADR-4/ADR-5), bounded by
+    // the same overall deadline as the session read. Its result is the ONLY
+    // input to the fallback-mode decision: if the read times out, storage
+    // could not serve even the mode key, so it cannot restore a session
+    // either — settle on the sign-in gate, NEVER demo, so a previously
+    // authenticated user can never be dropped into demo fixtures.
+    const modeReadResult = await withTimeout<
+      AuthMode | null | typeof MODE_READ_TIMED_OUT
+    >(loadPersistedAuthMode(), remaining(), MODE_READ_TIMED_OUT);
+    lastModeReadOutcome =
+      modeReadResult === MODE_READ_TIMED_OUT ? 'timed-out' : 'resolved';
+
+    if (modeReadResult === MODE_READ_TIMED_OUT) {
+      // Hung mode read: keep the sign-in gate. A fresh install with hung
+      // storage sees the sign-in screen once (recoverable) — strictly safer
+      // than the reverse, which silently drops an authenticated user into
+      // fixtures. Persist nothing: the backend is unresponsive.
+      useSettingsStore.setState({ mode: 'authenticated' });
+      set({ isBootstrapping: false });
+      return;
+    }
+    if (modeReadResult) {
+      // Nothing persisted → the default 'demo' stays.
+      useSettingsStore.setState({ mode: modeReadResult });
+    }
+
+    // Phase 2 — the session read, bounded by whatever time phase 1 left. A
+    // timeout here keeps the already-reconciled mode (sign-in gate for a
+    // previously authenticated user, demo for a fresh install).
+    await withTimeout(
       (async () => {
-        // Reconcile the persisted mode FIRST so the gate has the right value
-        // even when the session read below hangs or fails. Nothing persisted
-        // → the default 'demo' stays.
-        const persistedMode = await loadPersistedAuthMode();
-        if (persistedMode) useSettingsStore.setState({ mode: persistedMode });
-
         try {
           if (!(await isSecureStoreAvailable())) {
             // Web / unsupported platform: no persistence exists, so there is
@@ -154,9 +210,10 @@ export const useSessionStore = create<SessionState>((set) => ({
           // to a safe no-session state rather than crashing at launch.
         }
       })(),
-      new Promise<void>((resolve) => setTimeout(resolve, AUTH_RESTORE_TIMEOUT_MS)),
-    ]);
-    settle();
+      remaining(),
+      undefined,
+    );
+    set({ isBootstrapping: false });
   },
 
   signInWithEmail: async (email, password) => {
@@ -206,27 +263,32 @@ export const useSessionStore = create<SessionState>((set) => ({
 /**
  * Promotes state whenever supabase-js reports a session-bearing event
  * (SIGNED_IN, TOKEN_REFRESHED, USER_UPDATED, PASSWORD_RECOVERY) and clears it
- * on SIGNED_OUT. The module-scope guard keeps Fast Refresh from stacking
- * duplicate subscriptions; the client's docs recommend subscribing once
- * immediately after createClient.
+ * on SIGNED_OUT.
+ *
+ * The subscription goes through the shared listener registry instead of a
+ * module-scope flag: a flag resets when Metro re-executes this module on Fast
+ * Refresh while the old subscription persists on the client, stacking
+ * duplicate listeners. The registry keeps the previous handle, so re-init
+ * unsubscribes it first — exactly one listener even across refreshes.
  */
-let authStateListenerInitialized = false;
-
 function initAuthStateListener(): void {
-  if (authStateListenerInitialized) return;
-  authStateListenerInitialized = true;
-  supabase.auth.onAuthStateChange((event, session) => {
-    if (event === 'SIGNED_OUT') {
-      useSessionStore.setState({ session: null });
-      return;
-    }
-    if (session) {
-      useSessionStore.setState({ session });
-      useSettingsStore.getState().setMode('authenticated');
-      void savePersistedAuthMode('authenticated');
-      if (session.user) void ensureProfile(session.user.id);
-    }
-  });
+  registerAuthStateListener(
+    // `onAuthStateChange` is a class method that reads `this`, so it must be
+    // bound before it can be handed to the registry as a plain function.
+    supabase.auth.onAuthStateChange.bind(supabase.auth),
+    (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        useSessionStore.setState({ session: null });
+        return;
+      }
+      if (session) {
+        useSessionStore.setState({ session });
+        useSettingsStore.getState().setMode('authenticated');
+        void savePersistedAuthMode('authenticated');
+        if (session.user) void ensureProfile(session.user.id);
+      }
+    },
+  );
 }
 
 initAuthStateListener();
