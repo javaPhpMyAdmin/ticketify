@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test:adapter": "node scripts/test-storage-adapter.mjs",
     "test:auth": "node scripts/test-auth.mjs",
-    "test:demo": "node scripts/test-demo.mjs"
+    "test:demo": "node scripts/test-demo.mjs",
+    "test:features": "node scripts/test-features.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",

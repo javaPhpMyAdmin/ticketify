@@ -224,6 +224,47 @@ async function run() {
     assert.equal(fixturesMod.isDemoFixturesOnly(), true);
   });
 
+  await test('demo mode: feature reads report demo and never return fixtures from the APIs', async () => {
+    // The APIs must NOT fabricate the demo user/budget/rows themselves (that
+    // would be the old stub behavior); the hooks serve fixtures in demo mode,
+    // so the APIs report `{ status: 'demo' }` without touching the backend.
+    stubMod.__resetSupabaseBehavior();
+    settingsMod.useSettingsStore.setState({ mode: 'demo' });
+    const profile = await profileMod.fetchProfile('any-user-id');
+    assert.deepEqual(profile, { status: 'demo' });
+    const budget = await budgetMod.fetchMonthlyBudget('any-user-id');
+    assert.deepEqual(budget, { status: 'demo' });
+    const rows = await analyticsMod.fetchCategoryBreakdown('any-user-id', '2026-08');
+    assert.deepEqual(rows, { status: 'demo' });
+    assert.equal(
+      stubMod.__getCallLog().length,
+      0,
+      'demo reads must never issue a Supabase request',
+    );
+  });
+
+  await test('authenticated mode: APIs read the backend, never the fixtures', async () => {
+    stubMod.__resetSupabaseBehavior();
+    settingsMod.useSettingsStore.getState().setMode('authenticated');
+    stubMod.__setTableRead('profiles', {
+      rows: [
+        {
+          id: 'u1',
+          full_name: 'Ana',
+          avatar_url: null,
+          monthly_budget: 900,
+          currency: 'EUR',
+          tier: 'free',
+          created_at: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+    const user = await profileMod.fetchProfile('u1');
+    assert.equal(user.status, 'ok');
+    assert.notEqual(user.data.id, fixturesMod.demoUser.id, 'no demo user leak');
+    assert.equal(user.data.monthly_budget, 900);
+  });
+
   console.log('\n[tests] demo write boundary (tickets guard)\n');
 
   await test('saveReceipt is a local no-op: returns an id, never touches a backend', async () => {

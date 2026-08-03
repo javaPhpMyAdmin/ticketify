@@ -26,7 +26,7 @@ interface ModeRow {
 }
 
 export default function ProfileScreen() {
-  const { user, usage, setHouseholdSharing } = useProfile();
+  const { user, usage, error, setHouseholdSharing } = useProfile();
   const currency = useSettingsStore((s) => s.currency);
   const household = useSettingsStore((s) => s.household_sharing);
   const setHousehold = useSettingsStore((s) => s.setHouseholdSharing);
@@ -150,6 +150,8 @@ export default function ProfileScreen() {
         ) : null}
 
         {usage ? <UsageLimitsCard usage={usage} /> : null}
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account Settings</Text>
