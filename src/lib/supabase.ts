@@ -37,7 +37,14 @@ function isPlaceholder(value: string): boolean {
  *
  * Sessions persist through the chunked SecureStore adapter (values can exceed
  * SecureStore's 2048-byte limit), tokens auto-refresh, and sessions are never
- * detected from the URL (we complete OAuth PKCE manually).
+ * detected from the URL (we complete OAuth PKCE manually — ADR-3).
+ *
+ * `flowType: 'pkce'` is required by ADR-3: `signInWithOAuth` and
+ * `resetPasswordForEmail` attach a PKCE code challenge to their URLs and
+ * persist the verifier through the storage adapter, and the returned `code`
+ * is exchanged with `exchangeCodeForSession(code)`. The default flow
+ * (`implicit`) redirects with tokens in the URL fragment instead, which the
+ * custom-scheme redirect on native cannot use.
  *
  * Once we run `supabase gen types typescript` (gated on `supabase link`) we'll
  * parameterize this with the generated `Database` type for end-to-end type
@@ -52,6 +59,7 @@ export const supabase: SupabaseClient = createClient(
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: false,
+      flowType: 'pkce',
       storage: secureStoreAdapter,
     },
   },
