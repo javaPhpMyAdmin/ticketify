@@ -11,6 +11,7 @@ import {
   type AccountSettingRow,
 } from '@/features/profile';
 import { useSessionStore } from '@/features/auth';
+import { savePersistedAuthMode } from '@/lib/auth/auth-mode-storage';
 import { handleAuthenticatedPress } from '@/lib/auth/mode-switch';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -79,7 +80,12 @@ export default function ProfileScreen() {
       caption: 'Browse with sample data, no account needed',
       icon: 'sparkles',
       active: mode === 'demo',
-      onPress: () => setMode('demo'),
+      onPress: () => {
+        // An explicit demo choice is persisted so restore() honors it across
+        // relaunches: a stored session must never silently re-promote it.
+        setMode('demo');
+        void savePersistedAuthMode('demo');
+      },
     },
     {
       id: 'authenticated',
@@ -96,7 +102,14 @@ export default function ProfileScreen() {
         // effects.
         handleAuthenticatedPress({
           hasSession: session != null,
-          promote: () => setMode('authenticated'),
+          promote: () => {
+            // Persist the explicit promotion too: without it, relaunch would
+            // read the previously persisted demo choice and revert the user's
+            // authenticated switch. Both directions of the mode switch are
+            // user controls and both are persisted.
+            setMode('authenticated');
+            void savePersistedAuthMode('authenticated');
+          },
           navigateToSignIn: () => {
             setPressing(true);
             router.push('/sign-in');

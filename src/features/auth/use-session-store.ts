@@ -3,21 +3,26 @@
  *
  * Owns the live `Session` and the bootstrapping flag; the data-source mode
  * itself lives in `useSettingsStore.mode` (single source of truth). The mode
- * is promoted to `'authenticated'` ONLY when identity changes — launch
- * restore and the SIGNED_IN event (password sign-in, sign-up auto-sign-in,
- * OAuth exchange). Passive events (TOKEN_REFRESHED, USER_UPDATED,
- * PASSWORD_RECOVERY) refresh the session object but never override an
- * explicit demo-mode choice: mode is a user control, and auth events that do
- * not change identity must not flip it back. Sign-out only clears the session
- * and leaves the mode `'authenticated'`, so the root gate routes the user to
- * the sign-in screen instead of falling back to demo fixtures.
+ * is promoted to `'authenticated'` ONLY when identity changes — the
+ * SIGNED_IN event (password sign-in, sign-up auto-sign-in, OAuth exchange)
+ * and the launch restore when the persisted mode is not an explicit demo
+ * choice. Passive events (TOKEN_REFRESHED, USER_UPDATED, PASSWORD_RECOVERY)
+ * refresh the session object but never override an explicit demo-mode
+ * choice: mode is a user control, and auth events that do not change
+ * identity must not flip it back. Sign-out only clears the session and
+ * leaves the mode `'authenticated'`, so the root gate routes the user to the
+ * sign-in screen instead of falling back to demo fixtures.
  *
  * The mode is persisted through the chunked SecureStore adapter (same backend
- * as the session), so after a relaunch the gate is reconciled BEFORE the
- * session read: a user who previously authenticated lands on sign-in when no
- * session is restored, while a fresh install keeps the demo default.
- * Persistence: `useSettingsStore.mode` is the source of truth; only
- * `'authenticated'` is written, `'demo'` is the implicit default.
+ * as the session) whenever the user explicitly switches it on the profile
+ * screen, and by the session store whenever it promotes. After a relaunch
+ * the gate is reconciled BEFORE the session read: a user who previously
+ * authenticated lands on sign-in when no session is restored, a fresh
+ * install keeps the demo default, and an EXPLICIT demo choice survives
+ * relaunch even when a stored session exists — restore() never re-promotes a
+ * mode the user deliberately set to demo. Persistence:
+ * `useSettingsStore.mode` is the source of truth; both values are written,
+ * `'demo'` is the implicit default when nothing is persisted.
  *
  * Web has no native SecureStore backend, so restore() gates on
  * `isSecureStoreAvailable()` and the app degrades to demo mode there — there
@@ -215,20 +220,36 @@ export const useSessionStore = create<SessionState>((set) => ({
             if (stale()) return;
             // The stored token could not be refreshed and its access token
             // has expired: discard it and land on the sign-in screen (spec:
-            // expired stored session → session cleared → sign-in shown).
+            // expired stored session → session cleared → sign-in shown) —
+            // unless the user explicitly chose demo mode, which survives
+            // relaunch like any other explicit choice: the dead session is
+            // cleared, but the mode is NOT force-promoted.
             await supabase.auth.signOut().catch(() => {
               // Best effort — the client may already have cleared storage.
             });
-            useSettingsStore.getState().setMode('authenticated');
-            await savePersistedAuthMode('authenticated');
+            if (modeReadResult !== 'demo') {
+              useSettingsStore.getState().setMode('authenticated');
+              await savePersistedAuthMode('authenticated');
+            }
             return;
           }
           if (session) {
             if (stale()) return;
             set({ session });
-            useSettingsStore.getState().setMode('authenticated');
-            await savePersistedAuthMode('authenticated');
-            if (session.user) void ensureProfile(session.user.id);
+            // Restore-mode reconciliation: a persisted 'demo' is an EXPLICIT
+            // user choice and survives relaunch even with a stored session —
+            // mode is a user control, and a session placed by a passive event
+            // (e.g. PASSWORD_RECOVERY while in demo) must not silently
+            // promote it at launch. Persisted 'authenticated' (or nothing — a
+            // fresh install with a stored session, e.g. an OAuth cold-start
+            // exchange) promotes exactly as before: mode, persistence, and
+            // the profile upsert stay bundled, so demo mode also keeps its
+            // zero-network fixtures posture.
+            if (modeReadResult !== 'demo') {
+              useSettingsStore.getState().setMode('authenticated');
+              await savePersistedAuthMode('authenticated');
+              if (session.user) void ensureProfile(session.user.id);
+            }
           }
           // No stored session at all: the mode keeps whatever was reconciled
           // above — persisted 'authenticated' closes the gate so the user
@@ -319,8 +340,15 @@ export const useSessionStore = create<SessionState>((set) => ({
  * SIGNED_OUT. The session object is applied for EVERY session-bearing event
  * (the token/user data it carries is always newer), but the mode is promoted
  * only on SIGNED_IN — passive events (TOKEN_REFRESHED, USER_UPDATED,
- * PASSWORD_RECOVERY) must not override an explicit demo-mode choice, and
- * `ensureProfile` (ADR-6) only runs when identity actually changed.
+ * PASSWORD_RECOVERY) must not override an explicit demo-mode choice.
+ *
+ * `ensureProfile` (ADR-6) runs only on SIGNED_IN, so a profile insert that
+ * fails (missing table pre-migration, RLS denial, network) is NOT retried on
+ * the next passive event. This is deliberate: gating identity sync on an
+ * actual identity change avoids pointless network work on silent refreshes,
+ * and the failure is non-fatal by design — reads surface a recoverable
+ * missing-profile state until the row exists (the next explicit sign-in
+ * re-runs the upsert).
  *
  * The subscription goes through the shared listener registry instead of a
  * module-scope flag: a flag resets when Metro re-executes this module on Fast

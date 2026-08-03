@@ -8,12 +8,16 @@
  * persisted through the same chunked SecureStore adapter as the session, so
  * restore() can reconcile it BEFORE the session read.
  *
- * Only `'authenticated'` is ever written (every session-bearing event
- * promotes the mode); `'demo'` is the implicit default when nothing is
- * persisted, so a fresh install keeps the demo path. Web (no SecureStore
- * backend) and storage failures degrade to "nothing persisted" — the demo
- * default — and persistence failures are swallowed: they must never break an
- * auth transition.
+ * Both values are written when the user explicitly switches the data source
+ * (the profile screen's Demo/Authenticated rows); the session store also
+ * persists `'authenticated'` whenever it promotes the mode. `'demo'` remains
+ * the implicit default when nothing is persisted, so a fresh install keeps
+ * the demo path — but once a user explicitly chooses demo, restore() reads
+ * it back and keeps the demo mode across relaunches even with a stored
+ * session (the mode is never re-promoted at launch over an explicit choice).
+ * Web (no SecureStore backend) and storage failures degrade to "nothing
+ * persisted" — the demo default — and persistence failures are swallowed:
+ * they must never break an auth transition.
  */
 import { secureStoreAdapter } from '@/lib/supabase/storage-adapter';
 import type { AuthMode } from '@/stores/use-settings-store';

@@ -23,7 +23,11 @@ import type { CategoryMonthlyTotal, ScanTier, ScanUsage, User } from '@/types';
  * it before falling back to fixtures, so authenticated mode reads Supabase
  * data and never renders demo fixtures. Do not remove this seam or make it
  * return `false` before the reads are wired — that would silently promise
- * authenticated reads that do not exist yet.
+ * authenticated reads that do not exist yet. The mode-aware seam must also
+ * honor the RESTORE mode: `restore()` keeps an explicit demo choice across
+ * relaunches even with a stored session, so the seam must read the live
+ * store mode (already reconciled at bootstrap), never re-derive it from
+ * session presence.
  */
 export function isDemoFixturesOnly(): boolean {
   return true;

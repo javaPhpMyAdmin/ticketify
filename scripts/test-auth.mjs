@@ -201,6 +201,77 @@ async function run() {
     assert.equal(storageMod.__readStoredValue(MODE_KEY), 'authenticated');
   });
 
+  await test('persisted demo choice + stored session: restore keeps demo, gate open', async () => {
+    resetAll();
+    // The user explicitly tapped "Demo Mode" on a previous run; the session
+    // they already had (or one placed by a passive event such as
+    // PASSWORD_RECOVERY) is still stored. Mode is a user control: relaunch
+    // must NOT silently re-promote it (demo-mode spec: no forced promotion).
+    storageMod.__seedStoredValue(MODE_KEY, 'demo');
+    supabaseMod.__setSupabaseBehavior({
+      getSession: async () => ({ data: { session: FAKE_SESSION }, error: null }),
+    });
+    await storeMod.useSessionStore.getState().restore();
+    const s = storeMod.useSessionStore.getState();
+    // The session is real and is applied; the mode stays the user's choice.
+    assert.equal(s.session, FAKE_SESSION);
+    assert.equal(s.isBootstrapping, false);
+    assert.equal(settingsMod.useSettingsStore.getState().mode, 'demo');
+    assert.equal(
+      storageMod.__readStoredValue(MODE_KEY),
+      'demo',
+      'restore must not overwrite an explicit demo choice',
+    );
+  });
+
+  await test('persisted demo + stored session that failed to restore: mode not promoted', async () => {
+    resetAll();
+    // Same explicit demo choice, but the stored session's token is dead
+    // (refresh failed): the session is cleared, yet the demo choice survives
+    // the relaunch instead of being force-promoted to the sign-in gate.
+    storageMod.__seedStoredValue(MODE_KEY, 'demo');
+    let signedOut = 0;
+    supabaseMod.__setSupabaseBehavior({
+      getSession: async () => ({
+        data: { session: null },
+        error: { message: 'invalid refresh token' },
+      }),
+      signOut: async () => {
+        signedOut += 1;
+        return { error: null };
+      },
+    });
+    await storeMod.useSessionStore.getState().restore();
+    const s = storeMod.useSessionStore.getState();
+    assert.equal(s.session, null);
+    assert.equal(s.isBootstrapping, false);
+    assert.equal(settingsMod.useSettingsStore.getState().mode, 'demo');
+    assert.equal(signedOut, 1, 'the dead session is still cleared');
+  });
+
+  await test('persisted authenticated + stored session: restore promotes as before', async () => {
+    resetAll();
+    storageMod.__seedStoredValue(MODE_KEY, 'authenticated');
+    supabaseMod.__setSupabaseBehavior({
+      getSession: async () => ({ data: { session: FAKE_SESSION }, error: null }),
+    });
+    await storeMod.useSessionStore.getState().restore();
+    const s = storeMod.useSessionStore.getState();
+    assert.equal(s.session, FAKE_SESSION);
+    assert.equal(s.isBootstrapping, false);
+    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
+  });
+
+  await test('persisted demo + no session: demo kept, gate open (fresh-install path)', async () => {
+    resetAll();
+    storageMod.__seedStoredValue(MODE_KEY, 'demo');
+    await storeMod.useSessionStore.getState().restore();
+    const s = storeMod.useSessionStore.getState();
+    assert.equal(s.session, null);
+    assert.equal(s.isBootstrapping, false);
+    assert.equal(settingsMod.useSettingsStore.getState().mode, 'demo');
+  });
+
   await test('expired stored session: cleared, sign-in gate kept, storage best-effort', async () => {
     resetAll();
     let signedOut = 0;

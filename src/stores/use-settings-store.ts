@@ -8,11 +8,15 @@ import { settingsDefaults } from '@/lib/fixtures/demo';
  * - `'demo'` — feature hooks return fixtures, zero network calls.
  * - `'authenticated'` — feature hooks query Supabase for the signed-in user.
  *
- * The mode is promoted to `'authenticated'` by the session store whenever a
- * valid session exists (restore, sign-in, OAuth, password recovery). It is
- * never demoted by the gate, so a sign-out leaves the mode `'authenticated'`
- * with no session — the root gate then shows the sign-in screen instead of
- * leaking demo data into an authenticated context.
+ * The mode is promoted to `'authenticated'` ONLY when identity changes — the
+ * SIGNED_IN event (password sign-in, sign-up auto-sign-in, OAuth exchange)
+ * and the launch restore, which honors the persisted mode: an explicit demo
+ * choice survives relaunch even with a stored session. Passive events
+ * (TOKEN_REFRESHED, USER_UPDATED, PASSWORD_RECOVERY) apply the session
+ * without promoting, so a user-chosen demo mode is never flipped by them.
+ * The mode is never demoted by the gate, so a sign-out leaves the mode
+ * `'authenticated'` with no session — the root gate then shows the sign-in
+ * screen instead of leaking demo data into an authenticated context.
  */
 export type AuthMode = 'demo' | 'authenticated';
 
