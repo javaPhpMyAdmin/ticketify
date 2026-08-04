@@ -27,7 +27,9 @@
 --      set `tier = 'pro'` on their own row. Nothing consumes `tier` yet, so
 --      there is no exploit today — but it is a future entitlement, so the
 --      client is locked out of changing it now. Future tier management MUST
---      go through an edge function / service-role write.
+--      go through a dedicated security-definer function or another
+--      trigger-aware path — the service role bypasses RLS, not triggers, so
+--      a plain service-role write would still be rejected by this trigger.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -127,17 +129,40 @@ $$;
 -- 4. profiles.tier — client-writable privilege claim (risk fix)
 -- ---------------------------------------------------------------------------
 
--- Any tier change from the client — including a downgrade — is rejected:
--- `tier` is not user-manageable in this change. Future tier management MUST
--- go through an edge function / the service role, which bypasses the trigger
--- only when it needs to write tier directly.
+-- Any client write to `tier` — an INSERT claiming a non-default tier, or an
+-- UPDATE that changes the tier — is rejected: `tier` is not user-manageable
+-- in this change.
+--
+-- NOTE: this trigger fires for EVERY role, including service_role — the
+-- service role bypasses RLS, not triggers. Future tier management MUST go
+-- through a dedicated security-definer function (or another trigger-aware
+-- path) that performs this check and then writes `tier` explicitly, e.g. a
+-- function owned by a bypassrls role invoked by an edge function.
 create or replace function public.protect_profile_tier() returns trigger
 language plpgsql as $$
 begin
-  if new.tier is distinct from old.tier then
-    raise exception 'tier is managed server-side';
+  if TG_OP = 'INSERT' then
+    -- 0001's default is `tier text not null default 'free'`; by the time a
+    -- before-insert trigger fires the default is already applied, so a legit
+    -- insert that omits `tier` carries 'free' here and passes. Only an
+    -- explicitly non-default tier (e.g. 'pro') is refused.
+    if new.tier is distinct from 'free' then
+      raise exception 'tier is managed server-side';
+    end if;
+    return new;
   end if;
-  return new;
+
+  if TG_OP = 'UPDATE' then
+    -- Any tier change from the client — including a downgrade — is rejected.
+    if new.tier is distinct from old.tier then
+      raise exception 'tier is managed server-side';
+    end if;
+    return new;
+  end if;
+
+  -- DELETE (defensive: the trigger is only attached to insert/update; keep
+  -- the function total so attaching it to delete later stays safe).
+  return old;
 end $$;
 
 do $$
@@ -148,7 +173,7 @@ begin
       and tgrelid = 'public.profiles'::regclass
   ) then
     create trigger profiles_protect_tier
-      before update on public.profiles
+      before insert or update on public.profiles
       for each row execute function public.protect_profile_tier();
   end if;
 end $$;
