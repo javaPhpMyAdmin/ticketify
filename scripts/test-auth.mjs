@@ -85,6 +85,11 @@ function installRequireHook() {
       request = join(outDir, 'scripts', 'test-stubs', 'web-browser.js');
     } else if (request === 'expo-linking') {
       request = join(outDir, 'scripts', 'test-stubs', 'linking.js');
+    } else if (request === 'react-native') {
+      // query-client.ts (imported by the session store for the SIGNED_OUT
+      // cache clear) touches AppState/Platform; the real package cannot load
+      // in plain node.
+      request = join(outDir, 'scripts', 'test-stubs', 'react-native.js');
     } else if (request.startsWith('@/')) {
       request = join(outDir, 'src', request.slice(2));
     }
@@ -119,6 +124,7 @@ let registryMod;
 let supabaseMod;
 let storageMod;
 let browserMod;
+let queryClientMod;
 
 async function run() {
   console.log('\n[tests] compiling modules with isolated tsconfig…');
@@ -133,6 +139,7 @@ async function run() {
   supabaseMod = await load('scripts/test-stubs/supabase.js');
   storageMod = await load('scripts/test-stubs/storage-adapter.js');
   browserMod = await load('scripts/test-stubs/web-browser.js');
+  queryClientMod = await load('src/lib/query-client.js');
 
   console.log('\n[tests] session restore\n');
 
@@ -832,6 +839,11 @@ async function run() {
   await test('success: session cleared (gate → sign-in)', async () => {
     resetAll();
     storeMod.useSessionStore.setState({ session: FAKE_SESSION, isBootstrapping: false });
+    // Seed the in-memory server-state cache, then verify SIGNED_OUT wipes it
+    // (server-state-caching spec: no previous user's rows survive to the next
+    // session).
+    queryClientMod.queryClient.setQueryData(['profile', 'user-1'], { id: 'user-1' });
+    assert.equal(queryClientMod.queryClient.getQueryCache().findAll().length, 1);
     let signOutCalls = 0;
     supabaseMod.__setSupabaseBehavior({
       signOut: async () => {
@@ -846,6 +858,11 @@ async function run() {
     cb('SIGNED_OUT', null);
     const s = storeMod.useSessionStore.getState();
     assert.equal(s.session, null);
+    assert.equal(
+      queryClientMod.queryClient.getQueryCache().findAll().length,
+      0,
+      'SIGNED_OUT must clear the in-memory query cache',
+    );
     // The root gate (authenticated && !session) now routes to sign-in.
     assert.equal(signOutCalls, 1);
   });

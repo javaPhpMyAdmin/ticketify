@@ -19,6 +19,7 @@ import { create } from 'zustand';
 
 import { registerAuthStateListener } from '@/lib/auth/auth-listener-registry';
 import { ensureProfile } from '@/lib/auth/profile-sync';
+import { queryClient } from '@/lib/query-client';
 import { supabase } from '@/lib/supabase';
 import { isSecureStoreAvailable } from '@/lib/supabase/storage-adapter';
 
@@ -279,6 +280,12 @@ function initAuthStateListener(): void {
     supabase.auth.onAuthStateChange.bind(supabase.auth),
     (event, session) => {
       if (event === 'SIGNED_OUT') {
+        // Wipe the in-memory server-state cache (server-state-caching spec):
+        // no previous user's rows may survive to the next session. Co-located
+        // with the session clear so it fires even for bootstrap discards of an
+        // expired token — a layout effect would miss events fired before it
+        // subscribed (D6).
+        queryClient.clear();
         useSessionStore.setState({ session: null });
         return;
       }
