@@ -1,14 +1,24 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 import { fetchMonthlyTotals } from '../api';
-import { READ_ERROR_MESSAGE } from '@/lib/supabase/feature-access';
+import { useSessionUser } from '@/features/auth';
+import { queryKeys, utcYearMonth } from '@/lib/query-keys';
+import {
+  toQueryData,
+  toQueryErrorMessage,
+} from '@/lib/supabase/query-adapters';
 import type { CategoryMonthlyTotal } from '@/types';
 
 /**
  * Returns the current month's category totals plus a derived total
- * (data-access spec). Authenticated-only: reads the `monthly_category_totals`
- * RPC (scoped to `auth.uid()` server-side), with a user-safe error when the
- * call fails (e.g. the RPC is not deployed yet). No fabricated fallback.
+ * (data-access spec) through TanStack Query (server-state-caching spec). The
+ * read is authenticated-only and disabled until a signed-in user exists. The
+ * key embeds the shared UTC year-month (one derivation shared with scan
+ * usage), so it rolls over exactly when the month changes. The
+ * `monthly_category_totals` RPC is scoped to `auth.uid()` server-side — only
+ * the year-month is sent. Errors surface via `toQueryErrorMessage`; there is
+ * no fabricated fallback.
  */
 export function useMonthlyTotals(): {
   totals: CategoryMonthlyTotal[];
@@ -16,47 +26,25 @@ export function useMonthlyTotals(): {
   isLoading: boolean;
   error: string | null;
 } {
-  const [totals, setTotals] = useState<CategoryMonthlyTotal[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { userId } = useSessionUser();
+  const yearMonth = utcYearMonth();
 
-  useEffect(() => {
-    let cancelled = false;
+  const totalsQuery = useQuery({
+    queryKey: queryKeys.monthlyTotals(userId!, yearMonth),
+    enabled: !!userId,
+    queryFn: () => fetchMonthlyTotals(yearMonth).then(toQueryData),
+  });
 
-    setTotals([]);
-    setError(null);
-    setIsLoading(true);
-
-    const yearMonth = new Date().toISOString().slice(0, 7);
-    fetchMonthlyTotals(yearMonth).then((result) => {
-      if (cancelled) return;
-      if (result.status === 'ok') {
-        setTotals(result.data);
-      } else if (result.status === 'error') {
-        setError(result.message);
-      } else if (result.status === 'unconfigured') {
-        setError(READ_ERROR_MESSAGE);
-      }
-      // 'missing-profile' cannot occur for an RPC.
-      setIsLoading(false);
-    }, () => {
-      // Rejected fetch (network/backend failure before a response): surface
-      // the generic copy and settle the loading state — never leave the UI
-      // spinning on a swallowed rejection.
-      if (cancelled) return;
-      setError(READ_ERROR_MESSAGE);
-      setIsLoading(false);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
+  const totals = totalsQuery.data ?? [];
   const monthTotal = useMemo(
-    () => totals.reduce((acc, t) => acc + t.total, 0),
-    [totals],
+    () => (totalsQuery.data ?? []).reduce((acc, t) => acc + t.total, 0),
+    [totalsQuery.data],
   );
 
-  return { totals, monthTotal, isLoading, error };
+  return {
+    totals,
+    monthTotal,
+    isLoading: totalsQuery.isLoading,
+    error: totalsQuery.error ? toQueryErrorMessage(totalsQuery.error) : null,
+  };
 }
