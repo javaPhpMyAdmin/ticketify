@@ -70,7 +70,10 @@ export async function readProfileRow(
     .select('*')
     .eq('id', userId)
     .maybeSingle();
-  if (error) return { status: 'error', message: READ_ERROR_MESSAGE };
+  if (error) {
+    console.warn('[read] profile failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
   if (!data) return { status: 'missing-profile' };
   return { status: 'ok', data: data as User };
 }
@@ -92,7 +95,10 @@ export async function readScanUsageRow(
     .eq('user_id', userId)
     .eq('year_month', yearMonth)
     .maybeSingle();
-  if (error) return { status: 'error', message: READ_ERROR_MESSAGE };
+  if (error) {
+    console.warn('[read] scan usage failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
   return { status: 'ok', data: (data as ScanUsage | null) ?? null };
 }
 
@@ -107,7 +113,10 @@ export async function readMonthlyBudgetRow(
     .select('monthly_budget, currency')
     .eq('id', userId)
     .maybeSingle();
-  if (error) return { status: 'error', message: READ_ERROR_MESSAGE };
+  if (error) {
+    console.warn('[read] monthly budget failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
   if (!data) return { status: 'missing-profile' };
   return {
     status: 'ok',
@@ -129,6 +138,9 @@ export async function readCategoryTotals(
   const { data, error } = await supabase.rpc('monthly_category_totals', {
     p_year_month: yearMonth,
   });
-  if (error) return { status: 'error', message: READ_ERROR_MESSAGE };
+  if (error) {
+    console.warn('[read] category totals failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
   return { status: 'ok', data: (data ?? []) as CategoryMonthlyTotal[] };
 }
