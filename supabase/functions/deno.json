@@ -1,0 +1,9 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@^2.111.0",
+    "@supabase/functions-js": "npm:@supabase/functions-js@^2.4.4"
+  },
+  "tasks": {
+    "serve": "supabase functions serve"
+  }
+}

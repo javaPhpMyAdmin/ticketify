@@ -11,7 +11,7 @@
 // so the rest of the system (RLS, quotas, payload shape) can be exercised
 // end-to-end before we wire in the real model.
 
-import { createClient } from 'npm:@supabase/supabase-js@2.111.0';
+import { createClient } from '@supabase/supabase-js';
 
 // ---------------------------------------------------------------------------
 // Types — kept local to the function so it can deploy without TS project
@@ -42,6 +42,9 @@ interface ParsedReceipt {
 interface ErrorResponse {
   error: string;
   code: 'unauthenticated' | 'quota_exceeded' | 'bad_request' | 'parse_failed' | 'internal';
+  /** Quota metadata, only present on quota_exceeded responses. */
+  limit?: number;
+  used?: number;
 }
 
 // ---------------------------------------------------------------------------
