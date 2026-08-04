@@ -1,9 +1,11 @@
+import { QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 
 import { useSessionStore } from '@/features/auth';
+import { queryClient } from '@/lib/query-client';
 import { colors } from '@/theme';
 
 SplashScreen.preventAutoHideAsync();
@@ -47,7 +49,7 @@ export default function RootLayout() {
   }, [booted]);
 
   return (
-    <>
+    <QueryClientProvider client={queryClient}>
       <StatusBar style="dark" backgroundColor={colors.background} />
       <Stack
         screenOptions={{
@@ -68,6 +70,6 @@ export default function RootLayout() {
         </Stack.Protected>
         <Stack.Screen name="(auth)" />
       </Stack>
-    </>
+    </QueryClientProvider>
   );
 }
