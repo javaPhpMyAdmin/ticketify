@@ -8,8 +8,8 @@ index 32ebe58e05f46f9ccbbd582424aee89b7a609830..9c9060f7babba43bc6969100bc83b833
      mkdir -p framework/packages/react-native
 -    cp -R "$XCFRAMEWORK_PATH/.." framework/packages/react-native/
 -    find "$XCFRAMEWORK_PATH/.." -type f -exec rm {} +
-+    cp -R "$XCFRAMEWORK_PATH/." framework/packages/react-native/
-+    find "$XCFRAMEWORK_PATH/." -type f -exec rm {} +
++    cp -R "$XCFRAMEWORK_PATH/../." framework/packages/react-native/
++    find "$XCFRAMEWORK_PATH/.." -type f -exec rm {} +
      find "$CURRENT_PATH" -type d -empty -delete
    CMD
  
