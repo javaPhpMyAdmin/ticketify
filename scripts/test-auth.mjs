@@ -201,20 +201,26 @@ async function run() {
     assert.equal(storageMod.__readStoredValue(MODE_KEY), 'authenticated');
   });
 
-  await test('persisted demo choice + stored session: restore keeps demo, gate open', async () => {
+  await test('persisted demo choice + stored session: zero network, session left dormant', async () => {
     resetAll();
     // The user explicitly tapped "Demo Mode" on a previous run; the session
     // they already had (or one placed by a passive event such as
     // PASSWORD_RECOVERY) is still stored. Mode is a user control: relaunch
-    // must NOT silently re-promote it (demo-mode spec: no forced promotion).
+    // must NOT silently re-promote it, and demo must NOT touch the auth
+    // backend at launch (post-review CRITICAL: explicit demo = zero network).
+    // The dormant session is deliberately neither applied nor cleared.
     storageMod.__seedStoredValue(MODE_KEY, 'demo');
+    let getSessionCalls = 0;
     supabaseMod.__setSupabaseBehavior({
-      getSession: async () => ({ data: { session: FAKE_SESSION }, error: null }),
+      getSession: async () => {
+        getSessionCalls += 1;
+        return { data: { session: FAKE_SESSION }, error: null };
+      },
     });
     await storeMod.useSessionStore.getState().restore();
     const s = storeMod.useSessionStore.getState();
-    // The session is real and is applied; the mode stays the user's choice.
-    assert.equal(s.session, FAKE_SESSION);
+    assert.equal(getSessionCalls, 0, 'demo restore must not call getSession');
+    assert.equal(s.session, null);
     assert.equal(s.isBootstrapping, false);
     assert.equal(settingsMod.useSettingsStore.getState().mode, 'demo');
     assert.equal(
@@ -224,11 +230,12 @@ async function run() {
     );
   });
 
-  await test('persisted demo + stored session that failed to restore: mode not promoted', async () => {
+  await test('persisted demo + dead stored session: left dormant, never read or cleared', async () => {
     resetAll();
-    // Same explicit demo choice, but the stored session's token is dead
-    // (refresh failed): the session is cleared, yet the demo choice survives
-    // the relaunch instead of being force-promoted to the sign-in gate.
+    // Same explicit demo choice, and the stored session's token is dead.
+    // Because demo restore never reads the session, the dead token is never
+    // discovered — and therefore never cleared: the dormant session stays
+    // exactly as the user left it (zero network, zero mutation).
     storageMod.__seedStoredValue(MODE_KEY, 'demo');
     let signedOut = 0;
     supabaseMod.__setSupabaseBehavior({
@@ -246,7 +253,7 @@ async function run() {
     assert.equal(s.session, null);
     assert.equal(s.isBootstrapping, false);
     assert.equal(settingsMod.useSettingsStore.getState().mode, 'demo');
-    assert.equal(signedOut, 1, 'the dead session is still cleared');
+    assert.equal(signedOut, 0, 'demo restore must not clear a dormant session');
   });
 
   await test('persisted authenticated + stored session: restore promotes as before', async () => {

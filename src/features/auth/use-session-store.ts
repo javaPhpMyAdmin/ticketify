@@ -30,8 +30,8 @@
  * by `AUTH_RESTORE_TIMEOUT_MS` so a hung storage backend can never leave the
  * splash up forever.
  */
-import { create } from 'zustand';
 import type { Session } from '@supabase/supabase-js';
+import { create } from 'zustand';
 
 import { registerAuthStateListener } from '@/lib/auth/auth-listener-registry';
 import {
@@ -62,7 +62,10 @@ interface SessionState {
   /** True while `restore()` runs at launch; the root gate holds the splash. */
   isBootstrapping: boolean;
   restore: () => Promise<void>;
-  signInWithEmail: (email: string, password: string) => Promise<AuthActionError>;
+  signInWithEmail: (
+    email: string,
+    password: string,
+  ) => Promise<AuthActionError>;
   signUpWithEmail: (email: string, password: string) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
 }
@@ -143,10 +146,12 @@ const DUPLICATE_ACCOUNT_MARKERS = [
   'email_exists',
 ];
 
-function isDuplicateAccountError(error: {
-  message?: string;
-  code?: string;
-} | null): boolean {
+function isDuplicateAccountError(
+  error: {
+    message?: string;
+    code?: string;
+  } | null,
+): boolean {
   if (!error) return false;
   const haystack = `${error.message ?? ''} ${error.code ?? ''}`.toLowerCase();
   return DUPLICATE_ACCOUNT_MARKERS.some((marker) => haystack.includes(marker));
@@ -187,6 +192,20 @@ export const useSessionStore = create<SessionState>((set) => ({
       useSettingsStore.setState({ mode: modeReadResult });
     }
 
+    // Demo short-circuit (post-review CRITICAL): an EXPLICIT demo choice is
+    // zero-network by contract (ADR-5) — phase 2 exists to find a stored
+    // session and promote the gate, which is pointless and wrong for demo.
+    // Skipping it means launch never touches the auth backend, and a dormant
+    // session (e.g. one placed by a passive PASSWORD_RECOVERY event) is
+    // deliberately NOT cleared and NOT applied. A fresh install (nothing
+    // persisted) still runs phase 2: the default 'demo' is a fallback, not a
+    // choice, and the session read is the only way to detect an OAuth
+    // cold-start session and promote it.
+    if (modeReadResult === 'demo') {
+      set({ isBootstrapping: false });
+      return;
+    }
+
     // Phase 2 — the session read, bounded by whatever time phase 1 left. A
     // timeout here keeps the already-reconciled mode (sign-in gate for a
     // previously authenticated user, demo for a fresh install). The read's
@@ -220,36 +239,28 @@ export const useSessionStore = create<SessionState>((set) => ({
             if (stale()) return;
             // The stored token could not be refreshed and its access token
             // has expired: discard it and land on the sign-in screen (spec:
-            // expired stored session → session cleared → sign-in shown) —
-            // unless the user explicitly chose demo mode, which survives
-            // relaunch like any other explicit choice: the dead session is
-            // cleared, but the mode is NOT force-promoted.
+            // expired stored session → session cleared → sign-in shown). Demo
+            // never reaches this branch (short-circuited above), so the mode
+            // is always promoted to the sign-in gate.
             await supabase.auth.signOut().catch(() => {
               // Best effort — the client may already have cleared storage.
             });
-            if (modeReadResult !== 'demo') {
-              useSettingsStore.getState().setMode('authenticated');
-              await savePersistedAuthMode('authenticated');
-            }
+            useSettingsStore.getState().setMode('authenticated');
+            await savePersistedAuthMode('authenticated');
             return;
           }
           if (session) {
             if (stale()) return;
             set({ session });
-            // Restore-mode reconciliation: a persisted 'demo' is an EXPLICIT
-            // user choice and survives relaunch even with a stored session —
-            // mode is a user control, and a session placed by a passive event
-            // (e.g. PASSWORD_RECOVERY while in demo) must not silently
-            // promote it at launch. Persisted 'authenticated' (or nothing — a
-            // fresh install with a stored session, e.g. an OAuth cold-start
-            // exchange) promotes exactly as before: mode, persistence, and
-            // the profile upsert stay bundled, so demo mode also keeps its
-            // zero-network fixtures posture.
-            if (modeReadResult !== 'demo') {
-              useSettingsStore.getState().setMode('authenticated');
-              await savePersistedAuthMode('authenticated');
-              if (session.user) void ensureProfile(session.user.id);
-            }
+            // Restore-mode reconciliation: an explicit demo choice never
+            // reaches this branch (short-circuited above), so a stored
+            // session always promotes — persisted 'authenticated', or a fresh
+            // install with a stored session (e.g. an OAuth cold-start
+            // exchange). Mode, persistence, and the profile upsert stay
+            // bundled so the promotion is atomic.
+            useSettingsStore.getState().setMode('authenticated');
+            await savePersistedAuthMode('authenticated');
+            if (session.user) void ensureProfile(session.user.id);
           }
           // No stored session at all: the mode keeps whatever was reconciled
           // above — persisted 'authenticated' closes the gate so the user
