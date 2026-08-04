@@ -37,11 +37,11 @@ Refs: SSC = server-state-caching, DA = data-access, UA = user-auth.
 
 ## Phase 2: Core
 
-- [ ] 2.1 Wrap the `Stack` in `QueryClientProvider` in `src/app/_layout.tsx` [SSC-1]
-- [ ] 2.2 Add `queryClient.clear()` in SIGNED_OUT branch of `initAuthStateListener` (use-session-store.ts:281-283) [SSC-7, UA-1]
-- [ ] 2.3 Rewrite `useProfile.ts`: two `useQuery` (profile + scan-usage @30s), `enabled: !!userId`, factory keys, `toQueryErrorMessage`; shape `{user, usage, isLoading, error, setHouseholdSharing}` [SSC-9, DA-1]
-- [ ] 2.4 Rewrite `useBudget.ts`: `useQuery` over `fetchMonthlyBudget` + `toQueryData`; shape `{budget, spent, percent, error}` [SSC-9, DA-1]
-- [ ] 2.5 Rewrite `useMonthlyTotals.ts`: `useQuery` over RPC, `enabled: !!userId`, key `monthlyTotals(userId, utcYearMonth())`; shape `{totals, monthTotal, isLoading, error}` [SSC-5, SSC-9, DA-1]
+- [x] 2.1 Wrap the `Stack` in `QueryClientProvider` in `src/app/_layout.tsx` [SSC-1]
+- [x] 2.2 Add `queryClient.clear()` in SIGNED_OUT branch of `initAuthStateListener` (use-session-store.ts:281-283) [SSC-7, UA-1]
+- [x] 2.3 Rewrite `useProfile.ts`: two `useQuery` (profile + scan-usage @30s), `enabled: !!userId`, factory keys, `toQueryErrorMessage`; shape `{user, usage, isLoading, error, setHouseholdSharing}` [SSC-9, DA-1]
+- [x] 2.4 Rewrite `useBudget.ts`: `useQuery` over `fetchMonthlyBudget` + `toQueryData`; shape `{budget, spent, percent, error}` [SSC-9, DA-1]
+- [x] 2.5 Rewrite `useMonthlyTotals.ts`: `useQuery` over RPC, `enabled: !!userId`, key `monthlyTotals(userId, utcYearMonth())`; shape `{totals, monthTotal, isLoading, error}` [SSC-5, SSC-9, DA-1]
 
 ## Phase 3: Hooks
 
