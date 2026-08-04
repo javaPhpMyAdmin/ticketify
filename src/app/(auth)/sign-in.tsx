@@ -1,3 +1,4 @@
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -6,7 +7,6 @@ import {
   StyleSheet,
   TextInput,
 } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FieldGroup, Pressable, Spinner, Text, View } from '@/components';
@@ -32,13 +32,17 @@ export default function SignInScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
-  const [providerPending, setProviderPending] = useState<OAuthProvider | null>(null);
+  const [providerPending, setProviderPending] = useState<OAuthProvider | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
 
   // A failed cold-start OAuth exchange routes here with a user-readable
   // error param (`src/app/oauth.tsx`); surface it once on arrival.
   useEffect(() => {
-    const message = Array.isArray(params.error) ? params.error[0] : params.error;
+    const message = Array.isArray(params.error)
+      ? params.error[0]
+      : params.error;
     if (message) setError(message);
   }, [params.error]);
 
@@ -78,7 +82,11 @@ export default function SignInScreen() {
       }
       if (!result.cancelled) router.replace('/');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign-in failed. Please try again.');
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Sign-in failed. Please try again.',
+      );
     } finally {
       setProviderPending(null);
     }
@@ -181,7 +189,9 @@ export default function SignInScreen() {
               {providerPending === 'google' ? (
                 <Spinner size="sm" />
               ) : (
-                <Text style={styles.secondaryButtonText}>Continue with Google</Text>
+                <Text style={styles.secondaryButtonText}>
+                  Continue with Google
+                </Text>
               )}
             </Pressable>
             <Pressable
@@ -194,7 +204,9 @@ export default function SignInScreen() {
               {providerPending === 'apple' ? (
                 <Spinner size="sm" />
               ) : (
-                <Text style={styles.secondaryButtonText}>Continue with Apple</Text>
+                <Text style={styles.secondaryButtonText}>
+                  Continue with Apple
+                </Text>
               )}
             </Pressable>
           </View>
