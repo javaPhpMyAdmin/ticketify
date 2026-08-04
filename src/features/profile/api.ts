@@ -1,35 +1,41 @@
 /**
  * Profile feature — Supabase calls for the current user, scan usage
- * counters, and household sharing preferences.
+ * counters, and household sharing preferences (data-access spec).
  *
- * TODO: replace the stubs with real reads/writes once auth is wired.
+ * Reads are authenticated-only: they read the real rows
+ * for the signed-in user and surface a defensive error state on failure.
+ * `setHouseholdSharing` stays a no-op: the household-sharing switch must
+ * remain non-functional in this change.
  */
+import {
+  readProfileRow,
+  readScanUsageRow,
+  type FeatureReadResult,
+} from '@/lib/supabase/feature-access';
 import type { ScanUsage, User } from '@/types';
-import { demoScanUsage, demoUser } from '@/lib/fixtures/demo';
 
-export async function fetchProfile(_userId: string): Promise<User | null> {
-  // TODO: Supabase call.
-  // const { data, error } = await supabase
-  //   .from('profiles')
-  //   .select('*')
-  //   .eq('id', _userId)
-  //   .single();
-  // if (error) return null;
-  // return data;
-  return demoUser;
+export type ProfileReadResult = FeatureReadResult<User>;
+export type ScanUsageReadResult = FeatureReadResult<ScanUsage | null>;
+
+/** The authenticated user's `profiles` row. */
+export async function fetchProfile(userId: string): Promise<ProfileReadResult> {
+  return readProfileRow(userId);
 }
 
+/** The user's `scan_usage` row for a month (null when the month has none). */
 export async function fetchScanUsage(
-  _userId: string,
-  _yearMonth: string,
-): Promise<ScanUsage | null> {
-  // TODO: Supabase call.
-  return demoScanUsage;
+  userId: string,
+  yearMonth: string,
+): Promise<ScanUsageReadResult> {
+  return readScanUsageRow(userId, yearMonth);
 }
 
+/**
+ * Non-functional for now. A real write is out of scope for this change.
+ */
 export async function setHouseholdSharing(
   _userId: string,
   _enabled: boolean,
 ): Promise<void> {
-  // TODO: Supabase call.
+  // TODO: real write once household sharing ships.
 }
