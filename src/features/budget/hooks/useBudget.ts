@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { fetchMonthlyBudget, type MonthlyBudget } from '../api';
-import { useAuthMode } from '@/features/auth';
+import { useSessionUser } from '@/features/auth';
 import { READ_ERROR_MESSAGE } from '@/lib/supabase/feature-access';
 
 /**
@@ -26,7 +26,7 @@ const MISSING_PROFILE_MESSAGE =
 const NEUTRAL_BUDGET: MonthlyBudget = { amount: 0, currency: 'USD' };
 
 export function useBudget(): BudgetSnapshot {
-  const { userId } = useAuthMode();
+  const { userId } = useSessionUser();
   const [budget, setBudget] = useState<MonthlyBudget>(NEUTRAL_BUDGET);
   const [error, setError] = useState<string | null>(null);
 

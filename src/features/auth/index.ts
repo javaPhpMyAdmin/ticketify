@@ -1,10 +1,10 @@
 /**
  * Auth feature barrel.
  *
- *   import { useAuthMode, useSessionStore } from '@/features/auth';
+ *   import { useSessionUser, useSessionStore } from '@/features/auth';
  */
-export { useAuthMode } from './use-auth-mode';
-export type { AuthModeValue } from './use-auth-mode';
+export { useSessionUser } from './use-session-user';
+export type { SessionUserValue } from './use-session-user';
 
 export { useSessionStore } from './use-session-store';
 export type {

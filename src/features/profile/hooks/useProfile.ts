@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { fetchProfile, fetchScanUsage, setHouseholdSharing } from '../api';
-import { useAuthMode } from '@/features/auth';
+import { useSessionUser } from '@/features/auth';
 import { READ_ERROR_MESSAGE } from '@/lib/supabase/feature-access';
 import type { ScanUsage, User } from '@/types';
 
@@ -24,7 +24,7 @@ const MISSING_PROFILE_MESSAGE =
  * fails. There is no fabricated fallback.
  */
 export function useProfile(): UseProfileResult {
-  const { userId } = useAuthMode();
+  const { userId } = useSessionUser();
   const [user, setUser] = useState<User | null>(null);
   const [usage, setUsage] = useState<ScanUsage | null>(null);
   const [error, setError] = useState<string | null>(null);

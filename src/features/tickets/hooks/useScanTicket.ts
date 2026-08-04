@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 
 import { parseTicket, uploadToStorage } from '../api';
-import { useAuthMode } from '@/features/auth';
+import { useSessionUser } from '@/features/auth';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { tempId } from '@/lib/format';
 
@@ -26,7 +26,7 @@ export interface UseScanTicketResult {
  * never pass a user id (post-review cleanup).
  */
 export function useScanTicket(): UseScanTicketResult {
-  const { userId } = useAuthMode();
+  const { userId } = useSessionUser();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
