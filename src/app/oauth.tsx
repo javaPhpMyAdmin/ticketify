@@ -9,6 +9,7 @@ import {
   exchangeOAuthCode,
   getLastOAuthError,
   isOAuthFlowInFlight,
+  type OAuthExchangeResult,
 } from '@/lib/auth/oauth';
 import { colors } from '@/theme';
 
@@ -19,6 +20,23 @@ import { colors } from '@/theme';
  * arrives, so this bound only fires when the flow genuinely stalled.
  */
 const OAUTH_CALLBACK_WAIT_MS = 10_000;
+
+/**
+ * Bound for the cold-start code exchange (see the cold-start branch below).
+ * The in-process flow needs no such bound — the user is actively driving the
+ * browser — but a relaunch from a dead process must not hang on this spinner
+ * forever if the exchange stalls. On timeout we fall back to sign-in with the
+ * generic interrupted copy, exactly like any other failed exchange, and the
+ * user can simply retry.
+ */
+const OAUTH_EXCHANGE_TIMEOUT_MS = 15_000;
+
+/**
+ * Mirrors `PROVIDER_FLOW_ERROR` in `src/lib/auth/oauth.ts` (not exported).
+ * Kept here so the timeout path surfaces the same generic copy as every other
+ * interrupted exchange — no auth-internal detail leaks to the UI.
+ */
+const OAUTH_EXCHANGE_TIMEOUT_ERROR = 'Sign-in was interrupted. Please try again.';
 
 /**
  * Landing route for the OAuth PKCE callback URL (`ticketify://oauth`).
@@ -65,6 +83,7 @@ export default function OAuthCallbackScreen() {
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let exchangeTimer: ReturnType<typeof setTimeout> | undefined;
 
     const waitForFlow = (onSettled: (error: string | null) => void): void => {
       const deadline = Date.now() + OAUTH_CALLBACK_WAIT_MS;
@@ -107,17 +126,29 @@ export default function OAuthCallbackScreen() {
       });
     } else if (code) {
       // Cold start: no in-process flow survived — consume the deep-link code.
-      void exchangeOAuthCode(code, flowId ?? null).then((result) => {
-        if (cancelled) return;
-        if (result.ok) {
-          router.replace('/');
-        } else {
-          router.replace({
-            pathname: '/sign-in',
-            params: { error: result.error ?? undefined },
-          });
-        }
+      // The exchange is bounded (Promise.race): a relaunch from a dead
+      // process must not hang on the spinner if the exchange stalls, so a
+      // timeout resolves with the generic interrupted copy and the branch
+      // below falls back to sign-in, where the user can retry.
+      const timeoutBound = new Promise<OAuthExchangeResult>((resolve) => {
+        exchangeTimer = setTimeout(
+          () => resolve({ ok: false, error: OAUTH_EXCHANGE_TIMEOUT_ERROR }),
+          OAUTH_EXCHANGE_TIMEOUT_MS,
+        );
       });
+      void Promise.race([exchangeOAuthCode(code, flowId ?? null), timeoutBound]).then(
+        (result) => {
+          if (cancelled) return;
+          if (result.ok) {
+            router.replace('/');
+          } else {
+            router.replace({
+              pathname: '/sign-in',
+              params: { error: result.error ?? undefined },
+            });
+          }
+        },
+      );
     } else {
       // No code and no in-process flow: nothing will produce a session
       // (provider denial, malformed callback). Return to the sign-in screen.
@@ -127,6 +158,7 @@ export default function OAuthCallbackScreen() {
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+      if (exchangeTimer) clearTimeout(exchangeTimer);
     };
   }, [code, flowId]);
 
