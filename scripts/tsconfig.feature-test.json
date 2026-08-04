@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020", "dom"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "..",
+    "paths": {
+      "@/lib/supabase": ["./scripts/test-stubs/supabase.ts"],
+      "@/*": ["./src/*"]
+    },
+    "rootDir": ".."
+  },
+  "include": [
+    "../src/lib/supabase/feature-access.ts",
+    "../src/features/profile/api.ts",
+    "../src/features/budget/api.ts",
+    "../src/features/analytics/api.ts",
+    "../src/features/tickets/api.ts",
+    "../src/lib/format.ts",
+    "../src/types/index.ts",
+    "../scripts/test-stubs/supabase.ts"
+  ]
+}
