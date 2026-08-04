@@ -351,6 +351,321 @@ async function run() {
     assert.equal(error, 'Invalid email or password.');
   });
 
+  await test('nonexistent account: same generic message, no existence signal', async () => {
+    resetAll();
+    supabaseMod.__setSupabaseBehavior({
+      signInWithPassword: async () => ({
+        error: { message: 'Invalid login credentials' },
+      }),
+    });
+    const error = await storeMod.useSessionStore.getState().signInWithEmail(
+      'nobody@example.com',
+      'whatever',
+    );
+    assert.equal(error, 'Invalid email or password.');
+  });
+
+  await test('thrown network failure: also maps to generic copy, never rejects', async () => {
+    resetAll();
+    supabaseMod.__setSupabaseBehavior({
+      signInWithPassword: async () => {
+        throw new Error('Network request failed');
+      },
+    });
+    const error = await storeMod.useSessionStore.getState().signInWithEmail(
+      'user@example.com',
+      'right-password',
+    );
+    assert.equal(error, 'Invalid email or password.');
+  });
+
+  await test('sign-in success: null error, no throw', async () => {
+    resetAll();
+    const error = await storeMod.useSessionStore.getState().signInWithEmail(
+      'user@example.com',
+      'right-password',
+    );
+    assert.equal(error, null);
+  });
+
+  console.log('\n[tests] OAuth PKCE helper\n');
+
+  await test('success: exchanges code without flow id when callback has none', async () => {
+    resetAll();
+    const exchanges = [];
+    supabaseMod.__setSupabaseBehavior({
+      exchangeCodeForSession: async (code, options) => {
+        exchanges.push({ code, options });
+        return { data: { session: FAKE_SESSION }, error: null };
+      },
+    });
+    browserMod.__setNextBrowserResult({
+      type: 'success',
+      url: 'ticketify://oauth?code=abc123',
+    });
+    const result = await oauthMod.signInWithProvider('google');
+    assert.deepEqual(result, { cancelled: false, error: null });
+    assert.equal(exchanges.length, 1);
+    assert.equal(exchanges[0].code, 'abc123');
+    assert.equal(exchanges[0].options, undefined);
+  });
+
+  await test('success: passes sb_flow_id through to the exchange', async () => {
+    resetAll();
+    const exchanges = [];
+    supabaseMod.__setSupabaseBehavior({
+      exchangeCodeForSession: async (code, options) => {
+        exchanges.push({ code, options });
+        return { data: { session: FAKE_SESSION }, error: null };
+      },
+    });
+    browserMod.__setNextBrowserResult({
+      type: 'success',
+      url: 'ticketify://oauth?code=abc123&sb_flow_id=flow-42',
+    });
+    const result = await oauthMod.signInWithProvider('google');
+    assert.deepEqual(result, { cancelled: false, error: null });
+    assert.deepEqual(exchanges[0], { code: 'abc123', options: { flowId: 'flow-42' } });
+  });
+
+  await test('flowId from the signInWithOAuth result reaches the exchange', async () => {
+    resetAll();
+    const exchanges = [];
+    supabaseMod.__setSupabaseBehavior({
+      signInWithOAuth: async () => ({
+        data: { url: 'https://auth.example/authorize', flowId: 'flow-returned' },
+        error: null,
+      }),
+      exchangeCodeForSession: async (code, options) => {
+        exchanges.push({ code, options });
+        return { data: { session: FAKE_SESSION }, error: null };
+      },
+    });
+    browserMod.__setNextBrowserResult({
+      type: 'success',
+      url: 'ticketify://oauth?code=abc123',
+    });
+    const result = await oauthMod.signInWithProvider('google');
+    assert.deepEqual(result, { cancelled: false, error: null });
+    assert.deepEqual(exchanges[0], {
+      code: 'abc123',
+      options: { flowId: 'flow-returned' },
+    });
+  });
+
+  await test('returned flowId wins over the callback URL param', async () => {
+    resetAll();
+    const exchanges = [];
+    supabaseMod.__setSupabaseBehavior({
+      signInWithOAuth: async () => ({
+        data: { url: 'https://auth.example/authorize', flowId: 'flow-returned' },
+        error: null,
+      }),
+      exchangeCodeForSession: async (code, options) => {
+        exchanges.push({ code, options });
+        return { data: { session: FAKE_SESSION }, error: null };
+      },
+    });
+    browserMod.__setNextBrowserResult({
+      type: 'success',
+      url: 'ticketify://oauth?code=abc123&sb_flow_id=flow-from-url',
+    });
+    const result = await oauthMod.signInWithProvider('google');
+    assert.deepEqual(result, { cancelled: false, error: null });
+    assert.deepEqual(exchanges[0], {
+      code: 'abc123',
+      options: { flowId: 'flow-returned' },
+    });
+  });
+
+  await test('cancel: reported as cancelled, no exchange, no error', async () => {
+    resetAll();
+    let exchanged = false;
+    supabaseMod.__setSupabaseBehavior({
+      exchangeCodeForSession: async () => {
+        exchanged = true;
+        return { data: { session: null }, error: null };
+      },
+    });
+    browserMod.__setNextBrowserResult({ type: 'cancel' });
+    const result = await oauthMod.signInWithProvider('google');
+    assert.deepEqual(result, { cancelled: true, error: null });
+    assert.equal(exchanged, false);
+  });
+
+  await test('dismiss/locked/opened: real error, never a silent cancellation', async () => {
+    resetAll();
+    browserMod.__setNextBrowserResult({ type: 'dismiss' });
+    const result = await oauthMod.signInWithProvider('google');
+    assert.equal(result.cancelled, false);
+    assert.match(result.error, /interrupted/i);
+  });
+
+  await test('callback without a code: readable error', async () => {
+    resetAll();
+    browserMod.__setNextBrowserResult({
+      type: 'success',
+      url: 'ticketify://oauth?error=access_denied',
+    });
+    const result = await oauthMod.signInWithProvider('apple');
+    assert.equal(result.cancelled, false);
+    assert.match(result.error, /missing its code/i);
+  });
+
+  await test('exchange error: generic copy, raw GoTrue message never surfaced', async () => {
+    resetAll();
+    browserMod.__setNextBrowserResult({
+      type: 'success',
+      url: 'ticketify://oauth?code=bad',
+    });
+    supabaseMod.__setSupabaseBehavior({
+      exchangeCodeForSession: async () => ({
+        data: { session: null },
+        error: { message: 'Invalid state: PKCE flow id not found' },
+      }),
+    });
+    const result = await oauthMod.signInWithProvider('google');
+    assert.equal(result.cancelled, false);
+    assert.equal(result.error, 'Sign-in was interrupted. Please try again.');
+  });
+
+  await test('provider start failure: generic copy, raw GoTrue message never surfaced', async () => {
+    resetAll();
+    supabaseMod.__setSupabaseBehavior({
+      signInWithOAuth: async () => ({
+        data: { url: null },
+        error: { message: 'Unsupported provider' },
+      }),
+    });
+    const result = await oauthMod.signInWithProvider('google');
+    assert.equal(result.cancelled, false);
+    assert.equal(result.error, 'Sign-in could not be started. Please try again.');
+  });
+
+  await test('missing authorize url: readable error', async () => {
+    resetAll();
+    supabaseMod.__setSupabaseBehavior({
+      signInWithOAuth: async () => ({ data: { url: null }, error: null }),
+    });
+    const result = await oauthMod.signInWithProvider('google');
+    assert.equal(result.cancelled, false);
+    assert.match(result.error, /could not be started/i);
+  });
+
+  await test('thrown network error: generic copy, raw message never surfaced', async () => {
+    resetAll();
+    supabaseMod.__setSupabaseBehavior({
+      signInWithOAuth: async () => {
+        throw new Error('Network request failed');
+      },
+    });
+    const result = await oauthMod.signInWithProvider('google');
+    assert.equal(result.cancelled, false);
+    assert.equal(result.error, 'Sign-in was interrupted. Please try again.');
+  });
+
+  await test('cold-start exchange: deep-link code + sb_flow_id reach the exchange', async () => {
+    resetAll();
+    const exchanges = [];
+    supabaseMod.__setSupabaseBehavior({
+      exchangeCodeForSession: async (code, options) => {
+        exchanges.push({ code, options });
+        return { data: { session: FAKE_SESSION }, error: null };
+      },
+    });
+    // The oauth.tsx route calls this directly with params parsed from the
+    // deep link (ticketify://oauth?code=…&sb_flow_id=…).
+    const result = await oauthMod.exchangeOAuthCode('deep-link-code', 'flow-deep');
+    assert.deepEqual(result, { ok: true, error: null });
+    assert.deepEqual(exchanges[0], {
+      code: 'deep-link-code',
+      options: { flowId: 'flow-deep' },
+    });
+  });
+
+  await test('cold-start exchange: no flow id → exchange without options', async () => {
+    resetAll();
+    const exchanges = [];
+    supabaseMod.__setSupabaseBehavior({
+      exchangeCodeForSession: async (code, options) => {
+        exchanges.push({ code, options });
+        return { data: { session: FAKE_SESSION }, error: null };
+      },
+    });
+    const result = await oauthMod.exchangeOAuthCode('bare-code', null);
+    assert.deepEqual(result, { ok: true, error: null });
+    assert.equal(exchanges[0].options, undefined);
+  });
+
+  await test('cold-start exchange failure: generic copy, no session', async () => {
+    resetAll();
+    supabaseMod.__setSupabaseBehavior({
+      exchangeCodeForSession: async () => ({
+        data: { session: null },
+        error: { message: 'code has expired or already been used' },
+      }),
+    });
+    const result = await oauthMod.exchangeOAuthCode('stale-code', null);
+    assert.deepEqual(result, {
+      ok: false,
+      error: 'Sign-in was interrupted. Please try again.',
+    });
+  });
+
+  await test('in-flight flag: true while the provider flow is pending, false after', async () => {
+    resetAll();
+    let resolveOAuth;
+    supabaseMod.__setSupabaseBehavior({
+      signInWithOAuth: () => new Promise((resolve) => { resolveOAuth = resolve; }),
+    });
+    browserMod.__setNextBrowserResult({ type: 'cancel' });
+    assert.equal(oauthMod.isOAuthFlowInFlight(), false, 'idle flow is not in flight');
+    const promise = oauthMod.signInWithProvider('google');
+    await new Promise((r) => setTimeout(r, 5));
+    assert.equal(oauthMod.isOAuthFlowInFlight(), true, 'pending provider flow is in flight');
+    resolveOAuth({ data: { url: 'https://auth.example/authorize' }, error: null });
+    const result = await promise;
+    assert.deepEqual(result, { cancelled: true, error: null });
+    assert.equal(oauthMod.isOAuthFlowInFlight(), false, 'settled flow is no longer in flight');
+  });
+
+  await test('warm-race wait decision: session wins over everything', async () => {
+    resetAll();
+    assert.deepEqual(
+      oauthMod.decideOAuthCallbackWait(true, true, false, null),
+      { action: 'go-app' },
+    );
+    assert.deepEqual(
+      oauthMod.decideOAuthCallbackWait(true, false, true, 'x'),
+      { action: 'go-app' },
+    );
+  });
+
+  await test('warm-race wait decision: settled flow surfaces its error copy', async () => {
+    resetAll();
+    assert.deepEqual(
+      oauthMod.decideOAuthCallbackWait(false, false, false, 'Sign-in was interrupted. Please try again.'),
+      { action: 'go-signin', error: 'Sign-in was interrupted. Please try again.' },
+    );
+    // Cancelled flow: no error copy, plain sign-in.
+    assert.deepEqual(oauthMod.decideOAuthCallbackWait(false, false, false, null), {
+      action: 'go-signin',
+      error: null,
+    });
+  });
+
+  await test('warm-race wait decision: stalled flow falls back after the bound', async () => {
+    resetAll();
+    assert.deepEqual(
+      oauthMod.decideOAuthCallbackWait(false, true, true, null),
+      { action: 'go-signin', error: null },
+    );
+    assert.deepEqual(
+      oauthMod.decideOAuthCallbackWait(false, true, false, null),
+      { action: 'keep-waiting' },
+    );
+  });
+
   console.log('');
   if (failed > 0) {
     console.error(`[tests] ${failed} failed, ${passed} passed`);
