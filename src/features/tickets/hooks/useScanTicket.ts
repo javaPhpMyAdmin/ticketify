@@ -5,10 +5,6 @@ import { useAuthMode } from '@/features/auth';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { tempId } from '@/lib/format';
 
-export interface UseScanTicketArgs {
-  userId: string | null;
-}
-
 export interface UseScanTicketResult {
   isLoading: boolean;
   error: string | null;
@@ -25,9 +21,12 @@ export interface UseScanTicketResult {
  *   3. Seed the `useReceiptsStore` with the parsed draft.
  *
  * Returns a `draftId` callers can use to navigate to `/ticket/review/[id]`.
+ *
+ * The upload scope is derived internally from the live auth mode — callers
+ * never pass a user id (post-review cleanup).
  */
-export function useScanTicket({ userId }: UseScanTicketArgs): UseScanTicketResult {
-  const { userId: sessionUserId } = useAuthMode();
+export function useScanTicket(): UseScanTicketResult {
+  const { userId } = useAuthMode();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -45,10 +44,7 @@ export function useScanTicket({ userId }: UseScanTicketArgs): UseScanTicketResul
       try {
         // Step 1: upload (stubbed for now) — scoped to the signed-in user's
         // storage namespace when a session exists, 'anon' in demo mode.
-        const { url } = await uploadToStorage(
-          userId ?? sessionUserId ?? 'anon',
-          imageUri,
-        );
+        const { url } = await uploadToStorage(userId ?? 'anon', imageUri);
         // Step 2: parse.
         const parsed = await parseTicket(url);
         // Step 3: seed the store.
@@ -66,7 +62,7 @@ export function useScanTicket({ userId }: UseScanTicketArgs): UseScanTicketResul
         setIsLoading(false);
       }
     },
-    [userId, sessionUserId, startDraft, setDraftStore, setDraftDate, setDraftTotal, setDraftItems],
+    [userId, startDraft, setDraftStore, setDraftDate, setDraftTotal, setDraftItems],
   );
 
   const reset = useCallback(() => {
