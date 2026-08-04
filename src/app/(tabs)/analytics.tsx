@@ -6,12 +6,13 @@ import { CategoryBreakdownList, useMonthlyTotals } from '@/features/analytics';
 import { colors, spacing, typography } from '@/theme';
 
 export default function AnalyticsScreen() {
-  const { totals } = useMonthlyTotals();
+  const { totals, error } = useMonthlyTotals();
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>Analytics</Text>
         <Text style={styles.subtitle}>August 2026</Text>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
         <CategoryBreakdownList rows={totals} />
       </ScrollView>
     </SafeAreaView>
@@ -37,5 +38,9 @@ const styles = StyleSheet.create({
     ...typography.bodyMd,
     color: colors.textSecondary,
     marginTop: -spacing.md,
+  },
+  error: {
+    ...typography.labelSm,
+    color: colors.danger,
   },
 });
