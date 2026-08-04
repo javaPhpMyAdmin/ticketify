@@ -15,7 +15,9 @@
     "android": {
       "package": "com.ticketify.app",
       "adaptiveIcon": {
-        "backgroundColor": "#10B981"
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
       }
     },
     "web": {
@@ -27,8 +29,10 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F8F9FA",
-          "imageWidth": 200
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#F8F9FA"
         }
       ],
       [
