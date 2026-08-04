@@ -40,6 +40,9 @@ example
 
 .env
 
+# local tooling
+.atl/
+
 # generated native folders
 /ios
 /android
