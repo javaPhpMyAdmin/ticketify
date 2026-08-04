@@ -374,3 +374,30 @@ async function resolveAdapter(): Promise<StorageAdapter | null> {
  * callers (e.g. the session-restore gate) can detect unsupported platforms
  * before touching auth storage.
  */
+export async function isSecureStoreAvailable(): Promise<boolean> {
+  return (await resolveAdapter()) != null;
+}
+
+/**
+ * Default adapter wired to `expo-secure-store`. The native module is resolved
+ * lazily on the first call so importing this module never touches native code.
+ * On platforms without a native backend the methods reject with a descriptive
+ * error (fail loud) instead of a TypeError — there is no insecure fallback.
+ */
+export const secureStoreAdapter: StorageAdapter = {
+  getItem: async (key) => {
+    const adapter = await resolveAdapter();
+    if (adapter == null) throw new Error(STORAGE_UNAVAILABLE_MESSAGE);
+    return adapter.getItem(key);
+  },
+  setItem: async (key, value) => {
+    const adapter = await resolveAdapter();
+    if (adapter == null) throw new Error(STORAGE_UNAVAILABLE_MESSAGE);
+    return adapter.setItem(key, value);
+  },
+  removeItem: async (key) => {
+    const adapter = await resolveAdapter();
+    if (adapter == null) throw new Error(STORAGE_UNAVAILABLE_MESSAGE);
+    return adapter.removeItem(key);
+  },
+};
