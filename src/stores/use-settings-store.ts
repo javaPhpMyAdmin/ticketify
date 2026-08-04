@@ -1,8 +1,13 @@
 import { create } from 'zustand';
 
 import type { ScanTier } from '@/types';
-import { settingsDefaults } from '@/lib/fixtures/demo';
 
+/**
+ * App-level user preferences (non-auth settings). Session presence in
+ * `useSessionStore` is the single source of truth for the root gate — the
+ * data-source mode concept was removed by scope amendment 2026-08-03, so no
+ * mode lives here.
+ */
 interface SettingsState {
   monthly_budget: number;
   currency: string; // ISO 4217
@@ -15,11 +20,11 @@ interface SettingsState {
   hydrate: (next: Partial<SettingsState>) => void;
 }
 
-const defaults: Pick<SettingsState, 'monthly_budget' | 'currency' | 'tier' | 'household_sharing'> =
-  settingsDefaults;
-
 export const useSettingsStore = create<SettingsState>((set) => ({
-  ...defaults,
+  monthly_budget: 1200,
+  currency: 'USD',
+  tier: 'free',
+  household_sharing: false,
   setBudget: (monthly_budget) => set({ monthly_budget }),
   setCurrency: (currency) => set({ currency }),
   setTier: (tier) => set({ tier }),
