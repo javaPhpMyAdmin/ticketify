@@ -588,7 +588,7 @@ async function run() {
     assert.equal(result.error, 'Sign-in was interrupted. Please try again.');
   });
 
-  await test('provider start failure: error surfaced', async () => {
+  await test('provider start failure: generic copy, raw GoTrue message never surfaced', async () => {
     resetAll();
     supabaseMod.__setSupabaseBehavior({
       signInWithOAuth: async () => ({
@@ -598,7 +598,7 @@ async function run() {
     });
     const result = await oauthMod.signInWithProvider('google');
     assert.equal(result.cancelled, false);
-    assert.equal(result.error, 'Unsupported provider');
+    assert.equal(result.error, 'Sign-in could not be started. Please try again.');
   });
 
   await test('missing authorize url: readable error', async () => {
@@ -611,7 +611,7 @@ async function run() {
     assert.match(result.error, /could not be started/i);
   });
 
-  await test('thrown network error: readable message, stays on sign-in', async () => {
+  await test('thrown network error: generic copy, raw message never surfaced', async () => {
     resetAll();
     supabaseMod.__setSupabaseBehavior({
       signInWithOAuth: async () => {
@@ -620,7 +620,7 @@ async function run() {
     });
     const result = await oauthMod.signInWithProvider('google');
     assert.equal(result.cancelled, false);
-    assert.equal(result.error, 'Network request failed');
+    assert.equal(result.error, 'Sign-in was interrupted. Please try again.');
   });
 
   await test('cold-start exchange: deep-link code + sb_flow_id reach the exchange', async () => {
@@ -686,6 +686,73 @@ async function run() {
     const result = await promise;
     assert.deepEqual(result, { cancelled: true, error: null });
     assert.equal(oauthMod.isOAuthFlowInFlight(), false, 'settled flow is no longer in flight');
+  });
+
+  await test('warm-race wait decision: session wins over everything', async () => {
+    resetAll();
+    assert.deepEqual(
+      oauthMod.decideOAuthCallbackWait(true, true, false, null),
+      { action: 'go-app' },
+    );
+    assert.deepEqual(
+      oauthMod.decideOAuthCallbackWait(true, false, true, 'x'),
+      { action: 'go-app' },
+    );
+  });
+
+  await test('warm-race wait decision: settled flow surfaces its error copy', async () => {
+    resetAll();
+    assert.deepEqual(
+      oauthMod.decideOAuthCallbackWait(false, false, false, 'Sign-in was interrupted. Please try again.'),
+      { action: 'go-signin', error: 'Sign-in was interrupted. Please try again.' },
+    );
+    // Cancelled flow: no error copy, plain sign-in.
+    assert.deepEqual(oauthMod.decideOAuthCallbackWait(false, false, false, null), {
+      action: 'go-signin',
+      error: null,
+    });
+  });
+
+  await test('warm-race wait decision: stalled flow falls back after the bound', async () => {
+    resetAll();
+    assert.deepEqual(
+      oauthMod.decideOAuthCallbackWait(false, true, true, null),
+      { action: 'go-signin', error: null },
+    );
+    assert.deepEqual(
+      oauthMod.decideOAuthCallbackWait(false, true, false, null),
+      { action: 'keep-waiting' },
+    );
+  });
+
+  await test('last flow error: recorded on failure, cleared on success and cancel', async () => {
+    resetAll();
+    assert.equal(oauthMod.getLastOAuthError(), null);
+    // Failure (provider start): the generic copy is recorded.
+    supabaseMod.__setSupabaseBehavior({
+      signInWithOAuth: async () => ({
+        data: { url: null },
+        error: { message: 'Unsupported provider' },
+      }),
+    });
+    await oauthMod.signInWithProvider('google');
+    assert.equal(oauthMod.getLastOAuthError(), 'Sign-in could not be started. Please try again.');
+    // Success: cleared.
+    resetAll();
+    supabaseMod.__setSupabaseBehavior({
+      exchangeCodeForSession: async () => ({ data: { session: FAKE_SESSION }, error: null }),
+    });
+    browserMod.__setNextBrowserResult({
+      type: 'success',
+      url: 'ticketify://oauth?code=abc123',
+    });
+    await oauthMod.signInWithProvider('google');
+    assert.equal(oauthMod.getLastOAuthError(), null);
+    // Cancel: cleared.
+    resetAll();
+    browserMod.__setNextBrowserResult({ type: 'cancel' });
+    await oauthMod.signInWithProvider('google');
+    assert.equal(oauthMod.getLastOAuthError(), null);
   });
 
   console.log('\n[tests] password-recovery exchange\n');

@@ -4,7 +4,12 @@ import { StyleSheet } from 'react-native';
 
 import { Spinner, View } from '@/components';
 import { useSessionStore } from '@/features/auth';
-import { exchangeOAuthCode, isOAuthFlowInFlight } from '@/lib/auth/oauth';
+import {
+  decideOAuthCallbackWait,
+  exchangeOAuthCode,
+  getLastOAuthError,
+  isOAuthFlowInFlight,
+} from '@/lib/auth/oauth';
 import { colors } from '@/theme';
 
 /**
@@ -61,16 +66,26 @@ export default function OAuthCallbackScreen() {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
-    const waitForSession = (onTimeout: () => void): void => {
+    const waitForFlow = (onSettled: (error: string | null) => void): void => {
       const deadline = Date.now() + OAUTH_CALLBACK_WAIT_MS;
       const poll = (): void => {
         if (cancelled) return;
-        if (useSessionStore.getState().session) {
+        // Pure decision (tested in the auth harness): watch BOTH the session
+        // and the in-process flow, so a flow that settles without a session
+        // (failed/cancelled) is resolved immediately instead of waiting out
+        // the full bound, and its error copy is surfaced on sign-in.
+        const decision = decideOAuthCallbackWait(
+          useSessionStore.getState().session !== null,
+          isOAuthFlowInFlight(),
+          Date.now() >= deadline,
+          getLastOAuthError(),
+        );
+        if (decision.action === 'go-app') {
           router.replace('/');
           return;
         }
-        if (Date.now() >= deadline) {
-          onTimeout();
+        if (decision.action === 'go-signin') {
+          onSettled(decision.error);
           return;
         }
         timer = setTimeout(poll, 100);
@@ -82,10 +97,13 @@ export default function OAuthCallbackScreen() {
       // Warm race: the in-process flow owns this code. Wait for its exchange
       // to settle — never exchange here (single-use code) and never flash
       // sign-in while the session is about to appear.
-      waitForSession(() => {
-        // The in-process flow produced no session in time. Fall back to
-        // sign-in rather than risking a duplicate exchange.
-        router.replace('/sign-in');
+      waitForFlow((flowError) => {
+        if (flowError) {
+          router.replace({ pathname: '/sign-in', params: { error: flowError } });
+        } else {
+          // Cancelled (or stalled past the bound): plain sign-in, no banner.
+          router.replace('/sign-in');
+        }
       });
     } else if (code) {
       // Cold start: no in-process flow survived — consume the deep-link code.

@@ -60,6 +60,46 @@ export interface OAuthExchangeResult {
   error: string | null;
 }
 
+/**
+ * User-safe copy for provider-flow failures — the anti-enumeration posture
+ * (user-auth spec): raw GoTrue or storage messages never reach the UI, so
+ * nothing about the account state can be inferred from an error. The two
+ * phrasings distinguish "could not start" (config/provider problem) from
+ * "interrupted" (browser/exchange problem); both are generic.
+ */
+const PROVIDER_START_ERROR = 'Sign-in could not be started. Please try again.';
+const PROVIDER_FLOW_ERROR = 'Sign-in was interrupted. Please try again.';
+
+/** The callback URL carried no PKCE `code` — our copy, not a raw message. */
+const MISSING_CODE_ERROR = 'The sign-in response was missing its code.';
+
+/**
+ * Pure decision for the OAuth callback route's warm-race wait loop
+ * (`src/app/oauth.tsx`). Kept here (not in the route) so the settle logic is
+ * unit-testable without expo-router:
+ *   - a session appeared             → go to the app,
+ *   - the in-process flow settled    → it failed/cancelled, surface its error
+ *     without a session                (or nothing, for a cancellation),
+ *   - the wait bound expired         → the flow stalled, fall back to sign-in,
+ *   - otherwise                      → keep polling.
+ */
+export type OAuthCallbackDecision =
+  | { action: 'go-app' }
+  | { action: 'keep-waiting' }
+  | { action: 'go-signin'; error: string | null };
+
+export function decideOAuthCallbackWait(
+  hasSession: boolean,
+  flowInFlight: boolean,
+  deadlineReached: boolean,
+  lastError: string | null,
+): OAuthCallbackDecision {
+  if (hasSession) return { action: 'go-app' };
+  if (!flowInFlight) return { action: 'go-signin', error: lastError };
+  if (deadlineReached) return { action: 'go-signin', error: null };
+  return { action: 'keep-waiting' };
+}
+
 /** The PKCE auth code GoTrue puts in the callback URL's query string. */
 function codeFromCallbackUrl(url: string): string | null {
   try {
@@ -110,17 +150,16 @@ export async function exchangeOAuthCode(
     if (error) {
       return {
         ok: false,
-        error: 'Sign-in was interrupted. Please try again.',
+        error: PROVIDER_FLOW_ERROR,
       };
     }
     return { ok: true, error: null };
-  } catch (err) {
-    // Network/storage failure: surface a readable message (same posture as
+  } catch {
+    // Network/storage failure: surface generic copy (same posture as
     // signInWithProvider) and let the caller keep the user on sign-in.
     return {
       ok: false,
-      error:
-        err instanceof Error ? err.message : 'Sign-in was interrupted. Please try again.',
+      error: PROVIDER_FLOW_ERROR,
     };
   }
 }
@@ -136,8 +175,18 @@ export async function exchangeOAuthCode(
  */
 let providerFlowInFlight = false;
 
+/** Last error copy from the most recent provider flow (null on success or
+ *  cancellation). The OAuth callback route reads this for the warm-race
+ *  fallback: once the in-process flow settles without a session, it can
+ *  surface WHY instead of waiting out the bound. */
+let lastProviderFlowError: string | null = null;
+
 export function isOAuthFlowInFlight(): boolean {
   return providerFlowInFlight;
+}
+
+export function getLastOAuthError(): string | null {
+  return lastProviderFlowError;
 }
 
 /**
@@ -150,53 +199,57 @@ export async function signInWithProvider(
 ): Promise<OAuthResult> {
   providerFlowInFlight = true;
   try {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: oauthRedirectUri,
-        skipBrowserRedirect: true,
-      },
-    });
-    if (error) return { cancelled: false, error: error.message };
-    if (!data.url) return { cancelled: false, error: 'Sign-in could not be started.' };
-
-    // `url` is the fully-formed Supabase authorize URL (already carries the
-    // PKCE challenge). Open it in the system browser; on redirect the promise
-    // resolves with the callback URL carrying `code`.
-    const result = await WebBrowser.openAuthSessionAsync(data.url, oauthRedirectUri);
-
-    if (result.type === 'cancel') {
-      // User dismissed the consent screen: no session, stay on sign-in.
-      return { cancelled: true, error: null };
-    }
-    if (result.type !== 'success') {
-      // dismiss | opened | locked — the browser flow did not complete. Surface
-      // a real error instead of silently swallowing it as a cancellation.
-      return { cancelled: false, error: 'Sign-in was interrupted. Please try again.' };
-    }
-
-    const code = codeFromCallbackUrl(result.url);
-    if (!code) {
-      return { cancelled: false, error: 'The sign-in response was missing its code.' };
-    }
-
-    // The flow id returned by signInWithOAuth selects THIS flow's stored
-    // verifier slot for the exchange — never the shared legacy key, which any
-    // newer PKCE flow overwrites. The callback-URL fallback only covers SDKs
-    // that return no flow id.
-    const flowId = data.flowId ?? flowIdFromCallbackUrl(result.url);
-    const exchange = await exchangeOAuthCode(code, flowId);
-    if (!exchange.ok) return { cancelled: false, error: exchange.error };
-
-    return { cancelled: false, error: null };
-  } catch (err) {
-    // Storage unavailable (web), network failure, or an unexpected error:
-    // surface a readable message and keep the user on the sign-in screen.
-    return {
+    const result = await runProviderFlow(provider).catch(() => ({
       cancelled: false,
-      error: err instanceof Error ? err.message : 'Sign-in failed. Please try again.',
-    };
+      error: PROVIDER_FLOW_ERROR,
+    }));
+    lastProviderFlowError = result.error;
+    return result;
   } finally {
     providerFlowInFlight = false;
   }
+}
+
+/** The provider flow itself, with the in-flight flag and error tracking
+ *  handled by `signInWithProvider`. */
+async function runProviderFlow(provider: OAuthProvider): Promise<OAuthResult> {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: {
+      redirectTo: oauthRedirectUri,
+      skipBrowserRedirect: true,
+    },
+  });
+  if (error) return { cancelled: false, error: PROVIDER_START_ERROR };
+  if (!data.url) return { cancelled: false, error: PROVIDER_START_ERROR };
+
+  // `url` is the fully-formed Supabase authorize URL (already carries the
+  // PKCE challenge). Open it in the system browser; on redirect the promise
+  // resolves with the callback URL carrying `code`.
+  const result = await WebBrowser.openAuthSessionAsync(data.url, oauthRedirectUri);
+
+  if (result.type === 'cancel') {
+    // User dismissed the consent screen: no session, stay on sign-in.
+    return { cancelled: true, error: null };
+  }
+  if (result.type !== 'success') {
+    // dismiss | opened | locked — the browser flow did not complete. Surface
+    // a real error instead of silently swallowing it as a cancellation.
+    return { cancelled: false, error: PROVIDER_FLOW_ERROR };
+  }
+
+  const code = codeFromCallbackUrl(result.url);
+  if (!code) {
+    return { cancelled: false, error: MISSING_CODE_ERROR };
+  }
+
+  // The flow id returned by signInWithOAuth selects THIS flow's stored
+  // verifier slot for the exchange — never the shared legacy key, which any
+  // newer PKCE flow overwrites. The callback-URL fallback only covers SDKs
+  // that return no flow id.
+  const flowId = data.flowId ?? flowIdFromCallbackUrl(result.url);
+  const exchange = await exchangeOAuthCode(code, flowId);
+  if (!exchange.ok) return { cancelled: false, error: exchange.error };
+
+  return { cancelled: false, error: null };
 }
