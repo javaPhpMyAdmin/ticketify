@@ -1,9 +1,10 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 
 import { parseTicket, uploadToStorage } from '../api';
 import { useSessionUser } from '@/features/auth';
-import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { tempId } from '@/lib/format';
+import { useReceiptsStore } from '@/stores/use-receipts-store';
 
 export interface UseScanTicketResult {
   isLoading: boolean;
@@ -15,20 +16,21 @@ export interface UseScanTicketResult {
 }
 
 /**
- * Orchestrates the scan flow:
+ * Orchestrates the scan flow as a mutation (server-state-caching spec, D4):
  *   1. Upload the image to Supabase Storage.
  *   2. Call the `parse-ticket` edge function.
  *   3. Seed the `useReceiptsStore` with the parsed draft.
  *
- * Returns a `draftId` callers can use to navigate to `/ticket/review/[id]`.
+ * Parsing writes nothing server-side, so a successful scan invalidates no
+ * queries. A failed mutation leaves the store untouched — `error` carries
+ * the message and `draftId` stays null, so the review screen shows a retry
+ * state instead of a half-empty form.
  *
  * The upload scope is derived internally from the current session — callers
  * never pass a user id (post-review cleanup).
  */
 export function useScanTicket(): UseScanTicketResult {
   const { userId } = useSessionUser();
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
 
   const startDraft = useReceiptsStore((s) => s.startDraft);
@@ -37,38 +39,46 @@ export function useScanTicket(): UseScanTicketResult {
   const setDraftTotal = useReceiptsStore((s) => s.setDraftTotal);
   const setDraftItems = useReceiptsStore((s) => s.setDraftItems);
 
-  const scan = useCallback(
-    async (imageUri: string) => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        // Step 1: upload (stubbed for now) — scoped to the signed-in user's
-        // storage namespace (session-gated, so the user is always present).
-        const { url } = await uploadToStorage(userId ?? 'anon', imageUri);
-        // Step 2: parse.
-        const parsed = await parseTicket(url);
-        // Step 3: seed the store.
-        const id = tempId();
-        startDraft(url);
-        setDraftStore(parsed.store);
-        setDraftDate(parsed.date);
-        setDraftTotal(parsed.total);
-        setDraftItems(parsed.items);
-        setDraftId(id);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown scan error';
-        setError(message);
-      } finally {
-        setIsLoading(false);
-      }
+  const mutation = useMutation({
+    mutationFn: async (imageUri: string) => {
+      // Step 1: upload (stubbed for now) — scoped to the signed-in user's
+      // storage namespace (session-gated, so the user is always present).
+      const { url } = await uploadToStorage(userId ?? 'anon', imageUri);
+      // Step 2: parse.
+      const parsed = await parseTicket(url);
+      return { url, parsed };
     },
-    [userId, startDraft, setDraftStore, setDraftDate, setDraftTotal, setDraftItems],
-  );
+    onSuccess: ({ url, parsed }) => {
+      // Step 3: seed the store, then expose the draft id for navigation.
+      startDraft(url);
+      setDraftStore(parsed.store);
+      setDraftDate(parsed.date);
+      setDraftTotal(parsed.total);
+      setDraftItems(parsed.items);
+      setDraftId(tempId());
+    },
+  });
 
-  const reset = useCallback(() => {
-    setError(null);
+  const scan = async (imageUri: string) => {
+    await mutation.mutateAsync(imageUri);
+  };
+
+  const reset = () => {
+    mutation.reset();
     setDraftId(null);
-  }, []);
+  };
 
-  return { isLoading, error, draftId, scan, reset };
+  const error = mutation.error
+    ? mutation.error instanceof Error
+      ? mutation.error.message
+      : 'Unknown scan error'
+    : null;
+
+  return {
+    isLoading: mutation.isPending,
+    error,
+    draftId,
+    scan,
+    reset,
+  };
 }

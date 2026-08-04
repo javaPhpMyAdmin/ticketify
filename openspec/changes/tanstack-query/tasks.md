@@ -45,14 +45,20 @@ Refs: SSC = server-state-caching, DA = data-access, UA = user-auth.
 
 ## Phase 3: Hooks
 
-- [ ] 3.1 Rewrite `useScanTicket.ts` as `useMutation`: mutationFn upload→parse; onSuccess seeds store + draftId; no invalidation; shape `{isLoading, error, draftId, scan, reset}` [SSC-8]
-- [ ] 3.2 Rewrite `useHomeFeed.ts`: `useQuery` with stub queryFn→`EMPTY_FEED`, key homeFeed(userId), `enabled: !!userId`; shape preserved [SSC-9, DA-1]
-- [ ] 3.3 Rewrite `useHistoryEntries.ts`: `useQuery` with stub queryFn→`[]`, key historyEntries(userId), `enabled: !!userId` [SSC-9, DA-1]
-- [ ] 3.4 Delete `useCategoryBreakdown.ts` + barrel export in `analytics/index.ts`; keep `fetchCategoryBreakdown` [SSC-10]
+- [x] 3.1 Rewrite `useScanTicket.ts` as `useMutation`: mutationFn upload→parse; onSuccess seeds store + draftId; no invalidation; shape `{isLoading, error, draftId, scan, reset}` [SSC-8]
+- [x] 3.2 Rewrite `useHomeFeed.ts`: `useQuery` with stub queryFn→`EMPTY_FEED`, key homeFeed(userId), `enabled: !!userId`; shape preserved [SSC-9, DA-1]
+- [x] 3.3 Rewrite `useHistoryEntries.ts`: `useQuery` with stub queryFn→`[]`, key historyEntries(userId), `enabled: !!userId` [SSC-9, DA-1]
+- [x] 3.4 Delete `useCategoryBreakdown.ts` + barrel export in `analytics/index.ts`; keep `fetchCategoryBreakdown` [SSC-10]
 
 ## Phase 4: Verification
 
-- [ ] 4.1 `pnpm typecheck` passes — profile/index/analytics/review-[id] compile unchanged [SSC-9]
-- [ ] 4.2 `pnpm test` (adapter + auth + features) green [SSC-12]
-- [ ] 4.3 Device: Home→Profile no second `profiles` read; sign-out→sign-in shows no prior data; foreground refetches stale only [SSC-2, SSC-7, UA-1]
-- [ ] 4.4 Grep: no `useCategoryBreakdown` reference remains [SSC-10]
+- [x] 4.1 `pnpm typecheck` passes — profile/index/analytics/review-[id] compile unchanged [SSC-9]
+- [x] 4.2 `pnpm test` (adapter + auth + features) green [SSC-12]
+- [~] 4.3 Device: Home→Profile no second `profiles` read; sign-out→sign-in shows no prior data; foreground refetches stale only [SSC-2, SSC-7, UA-1]
+  - **Manual, deferred to user (no device simulator in apply).** Checklist:
+    1. Sign in as user A → Home tab: budget card loads from `profiles`; navigate to Profile → verify NO second `profiles` read fires (single request, deduped cache).
+    2. Foreground refetch: background the app for >30s (scan usage stale) but <60s (profile fresh) → return to foreground → scan usage refetches, profile does NOT re-request (stale-only refetch).
+    3. Scan flow: scan a ticket → review screen shows the parsed draft (store seeded); trigger a failure path → error state + retry button, store not half-seeded.
+    4. Sign-out → sign-in as user B on the same device → verify NO stale data from A appears (cache cleared on SIGNED_OUT); B's first reads hit the database.
+    5. Restart the app → data reloads from the database (in-memory cache only).
+- [x] 4.4 Grep: no `useCategoryBreakdown` reference remains in `src/`; no `useEffect`-based data-fetching hooks remain in migrated domains; `queryClient.clear()` present in SIGNED_OUT; `fetchCategoryBreakdown` kept (harness asserts it) [SSC-10]
