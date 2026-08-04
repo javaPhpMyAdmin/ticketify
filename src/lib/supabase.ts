@@ -32,8 +32,10 @@ function isPlaceholder(value: string): boolean {
 
 /**
  * The client is created even when configuration is missing so importing this
- * module never throws. Unconfigured requests fail with a detectable network
- * error instead of crashing — callers gate on `isSupabaseConfigured()`.
+ * module never throws. Without real values the client targets a placeholder
+ * domain and requests fail with a network error; the data-access seam gates
+ * on `isSupabaseConfigured()` BEFORE any call, so the UI surfaces
+ * READ_ERROR_MESSAGE instead of a confusing backend error.
  *
  * Sessions persist through the chunked SecureStore adapter (values can exceed
  * SecureStore's 2048-byte limit), tokens auto-refresh, and sessions are never

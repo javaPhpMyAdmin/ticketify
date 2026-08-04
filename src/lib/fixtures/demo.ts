@@ -18,8 +18,8 @@ import type { CategoryMonthlyTotal, ScanUsage, User } from '@/types';
  * — so it NEVER re-derives the mode from session presence. Feature APIs
  * consult it before any Supabase call (demo mode stays offline) and hooks use
  * the reactive `useAuthMode()` equivalent. The implementation lives in
- * `@/lib/supabase/feature-access` (the data-access seam) and is re-exported
- * here so the fixtures module keeps being the seam every consumer imports.
+ * `@/lib/supabase/feature-access` (the data-access seam); it is re-exported
+ * here for consumers that already import the fixtures from this module.
  */
 export { isDemoFixturesOnly } from '@/lib/supabase/feature-access';
 
