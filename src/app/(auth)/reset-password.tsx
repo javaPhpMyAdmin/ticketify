@@ -16,6 +16,11 @@ import { colors, radii, spacing, typography } from '@/theme';
 
 type ExchangeState = 'exchanging' | 'ready' | 'invalid' | 'error';
 
+/** User-safe copy for a failed password update — never a raw GoTrue message
+ *  (anti-enumeration posture, same as sign-in/sign-up). */
+const UPDATE_PASSWORD_ERROR =
+  'Could not update your password. Please try again.';
+
 /**
  * Deep-link target for password-recovery emails (user-auth spec).
  *
@@ -85,14 +90,14 @@ export default function ResetPasswordScreen() {
     try {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) {
-        setError(error.message);
+        setError(UPDATE_PASSWORD_ERROR);
         return;
       }
       // Fresh session from the recovery exchange is active; the root gate
       // exposes the app content.
       router.replace('/');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not update your password.');
+    } catch {
+      setError(UPDATE_PASSWORD_ERROR);
     } finally {
       setPending(false);
     }
