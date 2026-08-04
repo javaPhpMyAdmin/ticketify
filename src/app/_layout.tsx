@@ -55,7 +55,7 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: colors.background },
         }}
       >
-        <Stack.Protected guard={!session}>
+        <Stack.Protected guard={session != null}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen
             name="ticket/camera"
