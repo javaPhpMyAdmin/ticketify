@@ -31,7 +31,8 @@ export type IconName =
   | 'photo'
   | 'arrow.up.arrow.down'
   | 'doc.text'
-  | 'ellipsis';
+  | 'ellipsis'
+  | 'checkmark';
 
 /**
  * Material icon names are a strict union from the MaterialIcons glyph map.
@@ -60,6 +61,7 @@ const materialMap: Record<IconName, string> = {
   'arrow.up.arrow.down': 'swap-vert',
   'doc.text': 'description',
   ellipsis: 'more-horiz',
+  checkmark: 'check',
 };
 
 export interface IconProps {
