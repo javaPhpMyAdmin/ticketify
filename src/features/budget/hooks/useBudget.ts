@@ -62,6 +62,11 @@ export function useBudget(): BudgetSnapshot {
         setError(READ_ERROR_MESSAGE);
       }
       // 'demo' is unreachable: the hook already branched on the live mode.
+    }, () => {
+      // Rejected fetch (network/backend failure before a response): surface
+      // the generic copy instead of swallowing the rejection.
+      if (cancelled) return;
+      setError(READ_ERROR_MESSAGE);
     });
 
     return () => {

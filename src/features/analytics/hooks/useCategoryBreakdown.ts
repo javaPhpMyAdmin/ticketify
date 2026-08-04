@@ -48,6 +48,13 @@ export function useCategoryBreakdown(yearMonth: string): {
       }
       // 'missing-profile' cannot occur for an RPC; 'demo' is unreachable.
       setIsLoading(false);
+    }, () => {
+      // Rejected fetch (network/backend failure before a response): surface
+      // the generic copy and settle the loading state — never leave the UI
+      // spinning on a swallowed rejection.
+      if (cancelled) return;
+      setError(READ_ERROR_MESSAGE);
+      setIsLoading(false);
     });
 
     return () => {

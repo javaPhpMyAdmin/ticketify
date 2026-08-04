@@ -75,6 +75,14 @@ export function useProfile(): UseProfileResult {
         if (scanUsage.status === 'ok') setUsage(scanUsage.data);
         setIsLoading(false);
       },
+      () => {
+        // Rejected fetch (network/backend failure before a response): surface
+        // the generic copy and settle the loading state — never leave the UI
+        // spinning on a swallowed rejection.
+        if (cancelled) return;
+        setError(READ_ERROR_MESSAGE);
+        setIsLoading(false);
+      },
     );
 
     return () => {
