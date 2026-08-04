@@ -19,15 +19,7 @@ export async function uploadToStorage(
   _userId: string,
   _imageUri: string,
 ): Promise<UploadResult> {
-  // TODO: Supabase Storage upload.
-  // const path = `${userId}/${tempId()}.jpg`;
-  // const blob = await fetch(imageUri).then((r) => r.blob());
-  // const { error } = await supabase.storage
-  //   .from('receipts')
-  //   .upload(path, blob, { contentType: 'image/jpeg' });
-  // if (error) throw error;
-  // const { data } = supabase.storage.from('receipts').getPublicUrl(path);
-  // return { url: data.publicUrl };
+  // TODO(Phase 5): upload to the `receipts` bucket (path: userId/tempId.jpg).
   return { url: _imageUri };
 }
 
@@ -43,20 +35,8 @@ export interface ParsedReceipt {
  * draft the user can review before committing to the DB.
  */
 export async function parseTicket(_imageUrl: string): Promise<ParsedReceipt> {
-  // TODO: edge function call.
-  // const { data, error } = await supabase.functions.invoke<{
-  //   store: string;
-  //   date: string;
-  //   total: number;
-  //   items: Array<Omit<ReviewItem, 'temp_id'>>;
-  // }>('parse-ticket', { body: { imageUrl } });
-  // if (error) throw error;
-  // return {
-  //   store: data.store,
-  //   date: data.date,
-  //   total: data.total,
-  //   items: data.items.map((i) => ({ ...i, temp_id: tempId() })),
-  // };
+  // TODO(Phase 5): invoke the `parse-ticket` edge function; seed items with
+  // temp ids. Until then, return a mock draft so the review flow is usable.
   return {
     store: 'Whole Foods Market',
     date: new Date().toISOString().slice(0, 10),
@@ -72,11 +52,19 @@ export async function parseTicket(_imageUrl: string): Promise<ParsedReceipt> {
 /**
  * Persists the confirmed draft to the DB. Returns the new
  * purchase id on success.
+ *
+ * ADR-8 + data-access spec ("Purchase Writes Out of Scope"): purchase and
+ * receipt writes stay no-ops in this change. The call returns a local id so
+ * the flow completes, but nothing is persisted until Phase 5 wires the real
+ * `purchases` / `purchase_items` insert (the remote schema is not applied
+ * yet).
  */
 export async function saveReceipt(
   _userId: string,
   _draft: ReceiptDraft,
 ): Promise<{ id: string }> {
-  // TODO: insert into `purchases` and `purchase_items`.
+  // TODO(Phase 5): insert into `purchases` and `purchase_items` for the
+  // authenticated user. Deliberately still a no-op: writes are out of scope
+  // and the remote schema does not exist yet.
   return { id: tempId() };
 }
