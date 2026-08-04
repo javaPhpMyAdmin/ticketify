@@ -1,13 +1,14 @@
 /**
- * Budget feature — Supabase calls for the user's monthly budget.
+ * Budget feature — Supabase call for the user's monthly budget
+ * (data-access spec).
  *
- * TODO: replace the stubbed `fetchMonthlyBudget` with a real
- * `supabase.from('profiles').select('monthly_budget').eq('id', userId).single()`
- * once auth is wired up. The shape returned is identical to what the
- * current home screen reads from `useSettingsStore`, so swapping the
- * implementation in this file is a one-line change for callers.
+ * Authenticated-only: reads `profiles.monthly_budget` and
+ * `currency` for the signed-in user, with a defensive error state on failure.
  */
-import { monthlyBudget } from '@/lib/fixtures/demo';
+import {
+  readMonthlyBudgetRow,
+  type FeatureReadResult,
+} from '@/lib/supabase/feature-access';
 
 export interface MonthlyBudget {
   amount: number;
@@ -15,14 +16,19 @@ export interface MonthlyBudget {
   currency: string;
 }
 
-export async function fetchMonthlyBudget(_userId: string): Promise<MonthlyBudget> {
-  // TODO: Supabase call.
-  // const { data, error } = await supabase
-  //   .from('profiles')
-  //   .select('monthly_budget, currency')
-  //   .eq('id', _userId)
-  //   .single();
-  // if (error) throw error;
-  // return { amount: data.monthly_budget, currency: data.currency };
-  return monthlyBudget;
+export type MonthlyBudgetReadResult = FeatureReadResult<MonthlyBudget>;
+
+/** The signed-in user's monthly budget, shaped from their `profiles` row. */
+export async function fetchMonthlyBudget(
+  userId: string,
+): Promise<MonthlyBudgetReadResult> {
+  const result = await readMonthlyBudgetRow(userId);
+  if (result.status !== 'ok') return result;
+  return {
+    status: 'ok',
+    data: {
+      amount: result.data.monthly_budget,
+      currency: result.data.currency,
+    },
+  };
 }

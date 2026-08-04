@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Image, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -35,23 +35,24 @@ export default function ReviewReceiptScreen() {
   const { draft } = useReceiptDraftDraft();
   const { setStore, setPayment, upsertItem, clear } = useReceiptDraftActions();
   // The scan flow is the single entry point for parsing: `scan()` runs
-  // the upload + parse pipeline and seeds the store with the draft.
-  const { scan } = useScanTicket({ userId: null });
+  // the upload + parse pipeline and seeds the store with the draft. A
+  // failure leaves the store untouched, so the screen shows a retry state
+  // instead of a half-empty form.
+  const { scan, error: scanError, reset } = useScanTicket();
 
   const [parsing, setParsing] = useState(true);
 
   // Mock parse after a short delay so we can show the loading state.
+  const runParse = useCallback(async () => {
+    setParsing(true);
+    reset();
+    await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+    await scan(draft?.image_url ?? '');
+    setParsing(false);
+  }, [draft?.image_url, reset, scan]);
+
   useEffect(() => {
-    let cancelled = false;
-    const t = setTimeout(async () => {
-      await scan(draft?.image_url ?? '');
-      if (cancelled) return;
-      setParsing(false);
-    }, 2000);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
+    void runParse();
     // We intentionally key this on the route id only — the parse is
     // a one-shot effect for the lifetime of the review screen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -97,6 +98,18 @@ export default function ReviewReceiptScreen() {
             <View style={styles.parsingWrap}>
               <Text style={styles.parsingTitle}>Parsing receipt…</Text>
               <Text style={styles.parsingHint}>Sending to Google Gemini 1.5 Flash</Text>
+            </View>
+          ) : scanError && !draft ? (
+            <View style={styles.parsingWrap}>
+              <Text style={styles.parsingTitle}>Couldn&apos;t parse this receipt</Text>
+              <Text style={styles.parsingHint}>Check the image and try again.</Text>
+              <Pressable
+                onPress={() => void runParse()}
+                style={styles.retryButton}
+                accessibilityRole="button"
+              >
+                <Text style={styles.retryLabel}>Try again</Text>
+              </Pressable>
             </View>
           ) : (
             <>
@@ -220,6 +233,18 @@ const styles = StyleSheet.create({
   parsingHint: {
     ...typography.bodyMd,
     color: colors.textSecondary,
+  },
+  retryButton: {
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.primary,
+    borderRadius: radii.md,
+  },
+  retryLabel: {
+    ...typography.labelSm,
+    color: colors.surface,
+    textAlign: 'center',
   },
   kicker: {
     ...typography.labelCaps,
