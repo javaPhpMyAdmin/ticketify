@@ -1,12 +1,9 @@
 import { useCallback, useState } from 'react';
 
 import { parseTicket, uploadToStorage } from '../api';
+import { useSessionUser } from '@/features/auth';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { tempId } from '@/lib/format';
-
-export interface UseScanTicketArgs {
-  userId: string | null;
-}
 
 export interface UseScanTicketResult {
   isLoading: boolean;
@@ -24,8 +21,12 @@ export interface UseScanTicketResult {
  *   3. Seed the `useReceiptsStore` with the parsed draft.
  *
  * Returns a `draftId` callers can use to navigate to `/ticket/review/[id]`.
+ *
+ * The upload scope is derived internally from the current session — callers
+ * never pass a user id (post-review cleanup).
  */
-export function useScanTicket({ userId }: UseScanTicketArgs): UseScanTicketResult {
+export function useScanTicket(): UseScanTicketResult {
+  const { userId } = useSessionUser();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -41,7 +42,8 @@ export function useScanTicket({ userId }: UseScanTicketArgs): UseScanTicketResul
       setIsLoading(true);
       setError(null);
       try {
-        // Step 1: upload (stubbed for now).
+        // Step 1: upload (stubbed for now) — scoped to the signed-in user's
+        // storage namespace (session-gated, so the user is always present).
         const { url } = await uploadToStorage(userId ?? 'anon', imageUri);
         // Step 2: parse.
         const parsed = await parseTicket(url);
