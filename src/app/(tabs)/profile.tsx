@@ -3,13 +3,13 @@ import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Pressable, ProfileHeader, Spinner, Text, View } from '@/components';
+import { useSessionStore, useSessionUser } from '@/features/auth';
 import {
   AccountSettingsList,
   UsageLimitsCard,
   useProfile,
   type AccountSettingRow,
 } from '@/features/profile';
-import { useSessionStore } from '@/features/auth';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
 
@@ -19,13 +19,25 @@ export default function ProfileScreen() {
   const household = useSettingsStore((s) => s.household_sharing);
   const setHousehold = useSettingsStore((s) => s.setHouseholdSharing);
   const signOut = useSessionStore((s) => s.signOut);
+  const { email } = useSessionUser();
 
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
 
   const settings: AccountSettingRow[] = [
-    { id: 'export', label: 'Export Data', icon: 'square.and.arrow.up', trailing: { type: 'chevron' } },
-    { id: 'currency', label: 'Currency', value: `${currency}`, icon: 'creditcard', trailing: { type: 'chevron' } },
+    {
+      id: 'export',
+      label: 'Export Data',
+      icon: 'square.and.arrow.up',
+      trailing: { type: 'chevron' },
+    },
+    {
+      id: 'currency',
+      label: 'Currency',
+      value: `${currency}`,
+      icon: 'creditcard',
+      trailing: { type: 'chevron' },
+    },
     {
       id: 'household',
       label: 'Household Sharing',
@@ -68,7 +80,12 @@ export default function ProfileScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content}>
         {user ? (
-          <ProfileHeader name={user.full_name ?? 'You'} tier={user.tier} />
+          <ProfileHeader
+            name={user.full_name ?? 'You'}
+            avatarUrl={user.avatar_url}
+            subtitle={email ?? undefined}
+            tier={user.tier}
+          />
         ) : null}
 
         {usage ? <UsageLimitsCard usage={usage} /> : null}
@@ -81,7 +98,9 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.section}>
-          {signOutError ? <Text style={styles.error}>{signOutError}</Text> : null}
+          {signOutError ? (
+            <Text style={styles.error}>{signOutError}</Text>
+          ) : null}
           <Pressable
             style={styles.signOutButton}
             onPress={handleSignOut}

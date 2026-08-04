@@ -20,6 +20,7 @@ import { create } from 'zustand';
 import { registerAuthStateListener } from '@/lib/auth/auth-listener-registry';
 import { ensureProfile } from '@/lib/auth/profile-sync';
 import { queryClient } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
 import { supabase } from '@/lib/supabase';
 import { isSecureStoreAvailable } from '@/lib/supabase/storage-adapter';
 
@@ -172,7 +173,18 @@ export const useSessionStore = create<SessionState>((set) => ({
           if (session) {
             if (stale()) return;
             set({ session });
-            if (session.user) void ensureProfile(session.user.id);
+            if (session.user) {
+              // Backfill the profile row, then invalidate the profile query
+              // so a read that already resolved shows the backfilled identity
+              // instead of "You" until the query goes stale (60s) or relaunch.
+              // ensureProfile never rejects, so the .then chain cannot produce
+              // an unhandled rejection; fire-and-forget stays non-blocking.
+              void ensureProfile(session.user).then(() =>
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.profile(session.user.id),
+                }),
+              );
+            }
           }
           // No stored session: stay signed out; the gate shows the sign-in
           // screen.
@@ -259,13 +271,16 @@ export const useSessionStore = create<SessionState>((set) => ({
  * SIGNED_OUT. The session object is applied for EVERY session-bearing event
  * (the token/user data it carries is always newer).
  *
- * `ensureProfile` (ADR-6) runs only on SIGNED_IN, so a profile insert that
+ * `ensureProfile` (ADR-6) runs only on SIGNED_IN, so a profile backfill that
  * fails (missing table pre-migration, RLS denial, network) is NOT retried on
  * the next passive event. This is deliberate: gating identity sync on an
  * actual identity change avoids pointless network work on silent refreshes,
  * and the failure is non-fatal by design — reads surface a recoverable
  * missing-profile state until the row exists (the next explicit sign-in
- * re-runs the upsert).
+ * re-runs the upsert). After the upsert settles, the `profile` query key is
+ * invalidated so screens showing the pre-backfill row re-render immediately;
+ * on a swallowed upsert error the invalidation is a harmless refetch of the
+ * unchanged row.
  *
  * The subscription goes through the shared listener registry instead of a
  * module-scope flag: a flag resets when Metro re-executes this module on Fast
@@ -294,9 +309,18 @@ function initAuthStateListener(): void {
         // USER_UPDATED carry newer token/user data the store must reflect.
         useSessionStore.setState({ session });
         if (event === 'SIGNED_IN') {
-          // Identity changed: ensure the profile row exists (the bootstrap
-          // restore handles the relaunch case separately).
-          if (session.user) void ensureProfile(session.user.id);
+          // Identity changed: backfill the profile row, then invalidate the
+          // profile query so the UI re-renders with the fresh identity (the
+          // bootstrap restore handles the relaunch case separately).
+          if (session.user) {
+            // ensureProfile never rejects, so the .then chain cannot produce
+            // an unhandled rejection; fire-and-forget stays non-blocking.
+            void ensureProfile(session.user).then(() =>
+              queryClient.invalidateQueries({
+                queryKey: queryKeys.profile(session.user.id),
+              }),
+            );
+          }
         }
       }
     },
