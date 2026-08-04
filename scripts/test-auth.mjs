@@ -666,6 +666,221 @@ async function run() {
     );
   });
 
+  await test('last flow error: recorded on failure, cleared on success and cancel', async () => {
+    resetAll();
+    assert.equal(oauthMod.getLastOAuthError(), null);
+    // Failure (provider start): the generic copy is recorded.
+    supabaseMod.__setSupabaseBehavior({
+      signInWithOAuth: async () => ({
+        data: { url: null },
+        error: { message: 'Unsupported provider' },
+      }),
+    });
+    await oauthMod.signInWithProvider('google');
+    assert.equal(oauthMod.getLastOAuthError(), 'Sign-in could not be started. Please try again.');
+    // Success: cleared.
+    resetAll();
+    supabaseMod.__setSupabaseBehavior({
+      exchangeCodeForSession: async () => ({ data: { session: FAKE_SESSION }, error: null }),
+    });
+    browserMod.__setNextBrowserResult({
+      type: 'success',
+      url: 'ticketify://oauth?code=abc123',
+    });
+    await oauthMod.signInWithProvider('google');
+    assert.equal(oauthMod.getLastOAuthError(), null);
+    // Cancel: cleared.
+    resetAll();
+    browserMod.__setNextBrowserResult({ type: 'cancel' });
+    await oauthMod.signInWithProvider('google');
+    assert.equal(oauthMod.getLastOAuthError(), null);
+  });
+
+  console.log('\n[tests] password-recovery exchange\n');
+
+  await test('resolved without a session: invalid link (never rejects)', async () => {
+    resetAll();
+    // Default double behavior: { data: { session: null }, error: null }.
+    const result = await resetMod.exchangeRecoveryCode('stale-code');
+    assert.deepEqual(result, { ok: false });
+  });
+
+  await test('resolved with an error: invalid link', async () => {
+    resetAll();
+    supabaseMod.__setSupabaseBehavior({
+      exchangeCodeForSession: async () => ({
+        data: { session: null },
+        error: { message: 'Invalid code' },
+      }),
+    });
+    const result = await resetMod.exchangeRecoveryCode('bad-code');
+    assert.deepEqual(result, { ok: false });
+  });
+
+  await test('valid code: ok, and the flow id reaches the exchange', async () => {
+    resetAll();
+    const exchanges = [];
+    supabaseMod.__setSupabaseBehavior({
+      exchangeCodeForSession: async (code, options) => {
+        exchanges.push({ code, options });
+        return { data: { session: FAKE_SESSION }, error: null };
+      },
+    });
+    const result = await resetMod.exchangeRecoveryCode('good-code', 'flow-7');
+    assert.deepEqual(result, { ok: true });
+    assert.deepEqual(exchanges[0], { code: 'good-code', options: { flowId: 'flow-7' } });
+  });
+
+  await test('thrown exception propagates for the screen to catch', async () => {
+    resetAll();
+    supabaseMod.__setSupabaseBehavior({
+      exchangeCodeForSession: async () => {
+        throw new Error('storage unavailable');
+      },
+    });
+    await assert.rejects(
+      () => resetMod.exchangeRecoveryCode('code'),
+      /storage unavailable/,
+    );
+  });
+
+  console.log('\n[tests] auth state listener guard\n');
+
+  await test('init is idempotent: second call does not stack subscriptions', async () => {
+    resetAll();
+    // The compiled module already ran initAuthStateListener() once at import.
+    // Re-running the (non-exported) guard is not reachable from outside, so
+    // this asserts the observable contract instead: SIGNED_OUT clears the
+    // session and a session-bearing event applies it, exactly once each,
+    // through the single subscription created at module load.
+    storeMod.useSessionStore.setState({ session: FAKE_SESSION });
+    const cb = supabaseMod.__getLastAuthStateListener();
+    assert.ok(cb, 'a listener subscription was registered at module load');
+    cb('SIGNED_OUT', null);
+    assert.equal(storeMod.useSessionStore.getState().session, null);
+    cb('SIGNED_IN', FAKE_SESSION);
+    assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
+  });
+
+  console.log('\n[tests] passive events apply the session\n');
+
+  await test('TOKEN_REFRESHED updates the session object', async () => {
+    resetAll();
+    const cb = supabaseMod.__getLastAuthStateListener();
+    assert.ok(cb, 'listener is registered at module load');
+    cb('TOKEN_REFRESHED', FAKE_SESSION);
+    assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
+  });
+
+  await test('USER_UPDATED applies the newer session', async () => {
+    resetAll();
+    const cb = supabaseMod.__getLastAuthStateListener();
+    assert.ok(cb, 'listener is registered at module load');
+    cb('USER_UPDATED', FAKE_SESSION);
+    assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
+  });
+
+  await test('PASSWORD_RECOVERY applies the session', async () => {
+    resetAll();
+    const cb = supabaseMod.__getLastAuthStateListener();
+    assert.ok(cb, 'listener is registered at module load');
+    cb('PASSWORD_RECOVERY', FAKE_SESSION);
+    assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
+  });
+
+  await test('SIGNED_IN applies the session', async () => {
+    resetAll();
+    const cb = supabaseMod.__getLastAuthStateListener();
+    assert.ok(cb, 'listener is registered at module load');
+    cb('SIGNED_IN', FAKE_SESSION);
+    assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
+  });
+
+  await test('registry re-registration replaces the listener, never stacks', async () => {
+    resetAll();
+    // Module load registered the app's listener (active === 1). Re-registering
+    // — exactly what Fast Refresh does when Metro re-executes the store
+    // module — must unsubscribe the previous handle, so the active count stays
+    // at one instead of stacking duplicate callbacks (S-1). The re-registered
+    // callback is the app's own listener (the same one a re-executed store
+    // module would hand the registry), so the live seam keeps returning it
+    // for the sign-out tests that follow.
+    const appListener = supabaseMod.__getLastAuthStateListener();
+    assert.ok(appListener, 'the app listener is registered at module load');
+    const before = supabaseMod.__listenerStats();
+    assert.equal(before.active, 1, 'exactly one subscription after module load');
+    registryMod.registerAuthStateListener(
+      supabaseMod.supabase.auth.onAuthStateChange.bind(supabaseMod.supabase.auth),
+      appListener,
+    );
+    const after = supabaseMod.__listenerStats();
+    assert.equal(after.active, 1, 're-registration must not stack listeners');
+    assert.equal(
+      after.unsubscribed,
+      before.unsubscribed + 1,
+      'the previous handle must have been unsubscribed',
+    );
+    assert.equal(
+      supabaseMod.__getLastAuthStateListener(),
+      appListener,
+      'the live seam still returns the app listener after the swap',
+    );
+  });
+
+  console.log('\n[tests] sign-out\n');
+
+  await test('success: session cleared (gate → sign-in)', async () => {
+    resetAll();
+    storeMod.useSessionStore.setState({ session: FAKE_SESSION, isBootstrapping: false });
+    let signOutCalls = 0;
+    supabaseMod.__setSupabaseBehavior({
+      signOut: async () => {
+        signOutCalls += 1;
+        return { error: null };
+      },
+    });
+    await assert.doesNotReject(() => storeMod.useSessionStore.getState().signOut());
+    // auth-js fires SIGNED_OUT on success; the listener clears the session.
+    const cb = supabaseMod.__getLastAuthStateListener();
+    assert.ok(cb, 'listener is registered for SIGNED_OUT');
+    cb('SIGNED_OUT', null);
+    const s = storeMod.useSessionStore.getState();
+    assert.equal(s.session, null);
+    // The root gate (authenticated && !session) now routes to sign-in.
+    assert.equal(signOutCalls, 1);
+  });
+
+  await test('offline revoke failure: local session still cleared, no misleading throw', async () => {
+    resetAll();
+    storeMod.useSessionStore.setState({ session: FAKE_SESSION, isBootstrapping: false });
+    supabaseMod.__setSupabaseBehavior({
+      signOut: async () => {
+        // auth-js clears the local session and fires SIGNED_OUT BEFORE
+        // returning the revoke error (verified in GoTrueClient._signOut).
+        const cb = supabaseMod.__getLastAuthStateListener();
+        cb('SIGNED_OUT', null);
+        return { error: { message: 'Network request failed' } };
+      },
+    });
+    await assert.doesNotReject(() => storeMod.useSessionStore.getState().signOut());
+    assert.equal(storeMod.useSessionStore.getState().session, null);
+  });
+
+  await test('genuine failure (session intact): the only surfaced error', async () => {
+    resetAll();
+    storeMod.useSessionStore.setState({ session: FAKE_SESSION, isBootstrapping: false });
+    supabaseMod.__setSupabaseBehavior({
+      signOut: async () => ({ error: { message: 'storage backend unavailable' } }),
+    });
+    await assert.rejects(
+      () => storeMod.useSessionStore.getState().signOut(),
+      /storage backend unavailable/,
+    );
+    // No SIGNED_OUT fired: the local session was NOT cleared, so the sign-out
+    // genuinely failed and the error is worth surfacing.
+    assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
+  });
+
   console.log('');
   if (failed > 0) {
     console.error(`[tests] ${failed} failed, ${passed} passed`);
