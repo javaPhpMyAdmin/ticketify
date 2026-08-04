@@ -1,25 +1,30 @@
 /**
- * Analytics feature — Supabase aggregations for the analytics tab.
+ * Analytics feature — Supabase aggregations for the analytics tab
+ * (data-access spec).
  *
- * TODO: replace the stubs with real RPCs. The view layer (`useMonthlyTotals`,
- * `useCategoryBreakdown`) consumes the same shape the rest of the app
- * uses, so the migration is one file.
+ * Authenticated-only: reads the
+ * `monthly_category_totals(p_year_month)` RPC (ADR-7), which is scoped to
+ * `auth.uid()` server-side — the client only passes the year-month, never a
+ * user id.
  */
+import {
+  readCategoryTotals,
+  type FeatureReadResult,
+} from '@/lib/supabase/feature-access';
 import type { CategoryMonthlyTotal } from '@/types';
-import { categoryBreakdownRows } from '@/lib/fixtures/demo';
 
-export async function fetchMonthlyTotals(_userId: string): Promise<CategoryMonthlyTotal[]> {
-  // TODO: call an analytics RPC.
-  // const { data, error } = await supabase.rpc('monthly_category_totals', { user_id: _userId });
-  // if (error) throw error;
-  // return data as CategoryMonthlyTotal[];
-  return categoryBreakdownRows;
+export type CategoryTotalsReadResult = FeatureReadResult<CategoryMonthlyTotal[]>;
+
+/** Current-month category totals for the signed-in user. */
+export async function fetchMonthlyTotals(
+  yearMonth: string,
+): Promise<CategoryTotalsReadResult> {
+  return readCategoryTotals(yearMonth);
 }
 
+/** Per-category breakdown for a given year-month (same RPC, one source). */
 export async function fetchCategoryBreakdown(
-  _userId: string,
-  _yearMonth: string,
-): Promise<CategoryMonthlyTotal[]> {
-  // TODO: Supabase call.
-  return categoryBreakdownRows;
+  yearMonth: string,
+): Promise<CategoryTotalsReadResult> {
+  return readCategoryTotals(yearMonth);
 }
