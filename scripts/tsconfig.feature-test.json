@@ -17,6 +17,8 @@
   },
   "include": [
     "../src/lib/supabase/feature-access.ts",
+    "../src/lib/supabase/query-adapters.ts",
+    "../src/lib/query-keys.ts",
     "../src/features/profile/api.ts",
     "../src/features/budget/api.ts",
     "../src/features/analytics/api.ts",
