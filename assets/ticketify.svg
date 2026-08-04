@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Máscara para las muescas laterales del Ticket -->
+    <mask id="ticket-orange-mask">
+      <rect x="64" y="64" width="384" height="384" rx="44" fill="#FFFFFF" />
+      <!-- Bocado / Muesca izquierda -->
+      <circle cx="64" cy="220" r="28" fill="#000000" />
+      <!-- Bocado / Muesca derecha -->
+      <circle cx="448" cy="220" r="28" fill="#000000" />
+    </mask>
+
+    <!-- Sombra suave para dar volumen sobre cualquier fondo -->
+    <filter id="ticket-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.22" />
+    </filter>
+  </defs>
+
+  <!-- TICKET NARANJA (Sin fondo externo) -->
+  <g filter="url(#ticket-shadow)">
+    <!-- Cuerpo del ticket en Naranja Vibrante -->
+    <rect x="64" y="64" width="384" height="384" fill="#FF5500" mask="url(#ticket-orange-mask)" />
+
+    <!-- SECCIÓN SUPERIOR: MONOGRAMA 'T' + ISOTIPO QR (En Blanco Nieve) -->
+    <g transform="translate(0, -10)">
+      <!-- Letra 'T' Bold -->
+      <path d="M 200 130 H 312 C 321 130 328 137 328 146 V 162 C 328 171 321 178 312 178 H 276 V 250 C 276 259 269 266 260 266 H 252 C 243 266 236 259 236 250 V 178 H 200 C 191 178 184 171 184 162 V 146 C 184 137 191 130 200 130 Z" 
+            fill="#FFFFFF" />
+
+      <!-- Símbolo Escáner / QR -->
+      <g transform="translate(290, 195)">
+        <path d="M 0 12 V 4 A 4 4 0 0 1 4 0 H 12" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" fill="none" />
+        <path d="M 28 0 H 36 A 4 4 0 0 1 40 4 V 12" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" fill="none" />
+        <path d="M 40 28 V 36 A 4 4 0 0 1 36 40 H 28" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" fill="none" />
+        <path d="M 12 40 H 4 A 4 4 0 0 1 0 36 V 28" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" fill="none" />
+        <rect x="13" y="13" width="14" height="14" rx="3" fill="#FFFFFF" />
+      </g>
+    </g>
+
+    <!-- LÍNEA DE TROQUEL / PUNTEADA -->
+    <line x1="104" y1="280" x2="408" y2="280" 
+          stroke="#FFFFFF" 
+          stroke-width="4" 
+          stroke-dasharray="8,8" 
+          stroke-linecap="round" 
+          opacity="0.45" />
+
+    <!-- SECCIÓN INFERIOR: TEXTO 'TICKETIFY' EN BLANCO -->
+    <text x="256" y="360" 
+          font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" 
+          font-weight="900" 
+          font-size="40" 
+          fill="#FFFFFF" 
+          text-anchor="middle" 
+          letter-spacing="2">
+      TICKETIFY
+    </text>
+
+  </g>
+</svg>

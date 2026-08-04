@@ -43,6 +43,9 @@ example
 # local tooling
 .atl/
 
+# supabase CLI local cache
+supabase/.temp/
+
 # generated native folders
 /ios
 /android

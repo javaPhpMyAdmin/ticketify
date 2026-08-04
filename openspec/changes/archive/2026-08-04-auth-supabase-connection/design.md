@@ -2,7 +2,9 @@
 
 ## Technical Approach
 
-Wire the app to the real Supabase project in five coordinated slices: (1) env-driven client with a SecureStore-backed session adapter, (2) full auth (email/password, Google/Apple OAuth PKCE, reset, persistence), (3) a single mode source of truth (`demo` | `authenticated`) with fixtures fallback, (4) profile auto-creation on sign-in, (5) dual-mode reads for the existing feature APIs. Purchase writes stay no-ops. SQL `0002_auth_fixes.sql` fixes the `scan_usage` PK and adds the analytics RPC. Maps 1:1 to the five specs; nothing beyond them.
+Wire the app to the real Supabase project in four coordinated slices: (1) env-driven client with a SecureStore-backed session adapter, (2) full auth (email/password, Google/Apple OAuth PKCE, reset, persistence) with a sign-in-required root gate, (3) profile auto-creation on sign-in, (4) authenticated-only reads for the existing feature APIs, plus removal of all demo-mode code. Purchase writes stay no-ops. SQL `0002_auth_fixes.sql` fixes the `scan_usage` PK and adds the analytics RPC. Maps 1:1 to the four specs; nothing beyond them.
+
+> Scope change (2026-08-03): demo mode removed by product decision — login is mandatory from app start. No fixtures, no mode switching, no dual-mode reads; session presence is the single source of truth.
 
 Verified against installed deps: `@supabase/auth-js@2.111.0` exposes `exchangeCodeForSession` (NOT `setSessionFromUrl`); `expo-router@6.0.24` ships `Stack.Protected`; `expo-secure-store@57.0.1` installed; `expo-auth-session` NOT installed (dependency decision, see ADR-3); `.env` already carries `EXPO_PUBLIC_SUPABASE_URL`/`ANON_KEY` (gitignored).
 
@@ -13,25 +15,25 @@ Verified against installed deps: `@supabase/auth-js@2.111.0` exposes `exchangeCo
 | ADR-1 | Env: `process.env.EXPO_PUBLIC_*` first, `expoConfig.extra` fallback; `isSupabaseConfigured()` also rejects placeholder anon key | extra-only (status quo) | Expo inlines `EXPO_PUBLIC_*` at build; current guard only checks URL, spec requires rejecting placeholder keys |
 | ADR-2 | Chunked SecureStore adapter (2048 B/value limit) | Payload reduction (persist tokens only); single key; react-native-keychain | Full session JSON (user + tokens) exceeds 2048 B; chunking keeps supabase-js's storage contract unchanged; no new native dep |
 | ADR-3 | OAuth PKCE via `expo-auth-session`; complete with `exchangeCodeForSession(code)` | `setSessionFromUrl` (absent in installed auth-js) | PKCE redirect returns `code`; auth-js 2.111.0 exchanges it. `redirectTo = AuthSession.makeRedirectUri({ path: 'oauth' })` — `ticketify://oauth` in dev builds, `exp://…` in Expo Go; whitelist both in dashboard. **Add `expo-auth-session` (not installed — install decision for tasks)** |
-| ADR-4 | Mode source of truth: `useSettingsStore.mode` (`'demo'`\|`'authenticated'`); session in new `useSessionStore`; `useAuthMode()` derives `{ mode, userId }` | Session store owning mode | Proposal pins mode to settings store; hooks select data source BEFORE any network call → no fixture leakage |
-| ADR-5 | Root gate: hold splash until restore + mode reconcile; `Stack.Protected guard={!(mode==='authenticated' && !session)}` | Conditional `<Redirect>` | No flash of wrong mode; expo-router 6 supports Protected natively |
+| ~~ADR-4~~ | **SUPERSEDED / REMOVED** — mode source of truth (`useSettingsStore.mode` `'demo'`\|`'authenticated'`) | — | Removed by scope amendment (2026-08-03): no mode concept anymore. Session presence in `useSessionStore` is the single source of truth; `useAuthMode()` collapses to session-derived `{ userId }` |
+| ADR-5 | Root gate: hold splash until restore; `Stack.Protected guard={!session}` | Conditional `<Redirect>` | Sign-in required from launch; no flash of wrong mode; expo-router 6 supports Protected natively |
 | ADR-6 | Profile sync on auth events: upsert `{ id }` `ON CONFLICT (id) DO NOTHING` (RLS `profiles_insert_own` exists) | Trigger on `auth.users` | Client-side keeps logic in app; spec says "on every sign-in" |
-| ADR-7 | Analytics RPC `monthly_category_totals(p_year_month text)` scoped to `auth.uid()`, `security invoker` | `security definer` + `user_id` param | Invoker respects existing RLS on `purchases`/`purchase_items`; no trusting-client user_id |
-| ADR-8 | Purchase writes: `saveReceipt` stays `{ id: tempId() }` no-op, guarded in demo | Real insert | Spec: writes out of scope |
+| ADR-7 | Analytics RPC `monthly_category_totals(p_year_month text)` scoped to `auth.uid()`, `security invoker`; feature APIs read real data directly with defensive error states (unconfigured/error/missing-profile) | `security definer` + `user_id` param; dual-mode read seam | Invoker respects existing RLS on `purchases`/`purchase_items`; no trusting-client user_id; reads are authenticated-only — the scope amendment removed the dual-mode seam |
+| ADR-8 | Purchase writes: `saveReceipt` stays `{ id: tempId() }` no-op for signed-in users | Real insert | Spec: writes out of scope; no demo guard needed anymore |
 
 ## Data Flow & Sequence Diagrams
 
-**Launch / session restore** (ADR-5) — no flash of wrong mode:
+**Launch / session restore** (ADR-5) — sign-in required from launch:
 
     RootLayout
       ├─ prevent splash
       ├─ useSessionStore.restore()
       │    ├─ supabase.auth.getSession()  (reads chunked SecureStore adapter)
-      │    ├─ valid   → set session, setMode('authenticated'), ensureProfile()
-      │    └─ invalid → clear storage, setMode(default 'demo' or persisted)
+      │    ├─ valid   → set session, ensureProfile()
+      │    └─ invalid → clear storage
       ├─ isBootstrapping=false → Stack.Protected guard evaluates
-      │    └─ authenticated && !session → (auth) group renders
-      └─ hide splash → (tabs) demo renders fixtures
+      │    └─ !session → (auth) group renders
+      └─ hide splash → (tabs) renders with session
 
 **OAuth PKCE** (ADR-3):
 
@@ -41,16 +43,8 @@ Verified against installed deps: `@supabase/auth-js@2.111.0` exposes `exchangeCo
       AuthSession.loadAsync({ redirectUri, url }) → promptAsync() (web-browser)
         → success → parse `code` from res.url
       supabase.auth.exchangeCodeForSession(code) → SIGNED_IN event
-        → ensureProfile(userId) → setMode('authenticated') → navigate to (tabs)
+        → ensureProfile(userId) → navigate to (tabs)
         cancelled/error → no session, stay on sign-in
-
-**Demo ↔ authenticated switching** (ADR-4):
-
-    Settings store mode = single truth; features call useAuthMode()
-      demo mode:            hooks return fixtures synchronously, zero network
-      switch → authenticated, signed out: router.push('/sign-in'), mode stays demo
-      switch → authenticated, signed in:  setMode('authenticated') → hooks query Supabase
-      switch → demo while authed:         setMode('demo'), session retained, reads = fixtures
 
 ## File Changes
 
@@ -61,19 +55,21 @@ Verified against installed deps: `@supabase/auth-js@2.111.0` exposes `exchangeCo
 | `src/lib/auth/oauth.ts` | Create | `signInWithProvider(provider)` PKCE flow |
 | `src/lib/auth/profile-sync.ts` | Create | `ensureProfile(userId)` upsert `DO NOTHING` |
 | `src/features/auth/use-session-store.ts` | Create | Zustand: `session`, `isBootstrapping`, `restore`, `signIn/Up/Out`, subscribe `onAuthStateChange` |
-| `src/features/auth/use-auth-mode.ts` | Create | `useAuthMode(): { mode, userId }` from settings + session stores |
+| `src/features/auth/use-auth-mode.ts` | Create | `useAuthMode(): { userId }` — session-derived (mode concept removed) |
 | `src/features/auth/index.ts` | Create | Barrel |
-| `src/app/_layout.tsx` | Modify | Splash hold + `Stack.Protected` gate; register `(auth)`, `reset-password` screens |
+| `src/app/_layout.tsx` | Modify | Splash hold + `Stack.Protected guard={!session}`; register `(auth)`, `reset-password` screens |
 | `src/app/(auth)/sign-in.tsx`, `sign-up.tsx`, `forgot-password.tsx` | Create | Forms (pending state, disabled submit, duplicate-email / invalid-credentials errors) |
 | `src/app/(auth)/_layout.tsx` | Create | Stack for auth screens |
 | `src/app/reset-password.tsx` | Create | Deep link (recovery `code`) → `exchangeCodeForSession` → `updateUser({ password })` |
-| `src/stores/use-settings-store.ts` | Modify | Add `mode: AuthMode`, `setMode` |
-| `src/features/{profile,budget,analytics}/api.ts` | Modify | Real Supabase reads (authed path) |
-| `src/features/{profile,budget,analytics}/hooks/*` | Modify | Mode-aware: `demo` → fixtures, no network |
-| `src/features/tickets/api.ts` | Modify | `saveReceipt` no-op guard; upload/parse stay stubbed |
+| `src/stores/use-settings-store.ts` | Modify | Remove `mode: AuthMode`/`setMode` and demo settingsDefaults (mode concept deleted) |
+| `src/features/{profile,budget,analytics}/api.ts` + hooks | Modify | Authenticated Supabase reads only; defensive error states |
+| `src/features/tickets/api.ts` | Modify | `saveReceipt` no-op (ADR-8); upload/parse stay stubbed |
 | `src/features/tickets/hooks/useScanTicket.ts` | Modify | Pass session `userId` (not `'anon'`) |
-| `src/app/(tabs)/index.tsx`, `history.tsx` | Modify | Source inline mocks from fixtures module (kept in demo; purchase-list reads out of scope) |
-| `src/app/(tabs)/profile.tsx` | Modify | Mode switch + sign-out rows |
+| `src/app/(tabs)/index.tsx`, `history.tsx`, `profile.tsx` | Modify | Consume feature APIs; remove demo greeting and mode-switch rows |
+| `src/lib/fixtures/demo.ts` | Remove | Fixtures module (demo mode removed) |
+| `src/lib/supabase/feature-access.ts` | Modify | Simplify seam: authenticated-only reads; drop `isDemoFixturesOnly` and the `{ status: 'demo' }` result |
+| `src/lib/auth/auth-mode-storage.ts`, `src/lib/auth/mode-switch.ts` | Remove | Auth-mode persistence + mode-switch decision logic |
+| `scripts/test-demo.mjs`, `tsconfig.demo-test.json` | Remove | Demo test harness |
 | `supabase/migrations/0002_auth_fixes.sql` | Create | PK migration + RPC |
 
 ## Interfaces / Contracts
@@ -89,9 +85,8 @@ export const secureStoreAdapter: {
 ```
 
 ```ts
-// use-auth-mode.ts
-export type AuthMode = 'demo' | 'authenticated';
-export function useAuthMode(): { mode: AuthMode; userId: string | null }; // userId = session?.user.id ?? null
+// use-auth-mode.ts — session-derived only (mode concept removed)
+export function useAuthMode(): { userId: string | null }; // userId = session?.user.id ?? null
 ```
 
 ```sql
@@ -119,8 +114,8 @@ $$;
 
 ## Rollback Plan
 
-- Env: remove `EXPO_PUBLIC_*` keys → placeholder client, guard false, demo-only app.
-- Auth gate/screens: `git revert`; demo path untouched.
+- Env: remove `EXPO_PUBLIC_*` keys → placeholder client, guard false, reads surface unconfigured error states (no fallback).
+- Auth gate/screens: `git revert`.
 - SQL: `drop function monthly_category_totals`; PK revert documented above.
 - No data-loss risk: writes remain no-ops.
 
@@ -128,9 +123,9 @@ $$;
 
 | Layer | What | Approach |
 |-------|------|----------|
-| Unit (no runner — exercised at verify) | Adapter chunk/unchunk round-trip incl. >2048 B; `isSupabaseConfigured` (env/placeholder cases); `useAuthMode` selection | Ad-hoc node/tsx checks; logic kept pure |
+| Unit (no runner — exercised at verify) | Adapter chunk/unchunk round-trip incl. >2048 B; `isSupabaseConfigured` (env/placeholder cases); `useAuthMode` userId derivation | Ad-hoc node/tsx checks; logic kept pure |
 | Integration (manual device) | Email sign-up/dup, sign-in, reset (no enumeration), OAuth both providers, restart persistence, expired-token discard, RLS own/other row select | Expo Go + dev build |
-| E2E | Demo↔auth switching; no writes in demo; fixtures never leak | Manual script per verify-report |
+| E2E | Sign-in mandatory from launch; no fixtures path; no writes | Manual script per verify-report |
 
 ## Open Questions
 

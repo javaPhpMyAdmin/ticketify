@@ -1,0 +1,30 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Expo SDK 54 (React Native 0.81, React 19, newArch), expo-router 6 (typed routes), Zustand 5, Supabase (JS client + CLI), TypeScript strict
+  Architecture: Feature-first under src/ (expo-router routes, atomic components, feature modules with hooks/api, Zustand stores, theme tokens)
+  Testing: None configured — no test runner present (strict_tdd disabled)
+  Style: pnpm, ESLint 9 flat (eslint-config-expo), tsc --noEmit, @/* -> src/* path alias, component barrel index files
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+  apply:
+    - Follow existing code patterns (atomic components, feature hooks, barrel files, @/ alias)
+    tdd: false
+    test_command: ""
+  verify:
+    test_command: ""
+    build_command: "pnpm typecheck"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas
