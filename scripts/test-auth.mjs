@@ -37,7 +37,6 @@ mkdirSync(tmpRoot, { recursive: true });
 const workdir = mkdtempSync(join(tmpRoot, 'auth-test-'));
 const outDir = join(workdir, 'out');
 
-const MODE_KEY = 'ticketify.auth-mode';
 const FAKE_SESSION = {
   access_token: 'at-fake',
   token_type: 'bearer',
@@ -104,21 +103,18 @@ function load(mod) {
   return import(pathToFileURL(join(outDir, mod)).href);
 }
 
-/** Resets every double and both stores to their initial state. */
+/** Resets every double and the store to their initial state. */
 function resetAll() {
   supabaseMod.__resetSupabaseBehavior();
   storageMod.__resetStorage();
   browserMod.__setNextBrowserResult({ type: 'cancel' });
   storeMod.__setAuthRestoreTimeout(10_000);
   storeMod.useSessionStore.setState({ session: null, isBootstrapping: true });
-  settingsMod.useSettingsStore.setState({ mode: 'demo' });
 }
 
 let storeMod;
-let settingsMod;
 let oauthMod;
 let resetMod;
-let modeMod;
 let registryMod;
 let supabaseMod;
 let storageMod;
@@ -131,64 +127,32 @@ async function run() {
   console.log('[tests] loading compiled modules…');
 
   storeMod = await load('src/features/auth/use-session-store.js');
-  settingsMod = await load('src/stores/use-settings-store.js');
   oauthMod = await load('src/lib/auth/oauth.js');
   resetMod = await load('src/lib/auth/reset-exchange.js');
-  modeMod = await load('src/lib/auth/auth-mode-storage.js');
   registryMod = await load('src/lib/auth/auth-listener-registry.js');
   supabaseMod = await load('scripts/test-stubs/supabase.js');
   storageMod = await load('scripts/test-stubs/storage-adapter.js');
   browserMod = await load('scripts/test-stubs/web-browser.js');
 
-  console.log('\n[tests] auth-mode persistence\n');
-
-  await test('load: nothing persisted → null (demo default)', async () => {
-    resetAll();
-    assert.equal(await modeMod.loadPersistedAuthMode(), null);
-  });
-
-  await test('load: seeded "authenticated" round-trips', async () => {
-    resetAll();
-    storageMod.__seedStoredValue(MODE_KEY, 'authenticated');
-    assert.equal(await modeMod.loadPersistedAuthMode(), 'authenticated');
-  });
-
-  await test('load: corrupt value → null, never leaks into mode', async () => {
-    resetAll();
-    storageMod.__seedStoredValue(MODE_KEY, '{"role":"admin"}');
-    assert.equal(await modeMod.loadPersistedAuthMode(), null);
-  });
-
-  await test('save writes through the same adapter load reads', async () => {
-    resetAll();
-    await modeMod.savePersistedAuthMode('authenticated');
-    assert.equal(storageMod.__readStoredValue(MODE_KEY), 'authenticated');
-    assert.equal(await modeMod.loadPersistedAuthMode(), 'authenticated');
-  });
-
   console.log('\n[tests] session restore\n');
 
-  await test('fresh install: no session, nothing persisted → demo, gate opens', async () => {
+  await test('fresh install: no stored session → sign-in gate, bootstrap finishes', async () => {
     resetAll();
     await storeMod.useSessionStore.getState().restore();
     const s = storeMod.useSessionStore.getState();
     assert.equal(s.session, null);
     assert.equal(s.isBootstrapping, false);
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'demo');
   });
 
-  await test('signed-out user relaunch: persisted mode keeps sign-in gate', async () => {
+  await test('signed-out user relaunch: no stored session → sign-in gate', async () => {
     resetAll();
-    storageMod.__seedStoredValue(MODE_KEY, 'authenticated');
     await storeMod.useSessionStore.getState().restore();
     const s = storeMod.useSessionStore.getState();
     assert.equal(s.session, null);
     assert.equal(s.isBootstrapping, false);
-    // The gate shows sign-in instead of silently dropping into demo fixtures.
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
   });
 
-  await test('valid stored session: session set, mode promoted and persisted', async () => {
+  await test('valid stored session: restored, bootstrap finishes', async () => {
     resetAll();
     supabaseMod.__setSupabaseBehavior({
       getSession: async () => ({ data: { session: FAKE_SESSION }, error: null }),
@@ -197,89 +161,9 @@ async function run() {
     const s = storeMod.useSessionStore.getState();
     assert.equal(s.session, FAKE_SESSION);
     assert.equal(s.isBootstrapping, false);
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
-    assert.equal(storageMod.__readStoredValue(MODE_KEY), 'authenticated');
   });
 
-  await test('persisted demo choice + stored session: zero network, session left dormant', async () => {
-    resetAll();
-    // The user explicitly tapped "Demo Mode" on a previous run; the session
-    // they already had (or one placed by a passive event such as
-    // PASSWORD_RECOVERY) is still stored. Mode is a user control: relaunch
-    // must NOT silently re-promote it, and demo must NOT touch the auth
-    // backend at launch (post-review CRITICAL: explicit demo = zero network).
-    // The dormant session is deliberately neither applied nor cleared.
-    storageMod.__seedStoredValue(MODE_KEY, 'demo');
-    let getSessionCalls = 0;
-    supabaseMod.__setSupabaseBehavior({
-      getSession: async () => {
-        getSessionCalls += 1;
-        return { data: { session: FAKE_SESSION }, error: null };
-      },
-    });
-    await storeMod.useSessionStore.getState().restore();
-    const s = storeMod.useSessionStore.getState();
-    assert.equal(getSessionCalls, 0, 'demo restore must not call getSession');
-    assert.equal(s.session, null);
-    assert.equal(s.isBootstrapping, false);
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'demo');
-    assert.equal(
-      storageMod.__readStoredValue(MODE_KEY),
-      'demo',
-      'restore must not overwrite an explicit demo choice',
-    );
-  });
-
-  await test('persisted demo + dead stored session: left dormant, never read or cleared', async () => {
-    resetAll();
-    // Same explicit demo choice, and the stored session's token is dead.
-    // Because demo restore never reads the session, the dead token is never
-    // discovered — and therefore never cleared: the dormant session stays
-    // exactly as the user left it (zero network, zero mutation).
-    storageMod.__seedStoredValue(MODE_KEY, 'demo');
-    let signedOut = 0;
-    supabaseMod.__setSupabaseBehavior({
-      getSession: async () => ({
-        data: { session: null },
-        error: { message: 'invalid refresh token' },
-      }),
-      signOut: async () => {
-        signedOut += 1;
-        return { error: null };
-      },
-    });
-    await storeMod.useSessionStore.getState().restore();
-    const s = storeMod.useSessionStore.getState();
-    assert.equal(s.session, null);
-    assert.equal(s.isBootstrapping, false);
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'demo');
-    assert.equal(signedOut, 0, 'demo restore must not clear a dormant session');
-  });
-
-  await test('persisted authenticated + stored session: restore promotes as before', async () => {
-    resetAll();
-    storageMod.__seedStoredValue(MODE_KEY, 'authenticated');
-    supabaseMod.__setSupabaseBehavior({
-      getSession: async () => ({ data: { session: FAKE_SESSION }, error: null }),
-    });
-    await storeMod.useSessionStore.getState().restore();
-    const s = storeMod.useSessionStore.getState();
-    assert.equal(s.session, FAKE_SESSION);
-    assert.equal(s.isBootstrapping, false);
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
-  });
-
-  await test('persisted demo + no session: demo kept, gate open (fresh-install path)', async () => {
-    resetAll();
-    storageMod.__seedStoredValue(MODE_KEY, 'demo');
-    await storeMod.useSessionStore.getState().restore();
-    const s = storeMod.useSessionStore.getState();
-    assert.equal(s.session, null);
-    assert.equal(s.isBootstrapping, false);
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'demo');
-  });
-
-  await test('expired stored session: cleared, sign-in gate kept, storage best-effort', async () => {
+  await test('expired stored session: cleared, sign-in gate kept', async () => {
     resetAll();
     let signedOut = 0;
     supabaseMod.__setSupabaseBehavior({
@@ -296,13 +180,11 @@ async function run() {
     const s = storeMod.useSessionStore.getState();
     assert.equal(s.session, null);
     assert.equal(s.isBootstrapping, false);
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
     assert.equal(signedOut, 1);
   });
 
-  await test('storage/network failure: resolves safely, never forces demo', async () => {
+  await test('storage/network failure: resolves to a safe no-session state', async () => {
     resetAll();
-    storageMod.__seedStoredValue(MODE_KEY, 'authenticated');
     supabaseMod.__setSupabaseBehavior({
       getSession: async () => {
         throw new Error('SecureStore backend exploded');
@@ -312,35 +194,16 @@ async function run() {
     const s = storeMod.useSessionStore.getState();
     assert.equal(s.session, null);
     assert.equal(s.isBootstrapping, false);
-    // Previously authenticated user is NOT dropped into demo fixtures.
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
   });
 
   await test('hung storage backend: timeout settles bootstrap with safe state', async () => {
     resetAll();
-    storageMod.__seedStoredValue(MODE_KEY, 'authenticated');
     storageMod.__setStorageHang(true);
     storeMod.__setAuthRestoreTimeout(25);
     await storeMod.useSessionStore.getState().restore();
     const s = storeMod.useSessionStore.getState();
     assert.equal(s.isBootstrapping, false);
-    // Mode was reconciled BEFORE the hang: sign-in gate survives the timeout.
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
-  });
-
-  await test('hung mode read: settle keeps the sign-in gate, never forces demo', async () => {
-    resetAll();
-    storageMod.__setStorageReadHang(true);
-    storeMod.__setAuthRestoreTimeout(25);
-    await storeMod.useSessionStore.getState().restore();
-    const s = storeMod.useSessionStore.getState();
     assert.equal(s.session, null);
-    assert.equal(s.isBootstrapping, false);
-    // The mode is unknowable, so the only safe gate is 'authenticated':
-    // an existing user must NEVER land in demo fixtures because a storage
-    // read hung (W-2). No demo path, no 'guest' path.
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
-    assert.equal(storeMod.__lastModeReadOutcome(), 'timed-out');
   });
 
   await test('late restore read: never signs out over a newer session', async () => {
@@ -888,8 +751,8 @@ async function run() {
     // The compiled module already ran initAuthStateListener() once at import.
     // Re-running the (non-exported) guard is not reachable from outside, so
     // this asserts the observable contract instead: SIGNED_OUT clears the
-    // session and a session-bearing event promotes the mode, exactly once
-    // each, through the single subscription created at module load.
+    // session and a session-bearing event applies it, exactly once each,
+    // through the single subscription created at module load.
     storeMod.useSessionStore.setState({ session: FAKE_SESSION });
     const cb = supabaseMod.__getLastAuthStateListener();
     assert.ok(cb, 'a listener subscription was registered at module load');
@@ -897,61 +760,40 @@ async function run() {
     assert.equal(storeMod.useSessionStore.getState().session, null);
     cb('SIGNED_IN', FAKE_SESSION);
     assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
   });
 
-  console.log('\n[tests] passive events never override demo mode\n');
+  console.log('\n[tests] passive events apply the session\n');
 
-  await test('TOKEN_REFRESHED updates the session but never flips an explicit demo choice', async () => {
+  await test('TOKEN_REFRESHED updates the session object', async () => {
     resetAll();
-    // A signed-in user who explicitly tapped "Demo Mode": the session is live
-    // but the mode is the user's control. A silent token refresh must refresh
-    // the session object (the tokens it carries are newer) and NOT promote the
-    // mode back to 'authenticated' — otherwise the choice reverts at the next
-    // refresh (demo-mode spec: mode is a user control).
-    storeMod.useSessionStore.setState({ session: FAKE_SESSION });
-    settingsMod.useSettingsStore.setState({ mode: 'demo' });
     const cb = supabaseMod.__getLastAuthStateListener();
     assert.ok(cb, 'listener is registered at module load');
     cb('TOKEN_REFRESHED', FAKE_SESSION);
     assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'demo');
-    assert.equal(
-      storageMod.__readStoredValue(MODE_KEY),
-      undefined,
-      'passive events must not persist an auth-mode override',
-    );
   });
 
-  await test('USER_UPDATED keeps the user-chosen demo mode', async () => {
+  await test('USER_UPDATED applies the newer session', async () => {
     resetAll();
-    storeMod.useSessionStore.setState({ session: FAKE_SESSION });
-    settingsMod.useSettingsStore.setState({ mode: 'demo' });
     const cb = supabaseMod.__getLastAuthStateListener();
     assert.ok(cb, 'listener is registered at module load');
     cb('USER_UPDATED', FAKE_SESSION);
     assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'demo');
   });
 
-  await test('PASSWORD_RECOVERY does not override the user-chosen mode', async () => {
+  await test('PASSWORD_RECOVERY applies the session', async () => {
     resetAll();
-    settingsMod.useSettingsStore.setState({ mode: 'demo' });
     const cb = supabaseMod.__getLastAuthStateListener();
     assert.ok(cb, 'listener is registered at module load');
     cb('PASSWORD_RECOVERY', FAKE_SESSION);
     assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'demo');
   });
 
-  await test('SIGNED_IN promotes the mode and persists it', async () => {
+  await test('SIGNED_IN applies the session', async () => {
     resetAll();
     const cb = supabaseMod.__getLastAuthStateListener();
     assert.ok(cb, 'listener is registered at module load');
     cb('SIGNED_IN', FAKE_SESSION);
     assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
-    assert.equal(storageMod.__readStoredValue(MODE_KEY), 'authenticated');
   });
 
   await test('registry re-registration replaces the listener, never stacks', async () => {
@@ -987,10 +829,9 @@ async function run() {
 
   console.log('\n[tests] sign-out\n');
 
-  await test('success: session cleared, mode stays authenticated (gate → sign-in)', async () => {
+  await test('success: session cleared (gate → sign-in)', async () => {
     resetAll();
     storeMod.useSessionStore.setState({ session: FAKE_SESSION, isBootstrapping: false });
-    settingsMod.useSettingsStore.setState({ mode: 'authenticated' });
     let signOutCalls = 0;
     supabaseMod.__setSupabaseBehavior({
       signOut: async () => {
@@ -1006,14 +847,12 @@ async function run() {
     const s = storeMod.useSessionStore.getState();
     assert.equal(s.session, null);
     // The root gate (authenticated && !session) now routes to sign-in.
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
     assert.equal(signOutCalls, 1);
   });
 
   await test('offline revoke failure: local session still cleared, no misleading throw', async () => {
     resetAll();
     storeMod.useSessionStore.setState({ session: FAKE_SESSION, isBootstrapping: false });
-    settingsMod.useSettingsStore.setState({ mode: 'authenticated' });
     supabaseMod.__setSupabaseBehavior({
       signOut: async () => {
         // auth-js clears the local session and fires SIGNED_OUT BEFORE
@@ -1025,7 +864,6 @@ async function run() {
     });
     await assert.doesNotReject(() => storeMod.useSessionStore.getState().signOut());
     assert.equal(storeMod.useSessionStore.getState().session, null);
-    assert.equal(settingsMod.useSettingsStore.getState().mode, 'authenticated');
   });
 
   await test('genuine failure (session intact): the only surfaced error', async () => {

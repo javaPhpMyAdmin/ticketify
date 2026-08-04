@@ -3,7 +3,6 @@
  * function. Stubs for now; wiring them up is a single-file change
  * once auth and the edge function are live.
  */
-import { isDemoFixturesOnly } from '@/lib/supabase/feature-access';
 import { tempId } from '@/lib/format';
 import type { ReceiptDraft, ReviewItem } from '@/types';
 
@@ -55,20 +54,15 @@ export async function parseTicket(_imageUrl: string): Promise<ParsedReceipt> {
  * purchase id on success.
  *
  * ADR-8 + data-access spec ("Purchase Writes Out of Scope"): purchase and
- * receipt writes stay no-ops in this change. The demo-mode guard refuses the
- * write BEFORE any backend call (demo-mode spec), and the authenticated
- * branch is a documented no-op until Phase 5 wires the real `purchases` /
- * `purchase_items` insert (the remote schema is not applied yet).
+ * receipt writes stay no-ops in this change. The call returns a local id so
+ * the flow completes, but nothing is persisted until Phase 5 wires the real
+ * `purchases` / `purchase_items` insert (the remote schema is not applied
+ * yet).
  */
 export async function saveReceipt(
   _userId: string,
   _draft: ReceiptDraft,
 ): Promise<{ id: string }> {
-  if (isDemoFixturesOnly()) {
-    // Demo boundary: the write is refused — a local id is returned so the
-    // flow completes, but nothing is persisted (demo-mode spec).
-    return { id: tempId() };
-  }
   // TODO(Phase 5): insert into `purchases` and `purchase_items` for the
   // authenticated user. Deliberately still a no-op: writes are out of scope
   // and the remote schema does not exist yet.

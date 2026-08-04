@@ -54,8 +54,8 @@ export default function SignInScreen() {
         setError(message);
         return;
       }
-      // Session exists and mode is now 'authenticated' (SIGNED_IN event), so
-      // the root gate exposes the app content.
+      // The SIGNED_IN event set the session, so the root gate exposes the
+      // app content.
       router.replace('/');
     } catch {
       // signInWithEmail never rejects (every failure is mapped to the generic

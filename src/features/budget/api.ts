@@ -2,9 +2,8 @@
  * Budget feature — Supabase call for the user's monthly budget
  * (data-access spec).
  *
- * Dual-mode (ADR-4): demo mode returns `{ status: 'demo' }` WITHOUT touching
- * the network (the hook serves the fixtures); authenticated mode reads
- * `profiles.monthly_budget` and `currency` for the signed-in user.
+ * Authenticated-only: reads `profiles.monthly_budget` and
+ * `currency` for the signed-in user, with a defensive error state on failure.
  */
 import {
   readMonthlyBudgetRow,

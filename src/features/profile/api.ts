@@ -2,11 +2,10 @@
  * Profile feature — Supabase calls for the current user, scan usage
  * counters, and household sharing preferences (data-access spec).
  *
- * Reads are dual-mode (ADR-4): in demo mode they return `{ status: 'demo' }`
- * WITHOUT touching the network — the hooks serve the fixtures; in
- * authenticated mode they read the real rows for the signed-in user.
+ * Reads are authenticated-only: they read the real rows
+ * for the signed-in user and surface a defensive error state on failure.
  * `setHouseholdSharing` stays a no-op: the household-sharing switch must
- * remain non-functional in both modes (demo-mode spec).
+ * remain non-functional in this change.
  */
 import {
   readProfileRow,
@@ -32,8 +31,7 @@ export async function fetchScanUsage(
 }
 
 /**
- * Non-functional in both modes (demo-mode spec). A real write is out of
- * scope for this change.
+ * Non-functional for now. A real write is out of scope for this change.
  */
 export async function setHouseholdSharing(
   _userId: string,

@@ -304,7 +304,8 @@ let availabilityResolved = false;
  * Only a successful probe is cached: if `expo-secure-store` fails to import or
  * `isAvailableAsync()` rejects, this call returns null but the NEXT call
  * retries the probe. A transient failure must not permanently poison the
- * adapter — that would lock the app into demo mode for its whole lifetime.
+ * adapter — that would leave the app without session persistence for its
+ * whole lifetime.
  */
 async function resolveAdapter(): Promise<StorageAdapter | null> {
   if (sharedAdapter != null) return sharedAdapter;

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 
 import { fetchProfile, fetchScanUsage, setHouseholdSharing } from '../api';
 import { useAuthMode } from '@/features/auth';
-import { demoScanUsage, demoUser } from '@/lib/fixtures/demo';
 import { READ_ERROR_MESSAGE } from '@/lib/supabase/feature-access';
 import type { ScanUsage, User } from '@/types';
 
@@ -19,33 +18,20 @@ const MISSING_PROFILE_MESSAGE =
   'Your profile is not set up yet. Please try again.';
 
 /**
- * Aggregates the current user's profile and scan usage (data-access spec,
- * ADR-4). The data source is selected by the LIVE mode BEFORE any network
- * call: demo mode returns the fixtures synchronously (zero network);
- * authenticated mode reads Supabase for the signed-in user, surfacing a
- * user-safe error when the row is missing or the read fails.
+ * Aggregates the current user's profile and scan usage (data-access spec).
+ * Reads are authenticated-only: the hook queries Supabase for the signed-in
+ * user, surfacing a user-safe error when the row is missing or the read
+ * fails. There is no fabricated fallback.
  */
 export function useProfile(): UseProfileResult {
-  const { mode, userId } = useAuthMode();
-  const [user, setUser] = useState<User | null>(() =>
-    mode === 'demo' ? demoUser : null,
-  );
-  const [usage, setUsage] = useState<ScanUsage | null>(() =>
-    mode === 'demo' ? demoScanUsage : null,
-  );
+  const { userId } = useAuthMode();
+  const [user, setUser] = useState<User | null>(null);
+  const [usage, setUsage] = useState<ScanUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(mode !== 'demo');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-
-    if (mode === 'demo') {
-      setUser(demoUser);
-      setUsage(demoScanUsage);
-      setError(null);
-      setIsLoading(false);
-      return;
-    }
 
     setUser(null);
     setUsage(null);
@@ -71,7 +57,6 @@ export function useProfile(): UseProfileResult {
         } else if (profile.status === 'unconfigured') {
           setError(READ_ERROR_MESSAGE);
         }
-        // 'demo' is unreachable: the hook already branched on the live mode.
         if (scanUsage.status === 'ok') setUsage(scanUsage.data);
         setIsLoading(false);
       },
@@ -88,7 +73,7 @@ export function useProfile(): UseProfileResult {
     return () => {
       cancelled = true;
     };
-  }, [mode, userId]);
+  }, [userId]);
 
   return {
     user,
@@ -96,7 +81,7 @@ export function useProfile(): UseProfileResult {
     isLoading,
     error,
     setHouseholdSharing: async (enabled: boolean) => {
-      if (mode === 'authenticated' && userId) {
+      if (userId) {
         await setHouseholdSharing(userId, enabled);
       }
     },

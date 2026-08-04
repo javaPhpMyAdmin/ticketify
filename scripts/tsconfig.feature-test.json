@@ -17,8 +17,6 @@
   },
   "include": [
     "../src/lib/supabase/feature-access.ts",
-    "../src/stores/use-settings-store.ts",
-    "../src/lib/fixtures/demo.ts",
     "../src/features/profile/api.ts",
     "../src/features/budget/api.ts",
     "../src/features/analytics/api.ts",

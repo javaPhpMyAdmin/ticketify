@@ -21,12 +21,10 @@
   "include": [
     "../src/lib/auth/oauth.ts",
     "../src/lib/auth/reset-exchange.ts",
-    "../src/lib/auth/auth-mode-storage.ts",
     "../src/lib/auth/auth-listener-registry.ts",
     "../src/lib/auth/profile-sync.ts",
     "../src/features/auth/use-session-store.ts",
     "../src/stores/use-settings-store.ts",
-    "../src/lib/fixtures/demo.ts",
     "../scripts/test-stubs/supabase.ts",
     "../scripts/test-stubs/storage-adapter.ts",
     "../scripts/test-stubs/web-browser.ts",

@@ -22,7 +22,7 @@ export interface UseScanTicketResult {
  *
  * Returns a `draftId` callers can use to navigate to `/ticket/review/[id]`.
  *
- * The upload scope is derived internally from the live auth mode — callers
+ * The upload scope is derived internally from the current session — callers
  * never pass a user id (post-review cleanup).
  */
 export function useScanTicket(): UseScanTicketResult {
@@ -43,7 +43,7 @@ export function useScanTicket(): UseScanTicketResult {
       setError(null);
       try {
         // Step 1: upload (stubbed for now) — scoped to the signed-in user's
-        // storage namespace when a session exists, 'anon' in demo mode.
+        // storage namespace (session-gated, so the user is always present).
         const { url } = await uploadToStorage(userId ?? 'anon', imageUri);
         // Step 2: parse.
         const parsed = await parseTicket(url);

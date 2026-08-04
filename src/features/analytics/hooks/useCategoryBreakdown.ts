@@ -1,37 +1,26 @@
 import { useEffect, useState } from 'react';
 
 import { fetchCategoryBreakdown } from '../api';
-import { useAuthMode } from '@/features/auth';
-import { categoryBreakdownRows } from '@/lib/fixtures/demo';
 import { READ_ERROR_MESSAGE } from '@/lib/supabase/feature-access';
 import type { CategoryMonthlyTotal } from '@/types';
 
 /**
  * Returns the per-category breakdown for a given year-month (data-access
- * spec, ADR-4). Demo mode → fixture rows, zero network; authenticated mode →
- * the `monthly_category_totals` RPC for the signed-in user.
+ * spec). Authenticated-only: reads the `monthly_category_totals` RPC for the
+ * signed-in user, with a user-safe error when the call fails. No fabricated
+ * fallback.
  */
 export function useCategoryBreakdown(yearMonth: string): {
   rows: CategoryMonthlyTotal[];
   isLoading: boolean;
   error: string | null;
 } {
-  const { mode } = useAuthMode();
-  const [rows, setRows] = useState<CategoryMonthlyTotal[]>(() =>
-    mode === 'demo' ? categoryBreakdownRows : [],
-  );
-  const [isLoading, setIsLoading] = useState(mode !== 'demo');
+  const [rows, setRows] = useState<CategoryMonthlyTotal[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-
-    if (mode === 'demo') {
-      setRows(categoryBreakdownRows);
-      setError(null);
-      setIsLoading(false);
-      return;
-    }
 
     setRows([]);
     setError(null);
@@ -46,7 +35,7 @@ export function useCategoryBreakdown(yearMonth: string): {
       } else if (result.status === 'unconfigured') {
         setError(READ_ERROR_MESSAGE);
       }
-      // 'missing-profile' cannot occur for an RPC; 'demo' is unreachable.
+      // 'missing-profile' cannot occur for an RPC.
       setIsLoading(false);
     }, () => {
       // Rejected fetch (network/backend failure before a response): surface
@@ -60,7 +49,7 @@ export function useCategoryBreakdown(yearMonth: string): {
     return () => {
       cancelled = true;
     };
-  }, [mode, yearMonth]);
+  }, [yearMonth]);
 
   return { rows, isLoading, error };
 }

@@ -1,16 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { fetchMonthlyTotals } from '../api';
-import { useAuthMode } from '@/features/auth';
-import { categoryBreakdownRows } from '@/lib/fixtures/demo';
 import { READ_ERROR_MESSAGE } from '@/lib/supabase/feature-access';
 import type { CategoryMonthlyTotal } from '@/types';
 
 /**
  * Returns the current month's category totals plus a derived total
- * (data-access spec, ADR-4). Demo mode → fixture rows, zero network;
- * authenticated mode → the `monthly_category_totals` RPC, with a user-safe
- * error when the call fails (e.g. the RPC is not deployed yet).
+ * (data-access spec). Authenticated-only: reads the `monthly_category_totals`
+ * RPC (scoped to `auth.uid()` server-side), with a user-safe error when the
+ * call fails (e.g. the RPC is not deployed yet). No fabricated fallback.
  */
 export function useMonthlyTotals(): {
   totals: CategoryMonthlyTotal[];
@@ -18,22 +16,12 @@ export function useMonthlyTotals(): {
   isLoading: boolean;
   error: string | null;
 } {
-  const { mode } = useAuthMode();
-  const [totals, setTotals] = useState<CategoryMonthlyTotal[]>(() =>
-    mode === 'demo' ? categoryBreakdownRows : [],
-  );
-  const [isLoading, setIsLoading] = useState(mode !== 'demo');
+  const [totals, setTotals] = useState<CategoryMonthlyTotal[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-
-    if (mode === 'demo') {
-      setTotals(categoryBreakdownRows);
-      setError(null);
-      setIsLoading(false);
-      return;
-    }
 
     setTotals([]);
     setError(null);
@@ -49,7 +37,7 @@ export function useMonthlyTotals(): {
       } else if (result.status === 'unconfigured') {
         setError(READ_ERROR_MESSAGE);
       }
-      // 'missing-profile' cannot occur for an RPC; 'demo' is unreachable.
+      // 'missing-profile' cannot occur for an RPC.
       setIsLoading(false);
     }, () => {
       // Rejected fetch (network/backend failure before a response): surface
@@ -63,7 +51,7 @@ export function useMonthlyTotals(): {
     return () => {
       cancelled = true;
     };
-  }, [mode]);
+  }, []);
 
   const monthTotal = useMemo(
     () => totals.reduce((acc, t) => acc + t.total, 0),

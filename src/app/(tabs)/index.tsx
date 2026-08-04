@@ -3,14 +3,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
 import { Card, CategoryCard, Divider, Fab, ReceiptRow, Text, View } from '@/components';
-import { useAuthMode } from '@/features/auth';
 import { MonthlyBudgetCard, useBudget } from '@/features/budget';
 import { useHomeFeed } from '@/features/home';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
 
 export default function HomeScreen() {
-  const { mode } = useAuthMode();
   const currency = useSettingsStore((s) => s.currency);
   const { budget, spent } = useBudget();
   const { categories, receipts, wantsSnacksTotal } = useHomeFeed();
@@ -22,12 +20,9 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.greeting}>
-          {/* The fixture name is demo-only: showing "Alex" to a signed-in user
-              would leak the demo identity (post-review cleanup). The
-              authenticated greeting is neutral until profile names are wired. */}
-          <Text style={styles.greetingText}>
-            {mode === 'demo' ? 'Hello, Alex!' : 'Hello!'}
-          </Text>
+          {/* Neutral greeting: profile names are not wired into the home
+              header yet, so the header never pretends to know the user. */}
+          <Text style={styles.greetingText}>Hello!</Text>
         </View>
 
         <MonthlyBudgetCard

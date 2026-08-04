@@ -3,58 +3,31 @@ import { create } from 'zustand';
 import type { ScanTier } from '@/types';
 
 /**
- * The app's single source of truth for the data source (ADR-4):
- * - `'demo'` — feature hooks return fixtures, zero network calls.
- * - `'authenticated'` — feature hooks query Supabase for the signed-in user.
- *
- * The mode is promoted to `'authenticated'` ONLY when identity changes — the
- * SIGNED_IN event (password sign-in, sign-up auto-sign-in, OAuth exchange)
- * and the launch restore, which honors the persisted mode: an explicit demo
- * choice survives relaunch even with a stored session. Passive events
- * (TOKEN_REFRESHED, USER_UPDATED, PASSWORD_RECOVERY) apply the session
- * without promoting, so a user-chosen demo mode is never flipped by them.
- * The mode is never demoted by the gate, so a sign-out leaves the mode
- * `'authenticated'` with no session — the root gate then shows the sign-in
- * screen instead of leaking demo data into an authenticated context.
+ * App-level user preferences (non-auth settings). Session presence in
+ * `useSessionStore` is the single source of truth for the root gate — the
+ * data-source mode concept was removed by scope amendment 2026-08-03, so no
+ * mode lives here.
  */
-export type AuthMode = 'demo' | 'authenticated';
-
-/**
- * Defaults the settings store hydrates with. Lives HERE (not in the fixtures
- * module) so the fixtures module — which re-exports this — can re-export the
- * mode-aware read seam without creating an import cycle through the store.
- */
-export const settingsDefaults: Pick<
-  SettingsState,
-  'monthly_budget' | 'currency' | 'tier' | 'household_sharing'
-> = {
-  monthly_budget: 1200,
-  currency: 'USD',
-  tier: 'free',
-  household_sharing: false,
-};
-
 interface SettingsState {
   monthly_budget: number;
   currency: string; // ISO 4217
   tier: ScanTier;
   household_sharing: boolean;
-  mode: AuthMode;
   setBudget: (value: number) => void;
   setCurrency: (currency: string) => void;
   setTier: (tier: ScanTier) => void;
   setHouseholdSharing: (enabled: boolean) => void;
-  setMode: (mode: AuthMode) => void;
   hydrate: (next: Partial<SettingsState>) => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
-  ...settingsDefaults,
-  mode: 'demo',
+  monthly_budget: 1200,
+  currency: 'USD',
+  tier: 'free',
+  household_sharing: false,
   setBudget: (monthly_budget) => set({ monthly_budget }),
   setCurrency: (currency) => set({ currency }),
   setTier: (tier) => set({ tier }),
   setHouseholdSharing: (household_sharing) => set({ household_sharing }),
-  setMode: (mode) => set({ mode }),
   hydrate: (next) => set((prev) => ({ ...prev, ...next })),
 }));

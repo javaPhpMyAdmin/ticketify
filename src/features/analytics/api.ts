@@ -2,8 +2,7 @@
  * Analytics feature — Supabase aggregations for the analytics tab
  * (data-access spec).
  *
- * Dual-mode (ADR-4): demo mode returns `{ status: 'demo' }` WITHOUT touching
- * the network (the hooks serve the fixtures); authenticated mode reads the
+ * Authenticated-only: reads the
  * `monthly_category_totals(p_year_month)` RPC (ADR-7), which is scoped to
  * `auth.uid()` server-side — the client only passes the year-month, never a
  * user id.

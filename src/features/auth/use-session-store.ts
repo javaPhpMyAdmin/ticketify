@@ -1,47 +1,26 @@
 /**
- * Auth session store (ADR-4).
+ * Auth session store (ADR-5).
  *
- * Owns the live `Session` and the bootstrapping flag; the data-source mode
- * itself lives in `useSettingsStore.mode` (single source of truth). The mode
- * is promoted to `'authenticated'` ONLY when identity changes — the
- * SIGNED_IN event (password sign-in, sign-up auto-sign-in, OAuth exchange)
- * and the launch restore when the persisted mode is not an explicit demo
- * choice. Passive events (TOKEN_REFRESHED, USER_UPDATED, PASSWORD_RECOVERY)
- * refresh the session object but never override an explicit demo-mode
- * choice: mode is a user control, and auth events that do not change
- * identity must not flip it back. Sign-out only clears the session and
- * leaves the mode `'authenticated'`, so the root gate routes the user to the
- * sign-in screen instead of falling back to demo fixtures.
- *
- * The mode is persisted through the chunked SecureStore adapter (same backend
- * as the session) whenever the user explicitly switches it on the profile
- * screen, and by the session store whenever it promotes. After a relaunch
- * the gate is reconciled BEFORE the session read: a user who previously
- * authenticated lands on sign-in when no session is restored, a fresh
- * install keeps the demo default, and an EXPLICIT demo choice survives
- * relaunch even when a stored session exists — restore() never re-promotes a
- * mode the user deliberately set to demo. Persistence:
- * `useSettingsStore.mode` is the source of truth; both values are written,
- * `'demo'` is the implicit default when nothing is persisted.
+ * Owns the live `Session` and the bootstrapping flag. Session presence is the
+ * single source of truth for the root gate: sign-in is mandatory from launch
+ * (scope amendment 2026-08-03), so there is no mode to reconcile. `restore()`
+ * reads the persisted session through the chunked SecureStore adapter: a
+ * valid session is applied and its profile row ensured; an invalid or expired
+ * one is discarded so the gate shows the sign-in screen.
  *
  * Web has no native SecureStore backend, so restore() gates on
- * `isSecureStoreAvailable()` and the app degrades to demo mode there — there
- * is deliberately no insecure fallback storage. The whole restore is bounded
- * by `AUTH_RESTORE_TIMEOUT_MS` so a hung storage backend can never leave the
- * splash up forever.
+ * `isSecureStoreAvailable()` and settles in the safe no-session state there —
+ * there is deliberately no insecure fallback storage. The whole restore is
+ * bounded by `AUTH_RESTORE_TIMEOUT_MS` so a hung storage backend can never
+ * leave the splash up forever.
  */
 import type { Session } from '@supabase/supabase-js';
 import { create } from 'zustand';
 
 import { registerAuthStateListener } from '@/lib/auth/auth-listener-registry';
-import {
-  loadPersistedAuthMode,
-  savePersistedAuthMode,
-} from '@/lib/auth/auth-mode-storage';
 import { ensureProfile } from '@/lib/auth/profile-sync';
 import { supabase } from '@/lib/supabase';
 import { isSecureStoreAvailable } from '@/lib/supabase/storage-adapter';
-import { useSettingsStore, type AuthMode } from '@/stores/use-settings-store';
 
 /** A store action result: a user-displayable message, or null on success. */
 export type AuthActionError = string | null;
@@ -89,17 +68,6 @@ export function __setAuthRestoreTimeout(ms: number): void {
 }
 
 /**
- * Last restore() phase-1 outcome (mode read). Test seam: the harness asserts
- * a hung mode read settles to 'timed-out' and forces the sign-in gate rather
- * than leaving the mode untouched. Live through compiled CJS imports.
- */
-let lastModeReadOutcome: 'resolved' | 'timed-out' | 'not-run' = 'not-run';
-
-export function __lastModeReadOutcome(): 'resolved' | 'timed-out' | 'not-run' {
-  return lastModeReadOutcome;
-}
-
-/**
  * Races `promise` against a timer and ALWAYS cancels the timer once either
  * side wins. Cancelling matters beyond hygiene: a restore that settles early
  * must not leave a pending timeout keeping the process alive (the node test
@@ -121,9 +89,6 @@ function withTimeout<T>(
     if (handle) clearTimeout(handle);
   });
 }
-
-/** Signals that the mode read hit the restore bound (see restore()). */
-const MODE_READ_TIMED_OUT = Symbol('mode-read-timed-out');
 
 /** Generic sign-up failure copy — never a raw GoTrue message (no enumeration). */
 const SIGN_UP_GENERIC_ERROR = 'Sign-up failed. Please try again.';
@@ -166,63 +131,21 @@ export const useSessionStore = create<SessionState>((set) => ({
     const deadline = Date.now() + AUTH_RESTORE_TIMEOUT_MS;
     const remaining = (): number => Math.max(0, deadline - Date.now());
 
-    // Phase 1 — reconcile the persisted mode FIRST (ADR-4/ADR-5), bounded by
-    // the same overall deadline as the session read. Its result is the ONLY
-    // input to the fallback-mode decision: if the read times out, storage
-    // could not serve even the mode key, so it cannot restore a session
-    // either — settle on the sign-in gate, NEVER demo, so a previously
-    // authenticated user can never be dropped into demo fixtures.
-    const modeReadResult = await withTimeout<
-      AuthMode | null | typeof MODE_READ_TIMED_OUT
-    >(loadPersistedAuthMode(), remaining(), MODE_READ_TIMED_OUT);
-    lastModeReadOutcome =
-      modeReadResult === MODE_READ_TIMED_OUT ? 'timed-out' : 'resolved';
-
-    if (modeReadResult === MODE_READ_TIMED_OUT) {
-      // Hung mode read: keep the sign-in gate. A fresh install with hung
-      // storage sees the sign-in screen once (recoverable) — strictly safer
-      // than the reverse, which silently drops an authenticated user into
-      // fixtures. Persist nothing: the backend is unresponsive.
-      useSettingsStore.setState({ mode: 'authenticated' });
-      set({ isBootstrapping: false });
-      return;
-    }
-    if (modeReadResult) {
-      // Nothing persisted → the default 'demo' stays.
-      useSettingsStore.setState({ mode: modeReadResult });
-    }
-
-    // Demo short-circuit (post-review CRITICAL): an EXPLICIT demo choice is
-    // zero-network by contract (ADR-5) — phase 2 exists to find a stored
-    // session and promote the gate, which is pointless and wrong for demo.
-    // Skipping it means launch never touches the auth backend, and a dormant
-    // session (e.g. one placed by a passive PASSWORD_RECOVERY event) is
-    // deliberately NOT cleared and NOT applied. A fresh install (nothing
-    // persisted) still runs phase 2: the default 'demo' is a fallback, not a
-    // choice, and the session read is the only way to detect an OAuth
-    // cold-start session and promote it.
-    if (modeReadResult === 'demo') {
-      set({ isBootstrapping: false });
-      return;
-    }
-
-    // Phase 2 — the session read, bounded by whatever time phase 1 left. A
-    // timeout here keeps the already-reconciled mode (sign-in gate for a
-    // previously authenticated user, demo for a fresh install). The read's
-    // continuation is GUARDED: once the store has reconciled — bootstrap
-    // finished on the bound, or a newer session appeared while the read was
-    // in flight (e.g. an OAuth cold-start exchange completing through the
-    // callback route) — late results must never destroy or clobber the
-    // reconciled state. Without this guard, a read that outlived the bound
-    // could `signOut()` over a fresh session or overwrite it with a stale one.
+    // The session read, bounded so a hung storage backend can never leave the
+    // splash up forever. The read's continuation is GUARDED: once the store
+    // has reconciled — bootstrap finished on the bound, or a newer session
+    // appeared while the read was in flight (e.g. an OAuth cold-start exchange
+    // completing through the callback route) — late results must never destroy
+    // or clobber the reconciled state. Without this guard, a read that
+    // outlived the bound could `signOut()` over a fresh session or overwrite
+    // it with a stale one.
     const sessionAtPhase2Start = useSessionStore.getState().session;
     await withTimeout(
       (async () => {
         try {
           if (!(await isSecureStoreAvailable())) {
             // Web / unsupported platform: no persistence exists, so there is
-            // nothing to restore. Stay in the reconciled mode (demo default,
-            // or the persisted mode when storage just became unavailable).
+            // nothing to restore. Stay signed out; the gate shows sign-in.
             return;
           }
           const { data, error } = await supabase.auth.getSession();
@@ -230,7 +153,7 @@ export const useSessionStore = create<SessionState>((set) => ({
           // cannot cancel the read, so after the bound fires the store keeps
           // running this body. A late result is a no-op when bootstrap
           // already completed (the gate settled on the bound outcome) or a
-          // newer session replaced the one present when phase 2 began.
+          // newer session replaced the one present when the read began.
           const stale = (): boolean =>
             !useSessionStore.getState().isBootstrapping ||
             useSessionStore.getState().session !== sessionAtPhase2Start;
@@ -239,37 +162,22 @@ export const useSessionStore = create<SessionState>((set) => ({
             if (stale()) return;
             // The stored token could not be refreshed and its access token
             // has expired: discard it and land on the sign-in screen (spec:
-            // expired stored session → session cleared → sign-in shown). Demo
-            // never reaches this branch (short-circuited above), so the mode
-            // is always promoted to the sign-in gate.
+            // expired stored session → session cleared → sign-in shown).
             await supabase.auth.signOut().catch(() => {
               // Best effort — the client may already have cleared storage.
             });
-            useSettingsStore.getState().setMode('authenticated');
-            await savePersistedAuthMode('authenticated');
             return;
           }
           if (session) {
             if (stale()) return;
             set({ session });
-            // Restore-mode reconciliation: an explicit demo choice never
-            // reaches this branch (short-circuited above), so a stored
-            // session always promotes — persisted 'authenticated', or a fresh
-            // install with a stored session (e.g. an OAuth cold-start
-            // exchange). Mode, persistence, and the profile upsert stay
-            // bundled so the promotion is atomic.
-            useSettingsStore.getState().setMode('authenticated');
-            await savePersistedAuthMode('authenticated');
             if (session.user) void ensureProfile(session.user.id);
           }
-          // No stored session at all: the mode keeps whatever was reconciled
-          // above — persisted 'authenticated' closes the gate so the user
-          // lands on sign-in (fresh install / nothing persisted → demo).
+          // No stored session: stay signed out; the gate shows the sign-in
+          // screen.
         } catch {
-          // Corrupt storage or a storage-backend failure: keep the
-          // persisted/default mode — never force demo, which would silently
-          // drop a previously authenticated user into fixtures — and resolve
-          // to a safe no-session state rather than crashing at launch.
+          // Corrupt storage or a storage-backend failure: resolve to a safe
+          // no-session state rather than crashing at launch.
         }
       })(),
       remaining(),
@@ -292,8 +200,8 @@ export const useSessionStore = create<SessionState>((set) => ({
         // UI. Same posture as sign-up and password reset.
         return SIGN_IN_GENERIC_ERROR;
       }
-      // SIGNED_IN fires through onAuthStateChange: session set, mode promoted,
-      // profile synced. Nothing else to do here.
+      // SIGNED_IN fires through onAuthStateChange: session set, profile
+      // synced. Nothing else to do here.
       return null;
     } catch {
       // Network/storage failure: also generic — the UI must not render raw
@@ -340,18 +248,15 @@ export const useSessionStore = create<SessionState>((set) => ({
       if (!useSessionStore.getState().session) return;
       throw new Error(error.message);
     }
-    // SIGNED_OUT fires through onAuthStateChange and clears the session. The
-    // mode stays 'authenticated' (persisted) so the gate shows the sign-in
-    // screen, including after a relaunch.
+    // SIGNED_OUT fires through onAuthStateChange and clears the session; the
+    // gate then shows the sign-in screen.
   },
 }));
 
 /**
  * Keeps the store in sync with supabase-js auth events and clears it on
  * SIGNED_OUT. The session object is applied for EVERY session-bearing event
- * (the token/user data it carries is always newer), but the mode is promoted
- * only on SIGNED_IN — passive events (TOKEN_REFRESHED, USER_UPDATED,
- * PASSWORD_RECOVERY) must not override an explicit demo-mode choice.
+ * (the token/user data it carries is always newer).
  *
  * `ensureProfile` (ADR-6) runs only on SIGNED_IN, so a profile insert that
  * fails (missing table pre-migration, RLS denial, network) is NOT retried on
@@ -379,14 +284,11 @@ function initAuthStateListener(): void {
       }
       if (session) {
         // Always apply the refreshed session object: TOKEN_REFRESHED and
-        // USER_UPDATED carry newer token/user data the store must reflect
-        // even when the mode is not promoted.
+        // USER_UPDATED carry newer token/user data the store must reflect.
         useSessionStore.setState({ session });
         if (event === 'SIGNED_IN') {
-          // Identity changed: promote the mode (bootstrap restore handles
-          // the relaunch case separately) and ensure the profile row exists.
-          useSettingsStore.getState().setMode('authenticated');
-          void savePersistedAuthMode('authenticated');
+          // Identity changed: ensure the profile row exists (the bootstrap
+          // restore handles the relaunch case separately).
           if (session.user) void ensureProfile(session.user.id);
         }
       }

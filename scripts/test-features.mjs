@@ -1,25 +1,20 @@
 #!/usr/bin/env node
 /**
- * Node harness for the Phase 4 dual-mode feature reads (data-access slice).
+ * Node harness for the authenticated-only feature reads (data-access slice).
  *
- * Compiles the data-access seam (`src/lib/supabase/feature-access.ts`), the
- * settings store, and the feature APIs (profile, budget, analytics, tickets)
- * into a temp directory with an isolated tsconfig that remaps `@/lib/supabase`
- * to the hand-written test double (scripts/test-stubs/supabase.ts), then
- * asserts the data-access / demo-mode spec boundaries:
+ * Compiles the data-access seam (`src/lib/supabase/feature-access.ts`) and
+ * the feature APIs (profile, budget, analytics, tickets) into a temp
+ * directory with an isolated tsconfig that remaps `@/lib/supabase` to the
+ * hand-written test double (scripts/test-stubs/supabase.ts), then asserts the
+ * data-access spec boundaries:
  *
- *   - the mode-aware seam follows the LIVE settings-store mode (demo /
- *     authenticated) and never derives it from a session,
- *   - demo mode: feature reads report `{ status: 'demo' }` and make ZERO
- *     Supabase calls (call log stays empty),
  *   - authenticated profile / budget reads hit `profiles` (ok, missing-profile,
  *     unconfigured, error → user-safe message),
  *   - authenticated scan usage reads hit `scan_usage` (missing month row is a
  *     normal ok/null),
  *   - analytics reads call `rpc('monthly_category_totals', { p_year_month })`
  *     and a not-deployed RPC fails safe,
- *   - `saveReceipt` refuses writes in demo mode and stays a documented no-op
- *     when authenticated (ADR-8).
+ *   - `saveReceipt` stays a documented no-op (writes are out of scope).
  *
  * The double is type-checked against the compiled production code, so a
  * signature drift between the app and its tests fails the typecheck here.
@@ -101,19 +96,13 @@ function load(mod) {
   return import(pathToFileURL(join(outDir, mod)).href);
 }
 
-/** Resets the double (rows, RPCs, call log) and the store mode to demo. */
+/** Resets the double (rows, RPCs, call log) to its initial state. */
 function resetAll() {
   stubMod.__resetSupabaseBehavior();
   stubMod.__setSupabaseConfigured(true);
-  settingsMod.useSettingsStore.setState({ mode: 'demo' });
-}
-
-function setMode(mode) {
-  settingsMod.useSettingsStore.getState().setMode(mode);
 }
 
 let seamMod;
-let settingsMod;
 let stubMod;
 let profileMod;
 let budgetMod;
@@ -127,48 +116,16 @@ async function run() {
   console.log('[tests] loading compiled modules…');
 
   seamMod = await load('src/lib/supabase/feature-access.js');
-  settingsMod = await load('src/stores/use-settings-store.js');
   stubMod = await load('scripts/test-stubs/supabase.js');
   profileMod = await load('src/features/profile/api.js');
   budgetMod = await load('src/features/budget/api.js');
   analyticsMod = await load('src/features/analytics/api.js');
   ticketsMod = await load('src/features/tickets/api.js');
 
-  console.log('\n[tests] mode-aware read seam (ADR-4)\n');
-
-  await test('seam follows the live settings-store mode, never a session', () => {
-    resetAll();
-    assert.equal(seamMod.isDemoFixturesOnly(), true, 'default store mode is demo');
-    setMode('authenticated');
-    assert.equal(seamMod.isDemoFixturesOnly(), false, 'flips with the store');
-    setMode('demo');
-    assert.equal(seamMod.isDemoFixturesOnly(), true, 'flips back');
-  });
-
-  console.log('\n[tests] demo read boundary (zero network)\n');
-
-  await test('demo mode: every feature read reports demo and performs zero Supabase calls', async () => {
-    resetAll();
-    const profile = await profileMod.fetchProfile('u1');
-    assert.deepEqual(profile, { status: 'demo' });
-    const budget = await budgetMod.fetchMonthlyBudget('u1');
-    assert.deepEqual(budget, { status: 'demo' });
-    const totals = await analyticsMod.fetchMonthlyTotals('2026-08');
-    assert.deepEqual(totals, { status: 'demo' });
-    const breakdown = await analyticsMod.fetchCategoryBreakdown('2026-08');
-    assert.deepEqual(breakdown, { status: 'demo' });
-    assert.equal(
-      stubMod.__getCallLog().length,
-      0,
-      'demo reads must never touch the backend',
-    );
-  });
-
   console.log('\n[tests] authenticated profile reads\n');
 
   await test('fetchProfile returns the profiles row for the signed-in user', async () => {
     resetAll();
-    setMode('authenticated');
     stubMod.__setTableRead('profiles', {
       rows: [
         {
@@ -190,7 +147,6 @@ async function run() {
 
   await test('missing profiles row reports missing-profile (no crash)', async () => {
     resetAll();
-    setMode('authenticated');
     stubMod.__setTableRead('profiles', { rows: [] });
     const result = await profileMod.fetchProfile('u1');
     assert.equal(result.status, 'missing-profile');
@@ -198,7 +154,6 @@ async function run() {
 
   await test('PostgREST error maps to a user-safe message, never raw text', async () => {
     resetAll();
-    setMode('authenticated');
     stubMod.__setTableRead('profiles', {
       error: { message: 'relation "profiles" does not exist', code: '42P01' },
     });
@@ -210,7 +165,6 @@ async function run() {
 
   await test('unconfigured client reports unconfigured and skips the network', async () => {
     resetAll();
-    setMode('authenticated');
     stubMod.__setSupabaseConfigured(false);
     const result = await profileMod.fetchProfile('u1');
     assert.equal(result.status, 'unconfigured');
@@ -219,7 +173,6 @@ async function run() {
 
   await test('fetchScanUsage returns the user-month row', async () => {
     resetAll();
-    setMode('authenticated');
     stubMod.__setTableRead('scan_usage', {
       rows: [{ user_id: 'u1', year_month: '2026-08', scans_used: 3, scans_limit: 10 }],
     });
@@ -231,7 +184,6 @@ async function run() {
 
   await test('no scan_usage row for the month resolves to ok/null (normal)', async () => {
     resetAll();
-    setMode('authenticated');
     stubMod.__setTableRead('scan_usage', { rows: [] });
     const result = await profileMod.fetchScanUsage('u1', '2026-09');
     assert.equal(result.status, 'ok');
@@ -242,7 +194,6 @@ async function run() {
 
   await test('fetchMonthlyBudget reads profiles.monthly_budget and currency', async () => {
     resetAll();
-    setMode('authenticated');
     stubMod.__setTableRead('profiles', {
       rows: [{ monthly_budget: 900, currency: 'EUR' }],
     });
@@ -253,7 +204,6 @@ async function run() {
 
   await test('missing profile row reports missing-profile for budget', async () => {
     resetAll();
-    setMode('authenticated');
     stubMod.__setTableRead('profiles', { rows: [] });
     const result = await budgetMod.fetchMonthlyBudget('u1');
     assert.equal(result.status, 'missing-profile');
@@ -263,7 +213,6 @@ async function run() {
 
   await test('category totals call the RPC with p_year_month only (no user id)', async () => {
     resetAll();
-    setMode('authenticated');
     stubMod.__setRpcResult('monthly_category_totals', {
       rows: [
         {
@@ -288,7 +237,6 @@ async function run() {
 
   await test('not-deployed RPC fails safe with a user-safe error (no crash)', async () => {
     resetAll();
-    setMode('authenticated');
     stubMod.__setRpcResult('monthly_category_totals', {
       error: {
         message: 'function monthly_category_totals(text) does not exist',
@@ -300,19 +248,10 @@ async function run() {
     assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
   });
 
-  console.log('\n[tests] purchase write boundary (ADR-8)\n');
+  console.log('\n[tests] purchase write boundary\n');
 
-  await test('saveReceipt in demo mode refuses the write: local id, no mutation', async () => {
+  await test('saveReceipt stays a documented no-op (writes out of scope)', async () => {
     resetAll();
-    const result = await ticketsMod.saveReceipt('u1', DRAFT);
-    assert.ok(result && typeof result.id === 'string' && result.id.length > 0);
-    const log = stubMod.__getCallLog();
-    assert.ok(!log.some((e) => e.kind === 'upsert'), 'no write in demo mode');
-  });
-
-  await test('saveReceipt authenticated stays a documented no-op (writes out of scope)', async () => {
-    resetAll();
-    setMode('authenticated');
     const result = await ticketsMod.saveReceipt('u1', DRAFT);
     assert.ok(result && typeof result.id === 'string' && result.id.length > 0);
     assert.equal(stubMod.__getCallLog().length, 0, 'no backend interaction');

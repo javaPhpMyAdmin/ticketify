@@ -1,11 +1,21 @@
-import { useAuthMode } from '@/features/auth';
-import {
-  homeCategories,
-  recentReceipts,
-  wantsSnacksTotal,
-  type HomeCategory,
-  type ReceiptSummary,
-} from '@/lib/fixtures/demo';
+/**
+ * One entry in the home screen's "Recent Receipts" card.
+ */
+export interface ReceiptSummary {
+  id: string;
+  name: string;
+  date: string; // ISO
+  amount: number;
+}
+
+/**
+ * One spending-category card in the home screen's horizontal strip.
+ */
+export interface HomeCategory {
+  name: string;
+  amount: number;
+  icon: 'sparkles';
+}
 
 export interface HomeFeed {
   categories: HomeCategory[];
@@ -14,20 +24,10 @@ export interface HomeFeed {
 }
 
 /**
- * Home screen feed (ADR-4, demo-mode spec). Demo mode → fixtures; authenticated
- * mode → empty arrays, because purchase-list reads are explicitly out of scope
- * for this change (design "File Changes": "kept in demo; purchase-list reads
- * out of scope"). The empty state guarantees demo fixtures never render inside
- * an authenticated session.
+ * Home screen feed. Purchase-list reads are out of scope for this change, so
+ * the feed reports the neutral empty state — no fabricated content can render
+ * inside an authenticated session.
  */
 export function useHomeFeed(): HomeFeed {
-  const { mode } = useAuthMode();
-  if (mode === 'demo') {
-    return {
-      categories: homeCategories,
-      receipts: recentReceipts,
-      wantsSnacksTotal,
-    };
-  }
   return { categories: [], receipts: [], wantsSnacksTotal: 0 };
 }
