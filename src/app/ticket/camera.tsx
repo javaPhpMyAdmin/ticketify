@@ -244,12 +244,6 @@ export default function CameraScreen() {
           />
         </SafeAreaView>
 
-        <View style={styles.frameOverlay} pointerEvents="none">
-          <View style={styles.frame}>
-            <Text style={styles.hint}>Apunta la cámara al recibo</Text>
-          </View>
-        </View>
-
         {renderErrorBanner()}
         {renderBottomBar(true)}
       </View>
@@ -261,6 +255,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+    // Pins the top bar to the top and the capture controls to the bottom. The
+    // removed capture-frame overlay used to absorb the vertical space with its
+    // `flex: 1`; without it, the bottom bar would sit right under the top bar.
+    justifyContent: 'space-between',
   },
   topBar: {
     flexDirection: 'row',
@@ -303,6 +301,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   errorBanner: {
+    // Keeps the banner pinned just above the capture bar: the container uses
+    // `space-between`, so without an auto top margin the banner floats
+    // vertically centered over the preview.
+    marginTop: 'auto',
     marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
     paddingHorizontal: spacing.md,
@@ -314,32 +316,6 @@ const styles = StyleSheet.create({
   },
   errorBannerText: {
     ...typography.labelSm,
-    color: colors.textInverse,
-    textAlign: 'center',
-  },
-  frameOverlay: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
-    // The `View` atom defaults to the theme background (offWhite). Without
-    // transparency this overlay painted a solid rectangle over the camera
-    // preview, hiding it in the middle of the screen.
-    backgroundColor: 'transparent',
-  },
-  frame: {
-    width: '100%',
-    aspectRatio: 3 / 4,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.6)',
-    borderRadius: radii.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.xl,
-    backgroundColor: 'transparent',
-  },
-  hint: {
-    ...typography.headlineMd,
     color: colors.textInverse,
     textAlign: 'center',
   },
