@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { useRef, useState } from 'react';
+import { Linking, StyleSheet } from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { router, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,39 +10,46 @@ import { useReceiptDraftActions } from '@/features/tickets';
 import { tempId } from '@/lib/format';
 import { colors, radii, spacing, typography } from '@/theme';
 
+// NOTE: expo-camera ships a native module, so the dev client needs a rebuild
+// (`pnpm ios` / `pnpm android`) to pick it up after installing expo-camera.
+
 export default function CameraScreen() {
   const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState<'off' | 'on'>('off');
+  // The preview needs a few hundred ms to initialize on cold open; expo-camera
+  // throws on takePictureAsync before onCameraReady fires, so the shutter is
+  // gated on this flag (see handleCapture).
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  // In-screen error for the capture/gallery flows. The store's `setError`
+  // writes a field nothing reads (the review screen surfaces the mutation
+  // error instead), so failures are ALSO shown here and the user stays on the
+  // camera to retry — the X button is the only exit on error.
+  const [captureError, setCaptureError] = useState<string | null>(null);
+  const cameraRef = useRef<CameraView | null>(null);
   const { startDraft, setError } = useReceiptDraftActions();
+  const [permission, requestPermission] = useCameraPermissions();
 
   const handleCapture = async () => {
-    if (busy) return;
+    if (busy || !isCameraReady) return;
     setBusy(true);
+    setCaptureError(null);
     try {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        setError('Se necesita permiso de cámara para escanear recibos.');
-        router.back();
+      if (!cameraRef.current) {
+        throw new Error('Cámara no disponible.');
+      }
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.85 });
+      if (!photo) {
+        // Camera produced no picture — stay on screen so the user can retry
+        // instead of being kicked out.
+        setCaptureError('No se pudo capturar el recibo. Inténtalo de nuevo.');
         return;
       }
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        quality: 0.85,
-        allowsEditing: true,
-        aspect: [3, 4],
-        cameraType: ImagePicker.CameraType.back,
-      });
-      if (result.canceled || !result.assets?.[0]) {
-        // User cancelled — just go back.
-        router.back();
-        return;
-      }
-      const asset = result.assets[0];
-      startDraft(asset.uri);
+      startDraft(photo.uri);
       router.replace(`/ticket/review/${tempId()}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Error desconocido de la cámara.';
       setError(message);
-      router.back();
+      setCaptureError(message);
     } finally {
       setBusy(false);
     }
@@ -50,11 +58,16 @@ export default function CameraScreen() {
   const handlePickFromGallery = async () => {
     if (busy) return;
     setBusy(true);
+    setCaptureError(null);
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
+      const galleryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!galleryPermission.granted) {
+        // Media-library denial is NOT a camera failure: stay on screen with an
+        // explanation (the X button remains the exit). This path is reachable
+        // from the camera-permission gate too, where backing out would strand
+        // the user.
         setError('Se necesita acceso a tus fotos para importar recibos.');
-        router.back();
+        setCaptureError('Se necesita acceso a tus fotos para importar recibos.');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -73,16 +86,121 @@ export default function CameraScreen() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Error desconocido de la galería.';
       setError(message);
-      router.back();
+      setCaptureError(message);
     } finally {
       setBusy(false);
     }
   };
 
+  const toggleFlash = () => setFlash((mode) => (mode === 'off' ? 'on' : 'off'));
+
+  // Shared by both branches so the gallery entry point stays reachable even
+  // when the camera permission is denied — the gallery flow only needs the
+  // media-library permission, so the shutter (and the camera) are the only
+  // parts the permission gate should remove.
+  const renderBottomBar = (withShutter: boolean) => (
+    <SafeAreaView style={styles.bottomBar} edges={['bottom']}>
+      <Pressable
+        style={styles.galleryButton}
+        onPress={handlePickFromGallery}
+        disabled={busy}
+        accessibilityLabel="Elegir de la galería"
+      >
+        <Icon name="photo" size={22} color={colors.textInverse} />
+      </Pressable>
+      {withShutter ? (
+        <Pressable
+          style={({ pressed }) => [
+            styles.shutterOuter,
+            { opacity: busy || !isCameraReady ? 0.6 : pressed ? 0.85 : 1 },
+          ]}
+          onPress={handleCapture}
+          disabled={busy || !isCameraReady}
+          accessibilityLabel="Capturar recibo"
+        >
+          <View style={styles.shutterInner} />
+        </Pressable>
+      ) : null}
+      <View style={styles.galleryButton} />
+    </SafeAreaView>
+  );
+
+  const renderErrorBanner = () =>
+    captureError ? (
+      <View style={styles.errorBanner}>
+        <Text style={styles.errorBannerText}>{captureError}</Text>
+      </View>
+    ) : null;
+
+  if (!permission || !permission.granted) {
+    // Permanent denial: on Android the user checked "don't ask again"
+    // (`canAskAgain === false`) and on iOS any denial is final (the OS never
+    // re-prompts, and expo-modules-core reports `canAskAgain === false`
+    // whenever the status is `denied`). In both cases `requestPermission()`
+    // resolves immediately without prompting, so the "Permitir acceso"
+    // button would be a silent dead-end — show settings guidance instead.
+    // The gallery button stays visible below: importing a receipt only needs
+    // the media-library permission, which is independent of the camera.
+    const settingsRequired =
+      permission != null &&
+      permission.status === 'denied' &&
+      !permission.canAskAgain;
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.container}>
+          <SafeAreaView style={styles.topBar} edges={['top']}>
+            <IconButton
+              icon="xmark"
+              iconSize={22}
+              color={colors.textInverse}
+              backgroundColor="rgba(0,0,0,0.4)"
+              onPress={() => router.back()}
+              accessibilityLabel="Cerrar cámara"
+            />
+            <View style={{ flex: 1 }} />
+          </SafeAreaView>
+          <View style={styles.permissionState}>
+            <Icon name="camera.fill" size={44} color={colors.textSecondary} />
+            <Text style={styles.permissionMessage}>
+              {settingsRequired
+                ? 'Para escanear recibos, activa el acceso a la cámara desde los Ajustes.'
+                : 'Se necesita permiso de cámara para escanear recibos.'}
+            </Text>
+            <Pressable
+              style={styles.permissionButton}
+              onPress={
+                settingsRequired
+                  ? () => Linking.openSettings()
+                  : () => void requestPermission()
+              }
+              accessibilityLabel={
+                settingsRequired ? 'Abrir Ajustes' : 'Permitir acceso'
+              }
+            >
+              <Text style={styles.permissionButtonText}>
+                {settingsRequired ? 'Abrir Ajustes' : 'Permitir acceso'}
+              </Text>
+            </Pressable>
+          </View>
+          {renderErrorBanner()}
+          {renderBottomBar(false)}
+        </View>
+      </>
+    );
+  }
+
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
+        <CameraView
+          ref={cameraRef}
+          style={StyleSheet.absoluteFill}
+          facing="back"
+          flash={flash}
+          onCameraReady={() => setIsCameraReady(true)}
+        />
         <SafeAreaView style={styles.topBar} edges={['top']}>
           <IconButton
             icon="xmark"
@@ -93,49 +211,24 @@ export default function CameraScreen() {
             accessibilityLabel="Cerrar cámara"
           />
           <View style={{ flex: 1 }} />
-          {/* Flash toggle stub — real impl needs expo-camera which is not installed. */}
           <IconButton
             icon="bolt.fill"
             iconSize={20}
-            color={colors.textInverse}
+            color={flash === 'on' ? colors.primary : colors.textInverse}
             backgroundColor="rgba(0,0,0,0.4)"
-            disabled
-            accessibilityLabel="Activar flash"
+            onPress={toggleFlash}
+            accessibilityLabel={flash === 'on' ? 'Apagar flash' : 'Activar flash'}
           />
         </SafeAreaView>
 
-        <View style={styles.placeholder}>
+        <View style={styles.frameOverlay} pointerEvents="none">
           <View style={styles.frame}>
             <Text style={styles.hint}>Apunta la cámara al recibo</Text>
-            {/* In-app preview stub — real impl needs expo-camera which is not installed. */}
-            <Text style={styles.subHint}>
-              La cámara nativa se abre al tocar el botón de captura.
-            </Text>
           </View>
         </View>
 
-        <SafeAreaView style={styles.bottomBar} edges={['bottom']}>
-          <Pressable
-            style={styles.galleryButton}
-            onPress={handlePickFromGallery}
-            disabled={busy}
-            accessibilityLabel="Elegir de la galería"
-          >
-            <Icon name="photo" size={22} color={colors.textInverse} />
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.shutterOuter,
-              { opacity: busy ? 0.6 : pressed ? 0.85 : 1 },
-            ]}
-            onPress={handleCapture}
-            disabled={busy}
-            accessibilityLabel="Capturar recibo"
-          >
-            <View style={styles.shutterInner} />
-          </Pressable>
-          <View style={styles.galleryButton} />
-        </SafeAreaView>
+        {renderErrorBanner()}
+        {renderBottomBar(true)}
       </View>
     </>
   );
@@ -151,7 +244,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
   },
-  placeholder: {
+  permissionState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  permissionMessage: {
+    ...typography.headlineMd,
+    color: colors.textInverse,
+    textAlign: 'center',
+    marginTop: spacing.lg,
+  },
+  permissionButton: {
+    marginTop: spacing.xl,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: radii.lg,
+    backgroundColor: colors.primary,
+  },
+  permissionButtonText: {
+    ...typography.bodyMd,
+    color: colors.textInverse,
+    fontWeight: '700',
+  },
+  errorBanner: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.md,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
+  errorBannerText: {
+    ...typography.labelSm,
+    color: colors.textInverse,
+    textAlign: 'center',
+  },
+  frameOverlay: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -171,12 +303,6 @@ const styles = StyleSheet.create({
     ...typography.headlineMd,
     color: colors.textInverse,
     textAlign: 'center',
-  },
-  subHint: {
-    ...typography.bodyMd,
-    color: 'rgba(255,255,255,0.65)',
-    textAlign: 'center',
-    marginTop: spacing.sm,
   },
   bottomBar: {
     flexDirection: 'row',
