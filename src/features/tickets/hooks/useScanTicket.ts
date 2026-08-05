@@ -39,6 +39,7 @@ export function useScanTicket(): UseScanTicketResult {
   const setDraftTotal = useReceiptsStore((s) => s.setDraftTotal);
   const setDraftPayment = useReceiptsStore((s) => s.setDraftPayment);
   const setDraftItems = useReceiptsStore((s) => s.setDraftItems);
+  const updateDraft = useReceiptsStore((s) => s.updateDraft);
 
   const mutation = useMutation({
     mutationFn: async (imageUri: string) => {
@@ -56,6 +57,12 @@ export function useScanTicket(): UseScanTicketResult {
       setDraftDate(parsed.date);
       setDraftTotal(parsed.total);
       setDraftPayment(parsed.payment_method);
+      // Card brand/type are read-only extras on the draft — seed them only
+      // when the parse pipeline detected them (null values are harmless).
+      updateDraft({
+        card_brand: parsed.card_brand,
+        card_type: parsed.card_type,
+      });
       setDraftItems(parsed.items);
       setDraftId(tempId());
     },

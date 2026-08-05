@@ -139,6 +139,7 @@ let analyticsMod;
 let ticketsMod;
 let keysMod;
 let pictureSizeMod;
+let cardMod;
 let adaptersMod;
 
 async function run() {
@@ -157,6 +158,7 @@ async function run() {
   keysMod = await load('src/lib/query-keys.js');
   adaptersMod = await load('src/lib/supabase/query-adapters.js');
   pictureSizeMod = await load('src/features/tickets/lib/picture-size.js');
+  cardMod = await load('supabase/functions/parse-ticket/lib/card.js');
 
   console.log('\n[tests] authenticated profile reads\n');
 
@@ -449,6 +451,129 @@ async function run() {
     assert.ok(parsed.items[0].temp_id && parsed.items[0].temp_id.length > 0);
   });
 
+  await test('parseTicket maps card_brand and card_type from the edge payload', async () => {
+    resetAll();
+    expoFsMod.__setFileSource('file:///card.jpg', {
+      size: 1024,
+      type: 'image/jpeg',
+      base64: 'aGk=',
+    });
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      data: {
+        store_name: 'X',
+        purchase_date: '2026-08-02',
+        total: 12.5,
+        payment_method: 'card',
+        card_brand: 'Visa',
+        card_type: 'debit',
+        items: [
+          { name: 'A', quantity: 1, unit_price: 12.5, total_price: 12.5, suggested_category_slug: null },
+        ],
+      },
+    });
+    const parsed = await ticketsMod.parseTicket('file:///card.jpg');
+    assert.equal(parsed.card_brand, 'Visa');
+    assert.equal(parsed.card_type, 'debit');
+    assert.equal(parsed.payment_method, 'card');
+  });
+
+  await test('parseTicket trims card fields and compares card_type case-insensitively', async () => {
+    resetAll();
+    expoFsMod.__setFileSource('file:///norm.jpg', {
+      size: 1024,
+      type: 'image/jpeg',
+      base64: 'aGk=',
+    });
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      data: {
+        store_name: 'X',
+        purchase_date: '2026-08-02',
+        total: 8,
+        payment_method: 'card',
+        card_brand: '  oca  ',
+        card_type: 'DEBIT',
+        items: [
+          { name: 'A', quantity: 1, unit_price: 8, total_price: 8, suggested_category_slug: null },
+        ],
+      },
+    });
+    const parsed = await ticketsMod.parseTicket('file:///norm.jpg');
+    // Trimmed; brand casing preserved as detected.
+    assert.equal(parsed.card_brand, 'oca');
+    // Compared lowercase and normalized.
+    assert.equal(parsed.card_type, 'debit');
+
+    resetAll();
+    expoFsMod.__setFileSource('file:///norm2.jpg', {
+      size: 1024,
+      type: 'image/jpeg',
+      base64: 'aGk=',
+    });
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      data: {
+        store_name: 'X',
+        purchase_date: '2026-08-02',
+        total: 8,
+        payment_method: 'card',
+        card_brand: 'Mastercard',
+        card_type: 'Credit',
+        items: [
+          { name: 'A', quantity: 1, unit_price: 8, total_price: 8, suggested_category_slug: null },
+        ],
+      },
+    });
+    const creditParsed = await ticketsMod.parseTicket('file:///norm2.jpg');
+    assert.equal(creditParsed.card_brand, 'Mastercard');
+    assert.equal(creditParsed.card_type, 'credit');
+  });
+
+  await test('parseTicket maps absent or unrecognized card fields to null', async () => {
+    resetAll();
+    // Cash receipt: no card fields on the wire at all (old payload shape).
+    expoFsMod.__setFileSource('file:///cash.jpg', {
+      size: 1024,
+      type: 'image/jpeg',
+      base64: 'aGk=',
+    });
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      data: {
+        store_name: 'X',
+        purchase_date: '2026-08-02',
+        total: 4,
+        payment_method: 'cash',
+        items: [
+          { name: 'A', quantity: 1, unit_price: 4, total_price: 4, suggested_category_slug: null },
+        ],
+      },
+    });
+    const cashParsed = await ticketsMod.parseTicket('file:///cash.jpg');
+    assert.equal(cashParsed.card_brand, null);
+    assert.equal(cashParsed.card_type, null);
+
+    // Junk values degrade to null, never to a wrong brand/type.
+    expoFsMod.__setFileSource('file:///junk.jpg', {
+      size: 1024,
+      type: 'image/jpeg',
+      base64: 'aGk=',
+    });
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      data: {
+        store_name: 'X',
+        purchase_date: '2026-08-02',
+        total: 4,
+        payment_method: 'card',
+        card_brand: 42,
+        card_type: 'prepaid',
+        items: [
+          { name: 'A', quantity: 1, unit_price: 4, total_price: 4, suggested_category_slug: null },
+        ],
+      },
+    });
+    const junkParsed = await ticketsMod.parseTicket('file:///junk.jpg');
+    assert.equal(junkParsed.card_brand, null);
+    assert.equal(junkParsed.card_type, null);
+  });
+
   await test('parseTicket sends the file MIME type and a non-zero timeout', async () => {
     resetAll();
     expoFsMod.__setFileSource('file:///scan.png', {
@@ -632,6 +757,21 @@ async function run() {
 
   await test('pickBestPictureSize returns undefined for an empty list', async () => {
     assert.equal(pictureSizeMod.pickBestPictureSize([]), undefined);
+  });
+
+  await test('card normalizers keep a valid brand and both card kinds', async () => {
+    assert.equal(cardMod.normalizeCardBrand('  Visa  '), 'Visa');
+    assert.equal(cardMod.normalizeCardType('DEBIT'), 'debit');
+    assert.equal(cardMod.normalizeCardType('Credit'), 'credit');
+  });
+
+  await test('card normalizers degrade blank, junk and non-string values to null', async () => {
+    assert.equal(cardMod.normalizeCardBrand('   '), null);
+    assert.equal(cardMod.normalizeCardBrand(null), null);
+    assert.equal(cardMod.normalizeCardBrand(42), null);
+    assert.equal(cardMod.normalizeCardType('prepaid'), null);
+    assert.equal(cardMod.normalizeCardType(undefined), null);
+    assert.equal(cardMod.normalizeCardType(123), null);
   });
 
   console.log('');

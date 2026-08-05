@@ -10,7 +10,7 @@ import { FunctionsHttpError, FunctionsFetchError } from '@supabase/supabase-js';
 
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { tempId } from '@/lib/format';
-import type { PaymentMethod, ReceiptDraft, ReviewItem } from '@/types';
+import type { CardType, PaymentMethod, ReceiptDraft, ReviewItem } from '@/types';
 
 export interface UploadResult {
   /** Public URL where the receipt image is served from. */
@@ -34,6 +34,10 @@ export interface ParsedReceipt {
   date: string;
   total: number;
   payment_method: PaymentMethod;
+  /** Card network detected on the receipt; null when unknown/absent. */
+  card_brand: string | null;
+  /** Card kind detected on the receipt; null when unknown/absent. */
+  card_type: CardType | null;
   items: ReviewItem[];
 }
 
@@ -54,6 +58,8 @@ interface EdgeParsedReceipt {
   purchase_date: string;
   total: number;
   payment_method: string;
+  card_brand: string | null;
+  card_type: string | null;
   items: EdgeParsedItem[];
 }
 
@@ -185,6 +191,27 @@ async function readLocalImage(imageUri: string): Promise<LocalImage> {
   }
 }
 
+/**
+ * Card brand: trimmed, casing preserved as detected. Blank/absent values
+ * degrade to null so the review screen renders nothing extra.
+ */
+function normalizeCardBrand(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+/**
+ * Card type: compared lowercase and normalized to 'debit' | 'credit'.
+ * Unknown/absent values degrade to null — the review screen renders nothing
+ * for a receipt that shows no card or an unreadable kind.
+ */
+function normalizeCardType(value: unknown): CardType | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  return normalized === 'debit' || normalized === 'credit' ? normalized : null;
+}
+
 /** Maps the validated edge payload into the client `ParsedReceipt` shape. */
 function toClientReceipt(data: unknown): ParsedReceipt {
   const edge = data as EdgeParsedReceipt | null;
@@ -211,6 +238,10 @@ function toClientReceipt(data: unknown): ParsedReceipt {
       PAYMENT_METHODS.has(edge.payment_method)
         ? (edge.payment_method as PaymentMethod)
         : 'other',
+    // The edge function already normalizes these to null; this keeps old
+    // payloads without the fields (or with junk values) on the same semantics.
+    card_brand: normalizeCardBrand(edge.card_brand),
+    card_type: normalizeCardType(edge.card_type),
     items: edge.items.map((item) => ({
       temp_id: tempId(),
       name: item.name,

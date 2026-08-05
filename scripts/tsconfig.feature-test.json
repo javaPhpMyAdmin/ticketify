@@ -24,6 +24,7 @@
     "../src/features/analytics/api.ts",
     "../src/features/tickets/api.ts",
     "../src/features/tickets/lib/picture-size.ts",
+    "../supabase/functions/parse-ticket/lib/card.ts",
     "../src/lib/format.ts",
     "../src/types/index.ts",
     "../scripts/test-stubs/supabase.ts",
