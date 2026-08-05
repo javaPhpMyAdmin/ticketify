@@ -8,8 +8,13 @@ export default function TabsLayout() {
   return (
     <NativeTabs
       tintColor={emerald}
+      backgroundColor={colors.background}
+      indicatorColor={colors.surfaceDim}
       iconColor={{ default: colors.textSecondary, selected: emerald }}
-      labelStyle={{ fontSize: 11, fontWeight: '600' }}
+      labelStyle={{
+        default: { fontSize: 11, fontWeight: '600' },
+        selected: { fontSize: 13, fontWeight: '700' },
+      }}
     >
       <NativeTabs.Trigger name="index">
         <Label>Inicio</Label>
