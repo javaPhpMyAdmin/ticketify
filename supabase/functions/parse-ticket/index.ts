@@ -399,8 +399,12 @@ function currentYearMonth(): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
-/** Monthly scan allowance for free-tier users (mirrors scan_usage.scans_limit). */
-const SCANS_LIMIT = 10;
+/**
+ * Monthly scan allowance for free-tier users (mirrors scan_usage.scans_limit).
+ * Raised to 100 for the testing phase (migration 0004); the DB row value is
+ * authoritative and this constant only backs rows that report no limit.
+ */
+const SCANS_LIMIT = 100;
 
 /**
  * Atomically consumes one monthly scan slot.
