@@ -29,11 +29,11 @@ export function MonthlyBudgetCard({
       <BudgetCard spent={spent} limit={limit} currency={currency} />
       {showCallout ? (
         <Card style={styles.callout}>
-          <Text style={styles.kicker}>MICRO-EXPENSE CALLOUT</Text>
+          <Text style={styles.kicker}>MICROGASTOS</Text>
           <View style={styles.calloutRow}>
-            <Text style={styles.calloutLabel}>Wants / Snacks</Text>
+            <Text style={styles.calloutLabel}>Deseos / Snacks</Text>
             <Text style={styles.calloutAmount}>
-              {currency} {wantsSnacksTotal} this month
+              {currency} {wantsSnacksTotal} este mes
             </Text>
           </View>
         </Card>

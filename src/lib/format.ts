@@ -23,16 +23,53 @@ export function formatCurrency(value: number, currency: string = 'USD'): string 
   return `${value < 0 ? '-' : ''}${symbol}${withSeparators}.${decPart}`;
 }
 
+/** Spanish short month names (lowercase, the standard for `es`). */
+const MONTHS_SHORT_ES = [
+  'ene', 'feb', 'mar', 'abr', 'may', 'jun',
+  'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+];
+
+/** Spanish full month names (lowercase, the standard for `es`). */
+export const MONTHS_FULL_ES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+];
+
+/** Formats an ISO date as `d MMM` in Spanish — day-first, e.g. `12 ago`. */
 export function formatShortDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${date.getDate()} ${MONTHS_SHORT_ES[date.getMonth()]}`;
+}
+
+/**
+ * Formats a `YYYY-MM` year-month (as produced by `utcYearMonth`) for display,
+ * e.g. `2026-08` → `ago 2026` (short, default) or `agosto 2026` (full).
+ * `capitalize` uppercases the first letter for heading positions (e.g.
+ * `Agosto 2026`). Malformed input is returned unchanged.
+ */
+export function formatYearMonth(
+  yearMonth: string,
+  options: { full?: boolean; capitalize?: boolean } = {},
+): string {
+  const [year, month] = yearMonth.split('-').map(Number);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return yearMonth;
+  }
+  const names = options.full ? MONTHS_FULL_ES : MONTHS_SHORT_ES;
+  const label = `${names[month - 1]} ${year}`;
+  return options.capitalize
+    ? label.charAt(0).toUpperCase() + label.slice(1)
+    : label;
 }
 
 export function formatTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const hour12 = date.getHours() % 12 || 12;
+  const meridiem = date.getHours() < 12 ? 'a. m.' : 'p. m.';
+  return `${String(hour12).padStart(2, '0')}:${minutes} ${meridiem}`;
 }
 
 export function formatRelativeDay(iso: string, now: Date = new Date()): string {
@@ -42,14 +79,14 @@ export function formatRelativeDay(iso: string, now: Date = new Date()): string {
     date.getFullYear() === now.getFullYear() &&
     date.getMonth() === now.getMonth() &&
     date.getDate() === now.getDate();
-  if (sameDay) return 'Today';
+  if (sameDay) return 'Hoy';
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
   const isYesterday =
     date.getFullYear() === yesterday.getFullYear() &&
     date.getMonth() === yesterday.getMonth() &&
     date.getDate() === yesterday.getDate();
-  if (isYesterday) return 'Yesterday';
+  if (isYesterday) return 'Ayer';
   return formatShortDate(iso);
 }
 

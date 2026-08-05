@@ -18,7 +18,7 @@ import {
  * source (D3): previously duplicated in useProfile.ts and useBudget.ts.
  */
 export const MISSING_PROFILE_MESSAGE =
-  'Your profile is not set up yet. Please try again.';
+  'Tu perfil aún no está configurado. Inténtalo de nuevo.';
 
 /** The retry-gating error kinds the adapters can throw. */
 export type FeatureQueryErrorKind = 'missing-profile' | 'unconfigured' | 'error';

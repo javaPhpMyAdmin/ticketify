@@ -15,13 +15,14 @@ import {
 import { useTransactionBreakdown } from '@/features/transactions';
 import { useHistoryEntries, type HistoryEntry } from '@/features/history';
 import { colors, radii, spacing, typography } from '@/theme';
-import { formatRelativeDay } from '@/lib/format';
+import { formatRelativeDay, formatYearMonth } from '@/lib/format';
+import { utcYearMonth } from '@/lib/query-keys';
 
 const filters: { key: TransactionKind; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'needs', label: 'Needs' },
-  { key: 'wants', label: 'Wants' },
-  { key: 'income', label: 'Income' },
+  { key: 'all', label: 'Todas' },
+  { key: 'needs', label: 'Necesidades' },
+  { key: 'wants', label: 'Deseos' },
+  { key: 'income', label: 'Ingresos' },
 ];
 
 /**
@@ -56,6 +57,9 @@ export default function HistoryScreen() {
   const [filter, setFilter] = useState<TransactionKind>('all');
   const [query, setQuery] = useState('');
   const historyEntries = useHistoryEntries();
+  // Same UTC derivation the analytics/usage reads use, so the button always
+  // shows the live data month (e.g. "ago 2026").
+  const monthLabel = formatYearMonth(utcYearMonth());
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -82,7 +86,7 @@ export default function HistoryScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>History</Text>
+        <Text style={styles.title}>Historial</Text>
       </View>
 
       <View style={styles.searchRow}>
@@ -91,13 +95,13 @@ export default function HistoryScreen() {
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search transactions"
+            placeholder="Buscar transacciones"
             placeholderTextColor={colors.textSecondary}
             style={styles.searchInput}
           />
         </View>
         <Pressable style={styles.monthButton} accessibilityRole="button">
-          <Text style={styles.monthButtonText}>Aug 2026</Text>
+          <Text style={styles.monthButtonText}>{monthLabel}</Text>
           <Icon name="chevron.down" size={16} color={colors.textPrimary} />
         </Pressable>
       </View>

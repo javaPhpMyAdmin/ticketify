@@ -27,20 +27,20 @@ export default function ProfileScreen() {
   const settings: AccountSettingRow[] = [
     {
       id: 'export',
-      label: 'Export Data',
+      label: 'Exportar datos',
       icon: 'square.and.arrow.up',
       trailing: { type: 'chevron' },
     },
     {
       id: 'currency',
-      label: 'Currency',
+      label: 'Moneda',
       value: `${currency}`,
       icon: 'creditcard',
       trailing: { type: 'chevron' },
     },
     {
       id: 'household',
-      label: 'Household Sharing',
+      label: 'Uso compartido del hogar',
       icon: 'person.fill',
       trailing: {
         type: 'switch',
@@ -70,7 +70,7 @@ export default function ProfileScreen() {
       // would be dead the moment the gate unmounts this screen. The copy is
       // deliberately generic: a raw supabase-js/GoTrue message must never
       // reach the UI (same posture as sign-in and sign-up).
-      setSignOutError('Could not sign out. Please try again.');
+      setSignOutError('No se pudo cerrar la sesión. Inténtalo de nuevo.');
     } finally {
       setSigningOut(false);
     }
@@ -81,7 +81,7 @@ export default function ProfileScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         {user ? (
           <ProfileHeader
-            name={user.full_name ?? 'You'}
+            name={user.full_name ?? 'Tú'}
             avatarUrl={user.avatar_url}
             subtitle={email ?? undefined}
             tier={user.tier}
@@ -93,7 +93,7 @@ export default function ProfileScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account Settings</Text>
+          <Text style={styles.sectionTitle}>Configuración de la cuenta</Text>
           <AccountSettingsList rows={settings} />
         </View>
 
@@ -106,12 +106,12 @@ export default function ProfileScreen() {
             onPress={handleSignOut}
             disabled={signingOut}
             accessibilityRole="button"
-            accessibilityLabel="Sign out"
+            accessibilityLabel="Cerrar sesión"
           >
             {signingOut ? (
               <Spinner size="sm" color={colors.danger} />
             ) : (
-              <Text style={styles.signOutText}>Sign Out</Text>
+              <Text style={styles.signOutText}>Cerrar sesión</Text>
             )}
           </Pressable>
         </View>

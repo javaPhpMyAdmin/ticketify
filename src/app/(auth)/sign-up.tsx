@@ -49,7 +49,7 @@ export default function SignUpScreen() {
       }
       router.replace('/');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign-up failed. Please try again.');
+      setError(err instanceof Error ? err.message : 'No se pudo crear la cuenta. Inténtalo de nuevo.');
     } finally {
       setPending(false);
     }
@@ -60,18 +60,18 @@ export default function SignUpScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <View style={styles.confirmation}>
           <Text style={styles.kicker}>TICKETIFY</Text>
-          <Text style={styles.title}>Check your inbox</Text>
+          <Text style={styles.title}>Revisa tu bandeja de entrada</Text>
           <Text style={styles.subtitle}>
-            If this address is new, we sent a confirmation link. Open it to
-            activate your account, then come back and sign in.
+            Si esta dirección es nueva, te enviamos un enlace de confirmación.
+            Ábrelo para activar tu cuenta y luego vuelve para iniciar sesión.
           </Text>
           <Pressable
             style={styles.primaryButton}
             onPress={() => router.replace('/sign-in')}
             accessibilityRole="button"
-            accessibilityLabel="Back to sign in"
+            accessibilityLabel="Volver a iniciar sesión"
           >
-            <Text style={styles.primaryButtonText}>Back to Sign In</Text>
+            <Text style={styles.primaryButtonText}>Volver a iniciar sesión</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -90,14 +90,14 @@ export default function SignUpScreen() {
         >
           <View style={styles.heading}>
             <Text style={styles.kicker}>TICKETIFY</Text>
-            <Text style={styles.title}>Create account</Text>
+            <Text style={styles.title}>Crear cuenta</Text>
             <Text style={styles.subtitle}>
-              Sign up with your email to start tracking receipts.
+              Regístrate con tu correo para empezar a registrar tus recibos.
             </Text>
           </View>
 
           <View style={styles.form}>
-            <FieldGroup label="Email">
+            <FieldGroup label="Correo electrónico">
               <TextInput
                 value={email}
                 onChangeText={setEmail}
@@ -114,14 +114,14 @@ export default function SignUpScreen() {
             </FieldGroup>
 
             <FieldGroup
-              label="Password"
-              helper="At least 8 characters."
+              label="Contraseña"
+              helper="Al menos 8 caracteres."
             >
               <TextInput
                 value={password}
                 onChangeText={setPassword}
                 style={styles.input}
-                placeholder="Choose a password"
+                placeholder="Elige una contraseña"
                 placeholderTextColor={colors.textSecondary}
                 secureTextEntry
                 autoCapitalize="none"
@@ -140,24 +140,24 @@ export default function SignUpScreen() {
               onPress={handleSignUp}
               disabled={!canSubmit}
               accessibilityRole="button"
-              accessibilityLabel="Create account"
+              accessibilityLabel="Crear cuenta"
             >
               {pending ? (
                 <Spinner size="sm" color={colors.onPrimary} />
               ) : (
-                <Text style={styles.primaryButtonText}>Create Account</Text>
+                <Text style={styles.primaryButtonText}>Crear cuenta</Text>
               )}
             </Pressable>
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Already have an account? </Text>
+            <Text style={styles.footerText}>¿Ya tienes una cuenta? </Text>
             <Pressable
               onPress={() => router.replace('/sign-in')}
               disabled={pending}
               accessibilityRole="link"
             >
-              <Text style={styles.footerLink}>Sign in</Text>
+              <Text style={styles.footerLink}>Iniciar sesión</Text>
             </Pressable>
           </View>
         </ScrollView>

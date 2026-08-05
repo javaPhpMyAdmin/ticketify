@@ -19,7 +19,7 @@ type ExchangeState = 'exchanging' | 'ready' | 'invalid' | 'error';
 /** User-safe copy for a failed password update — never a raw GoTrue message
  *  (anti-enumeration posture, same as sign-in/sign-up). */
 const UPDATE_PASSWORD_ERROR =
-  'Could not update your password. Please try again.';
+  'No se pudo actualizar tu contraseña. Inténtalo de nuevo.';
 
 /**
  * Deep-link target for password-recovery emails (user-auth spec).
@@ -110,47 +110,47 @@ export default function ResetPasswordScreen() {
           {exchangeState === 'exchanging' ? (
             <>
               <Spinner size="md" />
-              <Text style={styles.subtitle}>Checking your reset link…</Text>
+              <Text style={styles.subtitle}>Verificando tu enlace de restablecimiento…</Text>
             </>
           ) : exchangeState === 'error' ? (
             <>
               <Text style={styles.kicker}>TICKETIFY</Text>
-              <Text style={styles.title}>Something went wrong</Text>
+              <Text style={styles.title}>Algo salió mal</Text>
               <Text style={styles.subtitle}>
-                We could not verify your reset link. Check your connection and
-                try again.
+                No pudimos verificar tu enlace de restablecimiento. Revisa tu
+                conexión e inténtalo de nuevo.
               </Text>
               <Pressable
                 style={styles.primaryButton}
                 onPress={handleRetry}
                 accessibilityRole="button"
-                accessibilityLabel="Try checking the reset link again"
+                accessibilityLabel="Volver a verificar el enlace de restablecimiento"
               >
-                <Text style={styles.primaryButtonText}>Try Again</Text>
+                <Text style={styles.primaryButtonText}>Intentar de nuevo</Text>
               </Pressable>
               <Pressable
                 style={styles.secondaryButton}
                 onPress={() => router.replace('/forgot-password')}
                 accessibilityRole="link"
               >
-                <Text style={styles.secondaryButtonText}>New Reset Link</Text>
+                <Text style={styles.secondaryButtonText}>Nuevo enlace de restablecimiento</Text>
               </Pressable>
             </>
           ) : (
             <>
               <Text style={styles.kicker}>TICKETIFY</Text>
-              <Text style={styles.title}>Invalid link</Text>
+              <Text style={styles.title}>Enlace no válido</Text>
               <Text style={styles.subtitle}>
-                This password-reset link is invalid or has expired. Request a
-                new one and try again.
+                Este enlace de restablecimiento no es válido o ha caducado.
+                Solicita uno nuevo e inténtalo de nuevo.
               </Text>
               <Pressable
                 style={styles.primaryButton}
                 onPress={() => router.replace('/forgot-password')}
                 accessibilityRole="button"
-                accessibilityLabel="Request a new reset link"
+                accessibilityLabel="Solicitar un nuevo enlace de restablecimiento"
               >
-                <Text style={styles.primaryButtonText}>New Reset Link</Text>
+                <Text style={styles.primaryButtonText}>Nuevo enlace de restablecimiento</Text>
               </Pressable>
             </>
           )}
@@ -171,19 +171,20 @@ export default function ResetPasswordScreen() {
         >
           <View style={styles.heading}>
             <Text style={styles.kicker}>TICKETIFY</Text>
-            <Text style={styles.title}>Choose a new password</Text>
+            <Text style={styles.title}>Elige una nueva contraseña</Text>
             <Text style={styles.subtitle}>
-              At least 8 characters. You will be signed in after the update.
+              Al menos 8 caracteres. Se iniciará tu sesión después de
+              actualizarla.
             </Text>
           </View>
 
           <View style={styles.form}>
-            <FieldGroup label="New password" helper="At least 8 characters.">
+            <FieldGroup label="Nueva contraseña" helper="Al menos 8 caracteres.">
               <TextInput
                 value={password}
                 onChangeText={setPassword}
                 style={styles.input}
-                placeholder="Choose a new password"
+                placeholder="Elige una nueva contraseña"
                 placeholderTextColor={colors.textSecondary}
                 secureTextEntry
                 autoCapitalize="none"
@@ -202,12 +203,12 @@ export default function ResetPasswordScreen() {
               onPress={handleReset}
               disabled={!canSubmit}
               accessibilityRole="button"
-              accessibilityLabel="Update password"
+              accessibilityLabel="Actualizar contraseña"
             >
               {pending ? (
                 <Spinner size="sm" color={colors.onPrimary} />
               ) : (
-                <Text style={styles.primaryButtonText}>Update Password</Text>
+                <Text style={styles.primaryButtonText}>Actualizar contraseña</Text>
               )}
             </Pressable>
           </View>

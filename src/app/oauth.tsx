@@ -36,7 +36,7 @@ const OAUTH_EXCHANGE_TIMEOUT_MS = 15_000;
  * Kept here so the timeout path surfaces the same generic copy as every other
  * interrupted exchange — no auth-internal detail leaks to the UI.
  */
-const OAUTH_EXCHANGE_TIMEOUT_ERROR = 'Sign-in was interrupted. Please try again.';
+const OAUTH_EXCHANGE_TIMEOUT_ERROR = 'El inicio de sesión se interrumpió. Inténtalo de nuevo.';
 
 /**
  * Landing route for the OAuth PKCE callback URL (`ticketify://oauth`).

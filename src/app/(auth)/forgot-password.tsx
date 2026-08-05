@@ -48,7 +48,7 @@ export default function ForgotPasswordScreen() {
       // account enumeration.
       setEmailSent(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not send the reset email.');
+      setError(err instanceof Error ? err.message : 'No se pudo enviar el correo de restablecimiento.');
     } finally {
       setPending(false);
     }
@@ -59,18 +59,19 @@ export default function ForgotPasswordScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <View style={styles.confirmation}>
           <Text style={styles.kicker}>TICKETIFY</Text>
-          <Text style={styles.title}>Check your inbox</Text>
+          <Text style={styles.title}>Revisa tu bandeja de entrada</Text>
           <Text style={styles.subtitle}>
-            If {email.trim()} is registered, you will receive a password-reset
-            link. Open it on this device to choose a new password.
+            Si {email.trim()} está registrado, recibirás un enlace para
+            restablecer la contraseña. Ábrelo en este dispositivo para elegir
+            una nueva.
           </Text>
           <Pressable
             style={styles.primaryButton}
             onPress={() => router.replace('/sign-in')}
             accessibilityRole="button"
-            accessibilityLabel="Back to sign in"
+            accessibilityLabel="Volver a iniciar sesión"
           >
-            <Text style={styles.primaryButtonText}>Back to Sign In</Text>
+            <Text style={styles.primaryButtonText}>Volver a iniciar sesión</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -89,14 +90,15 @@ export default function ForgotPasswordScreen() {
         >
           <View style={styles.heading}>
             <Text style={styles.kicker}>TICKETIFY</Text>
-            <Text style={styles.title}>Reset password</Text>
+            <Text style={styles.title}>Restablecer contraseña</Text>
             <Text style={styles.subtitle}>
-              Enter your account email and we will send you a recovery link.
+              Ingresa el correo de tu cuenta y te enviaremos un enlace de
+              recuperación.
             </Text>
           </View>
 
           <View style={styles.form}>
-            <FieldGroup label="Email">
+            <FieldGroup label="Correo electrónico">
               <TextInput
                 value={email}
                 onChangeText={setEmail}
@@ -121,24 +123,24 @@ export default function ForgotPasswordScreen() {
               onPress={handleSend}
               disabled={!canSubmit}
               accessibilityRole="button"
-              accessibilityLabel="Send reset email"
+              accessibilityLabel="Enviar enlace de restablecimiento"
             >
               {pending ? (
                 <Spinner size="sm" color={colors.onPrimary} />
               ) : (
-                <Text style={styles.primaryButtonText}>Send Reset Link</Text>
+                <Text style={styles.primaryButtonText}>Enviar enlace de restablecimiento</Text>
               )}
             </Pressable>
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Remembered it? </Text>
+            <Text style={styles.footerText}>¿Lo recordaste? </Text>
             <Pressable
               onPress={() => router.replace('/sign-in')}
               disabled={pending}
               accessibilityRole="link"
             >
-              <Text style={styles.footerLink}>Sign in</Text>
+              <Text style={styles.footerLink}>Iniciar sesión</Text>
             </Pressable>
           </View>
         </ScrollView>

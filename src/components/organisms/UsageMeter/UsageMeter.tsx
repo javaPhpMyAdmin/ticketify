@@ -19,9 +19,9 @@ export interface UsageMeterProps {
 export function UsageMeter({
   used,
   limit,
-  kicker = 'Monthly Free AI Scans',
-  resetLabel = 'Reset in 12 days',
-  upgradeLabel = 'Upgrade for unlimited.',
+  kicker = 'Escaneos de IA gratuitos mensuales',
+  resetLabel = 'Se restablece en 12 días',
+  upgradeLabel = 'Actualiza para obtener escaneos ilimitados.',
 }: UsageMeterProps) {
   const ratio = limit > 0 ? Math.min(1, used / limit) : 0;
   return (
@@ -29,7 +29,7 @@ export function UsageMeter({
       <Text style={styles.kicker}>{kicker}</Text>
       <View style={styles.row}>
         <Text style={styles.used}>
-          Scans Used {used}/{limit}
+          Escaneos usados {used}/{limit}
         </Text>
         <Text style={styles.reset}>{resetLabel}</Text>
       </View>

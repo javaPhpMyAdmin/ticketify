@@ -24,14 +24,14 @@ export function ReviewItemRow({ item, onToggleImpulse }: ReviewItemRowProps) {
           <Text style={styles.name} numberOfLines={1}>
             {item.name}
           </Text>
-          <Text style={styles.qty}>Qty {item.quantity}</Text>
+          <Text style={styles.qty}>Cant. {item.quantity}</Text>
         </View>
         <Text style={styles.price}>{formatCurrency(item.total_price, 'USD')}</Text>
       </View>
       <View style={styles.bottom}>
-        <Chip label={item.ai_suggested_category_id ?? 'UNCATEGORIZED'} selected />
+        <Chip label={item.ai_suggested_category_id ?? 'SIN CATEGORÍA'} selected />
         <View style={styles.impulseWrap}>
-          <Text style={styles.impulseLabel}>Impulse Buy</Text>
+          <Text style={styles.impulseLabel}>Compra impulsiva</Text>
           <Switch
             value={item.is_impulse}
             onValueChange={onToggleImpulse}

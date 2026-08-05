@@ -19,7 +19,7 @@ export default function CameraScreen() {
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
-        setError('Camera permission is required to scan receipts.');
+        setError('Se necesita permiso de cámara para escanear recibos.');
         router.back();
         return;
       }
@@ -39,7 +39,7 @@ export default function CameraScreen() {
       startDraft(asset.uri);
       router.replace(`/ticket/review/${tempId()}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown camera error';
+      const message = err instanceof Error ? err.message : 'Error desconocido de la cámara.';
       setError(message);
       router.back();
     } finally {
@@ -53,7 +53,7 @@ export default function CameraScreen() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        setError('Photo library permission is required to import receipts.');
+        setError('Se necesita acceso a tus fotos para importar recibos.');
         router.back();
         return;
       }
@@ -71,7 +71,7 @@ export default function CameraScreen() {
       startDraft(asset.uri);
       router.replace(`/ticket/review/${tempId()}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown picker error';
+      const message = err instanceof Error ? err.message : 'Error desconocido de la galería.';
       setError(message);
       router.back();
     } finally {
@@ -90,7 +90,7 @@ export default function CameraScreen() {
             color={colors.textInverse}
             backgroundColor="rgba(0,0,0,0.4)"
             onPress={() => router.back()}
-            accessibilityLabel="Close camera"
+            accessibilityLabel="Cerrar cámara"
           />
           <View style={{ flex: 1 }} />
           {/* Flash toggle stub — real impl needs expo-camera which is not installed. */}
@@ -100,16 +100,16 @@ export default function CameraScreen() {
             color={colors.textInverse}
             backgroundColor="rgba(0,0,0,0.4)"
             disabled
-            accessibilityLabel="Toggle flash"
+            accessibilityLabel="Activar flash"
           />
         </SafeAreaView>
 
         <View style={styles.placeholder}>
           <View style={styles.frame}>
-            <Text style={styles.hint}>Point your camera at the receipt</Text>
+            <Text style={styles.hint}>Apunta la cámara al recibo</Text>
+            {/* In-app preview stub — real impl needs expo-camera which is not installed. */}
             <Text style={styles.subHint}>
-              The native camera UI is launched when you tap the shutter.{'\n'}
-              (Requires `expo-camera` for an in-app preview — TBD.)
+              La cámara nativa se abre al tocar el botón de captura.
             </Text>
           </View>
         </View>
@@ -119,7 +119,7 @@ export default function CameraScreen() {
             style={styles.galleryButton}
             onPress={handlePickFromGallery}
             disabled={busy}
-            accessibilityLabel="Pick from gallery"
+            accessibilityLabel="Elegir de la galería"
           >
             <Icon name="photo" size={22} color={colors.textInverse} />
           </Pressable>
@@ -130,7 +130,7 @@ export default function CameraScreen() {
             ]}
             onPress={handleCapture}
             disabled={busy}
-            accessibilityLabel="Capture receipt"
+            accessibilityLabel="Capturar recibo"
           >
             <View style={styles.shutterInner} />
           </Pressable>

@@ -39,9 +39,9 @@ export function useTransactionBreakdown(
       needs + wants;
     const breakdown =
       filter === 'all'
-        ? `${needs > 0 ? `NEEDS ${formatCurrency(needs)}` : ''}` +
-          `${wants > 0 ? `  WANTS ${formatCurrency(wants)}` : ''}` +
-          `${income > 0 ? `  INCOME ${formatCurrency(income)}` : ''}`
+        ? `${needs > 0 ? `NECESIDADES ${formatCurrency(needs)}` : ''}` +
+          `${wants > 0 ? `  DESEOS ${formatCurrency(wants)}` : ''}` +
+          `${income > 0 ? `  INGRESOS ${formatCurrency(income)}` : ''}`
         : undefined;
     return { amount, breakdown, isIncome: filter === 'income' || income > 0 };
   }, [needs, wants, income, filter]);

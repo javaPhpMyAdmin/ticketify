@@ -17,7 +17,7 @@ import type { CategoryMonthlyTotal, ScanUsage, User } from '@/types';
  * User-safe copy shown when an authenticated read fails. Raw PostgREST text
  * must never reach the UI (same posture as the auth screens).
  */
-export const READ_ERROR_MESSAGE = 'Could not load data. Please try again.';
+export const READ_ERROR_MESSAGE = 'No se pudieron cargar los datos. Inténtalo de nuevo.';
 
 /**
  * Discriminated result every feature read returns:

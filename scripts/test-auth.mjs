@@ -304,7 +304,7 @@ async function run() {
       'short',
     );
     assert.equal(result.needsEmailConfirmation, false);
-    assert.equal(result.error, 'Sign-up failed. Please try again.');
+    assert.equal(result.error, 'No se pudo crear la cuenta. Inténtalo de nuevo.');
   });
 
   await test('account created, confirmation enabled: no session → confirmation state', async () => {
@@ -341,7 +341,7 @@ async function run() {
       'user@example.com',
       'wrong-password',
     );
-    assert.equal(error, 'Invalid email or password.');
+    assert.equal(error, 'Correo o contraseña inválidos.');
   });
 
   await test('unconfirmed email: indistinguishable from invalid credentials', async () => {
@@ -355,7 +355,7 @@ async function run() {
       'user@example.com',
       'right-password',
     );
-    assert.equal(error, 'Invalid email or password.');
+    assert.equal(error, 'Correo o contraseña inválidos.');
   });
 
   await test('nonexistent account: same generic message, no existence signal', async () => {
@@ -369,7 +369,7 @@ async function run() {
       'nobody@example.com',
       'whatever',
     );
-    assert.equal(error, 'Invalid email or password.');
+    assert.equal(error, 'Correo o contraseña inválidos.');
   });
 
   await test('thrown network failure: also maps to generic copy, never rejects', async () => {
@@ -383,7 +383,7 @@ async function run() {
       'user@example.com',
       'right-password',
     );
-    assert.equal(error, 'Invalid email or password.');
+    assert.equal(error, 'Correo o contraseña inválidos.');
   });
 
   await test('sign-in success: null error, no throw', async () => {
@@ -505,7 +505,7 @@ async function run() {
     browserMod.__setNextBrowserResult({ type: 'dismiss' });
     const result = await oauthMod.signInWithProvider('google');
     assert.equal(result.cancelled, false);
-    assert.match(result.error, /interrupted/i);
+    assert.match(result.error, /interrump/i);
   });
 
   await test('callback without a code: readable error', async () => {
@@ -516,7 +516,7 @@ async function run() {
     });
     const result = await oauthMod.signInWithProvider('apple');
     assert.equal(result.cancelled, false);
-    assert.match(result.error, /missing its code/i);
+    assert.match(result.error, /código/i);
   });
 
   await test('exchange error: generic copy, raw GoTrue message never surfaced', async () => {
@@ -533,7 +533,7 @@ async function run() {
     });
     const result = await oauthMod.signInWithProvider('google');
     assert.equal(result.cancelled, false);
-    assert.equal(result.error, 'Sign-in was interrupted. Please try again.');
+    assert.equal(result.error, 'El inicio de sesión se interrumpió. Inténtalo de nuevo.');
   });
 
   await test('provider start failure: generic copy, raw GoTrue message never surfaced', async () => {
@@ -546,7 +546,7 @@ async function run() {
     });
     const result = await oauthMod.signInWithProvider('google');
     assert.equal(result.cancelled, false);
-    assert.equal(result.error, 'Sign-in could not be started. Please try again.');
+    assert.equal(result.error, 'No se pudo iniciar sesión. Inténtalo de nuevo.');
   });
 
   await test('missing authorize url: readable error', async () => {
@@ -556,7 +556,7 @@ async function run() {
     });
     const result = await oauthMod.signInWithProvider('google');
     assert.equal(result.cancelled, false);
-    assert.match(result.error, /could not be started/i);
+    assert.match(result.error, /no se pudo iniciar/i);
   });
 
   await test('thrown network error: generic copy, raw message never surfaced', async () => {
@@ -568,7 +568,7 @@ async function run() {
     });
     const result = await oauthMod.signInWithProvider('google');
     assert.equal(result.cancelled, false);
-    assert.equal(result.error, 'Sign-in was interrupted. Please try again.');
+    assert.equal(result.error, 'El inicio de sesión se interrumpió. Inténtalo de nuevo.');
   });
 
   await test('cold-start exchange: deep-link code + sb_flow_id reach the exchange', async () => {
@@ -615,7 +615,7 @@ async function run() {
     const result = await oauthMod.exchangeOAuthCode('stale-code', null);
     assert.deepEqual(result, {
       ok: false,
-      error: 'Sign-in was interrupted. Please try again.',
+      error: 'El inicio de sesión se interrumpió. Inténtalo de nuevo.',
     });
   });
 
@@ -651,8 +651,8 @@ async function run() {
   await test('warm-race wait decision: settled flow surfaces its error copy', async () => {
     resetAll();
     assert.deepEqual(
-      oauthMod.decideOAuthCallbackWait(false, false, false, 'Sign-in was interrupted. Please try again.'),
-      { action: 'go-signin', error: 'Sign-in was interrupted. Please try again.' },
+      oauthMod.decideOAuthCallbackWait(false, false, false, 'El inicio de sesión se interrumpió. Inténtalo de nuevo.'),
+      { action: 'go-signin', error: 'El inicio de sesión se interrumpió. Inténtalo de nuevo.' },
     );
     // Cancelled flow: no error copy, plain sign-in.
     assert.deepEqual(oauthMod.decideOAuthCallbackWait(false, false, false, null), {
@@ -684,7 +684,7 @@ async function run() {
       }),
     });
     await oauthMod.signInWithProvider('google');
-    assert.equal(oauthMod.getLastOAuthError(), 'Sign-in could not be started. Please try again.');
+    assert.equal(oauthMod.getLastOAuthError(), 'No se pudo iniciar sesión. Inténtalo de nuevo.');
     // Success: cleared.
     resetAll();
     supabaseMod.__setSupabaseBehavior({
