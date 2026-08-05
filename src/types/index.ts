@@ -21,6 +21,9 @@ export type PaymentMethod =
   | 'transfer'
   | 'other';
 
+/** Card kind detected on a receipt (matches the parse-ticket edge function). */
+export type CardType = 'debit' | 'credit';
+
 export type PurchaseStatus = 'pending' | 'parsed' | 'confirmed' | 'failed';
 
 export type CategoryKind = 'need' | 'want';
@@ -116,6 +119,14 @@ export interface ReceiptDraft {
   total: number;
   payment_method: PaymentMethod;
   image_url: string;
+  /**
+   * Card network detected on the receipt (Visa, OCA, …). Optional so drafts
+   * created before card detection existed still type-check; null when the
+   * receipt shows no card or the brand is unknown.
+   */
+  card_brand?: string | null;
+  /** Card kind detected on the receipt. Null when unknown/absent. */
+  card_type?: CardType | null;
   items: ReviewItem[];
 }
 

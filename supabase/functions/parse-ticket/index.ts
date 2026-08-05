@@ -21,6 +21,10 @@
 // 30s client/function timeouts; flash-lite parses the same image in ~4s.
 
 import { createClient } from '@supabase/supabase-js';
+import {
+  normalizeCardBrand,
+  normalizeCardType,
+} from './lib/card.ts';
 
 // ---------------------------------------------------------------------------
 // Types — kept local to the function so it can deploy without TS project
@@ -46,6 +50,10 @@ interface ParsedReceipt {
   purchase_date: string; // YYYY-MM-DD
   total: number;
   payment_method: 'cash' | 'card' | 'apple_pay' | 'google_pay' | 'transfer' | 'other';
+  /** Card network printed on the receipt (Visa, OCA, …), null when unknown. */
+  card_brand: string | null;
+  /** Card kind printed on the receipt, null when unknown. */
+  card_type: 'debit' | 'credit' | null;
   items: ParsedItem[];
 }
 
@@ -157,6 +165,8 @@ const PROMPT = `You are a receipt parser. Extract the purchase data from the rec
   "purchase_date": string,
   "total": number,
   "payment_method": "cash" | "card" | "apple_pay" | "google_pay" | "transfer" | "other",
+  "card_brand": string | null,
+  "card_type": "debit" | "credit" | null,
   "items": [
     {
       "name": string,
@@ -173,6 +183,8 @@ Rules:
 - purchase_date: the receipt date formatted as YYYY-MM-DD.
 - total: the final amount paid, as a plain number (no currency symbol).
 - payment_method: one of cash, card, apple_pay, google_pay, transfer, other.
+- card_brand: the card network printed on the receipt, e.g. Visa, Mastercard, Maestro, OCA, American Express, Diners, etc. null when the receipt shows no card (e.g. cash or transfer) or the brand cannot be determined. Never guess or infer a brand from unrelated text.
+- card_type: "debit" or "credit" when the receipt states the card kind. null when it does not state it or the receipt shows no card. Never guess or infer the card kind from unrelated text.
 - items: one entry per line item, skipping taxes, subtotals, discounts and total-only lines. quantity is how many units, unit_price is the price of one unit, total_price is the line total.
 - suggested_category_slug: exactly one of frutas-verduras, refrescos, panaderia, carnes, lacteos, limpieza, snacks, otros, or null when you are not confident.
 - All money values must be plain numbers without currency symbols or thousands separators.`;
@@ -342,6 +354,8 @@ function parseReceiptJson(raw: unknown): ParsedReceipt {
   }
   const total = round2(requireFiniteNumber(raw.total, 'total'));
   const payment_method = normalizePaymentMethod(raw.payment_method);
+  const card_brand = normalizeCardBrand(raw.card_brand);
+  const card_type = normalizeCardType(raw.card_type);
 
   if (!Array.isArray(raw.items)) {
     throw new ParseError('items must be an array');
@@ -354,7 +368,7 @@ function parseReceiptJson(raw: unknown): ParsedReceipt {
     throw new ParseError('items must not be empty');
   }
 
-  return { store_name, purchase_date, total, payment_method, items };
+  return { store_name, purchase_date, total, payment_method, card_brand, card_type, items };
 }
 
 function parseItem(entry: unknown, index: number): ParsedItem {

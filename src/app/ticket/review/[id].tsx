@@ -21,7 +21,7 @@ import {
 } from '@/features/tickets';
 import { formatCurrency } from '@/lib/format';
 import { colors, radii, spacing, typography } from '@/theme';
-import type { PaymentMethod } from '@/types';
+import type { CardType, PaymentMethod } from '@/types';
 
 const paymentMethods: { key: PaymentMethod; label: string }[] = [
   { key: 'card', label: 'Tarjeta' },
@@ -29,6 +29,17 @@ const paymentMethods: { key: PaymentMethod; label: string }[] = [
   { key: 'apple_pay', label: 'Apple Pay' },
   { key: 'transfer', label: 'Transferencia' },
 ];
+
+/** Spanish labels for the card kind detected on the receipt. */
+const cardTypeLabels: Record<CardType, string> = {
+  debit: 'Débito',
+  credit: 'Crédito',
+};
+
+/** Capitalizes the first letter of the brand for display. */
+function capitalize(value: string): string {
+  return value.length > 0 ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+}
 
 export default function ReviewReceiptScreen() {
   const params = useLocalSearchParams<{ id: string }>();
@@ -66,6 +77,20 @@ export default function ReviewReceiptScreen() {
   const itemsTotal =
     draft?.items.reduce((acc, i) => acc + i.total_price, 0) ?? 0;
   const matches = draft ? Math.abs(itemsTotal - draft.total) < 0.01 : false;
+
+  // Read-only card detail under the payment chips, e.g. "Visa Débito".
+  // Gated on the selected payment method: showing a card brand under
+  // "Efectivo"/"Transferencia" would be contradictory review data. Renders
+  // nothing when the parse pipeline detected no card or brand.
+  const cardInfo =
+    draft?.payment_method === 'card'
+      ? [
+          draft.card_brand ? capitalize(draft.card_brand) : null,
+          draft.card_type ? cardTypeLabels[draft.card_type] : null,
+        ]
+          .filter(Boolean)
+          .join(' ')
+      : '';
 
   const handleConfirm = () => {
     // TODO: persist to Supabase via the `saveReceipt` helper in
@@ -158,6 +183,9 @@ export default function ReviewReceiptScreen() {
                         </Pressable>
                       ))}
                     </View>
+                    {cardInfo ? (
+                      <Text style={styles.cardInfo}>{cardInfo}</Text>
+                    ) : null}
                   </View>
                 </View>
               </Card>
@@ -298,6 +326,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
+  },
+  cardInfo: {
+    ...typography.bodyMd,
+    color: colors.textSecondary,
   },
   section: {
     gap: spacing.md,
