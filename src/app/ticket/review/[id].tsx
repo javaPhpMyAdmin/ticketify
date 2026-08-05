@@ -78,10 +78,11 @@ export default function ReviewReceiptScreen() {
     draft?.items.reduce((acc, i) => acc + i.total_price, 0) ?? 0;
   const matches = draft ? Math.abs(itemsTotal - draft.total) < 0.01 : false;
 
-  // Read-only card detail under the payment chips, e.g. "Visa Débito".
-  // Gated on the selected payment method: showing a card brand under
-  // "Efectivo"/"Transferencia" would be contradictory review data. Renders
-  // nothing when the parse pipeline detected no card or brand.
+  // Read-only card detail shown inside the "Tarjeta" chip, e.g.
+  // "Tarjeta · Maestro Débito". Gated on the selected payment method:
+  // showing a card brand next to "Efectivo"/"Transferencia" would be
+  // contradictory review data. The chip falls back to plain "Tarjeta"
+  // when the parse detected no card, brand, or kind.
   const cardInfo =
     draft?.payment_method === 'card'
       ? [
@@ -171,21 +172,26 @@ export default function ReviewReceiptScreen() {
                   <View style={styles.metaCol}>
                     <Text style={styles.kicker}>PAGO</Text>
                     <View style={styles.paymentRow}>
-                      {paymentMethods.map((m) => (
-                        <Pressable
-                          key={m.key}
-                          onPress={() => setPayment(m.key)}
-                        >
-                          <Chip
-                            label={m.label}
-                            selected={draft?.payment_method === m.key}
-                          />
-                        </Pressable>
-                      ))}
+                      {paymentMethods.map((m) => {
+                        const label =
+                          m.key === 'card' &&
+                          draft?.payment_method === 'card' &&
+                          cardInfo
+                            ? `Tarjeta · ${cardInfo}`
+                            : m.label;
+                        return (
+                          <Pressable
+                            key={m.key}
+                            onPress={() => setPayment(m.key)}
+                          >
+                            <Chip
+                              label={label}
+                              selected={draft?.payment_method === m.key}
+                            />
+                          </Pressable>
+                        );
+                      })}
                     </View>
-                    {cardInfo ? (
-                      <Text style={styles.cardInfo}>{cardInfo}</Text>
-                    ) : null}
                   </View>
                 </View>
               </Card>
@@ -326,10 +332,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
-  },
-  cardInfo: {
-    ...typography.bodyMd,
-    color: colors.textSecondary,
   },
   section: {
     gap: spacing.md,
