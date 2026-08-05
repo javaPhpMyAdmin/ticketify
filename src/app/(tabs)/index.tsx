@@ -1,4 +1,4 @@
-import { ScrollView, StyleSheet } from 'react-native';
+import { Platform, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
@@ -14,9 +14,10 @@ import { colors, spacing, typography } from '@/theme';
  * siblings (the FAB) render behind the native tab bar. `TAB_BAR_HEIGHT` is
  * the UIKit base height (49pt); the home-indicator inset is added at render
  * time via `useSafeAreaInsets` so the FAB sits above the tab bar, not
- * behind its glass.
+ * behind its glass. On Android the Material 3 NavigationBar is taller (80dp)
+ * and renders fully opaque, so we bump the offset on that platform.
  */
-const TAB_BAR_HEIGHT = 49;
+const TAB_BAR_HEIGHT = Platform.select({ ios: 49, android: 80, default: 49 });
 
 export default function HomeScreen() {
   const currency = useSettingsStore((s) => s.currency);
@@ -105,7 +106,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
-    paddingBottom: 120,
+    paddingBottom: Platform.select({ ios: 120, android: 156, default: 120 }),
     gap: spacing.lg,
   },
   greeting: {
