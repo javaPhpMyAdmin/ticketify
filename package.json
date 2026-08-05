@@ -53,6 +53,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
+    "@unrs/resolver-binding-darwin-arm64": "1.12.2",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~10.0.0",
     "patch-package": "^8.0.1",

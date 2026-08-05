@@ -8,5 +8,6 @@
   "deno.enablePaths": ["supabase/functions"],
   "deno.unstable": false,
   "deno.importMap": "supabase/functions/deno.json",
-  "deno.path": "/Users/marcelobatista/.deno/bin/deno"
+  "deno.path": "/Users/marcelobatista/.deno/bin/deno",
+  "editor.fontSize": 10
 }
