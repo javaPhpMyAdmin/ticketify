@@ -1,6 +1,6 @@
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Image, ScrollView, StyleSheet, TextInput } from 'react-native';
-import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -63,7 +63,8 @@ export default function ReviewReceiptScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id]);
 
-  const itemsTotal = draft?.items.reduce((acc, i) => acc + i.total_price, 0) ?? 0;
+  const itemsTotal =
+    draft?.items.reduce((acc, i) => acc + i.total_price, 0) ?? 0;
   const matches = draft ? Math.abs(itemsTotal - draft.total) < 0.01 : false;
 
   const handleConfirm = () => {
@@ -102,15 +103,19 @@ export default function ReviewReceiptScreen() {
           {parsing ? (
             <View style={styles.parsingWrap}>
               <Text style={styles.parsingTitle}>Procesando recibo…</Text>
-              <Text style={styles.parsingHint}>Enviando a Google Gemini 2.5 Flash</Text>
+              <Text style={styles.parsingHint}>Esperá un momento…</Text>
             </View>
           ) : scanError ? (
             // `scan` starts a draft before parsing, so on failure the store
             // still holds an empty draft — the retry state must not depend on
             // the draft being absent.
             <View style={styles.parsingWrap}>
-              <Text style={styles.parsingTitle}>No se pudo procesar este recibo</Text>
-              <Text style={styles.parsingHint}>Revisa la imagen e inténtalo de nuevo.</Text>
+              <Text style={styles.parsingTitle}>
+                No se pudo procesar este recibo
+              </Text>
+              <Text style={styles.parsingHint}>
+                Revisa la imagen e inténtalo de nuevo.
+              </Text>
               <Pressable
                 onPress={() => void runParse()}
                 style={styles.retryButton}
@@ -134,13 +139,18 @@ export default function ReviewReceiptScreen() {
                 <View style={styles.metaRow}>
                   <View style={styles.metaCol}>
                     <Text style={styles.kicker}>FECHA</Text>
-                    <Text style={styles.metaValue}>{draft?.purchase_date ?? '—'}</Text>
+                    <Text style={styles.metaValue}>
+                      {draft?.purchase_date ?? '—'}
+                    </Text>
                   </View>
                   <View style={styles.metaCol}>
                     <Text style={styles.kicker}>PAGO</Text>
                     <View style={styles.paymentRow}>
                       {paymentMethods.map((m) => (
-                        <Pressable key={m.key} onPress={() => setPayment(m.key)}>
+                        <Pressable
+                          key={m.key}
+                          onPress={() => setPayment(m.key)}
+                        >
                           <Chip
                             label={m.label}
                             selected={draft?.payment_method === m.key}
@@ -160,7 +170,9 @@ export default function ReviewReceiptScreen() {
                 {draft?.items ? (
                   <ReceiptItemsList
                     items={draft.items}
-                    onToggleImpulse={(item, v) => upsertItem({ ...item, is_impulse: v })}
+                    onToggleImpulse={(item, v) =>
+                      upsertItem({ ...item, is_impulse: v })
+                    }
                   />
                 ) : null}
               </View>
@@ -178,7 +190,10 @@ export default function ReviewReceiptScreen() {
             </View>
             <View style={styles.matchesRow}>
               <Text
-                style={[styles.matchesText, { color: matches ? colors.primary : colors.danger }]}
+                style={[
+                  styles.matchesText,
+                  { color: matches ? colors.primary : colors.danger },
+                ]}
               >
                 {matches ? 'Coincide' : 'No coincide'}
               </Text>
