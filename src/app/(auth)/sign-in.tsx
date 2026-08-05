@@ -58,9 +58,8 @@ export default function SignInScreen() {
         setError(message);
         return;
       }
-      // The SIGNED_IN event set the session, so the root gate exposes the
-      // app content.
-      router.replace('/');
+      // The SIGNED_IN event set the session; the root layout's
+      // session-transition effect owns navigation into the app.
     } catch {
       // signInWithEmail never rejects (every failure is mapped to the generic
       // message in the store); this is a defensive fallback with the same
@@ -80,7 +79,6 @@ export default function SignInScreen() {
         setError(result.error);
         return;
       }
-      if (!result.cancelled) router.replace('/');
     } catch (err) {
       setError(
         err instanceof Error

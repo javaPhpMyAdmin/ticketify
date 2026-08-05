@@ -125,6 +125,7 @@ let supabaseMod;
 let storageMod;
 let browserMod;
 let queryClientMod;
+let sessionNavMod;
 
 async function run() {
   console.log('\n[tests] compiling modules with isolated tsconfig…');
@@ -140,6 +141,7 @@ async function run() {
   storageMod = await load('scripts/test-stubs/storage-adapter.js');
   browserMod = await load('scripts/test-stubs/web-browser.js');
   queryClientMod = await load('src/lib/query-client.js');
+  sessionNavMod = await load('src/lib/auth/session-nav.js');
 
   console.log('\n[tests] session restore\n');
 
@@ -896,6 +898,64 @@ async function run() {
     // No SIGNED_OUT fired: the local session was NOT cleared, so the sign-out
     // genuinely failed and the error is worth surfacing.
     assert.equal(storeMod.useSessionStore.getState().session, FAKE_SESSION);
+  });
+
+  console.log('\n[tests] root-gate session navigation decision\n');
+
+  const nav = (prevSession, session, pathname) =>
+    sessionNavMod.decideSessionNavigation({ prevSession, session, pathname });
+
+  await test('flip null→session on /sign-in (email sign-in) → navigate /', async () => {
+    assert.deepEqual(nav(null, FAKE_SESSION, '/sign-in'), {
+      shouldNavigate: true,
+      target: '/',
+    });
+  });
+
+  await test('flip null→session on /oauth (cold-start exchange) → navigate /', async () => {
+    assert.deepEqual(nav(null, FAKE_SESSION, '/oauth'), {
+      shouldNavigate: true,
+      target: '/',
+    });
+  });
+
+  await test('session present on /oauth, prev already truthy (parked: warm race / stored-session cold start) → navigate /', async () => {
+    assert.deepEqual(nav(FAKE_SESSION, FAKE_SESSION, '/oauth'), {
+      shouldNavigate: true,
+      target: '/',
+    });
+  });
+
+  await test('session present on /sign-in with no flip → NO navigation', async () => {
+    assert.deepEqual(nav(FAKE_SESSION, FAKE_SESSION, '/sign-in'), {
+      shouldNavigate: false,
+      target: '/',
+    });
+  });
+
+  await test('/reset-password suppresses BOTH the flip and the parked clause', async () => {
+    assert.deepEqual(nav(null, FAKE_SESSION, '/reset-password'), {
+      shouldNavigate: false,
+      target: '/',
+    });
+    assert.deepEqual(nav(FAKE_SESSION, FAKE_SESSION, '/reset-password'), {
+      shouldNavigate: false,
+      target: '/',
+    });
+  });
+
+  await test('session null → NO navigation on any pathname', async () => {
+    assert.deepEqual(nav(null, null, '/sign-in'), { shouldNavigate: false, target: '/' });
+    assert.deepEqual(nav(null, null, '/oauth'), { shouldNavigate: false, target: '/' });
+    assert.deepEqual(nav(FAKE_SESSION, null, '/oauth'), { shouldNavigate: false, target: '/' });
+  });
+
+  await test('prev === session (no change) → NO navigation', async () => {
+    assert.deepEqual(nav(null, null, '/'), { shouldNavigate: false, target: '/' });
+    assert.deepEqual(nav(FAKE_SESSION, FAKE_SESSION, '/'), {
+      shouldNavigate: false,
+      target: '/',
+    });
   });
 
   console.log('');

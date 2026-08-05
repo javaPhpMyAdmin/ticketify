@@ -47,7 +47,6 @@ export default function SignUpScreen() {
         setConfirmationSent(true);
         return;
       }
-      router.replace('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo crear la cuenta. Inténtalo de nuevo.');
     } finally {

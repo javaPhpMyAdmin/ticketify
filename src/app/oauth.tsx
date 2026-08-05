@@ -75,15 +75,42 @@ export default function OAuthCallbackScreen() {
 
   useEffect(() => {
     // Duplicate callback delivery after the in-process flow already
-    // completed: the store session is authoritative.
+    // completed: the store session is authoritative. Do NOT navigate here —
+    // on Android the callback deep link can mount this screen before the root
+    // gate has committed `(tabs)` (React defers the re-render while the app is
+    // backgrounded), so a replace to `/` races the guard and fires the
+    // "screen couldn't be applied to the navigator" error. The root layout's
+    // session effect owns "go to app" for this exact state: it covers both a
+    // null→session flip on `/oauth` and a session already present on `/oauth`
+    // with no flip (warm race after the flip was consumed, or a stored-session
+    // cold start where `prevSession` never observed null), so yielding here
+    // can never strand the spinner.
     if (useSessionStore.getState().session) {
-      router.replace('/');
       return;
     }
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let exchangeTimer: ReturnType<typeof setTimeout> | undefined;
+
+    // Failure navigations must re-check the live session at decision time:
+    // the cold-start exchange can lose a race against the stored-session
+    // restore, and once a session is live the root layout's session effect
+    // has already moved the user to `(tabs)` (or will, via its parked
+    // clause). Replacing to `/sign-in` from here would strand a signed-in
+    // user on the auth screens — the root effect's `prevSession` is already
+    // truthy, so it can never rescue them. Genuinely signed-out failures
+    // (no session at this moment) still navigate to sign-in with the error.
+    const replaceToSignIn = (error: string | null): void => {
+      if (useSessionStore.getState().session) {
+        return;
+      }
+      if (error) {
+        router.replace({ pathname: '/sign-in', params: { error } });
+      } else {
+        router.replace('/sign-in');
+      }
+    };
 
     const waitForFlow = (onSettled: (error: string | null) => void): void => {
       const deadline = Date.now() + OAUTH_CALLBACK_WAIT_MS;
@@ -100,7 +127,10 @@ export default function OAuthCallbackScreen() {
           getLastOAuthError(),
         );
         if (decision.action === 'go-app') {
-          router.replace('/');
+          // The session appeared while polling; the root layout's session
+          // effect (flip clause) replaces `/oauth` with `/` once the gate has
+          // committed. Navigating from here could target `(tabs)` before it
+          // is registered (Android defers the re-render while backgrounded).
           return;
         }
         if (decision.action === 'go-signin') {
@@ -118,10 +148,10 @@ export default function OAuthCallbackScreen() {
       // sign-in while the session is about to appear.
       waitForFlow((flowError) => {
         if (flowError) {
-          router.replace({ pathname: '/sign-in', params: { error: flowError } });
+          replaceToSignIn(flowError);
         } else {
           // Cancelled (or stalled past the bound): plain sign-in, no banner.
-          router.replace('/sign-in');
+          replaceToSignIn(null);
         }
       });
     } else if (code) {
@@ -140,19 +170,20 @@ export default function OAuthCallbackScreen() {
         (result) => {
           if (cancelled) return;
           if (result.ok) {
-            router.replace('/');
+            // The exchange set the session (SIGNED_IN → store), so the root
+            // layout's session effect fires the null→session flip and
+            // replaces this screen with `/`. A second replace here would race
+            // it (and could target `(tabs)` before the gate commits).
+            return;
           } else {
-            router.replace({
-              pathname: '/sign-in',
-              params: { error: result.error ?? undefined },
-            });
+            replaceToSignIn(result.error);
           }
         },
       );
     } else {
       // No code and no in-process flow: nothing will produce a session
       // (provider denial, malformed callback). Return to the sign-in screen.
-      router.replace('/sign-in');
+      replaceToSignIn(null);
     }
 
     return () => {
