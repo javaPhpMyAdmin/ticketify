@@ -16,7 +16,7 @@ import {
   View,
 } from '@/components';
 import { MonthlyBudgetCard, useBudget } from '@/features/budget';
-import { useHomeFeed } from '@/features/home';
+import { ScanQuotaCard, useHomeFeed } from '@/features/home';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
 import { useSessionStore } from '../../features/auth';
@@ -80,6 +80,8 @@ export default function HomeScreen() {
           showCallout
           wantsSnacksTotal={wantsSnacksTotal}
         />
+
+        <ScanQuotaCard />
 
         {/* Categories */}
         <View style={styles.section}>
