@@ -24,6 +24,7 @@
     "../src/lib/auth/reset-exchange.ts",
     "../src/lib/auth/auth-listener-registry.ts",
     "../src/lib/auth/profile-sync.ts",
+    "../src/lib/auth/session-nav.ts",
     "../src/features/auth/use-session-store.ts",
     "../src/stores/use-settings-store.ts",
     "../scripts/test-stubs/supabase.ts",
