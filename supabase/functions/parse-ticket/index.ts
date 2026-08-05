@@ -5,7 +5,7 @@
 // Edge function that:
 //   1. Authenticates the caller via the Authorization bearer JWT.
 //   2. Validates the monthly scan quota in `public.scan_usage`.
-//   3. Sends the receipt image to Google Gemini (default `gemini-2.5-flash`,
+//   3. Sends the receipt image to Google Gemini (default `gemini-3.1-flash-lite`,
 //      override with the GEMINI_MODEL env var) and parses the structured
 //      response into our domain shape.
 //   4. Returns the parsed receipt to the mobile client.
@@ -13,6 +13,12 @@
 // The client sends the image base64-encoded (mime image/jpeg) in
 // `image_base64`; the function never touches Storage — upload and
 // persistence land in Phase 5.
+//
+// NOTE: the default was `gemini-2.5-flash` until Google retired it for new
+// API keys (404 "no longer available to new users"). Moved to
+// `gemini-3.1-flash-lite`: the 3.x reasoning models (e.g.
+// `gemini-3-flash-preview`) take ~47s on a receipt photo, blowing past the
+// 30s client/function timeouts; flash-lite parses the same image in ~4s.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -67,7 +73,7 @@ const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? '';
-const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash';
+const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-3.1-flash-lite';
 
 /**
  * User-facing message for unexpected server errors. Safe to send to the
