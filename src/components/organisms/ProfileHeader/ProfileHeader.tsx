@@ -54,7 +54,7 @@ export function ProfileHeader({
         <View style={styles.info}>
           <Text style={styles.name}>{name}</Text>
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-          <Chip label={tier === 'free' ? 'Free Tier' : 'Pro Tier'} />
+          <Chip label={tier === 'free' ? 'Plan Gratuito' : 'Plan Pro'} />
         </View>
       </View>
     </Card>

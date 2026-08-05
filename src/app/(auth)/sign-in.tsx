@@ -65,7 +65,7 @@ export default function SignInScreen() {
       // signInWithEmail never rejects (every failure is mapped to the generic
       // message in the store); this is a defensive fallback with the same
       // anti-enumeration copy.
-      setError('Invalid email or password.');
+      setError('Correo o contraseña inválidos.');
     } finally {
       setPending(false);
     }
@@ -85,7 +85,7 @@ export default function SignInScreen() {
       setError(
         err instanceof Error
           ? err.message
-          : 'Sign-in failed. Please try again.',
+          : 'No se pudo iniciar sesión. Inténtalo de nuevo.',
       );
     } finally {
       setProviderPending(null);
@@ -106,14 +106,14 @@ export default function SignInScreen() {
         >
           <View style={styles.heading}>
             <Text style={styles.kicker}>TICKETIFY</Text>
-            <Text style={styles.title}>Sign in</Text>
+            <Text style={styles.title}>Iniciar sesión</Text>
             <Text style={styles.subtitle}>
-              Access your receipts, budget, and analytics.
+              Accede a tus recibos, presupuesto y analítica.
             </Text>
           </View>
 
           <View style={styles.form}>
-            <FieldGroup label="Email">
+            <FieldGroup label="Correo electrónico">
               <TextInput
                 value={email}
                 onChangeText={setEmail}
@@ -129,12 +129,12 @@ export default function SignInScreen() {
               />
             </FieldGroup>
 
-            <FieldGroup label="Password">
+            <FieldGroup label="Contraseña">
               <TextInput
                 value={password}
                 onChangeText={setPassword}
                 style={styles.input}
-                placeholder="Your password"
+                placeholder="Tu contraseña"
                 placeholderTextColor={colors.textSecondary}
                 secureTextEntry
                 autoCapitalize="none"
@@ -153,12 +153,12 @@ export default function SignInScreen() {
               onPress={handleSignIn}
               disabled={!canSubmit || providerBusy}
               accessibilityRole="button"
-              accessibilityLabel="Sign in"
+              accessibilityLabel="Iniciar sesión"
             >
               {pending ? (
                 <Spinner size="sm" color={colors.onPrimary} />
               ) : (
-                <Text style={styles.primaryButtonText}>Sign In</Text>
+                <Text style={styles.primaryButtonText}>Iniciar sesión</Text>
               )}
             </Pressable>
 
@@ -168,13 +168,13 @@ export default function SignInScreen() {
               accessibilityRole="link"
               style={styles.inlineLinkWrap}
             >
-              <Text style={styles.inlineLink}>Forgot your password?</Text>
+              <Text style={styles.inlineLink}>¿Olvidaste tu contraseña?</Text>
             </Pressable>
           </View>
 
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerLabel}>OR</Text>
+            <Text style={styles.dividerLabel}>O</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -184,13 +184,13 @@ export default function SignInScreen() {
               onPress={() => handleProvider('google')}
               disabled={pending || providerBusy}
               accessibilityRole="button"
-              accessibilityLabel="Continue with Google"
+              accessibilityLabel="Continuar con Google"
             >
               {providerPending === 'google' ? (
                 <Spinner size="sm" />
               ) : (
                 <Text style={styles.secondaryButtonText}>
-                  Continue with Google
+                  Continuar con Google
                 </Text>
               )}
             </Pressable>
@@ -199,26 +199,26 @@ export default function SignInScreen() {
               onPress={() => handleProvider('apple')}
               disabled={pending || providerBusy}
               accessibilityRole="button"
-              accessibilityLabel="Continue with Apple"
+              accessibilityLabel="Continuar con Apple"
             >
               {providerPending === 'apple' ? (
                 <Spinner size="sm" />
               ) : (
                 <Text style={styles.secondaryButtonText}>
-                  Continue with Apple
+                  Continuar con Apple
                 </Text>
               )}
             </Pressable>
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>New to Ticketify? </Text>
+            <Text style={styles.footerText}>¿Nuevo en Ticketify? </Text>
             <Pressable
               onPress={() => router.push('/sign-up')}
               disabled={pending || providerBusy}
               accessibilityRole="link"
             >
-              <Text style={styles.footerLink}>Create an account</Text>
+              <Text style={styles.footerLink}>Crear una cuenta</Text>
             </Pressable>
           </View>
         </ScrollView>

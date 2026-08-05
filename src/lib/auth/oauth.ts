@@ -67,11 +67,11 @@ export interface OAuthExchangeResult {
  * phrasings distinguish "could not start" (config/provider problem) from
  * "interrupted" (browser/exchange problem); both are generic.
  */
-const PROVIDER_START_ERROR = 'Sign-in could not be started. Please try again.';
-const PROVIDER_FLOW_ERROR = 'Sign-in was interrupted. Please try again.';
+const PROVIDER_START_ERROR = 'No se pudo iniciar sesión. Inténtalo de nuevo.';
+const PROVIDER_FLOW_ERROR = 'El inicio de sesión se interrumpió. Inténtalo de nuevo.';
 
 /** The callback URL carried no PKCE `code` — our copy, not a raw message. */
-const MISSING_CODE_ERROR = 'The sign-in response was missing its code.';
+const MISSING_CODE_ERROR = 'La respuesta de inicio de sesión no incluía el código.';
 
 /**
  * Pure decision for the OAuth callback route's warm-race wait loop

@@ -25,11 +25,11 @@ export function BudgetCard({
   spent,
   limit,
   currency,
-  kicker = 'MONTHLY TARGET BUDGET',
+  kicker = 'PRESUPUESTO OBJETIVO MENSUAL',
   limitLabel,
 }: BudgetCardProps) {
   const percent = limit > 0 ? Math.min(1, spent / limit) : 0;
-  const resolvedLimitLabel = limitLabel ?? `Limit: ${currency} ${limit.toLocaleString()}`;
+  const resolvedLimitLabel = limitLabel ?? `Límite: ${currency} ${limit.toLocaleString()}`;
   return (
     <Card>
       <View style={styles.cardHeader}>
@@ -39,7 +39,7 @@ export function BudgetCard({
       <View style={styles.budgetRow}>
         <AmountDisplay value={spent} currency={currency} />
         <View style={styles.budgetMeta}>
-          <Text style={styles.percent}>{Math.round(percent * 100)}% used</Text>
+          <Text style={styles.percent}>{Math.round(percent * 100)}% usado</Text>
         </View>
       </View>
       <View style={styles.progressWrap}>

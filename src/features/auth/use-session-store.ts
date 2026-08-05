@@ -93,7 +93,7 @@ function withTimeout<T>(
 }
 
 /** Generic sign-up failure copy — never a raw GoTrue message (no enumeration). */
-const SIGN_UP_GENERIC_ERROR = 'Sign-up failed. Please try again.';
+const SIGN_UP_GENERIC_ERROR = 'No se pudo crear la cuenta. Inténtalo de nuevo.';
 
 /**
  * Generic sign-in failure copy — never a raw GoTrue message (no
@@ -103,7 +103,7 @@ const SIGN_UP_GENERIC_ERROR = 'Sign-up failed. Please try again.';
  * password, nonexistent account, unconfirmed email, network — maps to this
  * single message, the same posture as sign-up and password reset.
  */
-const SIGN_IN_GENERIC_ERROR = 'Invalid email or password.';
+const SIGN_IN_GENERIC_ERROR = 'Correo o contraseña inválidos.';
 
 /** GoTrue duplicate-account markers: message text and API error codes. */
 const DUPLICATE_ACCOUNT_MARKERS = [

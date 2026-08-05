@@ -380,7 +380,7 @@ async function run() {
     assert.equal(msg, adaptersMod.MISSING_PROFILE_MESSAGE);
     assert.equal(
       msg,
-      'Your profile is not set up yet. Please try again.',
+      'Tu perfil aún no está configurado. Inténtalo de nuevo.',
     );
   });
 

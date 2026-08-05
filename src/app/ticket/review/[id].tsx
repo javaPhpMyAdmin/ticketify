@@ -24,10 +24,10 @@ import { colors, radii, spacing, typography } from '@/theme';
 import type { PaymentMethod } from '@/types';
 
 const paymentMethods: { key: PaymentMethod; label: string }[] = [
-  { key: 'card', label: 'Card' },
-  { key: 'cash', label: 'Cash' },
+  { key: 'card', label: 'Tarjeta' },
+  { key: 'cash', label: 'Efectivo' },
   { key: 'apple_pay', label: 'Apple Pay' },
-  { key: 'transfer', label: 'Transfer' },
+  { key: 'transfer', label: 'Transferencia' },
 ];
 
 export default function ReviewReceiptScreen() {
@@ -81,7 +81,7 @@ export default function ReviewReceiptScreen() {
               clear();
               router.dismiss();
             }}
-            accessibilityLabel="Close review"
+            accessibilityLabel="Cerrar revisión"
           />
           {draft?.image_url ? (
             <Image source={{ uri: draft.image_url }} style={styles.thumb} />
@@ -96,40 +96,40 @@ export default function ReviewReceiptScreen() {
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {parsing ? (
             <View style={styles.parsingWrap}>
-              <Text style={styles.parsingTitle}>Parsing receipt…</Text>
-              <Text style={styles.parsingHint}>Sending to Google Gemini 1.5 Flash</Text>
+              <Text style={styles.parsingTitle}>Procesando recibo…</Text>
+              <Text style={styles.parsingHint}>Enviando a Google Gemini 1.5 Flash</Text>
             </View>
           ) : scanError && !draft ? (
             <View style={styles.parsingWrap}>
-              <Text style={styles.parsingTitle}>Couldn&apos;t parse this receipt</Text>
-              <Text style={styles.parsingHint}>Check the image and try again.</Text>
+              <Text style={styles.parsingTitle}>No se pudo procesar este recibo</Text>
+              <Text style={styles.parsingHint}>Revisa la imagen e inténtalo de nuevo.</Text>
               <Pressable
                 onPress={() => void runParse()}
                 style={styles.retryButton}
                 accessibilityRole="button"
               >
-                <Text style={styles.retryLabel}>Try again</Text>
+                <Text style={styles.retryLabel}>Intentar de nuevo</Text>
               </Pressable>
             </View>
           ) : (
             <>
               {/* Store + date + payment */}
               <Card>
-                <Text style={styles.kicker}>STORE</Text>
+                <Text style={styles.kicker}>TIENDA</Text>
                 <TextInput
                   value={draft?.store_name ?? ''}
                   onChangeText={setStore}
                   style={styles.storeInput}
-                  placeholder="Store name"
+                  placeholder="Nombre de la tienda"
                   placeholderTextColor={colors.textSecondary}
                 />
                 <View style={styles.metaRow}>
                   <View style={styles.metaCol}>
-                    <Text style={styles.kicker}>DATE</Text>
+                    <Text style={styles.kicker}>FECHA</Text>
                     <Text style={styles.metaValue}>{draft?.purchase_date ?? '—'}</Text>
                   </View>
                   <View style={styles.metaCol}>
-                    <Text style={styles.kicker}>PAYMENT</Text>
+                    <Text style={styles.kicker}>PAGO</Text>
                     <View style={styles.paymentRow}>
                       {paymentMethods.map((m) => (
                         <Pressable key={m.key} onPress={() => setPayment(m.key)}>
@@ -147,7 +147,7 @@ export default function ReviewReceiptScreen() {
               {/* Items */}
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>
-                  Parsed Items ({draft?.items.length ?? 0})
+                  Artículos procesados ({draft?.items.length ?? 0})
                 </Text>
                 {draft?.items ? (
                   <ReceiptItemsList
@@ -163,7 +163,7 @@ export default function ReviewReceiptScreen() {
         {!parsing ? (
           <View style={styles.footerWrap}>
             <View style={styles.totalRow}>
-              <Text style={styles.kicker}>Receipt Total</Text>
+              <Text style={styles.kicker}>Total del recibo</Text>
               <Text style={styles.totalValue}>
                 {formatCurrency(itemsTotal, 'USD')}
               </Text>
@@ -172,16 +172,16 @@ export default function ReviewReceiptScreen() {
               <Text
                 style={[styles.matchesText, { color: matches ? colors.primary : colors.danger }]}
               >
-                {matches ? 'Matches' : 'Mismatch'}
+                {matches ? 'Coincide' : 'No coincide'}
               </Text>
               {!matches ? (
                 <Text style={styles.matchesDetail}>
-                  Declared {formatCurrency(draft?.total ?? 0, 'USD')}
+                  Declarado {formatCurrency(draft?.total ?? 0, 'USD')}
                 </Text>
               ) : null}
             </View>
             <Fab
-              label="Confirm & Save"
+              label="Confirmar y guardar"
               icon="bolt.fill"
               onPress={handleConfirm}
               style={styles.confirmFab}

@@ -33,7 +33,7 @@ export default function HomeScreen() {
         <View style={styles.greeting}>
           {/* Neutral greeting: profile names are not wired into the home
               header yet, so the header never pretends to know the user. */}
-          <Text style={styles.greetingText}>Hello!</Text>
+          <Text style={styles.greetingText}>¡Hola!</Text>
         </View>
 
         <MonthlyBudgetCard
@@ -46,7 +46,7 @@ export default function HomeScreen() {
 
         {/* Categories */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Spending Categories</Text>
+          <Text style={styles.sectionTitle}>Categorías de gastos</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -66,7 +66,7 @@ export default function HomeScreen() {
 
         {/* Recent receipts */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Receipts</Text>
+          <Text style={styles.sectionTitle}>Recibos recientes</Text>
           <Card padding={spacing.sm}>
             {receipts.map((r, idx) => (
               <View key={r.id}>
@@ -88,7 +88,7 @@ export default function HomeScreen() {
         pointerEvents="box-none"
       >
         <Fab
-          label="Scan Ticket"
+          label="Escanear recibo"
           icon="camera.fill"
           onPress={() => router.push('/ticket/camera')}
         />
