@@ -39,6 +39,11 @@ const root = join(__dirname, '..');
 const tscBin = require.resolve('typescript/bin/tsc');
 const harnessConfig = join(__dirname, 'tsconfig.feature-test.json');
 
+// Same module instance as the compiled `api.js` (which requires
+// '@supabase/supabase-js'), so `instanceof FunctionsHttpError` works in the
+// error-mapping tests below.
+const supabaseJs = require('@supabase/supabase-js');
+
 const tmpRoot = join(root, 'node_modules', '.tmp');
 mkdirSync(tmpRoot, { recursive: true });
 const workdir = mkdtempSync(join(tmpRoot, 'feature-test-'));
@@ -88,7 +93,8 @@ async function throwsFeatureQueryError(fn, kind) {
  * Mirrors the harness tsconfig's `paths` at runtime: tsc type-checks against
  * the remapped files but emits the ORIGINAL specifier, so plain node cannot
  * resolve `@/…` in the compiled CommonJS output. The hook rewrites exactly
- * those specifiers to their compiled locations and passes everything else
+ * those specifiers (and the native-bound `expo-file-system` module used by
+ * the tickets api) to their compiled locations and passes everything else
  * (zustand, …) through untouched.
  */
 function installRequireHook() {
@@ -96,6 +102,8 @@ function installRequireHook() {
   Module._resolveFilename = function rewrittenResolve(request, ...rest) {
     if (request === '@/lib/supabase') {
       request = join(outDir, 'scripts', 'test-stubs', 'supabase.js');
+    } else if (request === 'expo-file-system') {
+      request = join(outDir, 'scripts', 'test-stubs', 'expo-file-system.js');
     } else if (request.startsWith('@/')) {
       request = join(outDir, 'src', request.slice(2));
     }
@@ -115,14 +123,16 @@ function load(mod) {
   return import(pathToFileURL(join(outDir, mod)).href);
 }
 
-/** Resets the double (rows, RPCs, call log) to its initial state. */
+/** Resets the double (rows, RPCs, invoke results, file sources, call log). */
 function resetAll() {
   stubMod.__resetSupabaseBehavior();
   stubMod.__setSupabaseConfigured(true);
+  expoFsMod.__resetFileSources();
 }
 
 let seamMod;
 let stubMod;
+let expoFsMod;
 let profileMod;
 let budgetMod;
 let analyticsMod;
@@ -138,6 +148,7 @@ async function run() {
 
   seamMod = await load('src/lib/supabase/feature-access.js');
   stubMod = await load('scripts/test-stubs/supabase.js');
+  expoFsMod = await load('scripts/test-stubs/expo-file-system.js');
   profileMod = await load('src/features/profile/api.js');
   budgetMod = await load('src/features/budget/api.js');
   analyticsMod = await load('src/features/analytics/api.js');
@@ -403,6 +414,200 @@ async function run() {
     const result = await ticketsMod.saveReceipt('u1', DRAFT);
     assert.ok(result && typeof result.id === 'string' && result.id.length > 0);
     assert.equal(stubMod.__getCallLog().length, 0, 'no backend interaction');
+  });
+
+  console.log('\n[tests] parseTicket edge-function wiring\n');
+
+  await test('parseTicket maps a valid edge payload including payment_method', async () => {
+    resetAll();
+    expoFsMod.__setFileSource('file:///receipt.jpg', {
+      size: 2048,
+      type: 'image/jpeg',
+      base64: 'c2FtcGxl',
+    });
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      data: {
+        store_name: 'Whole Foods Market',
+        purchase_date: '2026-08-02',
+        total: 42.18,
+        payment_method: 'apple_pay',
+        items: [
+          { name: 'Leche', quantity: 1, unit_price: 3.5, total_price: 3.5, suggested_category_slug: 'lacteos' },
+          { name: 'Snacks', quantity: 2, unit_price: 2.0, total_price: 4.0, suggested_category_slug: 'snacks' },
+        ],
+      },
+    });
+    const parsed = await ticketsMod.parseTicket('file:///receipt.jpg');
+    assert.equal(parsed.store, 'Whole Foods Market');
+    assert.equal(parsed.date, '2026-08-02');
+    assert.equal(parsed.total, 42.18);
+    assert.equal(parsed.payment_method, 'apple_pay');
+    assert.equal(parsed.items.length, 2);
+    assert.equal(parsed.items[0].ai_suggested_category_id, 'lacteos');
+    assert.ok(parsed.items[0].temp_id && parsed.items[0].temp_id.length > 0);
+  });
+
+  await test('parseTicket sends the file MIME type and a non-zero timeout', async () => {
+    resetAll();
+    expoFsMod.__setFileSource('file:///scan.png', {
+      size: 4096,
+      type: 'image/png',
+      base64: 'aGk=',
+    });
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      data: {
+        store_name: 'X',
+        purchase_date: '2026-08-02',
+        total: 1,
+        payment_method: 'card',
+        items: [{ name: 'A', quantity: 1, unit_price: 1, total_price: 1, suggested_category_slug: null }],
+      },
+    });
+    await ticketsMod.parseTicket('file:///scan.png');
+    const invoke = stubMod.__getCallLog().find((e) => e.kind === 'invoke');
+    assert.ok(invoke, 'parse-ticket was invoked');
+    assert.equal(invoke.opts.body.mime_type, 'image/png');
+    assert.equal(typeof invoke.opts.timeout, 'number');
+    assert.ok(invoke.opts.timeout > 0, 'timeout must be set');
+  });
+
+  await test('parseTicket rejects oversized images before invoking', async () => {
+    resetAll();
+    expoFsMod.__setFileSource('file:///big.jpg', {
+      size: 20 * 1024 * 1024,
+      type: 'image/jpeg',
+      base64: 'Ymln',
+    });
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      data: {
+        store_name: 'X',
+        purchase_date: '2026-08-02',
+        total: 1,
+        payment_method: 'card',
+        items: [{ name: 'A', quantity: 1, unit_price: 1, total_price: 1, suggested_category_slug: null }],
+      },
+    });
+    await assert.rejects(
+      () => ticketsMod.parseTicket('file:///big.jpg'),
+      (err) => {
+        assert.match(err.message, /demasiado grande/);
+        return true;
+      },
+    );
+    const invokes = stubMod.__getCallLog().filter((e) => e.kind === 'invoke');
+    assert.equal(invokes.length, 0, 'oversized image must not reach the edge function');
+  });
+
+  await test('parseTicket reports a missing image file with the read copy', async () => {
+    resetAll();
+    // No file source armed → the file does not exist.
+    await assert.rejects(
+      () => ticketsMod.parseTicket('file:///missing.jpg'),
+      /No se pudo leer la imagen/,
+    );
+  });
+
+  await test('parseTicket maps edge HTTP errors to user-safe Spanish copy', async () => {
+    resetAll();
+    expoFsMod.__setFileSource('file:///r.jpg', { size: 1024, type: 'image/jpeg', base64: 'aGVsbG8=' });
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      error: new supabaseJs.FunctionsHttpError(
+        new Response(
+          JSON.stringify({
+            error: 'Monthly scan quota exceeded',
+            code: 'quota_exceeded',
+            limit: 10,
+            used: 10,
+          }),
+          { status: 429, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    });
+    await assert.rejects(
+      () => ticketsMod.parseTicket('file:///r.jpg'),
+      (err) => {
+        assert.match(err.message, /límite mensual de escaneos/);
+        return true;
+      },
+    );
+  });
+
+  await test('parseTicket maps parse_failed to the retry copy', async () => {
+    resetAll();
+    expoFsMod.__setFileSource('file:///r2.jpg', { size: 1024, type: 'image/jpeg', base64: 'aGk=' });
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      error: new supabaseJs.FunctionsHttpError(
+        new Response(JSON.stringify({ error: 'x', code: 'parse_failed' }), {
+          status: 422,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    });
+    await assert.rejects(
+      () => ticketsMod.parseTicket('file:///r2.jpg'),
+      /No se pudo leer el recibo en la imagen/,
+    );
+  });
+
+  await test('parseTicket maps an AbortError timeout to the timeout copy', async () => {
+    resetAll();
+    expoFsMod.__setFileSource('file:///r3.jpg', { size: 1024, type: 'image/jpeg', base64: 'aGk=' });
+    const abortError = new DOMException('The operation was aborted', 'AbortError');
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      error: new supabaseJs.FunctionsFetchError(abortError),
+    });
+    await assert.rejects(
+      () => ticketsMod.parseTicket('file:///r3.jpg'),
+      /tardó demasiado/,
+    );
+  });
+
+  await test('parseTicket degrades an unknown payment_method to other', async () => {
+    resetAll();
+    expoFsMod.__setFileSource('file:///p.jpg', { size: 1024, type: 'image/jpeg', base64: 'aGk=' });
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      data: {
+        store_name: 'X',
+        purchase_date: '2026-08-02',
+        total: 5,
+        payment_method: 'crypto',
+        items: [{ name: 'A', quantity: 1, unit_price: 5, total_price: 5, suggested_category_slug: null }],
+      },
+    });
+    const parsed = await ticketsMod.parseTicket('file:///p.jpg');
+    assert.equal(parsed.payment_method, 'other');
+  });
+
+  await test('parseTicket rejects an empty items payload from the wire', async () => {
+    resetAll();
+    expoFsMod.__setFileSource('file:///empty.jpg', { size: 1024, type: 'image/jpeg', base64: 'aGk=' });
+    // A drift between the edge function and the client would otherwise let an
+    // empty receipt reach the review screen as a confirmation.
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      data: {
+        store_name: 'X',
+        purchase_date: '2026-08-02',
+        total: 0,
+        payment_method: 'card',
+        items: [],
+      },
+    });
+    await assert.rejects(
+      () => ticketsMod.parseTicket('file:///empty.jpg'),
+      /No se pudo procesar el recibo/,
+    );
+  });
+
+  await test('parseTicket reports unconfigured before invoking', async () => {
+    resetAll();
+    stubMod.__setSupabaseConfigured(false);
+    expoFsMod.__setFileSource('file:///u.jpg', { size: 1024, type: 'image/jpeg', base64: 'aGk=' });
+    await assert.rejects(
+      () => ticketsMod.parseTicket('file:///u.jpg'),
+      /no está disponible/,
+    );
+    const invokes = stubMod.__getCallLog().filter((e) => e.kind === 'invoke');
+    assert.equal(invokes.length, 0, 'no invoke when unconfigured');
   });
 
   console.log('');

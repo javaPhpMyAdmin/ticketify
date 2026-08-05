@@ -37,6 +37,7 @@ export function useScanTicket(): UseScanTicketResult {
   const setDraftStore = useReceiptsStore((s) => s.setDraftStore);
   const setDraftDate = useReceiptsStore((s) => s.setDraftDate);
   const setDraftTotal = useReceiptsStore((s) => s.setDraftTotal);
+  const setDraftPayment = useReceiptsStore((s) => s.setDraftPayment);
   const setDraftItems = useReceiptsStore((s) => s.setDraftItems);
 
   const mutation = useMutation({
@@ -54,6 +55,7 @@ export function useScanTicket(): UseScanTicketResult {
       setDraftStore(parsed.store);
       setDraftDate(parsed.date);
       setDraftTotal(parsed.total);
+      setDraftPayment(parsed.payment_method);
       setDraftItems(parsed.items);
       setDraftId(tempId());
     },

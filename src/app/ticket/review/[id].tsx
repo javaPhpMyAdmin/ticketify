@@ -46,9 +46,14 @@ export default function ReviewReceiptScreen() {
   const runParse = useCallback(async () => {
     setParsing(true);
     reset();
-    await new Promise<void>((resolve) => setTimeout(resolve, 2000));
-    await scan(draft?.image_url ?? '');
-    setParsing(false);
+    try {
+      await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+      await scan(draft?.image_url ?? '');
+    } finally {
+      // Guaranteed cleanup: a rejected scan must never leave the screen
+      // stuck on the infinite "Procesando recibo…" state.
+      setParsing(false);
+    }
   }, [draft?.image_url, reset, scan]);
 
   useEffect(() => {
@@ -97,9 +102,12 @@ export default function ReviewReceiptScreen() {
           {parsing ? (
             <View style={styles.parsingWrap}>
               <Text style={styles.parsingTitle}>Procesando recibo…</Text>
-              <Text style={styles.parsingHint}>Enviando a Google Gemini 1.5 Flash</Text>
+              <Text style={styles.parsingHint}>Enviando a Google Gemini 2.5 Flash</Text>
             </View>
-          ) : scanError && !draft ? (
+          ) : scanError ? (
+            // `scan` starts a draft before parsing, so on failure the store
+            // still holds an empty draft — the retry state must not depend on
+            // the draft being absent.
             <View style={styles.parsingWrap}>
               <Text style={styles.parsingTitle}>No se pudo procesar este recibo</Text>
               <Text style={styles.parsingHint}>Revisa la imagen e inténtalo de nuevo.</Text>
