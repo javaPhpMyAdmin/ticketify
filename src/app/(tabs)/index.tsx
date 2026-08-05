@@ -1,12 +1,25 @@
-import { Platform, ScrollView, StyleSheet } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { Image, Platform, ScrollView, StyleSheet } from 'react-native';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 
-import { Card, CategoryCard, Divider, Fab, ReceiptRow, Text, View } from '@/components';
+import {
+  Card,
+  CategoryCard,
+  Divider,
+  Fab,
+  Pressable,
+  ReceiptRow,
+  Text,
+  View,
+} from '@/components';
 import { MonthlyBudgetCard, useBudget } from '@/features/budget';
 import { useHomeFeed } from '@/features/home';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
+import { useSessionStore } from '../../features/auth';
 
 /**
  * NativeTabs (iOS) does not push screen content up: the first ScrollView
@@ -24,6 +37,16 @@ export default function HomeScreen() {
   const { budget, spent } = useBudget();
   const { categories, receipts, wantsSnacksTotal } = useHomeFeed();
   const insets = useSafeAreaInsets();
+  const { session } = useSessionStore();
+  // Canonical name key is `full_name` (see profile-sync); `name` is kept as a
+  // legacy fallback. Both can be absent (email signup sets no metadata).
+  const fullName =
+    session?.user?.user_metadata?.full_name ??
+    session?.user?.user_metadata?.name ??
+    '';
+  const firstName = fullName.trim().split(' ')[0];
+  const displayName = firstName || 'Usuario';
+  const avatarUrl = session?.user?.user_metadata?.avatar_url;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -32,9 +55,22 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.greeting}>
-          {/* Neutral greeting: profile names are not wired into the home
-              header yet, so the header never pretends to know the user. */}
-          <Text style={styles.greetingText}>¡Hola!</Text>
+          <Text style={styles.greetingText}>¡Hola {displayName}!</Text>
+          <Pressable
+            onPress={() => router.push('/profile')}
+            accessibilityLabel="Abrir perfil"
+            accessibilityRole="button"
+          >
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatar} />
+            ) : (
+              <View style={[styles.avatar, styles.avatarFallback]}>
+                <Text style={styles.avatarInitial}>
+                  {displayName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
+          </Pressable>
         </View>
 
         <MonthlyBudgetCard
@@ -85,7 +121,10 @@ export default function HomeScreen() {
       </ScrollView>
 
       <View
-        style={[styles.fabWrap, { bottom: insets.bottom + TAB_BAR_HEIGHT + spacing.xl }]}
+        style={[
+          styles.fabWrap,
+          { bottom: insets.bottom + TAB_BAR_HEIGHT + spacing.xl },
+        ]}
         pointerEvents="box-none"
       >
         <Fab
@@ -111,6 +150,10 @@ const styles = StyleSheet.create({
   },
   greeting: {
     paddingTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
   },
   greetingText: {
     ...typography.headlineLgMobile,
@@ -132,5 +175,19 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: 'center',
+  },
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+  },
+  avatarFallback: {
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    ...typography.headlineMd,
+    color: colors.background,
   },
 });
