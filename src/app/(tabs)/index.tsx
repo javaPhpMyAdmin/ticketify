@@ -1,5 +1,5 @@
 import { ScrollView, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
 import { Card, CategoryCard, Divider, Fab, ReceiptRow, Text, View } from '@/components';
@@ -8,10 +8,21 @@ import { useHomeFeed } from '@/features/home';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
 
+/**
+ * NativeTabs (iOS) does not push screen content up: the first ScrollView
+ * adjusts its own content inset automatically, but absolutely-positioned
+ * siblings (the FAB) render behind the native tab bar. `TAB_BAR_HEIGHT` is
+ * the UIKit base height (49pt); the home-indicator inset is added at render
+ * time via `useSafeAreaInsets` so the FAB sits above the tab bar, not
+ * behind its glass.
+ */
+const TAB_BAR_HEIGHT = 49;
+
 export default function HomeScreen() {
   const currency = useSettingsStore((s) => s.currency);
   const { budget, spent } = useBudget();
   const { categories, receipts, wantsSnacksTotal } = useHomeFeed();
+  const insets = useSafeAreaInsets();
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -72,7 +83,10 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
 
-      <View style={styles.fabWrap} pointerEvents="box-none">
+      <View
+        style={[styles.fabWrap, { bottom: insets.bottom + TAB_BAR_HEIGHT + spacing.xl }]}
+        pointerEvents="box-none"
+      >
         <Fab
           label="Scan Ticket"
           icon="camera.fill"
@@ -116,7 +130,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: spacing.xl,
     alignItems: 'center',
   },
 });
