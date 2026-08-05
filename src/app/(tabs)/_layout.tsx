@@ -21,14 +21,6 @@ export default function TabsLayout() {
         <Icon sf="chart.bar.fill" drawable="ic_menu_sort_by_size" />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="scan">
-        <Label>Scan</Label>
-        <Icon
-          sf={{ default: 'camera', selected: 'camera.fill' }}
-          drawable="ic_menu_camera"
-          selectedColor={emerald}
-        />
-      </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="history">
         <Label>History</Label>
