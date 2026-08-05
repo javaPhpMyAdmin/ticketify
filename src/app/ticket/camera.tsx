@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Linking, StyleSheet } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon, IconButton, Pressable, Text, View } from '@/components';
 import { useReceiptDraftActions } from '@/features/tickets';
+import { pickBestPictureSize } from '@/features/tickets/lib/picture-size';
 import { tempId } from '@/lib/format';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -20,6 +21,12 @@ export default function CameraScreen() {
   // throws on takePictureAsync before onCameraReady fires, so the shutter is
   // gated on this flag (see handleCapture).
   const [isCameraReady, setIsCameraReady] = useState(false);
+  // Captures at a capped resolution (see pickBestPictureSize): the parse
+  // pipeline base64-encodes the photo and sends it to Gemini, so a full 8MP
+  // sensor shot (multi-MB JPEG) makes the upload and the model slow — and can
+  // push the whole invoke past the 30s client timeout. A ~1280px capture keeps
+  // the receipt readable while staying well inside the timeout budget.
+  const [pictureSize, setPictureSize] = useState<string | undefined>(undefined);
   // In-screen error for the capture/gallery flows. The store's `setError`
   // writes a field nothing reads (the review screen surfaces the mutation
   // error instead), so failures are ALSO shown here and the user stays on the
@@ -28,6 +35,21 @@ export default function CameraScreen() {
   const cameraRef = useRef<CameraView | null>(null);
   const { startDraft, setError } = useReceiptDraftActions();
   const [permission, requestPermission] = useCameraPermissions();
+
+  useEffect(() => {
+    if (!isCameraReady || !cameraRef.current) return;
+    let cancelled = false;
+    cameraRef.current
+      .getAvailablePictureSizesAsync()
+      .then((sizes) => {
+        if (!cancelled) setPictureSize(pickBestPictureSize(sizes));
+      })
+      // Non-fatal: falls back to the sensor's default resolution.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isCameraReady]);
 
   const handleCapture = async () => {
     if (busy || !isCameraReady) return;
@@ -121,7 +143,7 @@ export default function CameraScreen() {
           <View style={styles.shutterInner} />
         </Pressable>
       ) : null}
-      <View style={styles.galleryButton} />
+      <View style={styles.gallerySpacer} />
     </SafeAreaView>
   );
 
@@ -158,7 +180,7 @@ export default function CameraScreen() {
               onPress={() => router.back()}
               accessibilityLabel="Cerrar cámara"
             />
-            <View style={{ flex: 1 }} />
+            <View style={styles.topBarSpacer} />
           </SafeAreaView>
           <View style={styles.permissionState}>
             <Icon name="camera.fill" size={44} color={colors.textSecondary} />
@@ -199,6 +221,7 @@ export default function CameraScreen() {
           style={StyleSheet.absoluteFill}
           facing="back"
           flash={flash}
+          pictureSize={pictureSize}
           onCameraReady={() => setIsCameraReady(true)}
         />
         <SafeAreaView style={styles.topBar} edges={['top']}>
@@ -210,7 +233,7 @@ export default function CameraScreen() {
             onPress={() => router.back()}
             accessibilityLabel="Cerrar cámara"
           />
-          <View style={{ flex: 1 }} />
+          <View style={styles.topBarSpacer} />
           <IconButton
             icon="bolt.fill"
             iconSize={20}
@@ -244,11 +267,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
   },
+  // Pushes the X (left) and flash (right) to the edges. Must be transparent:
+  // the `View` atom defaults to the theme background, which painted a white
+  // bar across the top of the dark camera screen.
+  topBarSpacer: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
   permissionState: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
+    // The `View` atom defaults to the theme background (offWhite). This state
+    // sits over the dark camera container, so it must stay transparent to keep
+    // the white text readable.
+    backgroundColor: 'transparent',
   },
   permissionMessage: {
     ...typography.headlineMd,
@@ -288,6 +322,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
+    // The `View` atom defaults to the theme background (offWhite). Without
+    // transparency this overlay painted a solid rectangle over the camera
+    // preview, hiding it in the middle of the screen.
+    backgroundColor: 'transparent',
   },
   frame: {
     width: '100%',
@@ -298,6 +336,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.xl,
+    backgroundColor: 'transparent',
   },
   hint: {
     ...typography.headlineMd,
@@ -318,6 +357,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  // Invisible column that mirrors the gallery button width so the shutter
+  // stays centered under `space-between`. Deliberately has no background —
+  // styling it like a button made it look tappable when it does nothing.
+  gallerySpacer: {
+    width: 56,
+    height: 56,
+    backgroundColor: 'transparent',
   },
   shutterOuter: {
     width: 80,
