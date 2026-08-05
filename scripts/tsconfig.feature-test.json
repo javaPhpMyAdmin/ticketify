@@ -25,6 +25,7 @@
     "../src/features/tickets/api.ts",
     "../src/lib/format.ts",
     "../src/types/index.ts",
-    "../scripts/test-stubs/supabase.ts"
+    "../scripts/test-stubs/supabase.ts",
+    "../scripts/test-stubs/expo-file-system.ts"
   ]
 }

@@ -28,11 +28,18 @@ export interface RpcResultState {
   error: StubError;
 }
 
+/** What `functions.invoke(fn)` resolves to (per function name). */
+export interface FunctionInvokeState {
+  data: unknown;
+  error: Error | null;
+}
+
 /** One entry in the double's call log (harness seam for write guards). */
 export type CallLogEntry =
   | { kind: 'from'; table: string }
   | { kind: 'rpc'; fn: string; params: Record<string, unknown> | null }
-  | { kind: 'upsert'; table: string };
+  | { kind: 'upsert'; table: string }
+  | { kind: 'invoke'; fn: string; opts: unknown };
 
 /** The `from(table)` surface: upserts (auth) and a select chain (reads). */
 export interface FromBuilder {
@@ -80,6 +87,12 @@ export type SupabaseBehavior = {
     fn: string,
     params?: Record<string, unknown>,
   ) => Promise<{ data: unknown[] | null; error: StubError }>;
+  functions: {
+    invoke: (
+      fn: string,
+      opts?: { body?: unknown; timeout?: number },
+    ) => Promise<{ data: unknown; error: Error | null }>;
+  };
 };
 
 /** Per-table read results (harness seam, see `__setTableRead`). */
@@ -87,6 +100,9 @@ const tableReads = new Map<string, TableReadState>();
 
 /** Per-function RPC results (harness seam, see `__setRpcResult`). */
 const rpcResults = new Map<string, RpcResultState>();
+
+/** Per-function edge-invoke results (harness seam, see `__setFunctionInvoke`). */
+const functionInvokes = new Map<string, FunctionInvokeState>();
 
 /** Every backend interaction the harness can assert on (write guards). */
 const callLog: CallLogEntry[] = [];
@@ -153,6 +169,13 @@ const defaultBehavior = (): SupabaseBehavior => ({
     if (state.error) return Promise.resolve({ data: null, error: state.error });
     return Promise.resolve({ data: state.rows, error: null });
   },
+  functions: {
+    invoke: (fn: string, opts?: { body?: unknown; timeout?: number }) => {
+      callLog.push({ kind: 'invoke', fn, opts: opts ?? null });
+      const state = functionInvokes.get(fn) ?? { data: null, error: null };
+      return Promise.resolve({ data: state.data, error: state.error });
+    },
+  },
 });
 
 let behavior = defaultBehavior();
@@ -216,6 +239,7 @@ export function __resetSupabaseBehavior(): void {
   behavior = defaultBehavior();
   tableReads.clear();
   rpcResults.clear();
+  functionInvokes.clear();
   callLog.length = 0;
 }
 
@@ -234,6 +258,14 @@ export function __setTableRead(
 /** Arms the rows (or the error) `rpc(fn)` resolves to. */
 export function __setRpcResult(fn: string, state: Partial<RpcResultState>): void {
   rpcResults.set(fn, { rows: state.rows ?? null, error: state.error ?? null });
+}
+
+/** Arms the data (or the error) `functions.invoke(fn)` resolves to. */
+export function __setFunctionInvoke(
+  fn: string,
+  state: Partial<FunctionInvokeState>,
+): void {
+  functionInvokes.set(fn, { data: state.data ?? null, error: state.error ?? null });
 }
 
 /** Snapshot of every backend interaction since the last reset. */
@@ -279,6 +311,15 @@ export const supabase = {
   from: (table: string) => behavior.from(table),
   rpc: (fn: string, params?: Record<string, unknown>) =>
     behavior.rpc(fn, params),
+  // Edge-function surface: mirrors the slice of supabase-js the tickets
+  // feature uses; behavior is armed per function via `__setFunctionInvoke`
+  // and the shape follows FunctionResponse.
+  functions: {
+    invoke: (
+      fn: string,
+      opts?: { body?: unknown; timeout?: number },
+    ) => behavior.functions.invoke(fn, opts),
+  },
 };
 
 /**
