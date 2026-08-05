@@ -113,6 +113,9 @@ importers:
       '@types/react':
         specifier: ~19.1.0
         version: 19.1.17
+      '@unrs/resolver-binding-darwin-arm64':
+        specifier: 1.12.2
+        version: 1.12.2
       eslint:
         specifier: ^9.0.0
         version: 9.39.5
@@ -6567,8 +6570,7 @@ snapshots:
   '@unrs/resolver-binding-android-arm64@1.12.2':
     optional: true
 
-  '@unrs/resolver-binding-darwin-arm64@1.12.2':
-    optional: true
+  '@unrs/resolver-binding-darwin-arm64@1.12.2': {}
 
   '@unrs/resolver-binding-darwin-x64@1.12.2':
     optional: true

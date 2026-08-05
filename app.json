@@ -53,7 +53,8 @@
       "expo-secure-store"
     ],
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": true,
+      "tsconfigPaths": true
     },
     "extra": {
       "supabaseUrl": "https://YOUR-PROJECT.supabase.co",
