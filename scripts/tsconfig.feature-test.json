@@ -23,6 +23,7 @@
     "../src/features/budget/api.ts",
     "../src/features/analytics/api.ts",
     "../src/features/tickets/api.ts",
+    "../src/features/tickets/lib/picture-size.ts",
     "../src/lib/format.ts",
     "../src/types/index.ts",
     "../scripts/test-stubs/supabase.ts",

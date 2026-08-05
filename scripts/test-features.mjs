@@ -138,6 +138,7 @@ let budgetMod;
 let analyticsMod;
 let ticketsMod;
 let keysMod;
+let pictureSizeMod;
 let adaptersMod;
 
 async function run() {
@@ -155,6 +156,7 @@ async function run() {
   ticketsMod = await load('src/features/tickets/api.js');
   keysMod = await load('src/lib/query-keys.js');
   adaptersMod = await load('src/lib/supabase/query-adapters.js');
+  pictureSizeMod = await load('src/features/tickets/lib/picture-size.js');
 
   console.log('\n[tests] authenticated profile reads\n');
 
@@ -608,6 +610,28 @@ async function run() {
     );
     const invokes = stubMod.__getCallLog().filter((e) => e.kind === 'invoke');
     assert.equal(invokes.length, 0, 'no invoke when unconfigured');
+  });
+
+  await test('pickBestPictureSize prefers the largest size at or below the cap', async () => {
+    assert.equal(
+      pictureSizeMod.pickBestPictureSize(['3840x2160', '1920x1080', '1280x720']),
+      '1280x720',
+    );
+  });
+
+  await test('pickBestPictureSize returns the smallest when every size exceeds the cap', async () => {
+    assert.equal(
+      pictureSizeMod.pickBestPictureSize(['4000x3000', '3840x2160', '3264x2448']),
+      '3264x2448',
+    );
+  });
+
+  await test('pickBestPictureSize handles mixed-case and malformed entries', async () => {
+    assert.equal(pictureSizeMod.pickBestPictureSize(['3840X2160', 'junk', '']), '3840X2160');
+  });
+
+  await test('pickBestPictureSize returns undefined for an empty list', async () => {
+    assert.equal(pictureSizeMod.pickBestPictureSize([]), undefined);
   });
 
   console.log('');
