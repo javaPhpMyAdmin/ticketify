@@ -121,8 +121,8 @@ export function daysAgoISO(days: number): string {
  * month a pure day offset spills into the previous month, and Home's
  * current-month view (`currentMonthKey()`) renders empty. The current-month
  * mock receipts use this so the demo always fills Home regardless of launch
- * day; the ~35-day seed keeps raw `daysAgoISO` so the History tab still has
- * a previous month to navigate to.
+ * day; the previous-month seed uses `previousMonthISO` so the History tab
+ * always has a previous month to navigate to.
  */
 export function currentMonthDaysAgoISO(days: number): string {
   const today = new Date();
@@ -134,6 +134,22 @@ export function currentMonthDaysAgoISO(days: number): string {
 }
 
 /**
+ * `YYYY-MM-DD` reliably inside the PREVIOUS month (the 15th), in local
+ * calendar time. Unlike a fixed `daysAgoISO` offset — which on the first
+ * days of a month lands two months back — this always seeds the previous
+ * month, so the History tab and the price-alert pair stay anchored no
+ * matter which day the app launches.
+ */
+export function previousMonthISO(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth(); // 0-based
+  const prevYear = month === 0 ? year - 1 : year;
+  const prevMonth = month === 0 ? 12 : month;
+  return `${prevYear}-${String(prevMonth).padStart(2, '0')}-15`;
+}
+
+/**
  * Seeded receipts for the Home feed offline. Without these the feed renders
  * one row at most (whatever was saved this session) and the screen ends
  * halfway down, leaving an empty band under the floating scan FAB. Several
@@ -141,7 +157,7 @@ export function currentMonthDaysAgoISO(days: number): string {
  * per category in mock mode). Purchase dates are anchored to the current
  * month (`currentMonthDaysAgoISO`): the current-month receipts fill Home no
  * matter which day the app launches (pure day offsets would spill into the
- * previous month on days 1–11), while the ~35-day one seeds the previous
+ * previous month on days 1–11), while `previousMonthISO` seeds the previous
  * month for the History tab. Two receipts carry
  * demo `image_url` placeholders (picsum) so the receipt-detail screen
  * shows a real ticket photo; real scans store the uploaded ticket URL.
@@ -160,7 +176,21 @@ export const MOCK_RECEIPTS: {
   status: PurchaseStatus;
   wants_snacks_total?: number;
   category_totals?: Record<string, number>;
-  items?: { name: string; amount: number; category: string }[];
+  items?: {
+    name: string;
+    /** Line total (already existed; the feed consumes it). */
+    amount: number;
+    /**
+     * Quantity and unit price are optional and only present when the
+     * receipt participates in price alerts: the alert compares unit prices
+     * of the same product identity across months, so without a unit price
+     * there is no comparable price. When both exist, amount = quantity ×
+     * unit_price (documented invariant).
+     */
+    quantity?: number;
+    unit_price?: number;
+    category: string;
+  }[];
 }[] = [
   {
     id: 'mock-receipt-0001',
@@ -180,10 +210,10 @@ export const MOCK_RECEIPTS: {
       verduleria: 2400,
     },
     items: [
-      { name: 'Leche entera 1L', amount: 1200, category: 'lacteos' },
+      { name: 'Leche entera 1L', amount: 1200, quantity: 1, unit_price: 1200, category: 'lacteos' },
       { name: 'Manteca 200g', amount: 1200, category: 'lacteos' },
       { name: 'Bizcochos de grasa x6', amount: 2100, category: 'panaderia' },
-      { name: 'Papas fritas x3', amount: 3150, category: 'snacks' },
+      { name: 'Papas fritas x3', amount: 3150, quantity: 3, unit_price: 1050, category: 'snacks' },
       { name: 'Gaseosa 2L', amount: 2750.5, category: 'refrescos' },
       { name: 'Bananas 1kg', amount: 1200, category: 'verduleria' },
       { name: 'Tomates 1kg', amount: 1200, category: 'verduleria' },
@@ -344,21 +374,26 @@ export const MOCK_RECEIPTS: {
     ],
   },
   {
-    // Lands in the previous month (~35 days back): guarantees the History
-    // tab has an older month to navigate to while Home stays scoped to the
-    // current month. Totals match the item rows (alimentos 3500 + limpieza
-    // 950 + bebidas 1500 = 5950).
+    // Lands reliably in the previous month via `previousMonthISO` (unlike a
+    // fixed day offset, which spills two months back on the first days of a
+    // month): guarantees the History tab has an older month to navigate to
+    // while Home stays scoped to the current month, and keeps the
+    // price-alert pair (Leche/Papas vs the current month) anchored. Totals
+    // match the item rows (alimentos 3500 + limpieza 950 + bebidas 1500 +
+    // lacteos 1100 + snacks 3060 = 10110).
     id: 'mock-receipt-0009',
     store_name: 'Mercado Central',
-    purchase_date: daysAgoISO(35),
-    scanned_at: daysAgoISO(35),
-    total: 5950,
+    purchase_date: previousMonthISO(),
+    scanned_at: previousMonthISO(),
+    total: 10110,
     image_url: null,
     status: 'confirmed',
     category_totals: {
       alimentos: 3500,
       limpieza: 950,
       bebidas: 1500,
+      lacteos: 1100,
+      snacks: 3060,
     },
     items: [
       { name: 'Harina 0000 1kg', amount: 900, category: 'alimentos' },
@@ -366,6 +401,12 @@ export const MOCK_RECEIPTS: {
       { name: 'Aceite de girasol 1L', amount: 1500, category: 'alimentos' },
       { name: 'Detergente lavaplatos', amount: 950, category: 'limpieza' },
       { name: 'Agua mineral 2L x6', amount: 1500, category: 'bebidas' },
+      // Price-alert pairs with the current month (0001): Leche entera 1L
+      // was 1100 last month vs 1200 now (+9.1% → alert); Papas fritas x3
+      // was 1020/unit last month vs 1050/unit now (+2.9% → below the 5%
+      // threshold, no alert).
+      { name: 'Leche entera 1L', amount: 1100, quantity: 1, unit_price: 1100, category: 'lacteos' },
+      { name: 'Papas fritas x3', amount: 3060, quantity: 3, unit_price: 1020, category: 'snacks' },
     ],
   },
 ];
