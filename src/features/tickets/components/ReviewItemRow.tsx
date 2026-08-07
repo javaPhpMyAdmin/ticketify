@@ -7,6 +7,8 @@ import type { ReviewItem } from '@/types';
 
 export interface ReviewItemRowProps {
   item: ReviewItem;
+  /** ISO 4217 code for the line price (defaults to the settings default, UYU). */
+  currency?: string;
   /** Called when the user toggles the "impulse" switch. */
   onToggleImpulse: (isImpulse: boolean) => void;
 }
@@ -16,7 +18,7 @@ export interface ReviewItemRowProps {
  * the left, line price on the right. Bottom half: AI-suggested
  * category chip + impulse-buy switch.
  */
-export function ReviewItemRow({ item, onToggleImpulse }: ReviewItemRowProps) {
+export function ReviewItemRow({ item, currency, onToggleImpulse }: ReviewItemRowProps) {
   return (
     <View style={styles.row}>
       <View style={styles.top}>
@@ -26,7 +28,9 @@ export function ReviewItemRow({ item, onToggleImpulse }: ReviewItemRowProps) {
           </Text>
           <Text style={styles.qty}>Cant. {item.quantity}</Text>
         </View>
-        <Text style={styles.price}>{formatCurrency(item.total_price, 'USD')}</Text>
+        <Text style={styles.price}>
+          {formatCurrency(item.total_price, currency)}
+        </Text>
       </View>
       <View style={styles.bottom}>
         <Chip label={item.ai_suggested_category_id ?? 'SIN CATEGORÍA'} selected />

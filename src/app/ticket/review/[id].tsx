@@ -1,6 +1,14 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { Image, ScrollView, StyleSheet, TextInput } from 'react-native';
+import LottieView from 'lottie-react-native';
+import {
+  Component,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { Animated, Image, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -13,13 +21,16 @@ import {
   Text,
   View,
 } from '@/components';
+import { useSessionUser } from '@/features/auth';
 import {
   ReceiptItemsList,
   useReceiptDraftActions,
   useReceiptDraftDraft,
   useScanTicket,
+  saveReceipt,
 } from '@/features/tickets';
 import { formatCurrency } from '@/lib/format';
+import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 import type { CardType, PaymentMethod } from '@/types';
 
@@ -38,11 +49,37 @@ const cardTypeLabels: Record<CardType, string> = {
 
 /** Capitalizes the first letter of the brand for display. */
 function capitalize(value: string): string {
-  return value.length > 0 ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+  return value.length > 0
+    ? value.charAt(0).toUpperCase() + value.slice(1)
+    : value;
+}
+
+/**
+ * Catches a render throw from LottieView when the native module is
+ * unavailable: the processing phase falls back to a static placeholder
+ * instead of blanking the whole screen.
+ */
+class LottieErrorBoundary extends Component<
+  { fallback: ReactNode; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
 }
 
 export default function ReviewReceiptScreen() {
   const params = useLocalSearchParams<{ id: string }>();
+  const { userId } = useSessionUser();
+  // The receipt is denominated in the user's currency setting (default
+  // UYU), the same store Home/History read — never a hardcoded code.
+  const currency = useSettingsStore((s) => s.currency);
   const { draft } = useReceiptDraftDraft();
   const { setStore, setPayment, upsertItem, clear } = useReceiptDraftActions();
   // The scan flow is the single entry point for parsing: `scan()` runs
@@ -52,20 +89,96 @@ export default function ReviewReceiptScreen() {
   const { scan, error: scanError, reset } = useScanTicket();
 
   const [parsing, setParsing] = useState(true);
+  // Once the parse resolves the screen shows a short success beat before
+  // revealing the review form: `processing` -> `success` -> form.
+  const [phase, setPhase] = useState<'processing' | 'success'>('processing');
+  // Marching dots shared by both parsing labels ("Procesando recibo" and
+  // "Esperá un momento") so they always animate in sync.
+  const dotOpacity = useRef([
+    new Animated.Value(0),
+    new Animated.Value(0),
+    new Animated.Value(0),
+  ]).current;
+  const checkScale = useRef(new Animated.Value(0)).current;
 
-  // Mock parse after a short delay so we can show the loading state.
+  useEffect(() => {
+    // The dots are separate text nodes (baseline row siblings), so they get
+    // real native views and opacity animates on the native driver. They sit
+    // in the JS tree long enough that the 3 values are negligible either way.
+    const loop = Animated.loop(
+      Animated.stagger(220, [
+        Animated.timing(dotOpacity[0], {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dotOpacity[1], {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dotOpacity[2], {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dotOpacity[0], {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dotOpacity[1], {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dotOpacity[2], {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [dotOpacity]);
+
+  // The scan is the only mock delay: the hook already holds the mock path
+  // for MOCK_PARSE_DELAY_MS (2.5s) so "Procesando recibo" reads like a
+  // real scan — stacking a second beat here would double the wait. The
+  // floor below just keeps a fast (real) parse from flashing a sub-second
+  // processing beat.
+  const MIN_PROCESSING_MS = 800;
+  // How long the green success check stays on screen before the form.
+  const SUCCESS_MS = 750;
+
   const runParse = useCallback(async () => {
     setParsing(true);
+    setPhase('processing');
     reset();
     try {
-      await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+      const startedAt = Date.now();
       await scan(draft?.image_url ?? '');
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < MIN_PROCESSING_MS) {
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, MIN_PROCESSING_MS - elapsed),
+        );
+      }
+      setPhase('success');
+      Animated.spring(checkScale, {
+        toValue: 1,
+        friction: 5,
+        tension: 90,
+        useNativeDriver: true,
+      }).start();
+      await new Promise<void>((resolve) => setTimeout(resolve, SUCCESS_MS));
     } finally {
       // Guaranteed cleanup: a rejected scan must never leave the screen
       // stuck on the infinite "Procesando recibo…" state.
       setParsing(false);
     }
-  }, [draft?.image_url, reset, scan]);
+  }, [checkScale, draft?.image_url, reset, scan]);
 
   useEffect(() => {
     void runParse();
@@ -93,11 +206,36 @@ export default function ReviewReceiptScreen() {
           .join(' ')
       : '';
 
-  const handleConfirm = () => {
-    // TODO: persist to Supabase via the `saveReceipt` helper in
-    // `features/tickets/api.ts`.
-    clear();
-    router.dismiss();
+  const [saving, setSaving] = useState(false);
+  // Synchronous double-tap guard: the `saving` state is async, so two taps
+  // in the same frame would both read it as false and run the save twice.
+  // The ref is set before any await, so a second tap in the same frame is
+  // rejected immediately.
+  const savingRef = useRef(false);
+
+  const handleConfirm = async () => {
+    // The save is async; guard against double-taps so the receipt is not
+    // persisted twice (two Home-feed rows in mock mode, two `purchases`
+    // rows in Phase 5) and the screen is dismissed exactly once.
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      // Persist the draft. In prod this is still a stub (returns a local
+      // id, writes nothing until Phase 5); in mock dev
+      // (EXPO_PUBLIC_MOCK_DATA=1) it appends to the receipts store so the
+      // Home feed shows the receipt.
+      if (draft && userId) {
+        await saveReceipt(userId, draft);
+      }
+    } finally {
+      // Cleanup runs even if the write rejects — the review screen must
+      // never stay up with no feedback (Phase 5 will hit real network
+      // errors here).
+      savingRef.current = false;
+      clear();
+      router.dismiss();
+    }
   };
 
   return (
@@ -125,12 +263,81 @@ export default function ReviewReceiptScreen() {
           <View style={{ flex: 1 }} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            parsing && styles.scrollContentParsing,
+          ]}
+        >
           {parsing ? (
-            <View style={styles.parsingWrap}>
-              <Text style={styles.parsingTitle}>Procesando recibo…</Text>
-              <Text style={styles.parsingHint}>Esperá un momento…</Text>
-            </View>
+            phase === 'success' ? (
+              <View style={styles.parsingWrap}>
+                <View style={styles.checkBubble}>
+                  <Animated.View
+                    style={{
+                      transform: [{ scale: checkScale }],
+                    }}
+                  >
+                    <Icon name="checkmark" size={40} color={colors.surface} />
+                  </Animated.View>
+                </View>
+                <Text style={styles.parsingTitle}>Recibo listo</Text>
+              </View>
+            ) : (
+              <View style={styles.parsingWrap}>
+                <LottieErrorBoundary
+                  fallback={
+                    <View
+                      style={[
+                        styles.parsingAnimation,
+                        styles.parsingAnimationFallback,
+                      ]}
+                    >
+                      <Icon
+                        name="doc.text"
+                        size={44}
+                        color={colors.textSecondary}
+                      />
+                    </View>
+                  }
+                >
+                  <LottieView
+                    source={require('../../../../assets/images/notebook-writing.json')}
+                    autoPlay
+                    loop
+                    style={styles.parsingAnimation}
+                  />
+                </LottieErrorBoundary>
+                {/* The dots are SIBLING text nodes in a baseline row, not
+                    nested inside the label: React Native flattens nested
+                    <Text>, so an inner Animated.Text never gets its own
+                    native node and opacity can't animate (regardless of
+                    driver). Separate nodes keep the dots on the same line
+                    AND give them a real node to animate. */}
+                <View style={styles.parsingRow}>
+                  <Text style={styles.parsingTitle}>Procesando recibo</Text>
+                  {dotOpacity.map((dot, index) => (
+                    <Animated.Text
+                      key={index}
+                      style={[styles.parsingTitle, styles.parsingDot, { opacity: dot }]}
+                    >
+                      .
+                    </Animated.Text>
+                  ))}
+                </View>
+                <View style={styles.parsingRow}>
+                  <Text style={styles.parsingHint}>Esperá un momento</Text>
+                  {dotOpacity.map((dot, index) => (
+                    <Animated.Text
+                      key={index}
+                      style={[styles.parsingHint, styles.parsingDot, { opacity: dot }]}
+                    >
+                      .
+                    </Animated.Text>
+                  ))}
+                </View>
+              </View>
+            )
           ) : scanError ? (
             // `scan` starts a draft before parsing, so on failure the store
             // still holds an empty draft — the retry state must not depend on
@@ -204,6 +411,7 @@ export default function ReviewReceiptScreen() {
                 {draft?.items ? (
                   <ReceiptItemsList
                     items={draft.items}
+                    currency={currency}
                     onToggleImpulse={(item, v) =>
                       upsertItem({ ...item, is_impulse: v })
                     }
@@ -219,7 +427,7 @@ export default function ReviewReceiptScreen() {
             <View style={styles.totalRow}>
               <Text style={styles.kicker}>Total del recibo</Text>
               <Text style={styles.totalValue}>
-                {formatCurrency(itemsTotal, 'USD')}
+                {formatCurrency(itemsTotal, currency)}
               </Text>
             </View>
             <View style={styles.matchesRow}>
@@ -233,14 +441,15 @@ export default function ReviewReceiptScreen() {
               </Text>
               {!matches ? (
                 <Text style={styles.matchesDetail}>
-                  Declarado {formatCurrency(draft?.total ?? 0, 'USD')}
+                  Declarado {formatCurrency(draft?.total ?? 0, currency)}
                 </Text>
               ) : null}
             </View>
             <Fab
               label="Confirmar y guardar"
               icon="bolt.fill"
-              onPress={handleConfirm}
+              onPress={() => void handleConfirm()}
+              disabled={saving}
               style={styles.confirmFab}
             />
           </View>
@@ -278,18 +487,62 @@ const styles = StyleSheet.create({
     paddingBottom: 200,
     gap: spacing.lg,
   },
+  // While parsing there is no scrollable form, so the status block can
+  // take the full height and sit centered instead of hugging the top bar.
+  scrollContentParsing: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
   parsingWrap: {
-    paddingVertical: spacing.xxl * 2,
     alignItems: 'center',
     gap: spacing.sm,
   },
+  checkBubble: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    marginBottom: spacing.md,
+  },
+  parsingAnimation: {
+    width: 140,
+    height: 140,
+    marginBottom: spacing.xs,
+  },
+  // Static stand-in for the Lottie animation when the native module is
+  // unavailable (LottieErrorBoundary fallback).
+  parsingAnimationFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.chipBg,
+    borderRadius: radii.md,
+  },
   parsingTitle: {
-    ...typography.headlineMd,
+    ...typography.headlineLg,
+    fontSize: 34,
+    lineHeight: 42,
+    fontWeight: '700',
     color: colors.textPrimary,
   },
   parsingHint: {
-    ...typography.bodyMd,
+    ...typography.bodyLg,
+    fontSize: 20,
+    lineHeight: 26,
     color: colors.textSecondary,
+  },
+  // Row layout keeps the marching dots on the same line as the label:
+  // baseline alignment sits them on the text baseline, and as separate
+  // nodes (not nested Text) they animate reliably.
+  parsingRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  parsingDot: {
+    // Inline dots inherit the label's font metrics via the style array;
+    // this only pins the extra spacing before the first dot.
+    marginLeft: 2,
   },
   retryButton: {
     marginTop: spacing.lg,
