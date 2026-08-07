@@ -6,6 +6,8 @@ import { ReviewItemRow } from './ReviewItemRow';
 
 export interface ReceiptItemsListProps {
   items: ReviewItem[];
+  /** ISO 4217 code for the line prices (defaults to the settings default, UYU). */
+  currency?: string;
   /** When true, the list is rendered without the wrapping Card chrome. */
   bare?: boolean;
   /** Called when the user toggles the "impulse" switch on a row. */
@@ -16,12 +18,21 @@ export interface ReceiptItemsListProps {
  * The list of parsed items shown on the review screen. Internally
  * a stack of `ReviewItemRow`s separated by a `Divider`.
  */
-export function ReceiptItemsList({ items, bare, onToggleImpulse }: ReceiptItemsListProps) {
+export function ReceiptItemsList({
+  items,
+  currency,
+  bare,
+  onToggleImpulse,
+}: ReceiptItemsListProps) {
   const content = (
     <View>
       {items.map((item, idx) => (
         <View key={item.temp_id}>
-          <ReviewItemRow item={item} onToggleImpulse={(v) => onToggleImpulse(item, v)} />
+          <ReviewItemRow
+            item={item}
+            currency={currency}
+            onToggleImpulse={(v) => onToggleImpulse(item, v)}
+          />
           {idx < items.length - 1 ? <Divider /> : null}
         </View>
       ))}
