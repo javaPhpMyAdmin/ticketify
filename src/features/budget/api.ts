@@ -5,6 +5,7 @@
  * Authenticated-only: reads `profiles.monthly_budget` and
  * `currency` for the signed-in user, with a defensive error state on failure.
  */
+import { MOCK_MONTHLY_BUDGET, USE_MOCK_DATA } from '@/lib/mock-data';
 import {
   readMonthlyBudgetRow,
   type FeatureReadResult,
@@ -22,6 +23,11 @@ export type MonthlyBudgetReadResult = FeatureReadResult<MonthlyBudget>;
 export async function fetchMonthlyBudget(
   userId: string,
 ): Promise<MonthlyBudgetReadResult> {
+  if (USE_MOCK_DATA) {
+    // Offline dev (EXPO_PUBLIC_MOCK_DATA=1): serve the fixture instead of
+    // reading `profiles`, so the budget card renders without a real row.
+    return { status: 'ok', data: MOCK_MONTHLY_BUDGET };
+  }
   const result = await readMonthlyBudgetRow(userId);
   if (result.status !== 'ok') return result;
   return {

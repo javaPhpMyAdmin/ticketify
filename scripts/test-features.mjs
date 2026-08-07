@@ -104,6 +104,10 @@ function installRequireHook() {
       request = join(outDir, 'scripts', 'test-stubs', 'supabase.js');
     } else if (request === 'expo-file-system') {
       request = join(outDir, 'scripts', 'test-stubs', 'expo-file-system.js');
+    } else if (request === 'react-native') {
+      // Mirrors the auth harness: the real package cannot load in plain node
+      // (flow syntax); `query-client.ts` only touches AppState + Platform.OS.
+      request = join(outDir, 'scripts', 'test-stubs', 'react-native.js');
     } else if (request.startsWith('@/')) {
       request = join(outDir, 'src', request.slice(2));
     }
@@ -145,6 +149,10 @@ let adaptersMod;
 async function run() {
   console.log('\n[tests] compiling data-access modules…');
   await compile();
+  // The app gates its mock flags on React Native's `__DEV__` global; plain
+  // node has none. Declared for tsc via test-stubs/globals.d.ts; defined
+  // here so the compiled mock config modules load with the mock branches off.
+  globalThis.__DEV__ = false;
   installRequireHook();
   console.log('[tests] loading compiled modules…');
 

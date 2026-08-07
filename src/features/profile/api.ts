@@ -7,6 +7,7 @@
  * `setHouseholdSharing` stays a no-op: the household-sharing switch must
  * remain non-functional in this change.
  */
+import { mockScanUsage, USE_MOCK_DATA } from '@/lib/mock-data';
 import {
   readProfileRow,
   readScanUsageRow,
@@ -27,6 +28,11 @@ export async function fetchScanUsage(
   userId: string,
   yearMonth: string,
 ): Promise<ScanUsageReadResult> {
+  if (USE_MOCK_DATA) {
+    // Offline dev (EXPO_PUBLIC_MOCK_DATA=1): serve the fixture quota row —
+    // same userId / year-month params, fixture counters.
+    return { status: 'ok', data: mockScanUsage(userId, yearMonth) };
+  }
   return readScanUsageRow(userId, yearMonth);
 }
 

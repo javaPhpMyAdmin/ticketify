@@ -130,6 +130,10 @@ let sessionNavMod;
 async function run() {
   console.log('\n[tests] compiling modules with isolated tsconfig…');
   await compile();
+  // The app gates its mock flags on React Native's `__DEV__` global; plain
+  // node has none. Declared for tsc via test-stubs/globals.d.ts; defined
+  // here so the compiled mock config modules load with the mock branches off.
+  globalThis.__DEV__ = false;
   installRequireHook();
   console.log('[tests] loading compiled modules…');
 

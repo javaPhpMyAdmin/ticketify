@@ -12,9 +12,10 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   GBP: '£',
   BRL: 'R$',
   MXN: 'MX$',
+  UYU: '$',
 };
 
-export function formatCurrency(value: number, currency: string = 'USD'): string {
+export function formatCurrency(value: number, currency: string = 'UYU'): string {
   const symbol = CURRENCY_SYMBOLS[currency.toUpperCase()] ?? `${currency} `;
   const fixed = Math.abs(value).toFixed(2);
   // Add thousands separator to the integer part only.
@@ -35,9 +36,24 @@ export const MONTHS_FULL_ES = [
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
 ];
 
+/**
+ * Parses a date string in LOCAL calendar time. `new Date('YYYY-MM-DD')`
+ * parses as UTC midnight, which shifts a day backward in UTC-x zones —
+ * under TZ=America/Montevideo (UTC-3) '2026-08-01' would render "31 jul"
+ * and today "5 ago". Date-only strings are split and built as a local
+ * date; anything with a time component falls back to normal ISO parsing.
+ */
+function parseLocalDate(iso: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (match) {
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  }
+  return new Date(iso);
+}
+
 /** Formats an ISO date as `d MMM` in Spanish — day-first, e.g. `12 ago`. */
 export function formatShortDate(iso: string): string {
-  const date = new Date(iso);
+  const date = parseLocalDate(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return `${date.getDate()} ${MONTHS_SHORT_ES[date.getMonth()]}`;
 }
@@ -73,7 +89,7 @@ export function formatTime(iso: string): string {
 }
 
 export function formatRelativeDay(iso: string, now: Date = new Date()): string {
-  const date = new Date(iso);
+  const date = parseLocalDate(iso);
   if (Number.isNaN(date.getTime())) return iso;
   const sameDay =
     date.getFullYear() === now.getFullYear() &&
@@ -88,6 +104,22 @@ export function formatRelativeDay(iso: string, now: Date = new Date()): string {
     date.getDate() === yesterday.getDate();
   if (isYesterday) return 'Ayer';
   return formatShortDate(iso);
+}
+
+/**
+ * `YYYY-MM-DD` for today in local calendar time. A UTC slice
+ * (`new Date().toISOString().slice(0, 10)`) drifts a day for late-evening
+ * timestamps in UTC-x zones (in UTC-3, from ~21:00 a "today" stamp lands on
+ * the NEXT day), which would push a saved receipt into the next month and
+ * out of Home's current-month view. Mirrors the local-calendar logic of
+ * `daysAgoISO` in `src/lib/mock-data.ts` (days = 0).
+ */
+export function todayLocalISO(): string {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**
