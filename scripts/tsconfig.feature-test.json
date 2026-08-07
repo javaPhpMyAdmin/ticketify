@@ -11,6 +11,7 @@
     "baseUrl": "..",
     "paths": {
       "@/lib/supabase": ["./scripts/test-stubs/supabase.ts"],
+      "react-native": ["./scripts/test-stubs/react-native.ts"],
       "@/*": ["./src/*"]
     },
     "rootDir": ".."
@@ -27,7 +28,9 @@
     "../supabase/functions/parse-ticket/lib/card.ts",
     "../src/lib/format.ts",
     "../src/types/index.ts",
+    "../scripts/test-stubs/globals.d.ts",
     "../scripts/test-stubs/supabase.ts",
-    "../scripts/test-stubs/expo-file-system.ts"
+    "../scripts/test-stubs/expo-file-system.ts",
+    "../scripts/test-stubs/react-native.ts"
   ]
 }

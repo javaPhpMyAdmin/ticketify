@@ -21,10 +21,7 @@
 // 30s client/function timeouts; flash-lite parses the same image in ~4s.
 
 import { createClient } from '@supabase/supabase-js';
-import {
-  normalizeCardBrand,
-  normalizeCardType,
-} from './lib/card.ts';
+import { normalizeCardBrand, normalizeCardType } from './lib/card.ts';
 
 // ---------------------------------------------------------------------------
 // Types — kept local to the function so it can deploy without TS project
@@ -49,7 +46,13 @@ interface ParsedReceipt {
   store_name: string;
   purchase_date: string; // YYYY-MM-DD
   total: number;
-  payment_method: 'cash' | 'card' | 'apple_pay' | 'google_pay' | 'transfer' | 'other';
+  payment_method:
+    | 'cash'
+    | 'card'
+    | 'apple_pay'
+    | 'google_pay'
+    | 'transfer'
+    | 'other';
   /** Card network printed on the receipt (Visa, OCA, …), null when unknown. */
   card_brand: string | null;
   /** Card kind printed on the receipt, null when unknown. */
@@ -59,7 +62,12 @@ interface ParsedReceipt {
 
 interface ErrorResponse {
   error: string;
-  code: 'unauthenticated' | 'quota_exceeded' | 'bad_request' | 'parse_failed' | 'internal';
+  code:
+    | 'unauthenticated'
+    | 'quota_exceeded'
+    | 'bad_request'
+    | 'parse_failed'
+    | 'internal';
   /** Quota metadata, only present on quota_exceeded responses. */
   limit?: number;
   used?: number;
@@ -78,7 +86,8 @@ class ParseError extends Error {}
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+const SUPABASE_SERVICE_ROLE_KEY =
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? '';
 const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-3.1-flash-lite';
@@ -130,7 +139,13 @@ const PAYMENT_METHODS = new Set([
   'other',
 ]);
 
-/** Category slugs the app renders directly as review chips. */
+/**
+ * Category slugs the Gemini prompt may emit. These are the descriptive
+ * vocabulary fed to the model; they are NOT the client taxonomy — the
+ * canonical registry lives in `src/features/home/categories.ts` and the
+ * output is mapped there via CATEGORY_SLUG_ALIASES below, so real parse
+ * data never misbuckets into "Otros" on the client.
+ */
 const CATEGORY_SLUGS = new Set([
   'frutas-verduras',
   'refrescos',
@@ -141,6 +156,16 @@ const CATEGORY_SLUGS = new Set([
   'snacks',
   'otros',
 ]);
+
+/**
+ * Maps the edge vocabulary to the client-canonical slugs
+ * (`src/features/home/categories.ts`). Slugs with no alias pass through
+ * unchanged.
+ */
+const CATEGORY_SLUG_ALIASES: Record<string, string> = {
+  'frutas-verduras': 'verduleria',
+  carnes: 'carniceria',
+};
 
 /**
  * Cheap structural validation for a base64 string: non-empty, only base64
@@ -189,7 +214,10 @@ Rules:
 - suggested_category_slug: exactly one of frutas-verduras, refrescos, panaderia, carnes, lacteos, limpieza, snacks, otros, or null when you are not confident.
 - All money values must be plain numbers without currency symbols or thousands separators.`;
 
-async function callGemini(imageBase64: string, mimeType: string): Promise<ParsedReceipt> {
+async function callGemini(
+  imageBase64: string,
+  mimeType: string,
+): Promise<ParsedReceipt> {
   if (!GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY is not configured');
   }
@@ -231,13 +259,19 @@ async function callGemini(imageBase64: string, mimeType: string): Promise<Parsed
     throw new Error(
       isTimeout
         ? 'Gemini request timed out'
-        : `Gemini request failed: ${err instanceof Error ? err.message : 'network error'}`,
+        : `Gemini request failed: ${
+            err instanceof Error ? err.message : 'network error'
+          }`,
     );
   }
 
   if (!res.ok) {
     const detail = await geminiErrorDetail(res);
-    console.error('[parse-ticket]', `Gemini request failed (HTTP ${res.status})`, detail);
+    console.error(
+      '[parse-ticket]',
+      `Gemini request failed (HTTP ${res.status})`,
+      detail,
+    );
     throw new Error(`Gemini request failed (HTTP ${res.status}): ${detail}`);
   }
 
@@ -286,7 +320,11 @@ function extractResponseText(payload: unknown): string | null {
   const parts = content.parts;
   if (!Array.isArray(parts)) return null;
   for (const part of parts) {
-    if (isRecord(part) && typeof part.text === 'string' && part.text.trim() !== '') {
+    if (
+      isRecord(part) &&
+      typeof part.text === 'string' &&
+      part.text.trim() !== ''
+    ) {
       return part.text;
     }
   }
@@ -320,7 +358,9 @@ function round2(value: number): number {
 }
 
 /** Unknown payment methods degrade to 'other' instead of failing the scan. */
-function normalizePaymentMethod(value: unknown): ParsedReceipt['payment_method'] {
+function normalizePaymentMethod(
+  value: unknown,
+): ParsedReceipt['payment_method'] {
   return typeof value === 'string' && PAYMENT_METHODS.has(value)
     ? (value as ParsedReceipt['payment_method'])
     : 'other';
@@ -328,7 +368,11 @@ function normalizePaymentMethod(value: unknown): ParsedReceipt['payment_method']
 
 /** Unknown category slugs degrade to null (the review chip shows SIN CATEGORÍA). */
 function normalizeCategorySlug(value: unknown): string | null {
-  return typeof value === 'string' && CATEGORY_SLUGS.has(value) ? value : null;
+  if (typeof value !== 'string' || !CATEGORY_SLUGS.has(value)) return null;
+  // Emit the client-canonical slug (e.g. 'frutas-verduras' → 'verduleria',
+  // 'carnes' → 'carniceria') so the Home registry buckets parse data into
+  // the right category instead of a duplicate "Otros" card.
+  return CATEGORY_SLUG_ALIASES[value] ?? value;
 }
 
 function parseReceiptJson(raw: unknown): ParsedReceipt {
@@ -337,7 +381,10 @@ function parseReceiptJson(raw: unknown): ParsedReceipt {
   }
 
   const store_name = requireNonEmptyString(raw.store_name, 'store_name');
-  const purchase_date = requireNonEmptyString(raw.purchase_date, 'purchase_date');
+  const purchase_date = requireNonEmptyString(
+    raw.purchase_date,
+    'purchase_date',
+  );
   if (!/^\d{4}-\d{2}-\d{2}$/.test(purchase_date)) {
     throw new ParseError('purchase_date must be YYYY-MM-DD');
   }
@@ -368,7 +415,15 @@ function parseReceiptJson(raw: unknown): ParsedReceipt {
     throw new ParseError('items must not be empty');
   }
 
-  return { store_name, purchase_date, total, payment_method, card_brand, card_type, items };
+  return {
+    store_name,
+    purchase_date,
+    total,
+    payment_method,
+    card_brand,
+    card_type,
+    items,
+  };
 }
 
 function parseItem(entry: unknown, index: number): ParsedItem {
@@ -381,11 +436,15 @@ function parseItem(entry: unknown, index: number): ParsedItem {
     1,
     Math.floor(requireFiniteNumber(entry.quantity, `items[${index}].quantity`)),
   );
-  const unit_price = round2(requireFiniteNumber(entry.unit_price, `items[${index}].unit_price`));
+  const unit_price = round2(
+    requireFiniteNumber(entry.unit_price, `items[${index}].unit_price`),
+  );
   const total_price = round2(
     requireFiniteNumber(entry.total_price, `items[${index}].total_price`),
   );
-  const suggested_category_slug = normalizeCategorySlug(entry.suggested_category_slug);
+  const suggested_category_slug = normalizeCategorySlug(
+    entry.suggested_category_slug,
+  );
 
   return { name, quantity, unit_price, total_price, suggested_category_slug };
 }
@@ -396,7 +455,10 @@ function parseItem(entry: unknown, index: number): ParsedItem {
 
 function currentYearMonth(): string {
   const now = new Date();
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(
+    2,
+    '0',
+  )}`;
 }
 
 /**
@@ -464,9 +526,15 @@ Deno.serve(async (req: Request) => {
   }
 
   const userClient_ = userClient(jwt);
-  const { data: userData, error: userErr } = await userClient_.auth.getUser(jwt);
+  const { data: userData, error: userErr } = await userClient_.auth.getUser(
+    jwt,
+  );
   if (userErr || !userData?.user) {
-    return jsonError(401, 'unauthenticated', userErr?.message ?? 'Invalid token');
+    return jsonError(
+      401,
+      'unauthenticated',
+      userErr?.message ?? 'Invalid token',
+    );
   }
   const userId = userData.user.id;
 
@@ -483,7 +551,11 @@ Deno.serve(async (req: Request) => {
     return jsonError(400, 'bad_request', 'image_base64 is not valid base64');
   }
   if (body.image_base64.length > MAX_BASE64_CHARS) {
-    return jsonError(400, 'bad_request', 'image_base64 exceeds the maximum allowed size');
+    return jsonError(
+      400,
+      'bad_request',
+      'image_base64 exceeds the maximum allowed size',
+    );
   }
   const mimeType =
     typeof body.mime_type === 'string' && /^image\//.test(body.mime_type)

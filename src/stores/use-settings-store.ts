@@ -22,7 +22,7 @@ interface SettingsState {
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   monthly_budget: 1200,
-  currency: 'USD',
+  currency: 'UYU',
   tier: 'free',
   household_sharing: false,
   setBudget: (monthly_budget) => set({ monthly_budget }),

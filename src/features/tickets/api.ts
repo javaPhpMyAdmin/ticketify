@@ -8,8 +8,12 @@
  */
 import { FunctionsHttpError, FunctionsFetchError } from '@supabase/supabase-js';
 
+import { tempId, todayLocalISO } from '@/lib/format';
+import { USE_MOCK_DATA } from '@/lib/mock-data';
+import { queryClient } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { tempId } from '@/lib/format';
+import { useReceiptsStore } from '@/stores/use-receipts-store';
 import type { CardType, PaymentMethod, ReceiptDraft, ReviewItem } from '@/types';
 
 export interface UploadResult {
@@ -291,11 +295,68 @@ export async function parseTicket(imageUri: string): Promise<ParsedReceipt> {
  * the flow completes, but nothing is persisted until Phase 5 wires the real
  * `purchases` / `purchase_items` insert (the remote schema is not applied
  * yet).
+ *
+ * Offline dev (EXPO_PUBLIC_MOCK_DATA=1): instead of hitting Supabase, the
+ * receipt is appended to the `useReceiptsStore` list so the mock Home feed
+ * can render it, and the session's home-feed query is invalidated so the tab
+ * shows the new receipt. Callers keep the same return shape either way.
  */
 export async function saveReceipt(
-  _userId: string,
-  _draft: ReceiptDraft,
+  userId: string,
+  draft: ReceiptDraft,
 ): Promise<{ id: string }> {
+  if (USE_MOCK_DATA) {
+    const id = `mock-${tempId()}`;
+    const { list, setList } = useReceiptsStore.getState();
+    // Persist the line items (name + amount + suggested category) so the
+    // per-category drill-down can break this receipt down by item type.
+    // Unknown/absent suggestions bucket into 'otros'.
+    const items = draft.items.map((item) => ({
+      name: item.name,
+      amount: item.total_price,
+      category: item.ai_suggested_category_id ?? 'otros',
+    }));
+    const category_totals = items.reduce<Record<string, number>>(
+      (totals, item) => {
+        totals[item.category] = (totals[item.category] ?? 0) + item.amount;
+        return totals;
+      },
+      {},
+    );
+    setList([
+      ...list,
+      {
+        id,
+        store_name: draft.store_name,
+        purchase_date: draft.purchase_date,
+        // The ticket was captured now, so it lands at the top of
+        // "Recibos recientes" even if its printed date is older. Same
+        // YYYY-MM-DD format as the mock so the scan order stays stable.
+        // Local calendar time (not a UTC slice): a UTC stamp drifts a day
+        // for late-evening scans in UTC-x zones and would drop the receipt
+        // out of the current month on Home.
+        scanned_at: todayLocalISO(),
+        total: draft.total,
+        image_url: draft.image_url,
+        status: 'confirmed',
+        // Persist the impulse total so the Home "snacks" callout can render
+        // a non-zero value (the live draft is cleared right after save).
+        wants_snacks_total: draft.items.reduce(
+          (sum, item) => (item.is_impulse ? sum + item.total_price : sum),
+          0,
+        ),
+        items,
+        category_totals,
+      },
+    ]);
+    // The mock feed queryFn reads the store list, so nudge it to refetch and
+    // render the new receipt (server-state-caching spec: invalidate the
+    // source after a mutation).
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.homeFeed(userId),
+    });
+    return { id };
+  }
   // TODO(Phase 5): insert into `purchases` and `purchase_items` for the
   // authenticated user. Deliberately still a no-op: writes are out of scope
   // and the remote schema does not exist yet.

@@ -1,19 +1,41 @@
 import { create } from 'zustand';
 
+import { MOCK_RECEIPTS, USE_MOCK_DATA } from '@/lib/mock-data';
 import type { PaymentMethod, PurchaseStatus, ReceiptDraft, ReviewItem } from '@/types';
-import { tempId } from '@/lib/format';
+import { tempId, todayLocalISO } from '@/lib/format';
 
 export type ScanState = 'idle' | 'capturing' | 'parsing' | 'reviewing' | 'saving' | 'error';
 
 interface ReceiptsState {
-  /** Server-backed purchases, hydrated from Supabase on app start. */
+  /**
+   * Receipts backing Home's feed and the History/drill-down screens. Mock
+   * only for now: seeded from `MOCK_RECEIPTS` and appended to by the mock
+   * save path — nothing hydrates it from Supabase until Phase 5 wires the
+   * real `purchases` / `purchase_items` reads.
+   */
   list: Array<{
     id: string;
     store_name: string;
     purchase_date: string;
+    /** When the receipt was scanned/captured (ISO). Orders "Recibos recientes". */
+    scanned_at: string;
     total: number;
     image_url: string | null;
     status: PurchaseStatus;
+    /** Impulse-items total for the receipt, if the source provides it. */
+    wants_snacks_total?: number;
+    /**
+     * Per-category totals (category key -> amount) so the Home feed can
+     * break spending down by item type. Mock-only for now; Phase 5 persists
+     * `category_id` per item server-side and derives this from the items.
+     */
+    category_totals?: Record<string, number>;
+    /**
+     * Line items of the receipt (name + amount + category key). Mock-only
+     * for now; drives the per-category detail screen. Phase 5 persists
+     * items server-side with a real `category_id`.
+     */
+    items?: { name: string; amount: number; category: string }[];
   }>;
   /** The receipt currently being captured / parsed / reviewed. */
   draft: ReceiptDraft | null;
@@ -37,7 +59,9 @@ interface ReceiptsState {
 
 const emptyDraft = (imageUrl: string): ReceiptDraft => ({
   store_name: '',
-  purchase_date: new Date().toISOString().slice(0, 10),
+  // Local calendar date (mirrors saveReceipt/mockParsedReceipt): the parse
+  // result overwrites this seed, and it must never drift to UTC's date.
+  purchase_date: todayLocalISO(),
   total: 0,
   payment_method: 'card',
   image_url: imageUrl,
@@ -45,7 +69,11 @@ const emptyDraft = (imageUrl: string): ReceiptDraft => ({
 });
 
 export const useReceiptsStore = create<ReceiptsState>((set) => ({
-  list: [],
+  // Offline dev seeds the feed with sample receipts so the Home tab fills
+  // the screen (no empty band under the floating FAB); prod starts empty —
+  // real hydration lands in Phase 5 (History/drill-downs are mock-only
+  // until then).
+  list: USE_MOCK_DATA ? MOCK_RECEIPTS : [],
   draft: null,
   scanState: 'idle',
   scanError: null,
