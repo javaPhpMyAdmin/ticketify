@@ -63,7 +63,18 @@ export interface ReceiptSpendRecord {
   store_name?: string;
   purchase_date: string;
   category_totals?: Record<string, number>;
-  items?: { name: string; amount: number; category: string }[];
+  items?: {
+    name: string;
+    amount: number;
+    /**
+     * Quantity and unit price are optional, matching the mock receipts:
+     * present only when the item participates in price alerts, where the
+     * unit price is the comparable figure across months.
+     */
+    quantity?: number;
+    unit_price?: number;
+    category: string;
+  }[];
 }
 
 /**
@@ -109,6 +120,16 @@ export function getMonthKey(isoDate: string): string {
 export function currentMonthKey(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Previous month bucket (`YYYY-MM`) for a given month key. String math only
+ * (no Date parsing), mirroring `getMonthKey`: December rolls to January of
+ * the previous year.
+ */
+export function previousMonthKey(monthKey: string): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  return month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
 }
 
 /**
