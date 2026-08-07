@@ -14,6 +14,7 @@ export type IconName =
   | 'house.fill'
   | 'chart.bar.fill'
   | 'camera.fill'
+  | 'calendar'
   | 'clock.fill'
   | 'person.fill'
   | 'plus'
@@ -26,13 +27,25 @@ export type IconName =
   | 'creditcard'
   | 'sparkles'
   | 'exclamationmark.triangle.fill'
+  | 'chevron.left'
   | 'chevron.right'
   | 'chevron.down'
   | 'photo'
   | 'arrow.up.arrow.down'
   | 'doc.text'
   | 'ellipsis'
-  | 'checkmark';
+  | 'checkmark'
+  | 'takeoutbag.and.cup.and.straw.fill'
+  | 'drop.fill'
+  | 'birthday.cake.fill'
+  | 'bag.fill'
+  | 'fork.knife'
+  | 'leaf.fill'
+  | 'pills.fill'
+  | 'cart.fill'
+  | 'soap.fill'
+  | 'bubbles.and.sparkles.fill'
+  | 'waterbottle.fill';
 
 /**
  * Material icon names are a strict union from the MaterialIcons glyph map.
@@ -43,6 +56,7 @@ const materialMap: Record<IconName, string> = {
   'house.fill': 'home',
   'chart.bar.fill': 'bar-chart',
   'camera.fill': 'camera-alt',
+  calendar: 'calendar-month',
   'clock.fill': 'history',
   'person.fill': 'person',
   plus: 'add',
@@ -55,6 +69,7 @@ const materialMap: Record<IconName, string> = {
   creditcard: 'credit-card',
   sparkles: 'auto-awesome',
   'exclamationmark.triangle.fill': 'warning',
+  'chevron.left': 'chevron-left',
   'chevron.right': 'chevron-right',
   'chevron.down': 'expand-more',
   photo: 'photo',
@@ -62,6 +77,17 @@ const materialMap: Record<IconName, string> = {
   'doc.text': 'description',
   ellipsis: 'more-horiz',
   checkmark: 'check',
+  'takeoutbag.and.cup.and.straw.fill': 'local-drink',
+  'drop.fill': 'water-drop',
+  'birthday.cake.fill': 'cake',
+  'bag.fill': 'shopping-bag',
+  'fork.knife': 'restaurant',
+  'leaf.fill': 'eco',
+  'pills.fill': 'medication',
+  'cart.fill': 'shopping-cart',
+  'soap.fill': 'soap',
+  'bubbles.and.sparkles.fill': 'cleaning-services',
+  'waterbottle.fill': 'local-drink',
 };
 
 export interface IconProps {

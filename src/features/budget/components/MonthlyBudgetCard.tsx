@@ -1,6 +1,7 @@
 import { StyleSheet } from 'react-native';
 
 import { BudgetCard, Card, Text, View } from '@/components';
+import { formatCurrency } from '@/lib/format';
 import { colors, spacing, typography } from '@/theme';
 
 export interface MonthlyBudgetCardProps {
@@ -33,7 +34,7 @@ export function MonthlyBudgetCard({
           <View style={styles.calloutRow}>
             <Text style={styles.calloutLabel}>Deseos / Snacks</Text>
             <Text style={styles.calloutAmount}>
-              {currency} {wantsSnacksTotal} este mes
+              {formatCurrency(wantsSnacksTotal, currency)} este mes
             </Text>
           </View>
         </Card>

@@ -15,7 +15,8 @@
     "test:auth": "node scripts/test-auth.mjs",
     "test:features": "node scripts/test-features.mjs",
     "test:format": "node scripts/test-format.mjs",
-    "test": "pnpm test:format && pnpm test:adapter && pnpm test:auth && pnpm test:features"
+    "test:home": "node scripts/test-home.mjs",
+    "test": "pnpm test:format && pnpm test:adapter && pnpm test:auth && pnpm test:features && pnpm test:home"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",

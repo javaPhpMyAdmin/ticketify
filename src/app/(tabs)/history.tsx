@@ -1,87 +1,78 @@
+import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
+import { Platform, ScrollView, StyleSheet, TextInput } from 'react-native';
 import {
-  Card,
-  Chip,
-  Icon,
-  Pressable,
-  Text,
-  TransactionItem,
-  View,
-  type TransactionKind,
-} from '@/components';
-import { useTransactionBreakdown } from '@/features/transactions';
-import { useHistoryEntries, type HistoryEntry } from '@/features/history';
-import { colors, radii, spacing, typography } from '@/theme';
-import { formatRelativeDay, formatYearMonth } from '@/lib/format';
-import { utcYearMonth } from '@/lib/query-keys';
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 
-const filters: { key: TransactionKind; label: string }[] = [
-  { key: 'all', label: 'Todas' },
-  { key: 'needs', label: 'Necesidades' },
-  { key: 'wants', label: 'Deseos' },
-  { key: 'income', label: 'Ingresos' },
-];
+import { Icon, Pressable, Text, View } from '@/components';
+import { CategoryCard } from '@/components/organisms/CategoryCard';
+import {
+  aggregateCategoriesByMonth,
+  currentMonthKey,
+  getAvailableMonthKeys,
+  monthKeyToLabel,
+  useItemSearch,
+} from '@/features/home';
+import { formatCurrency } from '@/lib/format';
+import { useReceiptsStore } from '@/stores/use-receipts-store';
+import { useSettingsStore } from '@/stores/use-settings-store';
+import { colors, radii, spacing, typography } from '@/theme';
 
 /**
- * Row wrapper: derives the display amount / breakdown through
- * `useTransactionBreakdown` and forwards them to the pure-render
- * `TransactionItem`.
+ * NativeTabs (iOS) does not push screen content up: the ScrollView must clear
+ * the native tab bar itself or the last category card hides behind its glass.
+ * Same values as the Home screen's FAB: UIKit base height (49pt) plus the
+ * home-indicator inset at render time; Android's Material 3 NavigationBar is
+ * taller and fully opaque.
  */
-function TransactionRow({
-  entry,
-  filter,
-  hideDivider,
-}: {
-  entry: HistoryEntry;
-  filter: TransactionKind;
-  hideDivider: boolean;
-}) {
-  const { amount, breakdown, isIncome } = useTransactionBreakdown(entry, filter);
-  return (
-    <TransactionItem
-      merchant={entry.merchant}
-      date={entry.date}
-      category={entry.category}
-      amount={amount}
-      breakdown={breakdown}
-      isIncome={isIncome}
-      hideDivider={hideDivider}
-    />
-  );
-}
+const TAB_BAR_HEIGHT = Platform.select({ ios: 49, android: 80, default: 49 });
 
+/**
+ * Monthly spending history (mock): navigate month → categories, each card
+ * drilling into `/categories/[key]?month=…`. The month selector moves
+ * within the months that actually have receipts (`getAvailableMonthKeys`),
+ * so empty months never appear as steps; the current month stays reachable
+ * even when it has no data yet ("Sin gastos este mes.").
+ */
 export default function HistoryScreen() {
-  const [filter, setFilter] = useState<TransactionKind>('all');
+  const list = useReceiptsStore((s) => s.list);
+  const currency = useSettingsStore((s) => s.currency);
+  const insets = useSafeAreaInsets();
+  const [monthKey, setMonthKey] = useState(currentMonthKey);
+  // Item search: empty query shows the category list; typing switches the
+  // scroll area to product-level results (cross-category, month-scoped).
   const [query, setQuery] = useState('');
-  const historyEntries = useHistoryEntries();
-  // Same UTC derivation the analytics/usage reads use, so the button always
-  // shows the live data month (e.g. "ago 2026").
-  const monthLabel = formatYearMonth(utcYearMonth());
+  const isSearching = query.trim().length > 0;
+  const searchResults = useItemSearch(query, monthKey);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return historyEntries.filter((e) => {
-      if (q && !e.merchant.toLowerCase().includes(q)) return false;
-      if (filter === 'needs' && e.needs <= 0) return false;
-      if (filter === 'wants' && e.wants <= 0) return false;
-      if (filter === 'income' && e.income <= 0) return false;
-      return true;
-    });
-  }, [filter, query, historyEntries]);
+  const monthKeys = useMemo(() => getAvailableMonthKeys(list), [list]);
+  const categories = useMemo(
+    () => aggregateCategoriesByMonth(list, monthKey),
+    [list, monthKey],
+  );
+  const monthTotal = categories.reduce(
+    (sum, category) => sum + category.amount,
+    0,
+  );
 
-  // Group by day for the SectionList feel.
-  const sections = useMemo(() => {
-    const map = new Map<string, HistoryEntry[]>();
-    for (const e of filtered) {
-      const day = e.date.slice(0, 10);
-      if (!map.has(day)) map.set(day, []);
-      map.get(day)!.push(e);
-    }
-    return Array.from(map.entries()).map(([day, data]) => ({ day, data }));
-  }, [filtered]);
+  // `monthKeys` is newest-first. The selected month may not be in it (e.g.
+  // the current month with no receipts yet): it is then newer than
+  // everything, so only "older" is enabled and it jumps to the newest
+  // month that has data.
+  const currentIndex = monthKeys.indexOf(monthKey);
+  const canGoNewer = currentIndex > 0;
+  const canGoOlder =
+    currentIndex === -1
+      ? monthKeys.length > 0
+      : currentIndex < monthKeys.length - 1;
+
+  const goOlder = () =>
+    setMonthKey(
+      currentIndex === -1 ? monthKeys[0] : monthKeys[currentIndex + 1],
+    );
+  const goNewer = () => setMonthKey(monthKeys[currentIndex - 1]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -89,57 +80,164 @@ export default function HistoryScreen() {
         <Text style={styles.title}>Historial</Text>
       </View>
 
-      <View style={styles.searchRow}>
-        <View style={styles.searchInputWrap}>
-          <Icon name="magnifyingglass" size={18} color={colors.textSecondary} />
+      {/* Month selector + total stay pinned above the scroll so the user
+          always sees which month they're looking at and how much it cost
+          while browsing the category cards. */}
+      <View style={styles.fixedHeader}>
+        <View style={styles.monthSelector}>
+          <Pressable
+            onPress={goOlder}
+            disabled={!canGoOlder}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Mes anterior"
+            accessibilityState={{ disabled: !canGoOlder }}
+          >
+            <Icon
+              name="chevron.left"
+              size={22}
+              color={canGoOlder ? colors.textPrimary : colors.textSecondary}
+            />
+          </Pressable>
+          <Text style={styles.monthLabel}>{monthKeyToLabel(monthKey)}</Text>
+          <Pressable
+            onPress={goNewer}
+            disabled={!canGoNewer}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Mes siguiente"
+            accessibilityState={{ disabled: !canGoNewer }}
+          >
+            <Icon
+              name="chevron.right"
+              size={22}
+              color={canGoNewer ? colors.textPrimary : colors.textSecondary}
+            />
+          </Pressable>
+        </View>
+
+        <View style={styles.totalRow}>
+          <Text style={styles.totalLabel}>Total del mes</Text>
+          <Text style={styles.totalAmount}>
+            {formatCurrency(monthTotal, currency)}
+          </Text>
+        </View>
+
+        <View style={styles.searchBox}>
+          <Icon name="magnifyingglass" size={16} color={colors.textSecondary} />
           <TextInput
+            style={styles.searchInput}
             value={query}
             onChangeText={setQuery}
-            placeholder="Buscar transacciones"
+            placeholder="Buscar producto…"
             placeholderTextColor={colors.textSecondary}
-            style={styles.searchInput}
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+            accessibilityLabel="Buscar producto"
           />
         </View>
-        <Pressable style={styles.monthButton} accessibilityRole="button">
-          <Text style={styles.monthButtonText}>{monthLabel}</Text>
-          <Icon name="chevron.down" size={16} color={colors.textPrimary} />
-        </Pressable>
       </View>
 
       <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipStrip}
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.scrollContent,
+          // Clear the native tab bar: without this the last category card
+          // sits behind its glass and can't be scrolled above it.
+          { paddingBottom: insets.bottom + TAB_BAR_HEIGHT + spacing.lg },
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {filters.map((f) => (
-          <Pressable key={f.key} onPress={() => setFilter(f.key)}>
-            <Chip label={f.label} selected={filter === f.key} />
-          </Pressable>
-        ))}
-      </ScrollView>
-
-      <ScrollView contentContainerStyle={styles.listContent}>
-        {sections.map((section) => (
-          <View key={section.day} style={styles.section}>
-            <Text style={styles.dayHeader}>{formatRelativeDay(section.day)}</Text>
-            <Card padding={spacing.sm}>
-              {section.data.map((entry, idx) => (
-                <TransactionRow
-                  key={entry.id}
-                  entry={entry}
-                  filter={filter}
-                  hideDivider={idx >= section.data.length - 1}
-                />
+        {isSearching ? (
+          searchResults.length === 0 ? (
+            <Text style={styles.empty}>
+              Sin resultados para “{query.trim()}”.
+            </Text>
+          ) : (
+            <View style={styles.searchResults}>
+              {searchResults.map((item) => (
+                <Pressable
+                  key={item.name}
+                  style={({ pressed }) => [
+                    styles.searchResultRow,
+                    pressed && styles.searchResultPressed,
+                  ]}
+                  onPress={() =>
+                    router.push(
+                      `/items/${encodeURIComponent(
+                        item.name,
+                      )}?month=${monthKey}`,
+                    )
+                  }
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.searchResultName} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.searchResultAmount}>
+                    {formatCurrency(item.amount, currency)}
+                  </Text>
+                  <View style={styles.searchWrapGo}>
+                    <Text style={styles.searchGo} numberOfLines={1}>
+                      VER
+                    </Text>
+                    <Icon
+                      name="chevron.right"
+                      size={16}
+                      color={colors.onPrimary}
+                    />
+                  </View>
+                </Pressable>
               ))}
-            </Card>
+            </View>
+          )
+        ) : categories.length === 0 ? (
+          <Text style={styles.empty}>Sin gastos este mes.</Text>
+        ) : (
+          <View style={styles.categoryList}>
+            {categories.map((category) => (
+              <CategoryCard
+                key={category.key}
+                icon={category.icon}
+                name={category.name}
+                amount={category.amount}
+                currency={currency}
+                layout="list"
+                style={styles.categoryCard}
+                onPress={() =>
+                  router.push(
+                    monthKey === currentMonthKey()
+                      ? `/categories/${category.key}`
+                      : `/categories/${category.key}?month=${monthKey}`,
+                  )
+                }
+              />
+            ))}
           </View>
-        ))}
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  searchWrapGo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: colors.primary,
+  },
+  searchGo: {
+    fontSize: 19,
+    fontWeight: 900,
+    lineHeight: 24,
+    letterSpacing: 0.5,
+    color: colors.onPrimary,
+  },
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
@@ -153,59 +251,102 @@ const styles = StyleSheet.create({
     ...typography.headlineLgMobile,
     color: colors.textPrimary,
   },
-  searchRow: {
-    flexDirection: 'row',
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
     paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+  },
+  fixedHeader: {
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.md,
     gap: spacing.md,
   },
-  searchInputWrap: {
-    flex: 1,
+  searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
     backgroundColor: colors.surface,
-    borderRadius: radii.DEFAULT,
+    borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    height: 50,
   },
   searchInput: {
     flex: 1,
     ...typography.bodyMd,
     color: colors.textPrimary,
+    padding: 0,
   },
-  monthButton: {
+  searchResults: {
+    gap: spacing.sm,
+  },
+  searchResultRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    justifyContent: 'space-between',
+    gap: spacing.md,
     backgroundColor: colors.surface,
-    borderRadius: radii.DEFAULT,
+    borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
-  },
-  monthButtonText: {
-    ...typography.labelSm,
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  chipStrip: {
-    paddingHorizontal: spacing.xl,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    gap: spacing.sm,
   },
-  listContent: {
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xxl,
-    gap: spacing.lg,
+  searchResultPressed: {
+    transform: [{ scale: 0.98 }],
   },
-  section: {
-    gap: spacing.sm,
+  searchResultName: {
+    ...typography.bodyMd,
+    color: colors.textPrimary,
+    flex: 1,
   },
-  dayHeader: {
+  searchResultAmount: {
+    ...typography.headlineMd,
+    color: colors.textPrimary,
+  },
+  monthSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  monthLabel: {
+    ...typography.headlineMd,
+    color: colors.textPrimary,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 10,
+  },
+  totalLabel: {
     ...typography.labelCaps,
+    color: colors.primary,
+  },
+  totalAmount: {
+    ...typography.headlineMd,
+    color: colors.primary,
+  },
+  categoryList: {
+    gap: spacing.md,
+  },
+  categoryCard: {
+    width: '100%',
+  },
+  empty: {
+    ...typography.bodyMd,
     color: colors.textSecondary,
+    textAlign: 'center',
+    paddingVertical: spacing.xl,
   },
 });

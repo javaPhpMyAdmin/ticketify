@@ -18,7 +18,8 @@
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      }
+      },
+      "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
       "output": "static",
