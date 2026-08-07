@@ -6,10 +6,9 @@ import {
 } from 'react-native-safe-area-context';
 
 import {
-  Card,
   CategoryCard,
-  Divider,
   Fab,
+  Icon,
   Pressable,
   ReceiptRow,
   Text,
@@ -24,11 +23,11 @@ import { useSessionStore } from '../../features/auth';
 /**
  * NativeTabs (iOS) does not push screen content up: the first ScrollView
  * adjusts its own content inset automatically, but absolutely-positioned
- * siblings (the FAB) render behind the native tab bar. `TAB_BAR_HEIGHT` is
- * the UIKit base height (49pt); the home-indicator inset is added at render
- * time via `useSafeAreaInsets` so the FAB sits above the tab bar, not
- * behind its glass. On Android the Material 3 NavigationBar is taller (80dp)
- * and renders fully opaque, so we bump the offset on that platform.
+ * siblings (the scan FAB) render behind the native tab bar. `TAB_BAR_HEIGHT`
+ * is the UIKit base height (49pt); the home-indicator inset is added at
+ * render time via `useSafeAreaInsets` so the FAB floats above the tab bar,
+ * not behind its glass. On Android the Material 3 NavigationBar is taller
+ * (80dp) and renders fully opaque, so we bump the offset on that platform.
  */
 const TAB_BAR_HEIGHT = Platform.select({ ios: 49, android: 80, default: 49 });
 
@@ -85,7 +84,19 @@ export default function HomeScreen() {
 
         {/* Categories */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Categorías de gastos</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Categorías de gastos</Text>
+            <Pressable
+              onPress={() => router.push('/history')}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Ver historial"
+              style={styles.historyLink}
+            >
+              <Icon name="calendar" size={16} color={colors.primary} />
+              <Text style={styles.historyLinkText}>Historial</Text>
+            </Pressable>
+          </View>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -93,11 +104,12 @@ export default function HomeScreen() {
           >
             {categories.map((c) => (
               <CategoryCard
-                key={c.name}
+                key={c.key}
                 name={c.name}
                 amount={c.amount}
                 currency={currency}
                 icon={c.icon}
+                onPress={() => router.push(`/categories/${c.key}`)}
               />
             ))}
           </ScrollView>
@@ -106,31 +118,31 @@ export default function HomeScreen() {
         {/* Recent receipts */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recibos recientes</Text>
-          <Card padding={spacing.sm}>
-            {receipts.map((r, idx) => (
-              <View key={r.id}>
-                <ReceiptRow
-                  name={r.name}
-                  date={r.date}
-                  amount={r.amount}
-                  currency={currency}
-                />
-                {idx < receipts.length - 1 ? <Divider /> : null}
-              </View>
+          <View style={styles.receiptList}>
+            {receipts.map((r) => (
+              <ReceiptRow
+                key={r.id}
+                name={r.name}
+                date={r.date}
+                amount={r.amount}
+                currency={currency}
+                imageUrl={r.imageUrl}
+                onPress={() => router.push(`/receipts/${r.id}`)}
+              />
             ))}
-          </Card>
+          </View>
         </View>
       </ScrollView>
 
       <View
         style={[
           styles.fabWrap,
-          { bottom: insets.bottom + TAB_BAR_HEIGHT + spacing.xl },
+          { bottom: insets.bottom + TAB_BAR_HEIGHT + spacing.sm },
         ]}
         pointerEvents="box-none"
       >
         <Fab
-          label="Escanear recibo"
+          label="Escanear ticket"
           icon="camera.fill"
           onPress={() => router.push('/ticket/camera')}
         />
@@ -147,7 +159,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
-    paddingBottom: Platform.select({ ios: 120, android: 156, default: 120 }),
+    // Clear the floating scan FAB: it sits at
+    // insets.bottom + TAB_BAR_HEIGHT + spacing.xl (~103pt) and is ~56pt
+    // tall, so its top edge lands ~159pt from the bottom. Content must
+    // scroll past that, or the last card hides behind the button.
+    paddingBottom: Platform.select({ ios: 184, android: 184, default: 184 }),
     gap: spacing.lg,
   },
   greeting: {
@@ -168,15 +184,34 @@ const styles = StyleSheet.create({
     ...typography.headlineMd,
     color: colors.textPrimary,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  historyLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  historyLinkText: {
+    ...typography.labelSm,
+    color: colors.primary,
+    fontWeight: '600',
+  },
   categoryStrip: {
     gap: spacing.md,
     paddingRight: spacing.xl,
+  },
+  receiptList: {
+    gap: spacing.md,
   },
   fabWrap: {
     position: 'absolute',
     left: 0,
     right: 0,
     alignItems: 'center',
+    backgroundColor: 'transparent',
   },
   avatar: {
     width: 50,

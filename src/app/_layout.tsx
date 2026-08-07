@@ -1,6 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SystemUI from 'expo-system-ui';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef, useState } from 'react';
 
@@ -72,6 +73,16 @@ export default function RootLayout() {
     restore();
   }, [restore]);
 
+  // Paint the native root view once so pop/modal transitions never flash
+  // the system background (black in dark mode) between frames — the Stack
+  // `contentStyle` only covers the navigator content, not the window that
+  // shows through during dismiss animations.
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(colors.background).catch(() => {
+      // safe to ignore — unsupported on some platforms; contentStyle still covers it
+    });
+  }, []);
+
   useEffect(() => {
     if (!isBootstrapping) setBooted(true);
   }, [isBootstrapping]);
@@ -105,6 +116,7 @@ export default function RootLayout() {
             name="ticket/review/[id]"
             options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
           />
+          <Stack.Screen name="categories/[key]" />
         </Stack.Protected>
         <Stack.Screen name="(auth)" />
       </Stack>

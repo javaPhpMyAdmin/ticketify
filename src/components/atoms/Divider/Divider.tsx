@@ -16,7 +16,12 @@ export type DividerProps = {
  * 1px hairline divider. Useful between list rows or under section
  * headers. Renders transparent when `thickness` is 0.
  */
-export function Divider({ color, thickness = 1, spacing: extra, style }: DividerProps) {
+export function Divider({
+  color,
+  thickness = 1,
+  spacing: extra,
+  style,
+}: DividerProps) {
   return (
     <View
       style={[

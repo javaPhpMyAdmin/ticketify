@@ -1,6 +1,7 @@
 import { StyleSheet } from 'react-native';
 
 import { AmountDisplay, Card, ProgressBar, Text, View } from '@/components';
+import { formatCurrency } from '@/lib/format';
 import { colors, spacing, typography } from '@/theme';
 
 export interface BudgetCardProps {
@@ -29,7 +30,8 @@ export function BudgetCard({
   limitLabel,
 }: BudgetCardProps) {
   const percent = limit > 0 ? Math.min(1, spent / limit) : 0;
-  const resolvedLimitLabel = limitLabel ?? `Límite: ${currency} ${limit.toLocaleString()}`;
+  const resolvedLimitLabel =
+    limitLabel ?? `Límite: ${formatCurrency(limit, currency)}`;
   return (
     <Card>
       <View style={styles.cardHeader}>

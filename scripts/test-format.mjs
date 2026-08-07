@@ -6,12 +6,20 @@
  * mechanism as test-auth/test-features) and asserts the formatting contract
  * with FIXED inputs — no `Intl`, no real clock:
  *
- *   - formatShortDate: day-first "12 ago" (Spanish convention),
+ *   - formatCurrency: UYU renders with the $ symbol, negatives prefixed,
+ *     unknown codes fall back to "CODE ",
+ *   - formatShortDate: day-first "12 ago" (Spanish convention), date-only
+ *     strings parsed in LOCAL time (a UTC parse of '2026-08-01' renders
+ *     "31 jul" under UTC-x zones — the regression this pins),
  *   - formatTime: 12-hour "02:30 p. m." / "12:00 a. m.",
  *   - formatRelativeDay: Hoy / Ayer / short date against an explicit `now`,
- *   - formatYearMonth: "ago 2026" / "Agosto 2026" from a `YYYY-MM`.
+ *   - formatYearMonth: "ago 2026" / "Agosto 2026" from a `YYYY-MM`,
+ *   - todayLocalISO: today's local calendar date (compared against a
+ *     locally-constructed date, never a UTC slice).
  *
- * The module has no imports, so no `@/` remap hook is needed.
+ * The module has no imports, so no `@/` remap hook is needed. The TZ is
+ * pinned to America/Montevideo (UTC-3) so the date-only assertions are
+ * deterministic regardless of the runner's zone.
  *
  * Usage: pnpm test:format
  */
@@ -60,8 +68,24 @@ function compile() {
 async function run() {
   console.log('\n[tests] compiling format module…');
   compile();
+  // Pin the zone so the date-only local-parse assertions are deterministic
+  // on any machine (Node honors mid-process TZ changes on POSIX).
+  process.env.TZ = 'America/Montevideo';
   console.log('[tests] loading compiled module…');
   const fmt = await import(pathToFileURL(join(outDir, 'src', 'lib', 'format.js')).href);
+
+  await test('formatCurrency UYU renders with the $ symbol', () => {
+    assert.equal(fmt.formatCurrency(1234.5, 'UYU'), '$1,234.50');
+    assert.equal(fmt.formatCurrency(1234.5, 'ARS'), '$1,234.50');
+  });
+
+  await test('formatCurrency prefixes negative amounts with the sign', () => {
+    assert.equal(fmt.formatCurrency(-1234.5, 'UYU'), '-$1,234.50');
+  });
+
+  await test('formatCurrency falls back to "CODE " for unknown currencies', () => {
+    assert.equal(fmt.formatCurrency(5, 'XYZ'), 'XYZ 5.00');
+  });
 
   await test('formatShortDate → day-first "12 ago"', () => {
     const iso = new Date(2026, 7, 12, 14, 30).toISOString();
@@ -70,6 +94,13 @@ async function run() {
 
   await test('formatShortDate returns input on invalid date', () => {
     assert.equal(fmt.formatShortDate('not-a-date'), 'not-a-date');
+  });
+
+  await test('formatShortDate parses date-only strings in LOCAL time, not UTC', () => {
+    // Under TZ=America/Montevideo (UTC-3) `new Date('2026-08-01')` is UTC
+    // midnight → Jul 31 21:00 local → "31 jul". The local parse must stay
+    // on the right calendar day: "1 ago".
+    assert.equal(fmt.formatShortDate('2026-08-01'), '1 ago');
   });
 
   await test('formatTime → "02:30 p. m."', () => {
@@ -98,6 +129,19 @@ async function run() {
     const now = new Date(2026, 7, 12, 9, 0);
     const iso = new Date(2026, 7, 10, 14, 30).toISOString();
     assert.equal(fmt.formatRelativeDay(iso, now), '10 ago');
+  });
+
+  await test('formatRelativeDay treats a date-only string as a local day', () => {
+    const now = new Date(2026, 7, 1, 12, 0);
+    // A UTC parse of '2026-08-01' lands on Jul 31 in UTC-3 → "31 jul";
+    // the local parse keeps "Hoy".
+    assert.equal(fmt.formatRelativeDay('2026-08-01', now), 'Hoy');
+  });
+
+  await test('todayLocalISO returns today in local calendar time, not UTC', () => {
+    const local = new Date();
+    const expected = `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}-${String(local.getDate()).padStart(2, '0')}`;
+    assert.equal(fmt.todayLocalISO(), expected);
   });
 
   await test('formatYearMonth short → "ago 2026"', () => {
