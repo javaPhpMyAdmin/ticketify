@@ -4,7 +4,6 @@ import { useEffect, useMemo } from 'react';
 import type { IconName } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import { formatYearMonth } from '@/lib/format';
-import { USE_MOCK_DATA } from '@/lib/mock-data';
 import { queryKeys } from '@/lib/query-keys';
 import { toQueryData } from '@/lib/supabase/query-adapters';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
@@ -242,7 +241,7 @@ export function aggregateItemsByMonth(
 }
 
 /**
- * Per-category drill-down (mock): reads the receipts store reactively and
+ * Per-category drill-down: reads the receipts store reactively and
  * aggregates every line item tagged with `categoryKey` within `monthKey`
  * (defaults to the current month), grouped by normalized name, sorted by
  * amount desc. `total` is the sum of those items — the category's monthly
@@ -275,22 +274,19 @@ export interface ItemPurchaseSummary {
  * día"); an empty query returns the full month item list. Works for any
  * month via `monthKey` (defaults to the current month).
  *
- * Mock mode filters the receipts store in memory (no network). Real mode
- * (option B, approved) runs an indexed, accent-insensitive ilike on
- * `purchase_items.name_search`, user-scoped via RLS, month-bounded by the
- * purchase date; matched items come back as single-receipt rows and
- * re-aggregate through the same pure month aggregators, so both modes
- * group identically. Empty queries never hit the network (the History
- * screen renders the category list in that case).
+ * Runs an indexed, accent-insensitive ilike on `purchase_items.name_search`
+ * (option B, approved), user-scoped via RLS, month-bounded by the purchase
+ * date; matched items come back as single-receipt rows and re-aggregate
+ * through the same pure month aggregators. Empty queries never hit the
+ * network (the History screen renders the category list in that case).
  */
 export function useItemSearch(query: string, monthKey = currentMonthKey()) {
   const { userId } = useSessionUser();
-  const list = useReceiptsStore((s) => s.list);
   const normalizedQuery = normalizeItemName(query);
 
   const searchQuery = useQuery<CategoryItemSummary[]>({
     queryKey: queryKeys.itemSearch(userId!, monthKey, normalizedQuery),
-    enabled: !!userId && !USE_MOCK_DATA && normalizedQuery.length > 0,
+    enabled: !!userId && normalizedQuery.length > 0,
     queryFn: async () => {
       const result = await searchPurchaseItems(
         userId!,
@@ -304,16 +300,11 @@ export function useItemSearch(query: string, monthKey = currentMonthKey()) {
     },
   });
 
-  if (USE_MOCK_DATA) {
-    const items = aggregateItemsByMonth(list, monthKey);
-    if (!normalizedQuery) return items;
-    return items.filter((item) => item.name.includes(normalizedQuery));
-  }
   return searchQuery.data ?? [];
 }
 
 /**
- * Item drill-down (mock): the individual purchases behind one normalized
+ * Item drill-down: the individual purchases behind one normalized
  * item in one month, with the month total — the answer to "cuánto gasté en
  * menú del día este mes", wherever it was bought. `total` is the sum of the
  * returned purchases.
@@ -365,13 +356,12 @@ export function compareReceiptsByScan(
 
 /**
  * Pure derivation: receipt rows → the Home feed, scoped to the current
- * month. Shared by mock and real modes so both render identically: recent
- * receipts map 1:1 to the current-month rows ordered by `scanned_at`
- * (when the ticket was captured — scanning an older ticket surfaces it at
- * the top; ties break by purchase date), category cards aggregate the
- * per-item totals through the expense-category registry (so the strip
- * answers "en qué se me va el dinero" by item type, not by store), and
- * the snacks total sums the impulse totals (0 when none).
+ * month: recent receipts map 1:1 to the current-month rows ordered by
+ * `scanned_at` (when the ticket was captured — scanning an older ticket
+ * surfaces it at the top; ties break by purchase date), category cards
+ * aggregate the per-item totals through the expense-category registry (so
+ * the strip answers "en qué se me va el dinero" by item type, not by
+ * store), and the snacks total sums the impulse totals (0 when none).
  */
 export function mapPurchaseRowsToHomeFeed(rows: HomeFeedReceiptRow[]): HomeFeed {
   const monthKey = currentMonthKey();
@@ -401,13 +391,11 @@ export function mapPurchaseRowsToHomeFeed(rows: HomeFeedReceiptRow[]): HomeFeed 
  * The feed is scoped to the current month: categories, recent receipts,
  * and the impulse total only cover receipts whose purchase month matches
  * `currentMonthKey()` — past months live in the History tab. The query
- * source is the full purchase list (all months): real mode reads
- * `purchases` / `purchase_items` (one batched round trip); offline dev
- * (EXPO_PUBLIC_MOCK_DATA=1) reads the receipts store back. Real mode also
- * hydrates the receipts store with the full list, so the store-based
- * History/Analytics screens and drill-downs render the same rows. The
- * query is disabled until a signed-in user exists, so no read ever runs
- * without a session.
+ * source is the full purchase list (all months), read from `purchases` /
+ * `purchase_items` (one batched round trip). The feed also hydrates the
+ * receipts store with the full list, so the store-based History/Analytics
+ * screens and drill-downs render the same rows. The query is disabled
+ * until a signed-in user exists, so no read ever runs without a session.
  */
 export function useHomeFeed(): HomeFeed {
   const { userId } = useSessionUser();
@@ -415,21 +403,15 @@ export function useHomeFeed(): HomeFeed {
   const rowsQuery = useQuery<HomeFeedReceiptRow[]>({
     queryKey: queryKeys.homeFeed(userId!),
     enabled: !!userId,
-    queryFn: async () => {
-      if (USE_MOCK_DATA) {
-        return useReceiptsStore.getState().list;
-      }
-      return toQueryData(await readPurchaseList(userId!));
-    },
+    queryFn: async () => toQueryData(await readPurchaseList(userId!)),
   });
 
-  // Real mode hydrates the receipts store with the full purchase list so
-  // the store-subscribing screens (History, Analytics, drill-downs, price
-  // alerts) render the same rows the feed does. Mock mode keeps the seeded
-  // store untouched — the mock queryFn reads it back as its data source.
+  // Hydrates the receipts store with the full purchase list so the
+  // store-subscribing screens (History, Analytics, drill-downs, price
+  // alerts) render the same rows the feed does.
   const rows = rowsQuery.data;
   useEffect(() => {
-    if (!USE_MOCK_DATA && rows) {
+    if (rows) {
       useReceiptsStore.setState({ list: rows });
     }
   }, [rows]);

@@ -19,7 +19,6 @@ import { create } from 'zustand';
 
 import { registerAuthStateListener } from '@/lib/auth/auth-listener-registry';
 import { ensureProfile } from '@/lib/auth/profile-sync';
-import { MOCK_SESSION, USE_MOCK_AUTH } from '@/lib/mock-data';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
 import { supabase } from '@/lib/supabase';
@@ -126,21 +125,12 @@ function isDuplicateAccountError(
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
-  // Mock auth (EXPO_PUBLIC_MOCK_AUTH=1): boot straight into the mock
-  // identity so every session-gated query is active offline. Real auth
-  // starts signed out until restore() finds a stored session.
-  session: USE_MOCK_AUTH ? MOCK_SESSION : null,
+  // Real auth: start signed out until restore() finds a stored session.
+  session: null,
   isBootstrapping: true,
 
   restore: async () => {
     set({ isBootstrapping: true });
-    if (USE_MOCK_AUTH) {
-      // Mock auth: no storage or Supabase reads — the store already holds
-      // the mock session, so just end the bootstrap wait and let the root
-      // gate open (the splash hides once isBootstrapping clears).
-      set({ isBootstrapping: false });
-      return;
-    }
     const deadline = Date.now() + AUTH_RESTORE_TIMEOUT_MS;
     const remaining = (): number => Math.max(0, deadline - Date.now());
 
@@ -211,12 +201,6 @@ export const useSessionStore = create<SessionState>((set) => ({
   },
 
   signInWithEmail: async (email, password) => {
-    if (USE_MOCK_AUTH) {
-      // Mock auth: any credentials open the app with the mock identity — no
-      // GoTrue call, no profile sync.
-      useSessionStore.setState({ session: MOCK_SESSION });
-      return null;
-    }
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
@@ -241,12 +225,6 @@ export const useSessionStore = create<SessionState>((set) => ({
   },
 
   signUpWithEmail: async (email, password) => {
-    if (USE_MOCK_AUTH) {
-      // Mock auth: same shortcut as sign-in — the mock identity is issued
-      // immediately, no confirmation step.
-      useSessionStore.setState({ session: MOCK_SESSION });
-      return { error: null, needsEmailConfirmation: false };
-    }
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
@@ -271,12 +249,6 @@ export const useSessionStore = create<SessionState>((set) => ({
   },
 
   signOut: async () => {
-    if (USE_MOCK_AUTH) {
-      // Mock auth: no Supabase revoke — clearing the store signs out; the
-      // root gate then shows the sign-in screen.
-      useSessionStore.setState({ session: null });
-      return;
-    }
     const { error } = await supabase.auth.signOut();
     if (error) {
       // auth-js clears the local session and fires SIGNED_OUT BEFORE
