@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
 import { parseTicket, uploadToStorage } from '../api';
-import { MOCK_PARSE_DELAY_MS, mockParsedReceipt, USE_MOCK_PARSE } from '../lib/mock-parse';
 import { useSessionUser } from '@/features/auth';
 import { tempId } from '@/lib/format';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
@@ -44,16 +43,6 @@ export function useScanTicket(): UseScanTicketResult {
 
   const mutation = useMutation({
     mutationFn: async (imageUri: string) => {
-      // Dev shortcut (EXPO_PUBLIC_MOCK_PARSE=1): skip the network and Gemini
-      // entirely so UI work (the processing animation, the review screen)
-      // can be tested without spending tokens. Still goes through the same
-      // onSuccess seeding path, so the draft shape is identical.
-      if (USE_MOCK_PARSE) {
-        await new Promise<void>((resolve) =>
-          setTimeout(resolve, MOCK_PARSE_DELAY_MS),
-        );
-        return { url: imageUri, parsed: mockParsedReceipt() };
-      }
       // Step 1: upload (stubbed for now) — scoped to the signed-in user's
       // storage namespace (session-gated, so the user is always present).
       const { url } = await uploadToStorage(userId ?? 'anon', imageUri);

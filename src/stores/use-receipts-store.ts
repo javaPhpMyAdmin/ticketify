@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 
 import { tempId, todayLocalISO } from '@/lib/format';
-import { MOCK_RECEIPTS, USE_MOCK_DATA } from '@/lib/mock-data';
 import type {
   HomeFeedReceiptRow,
   PaymentMethod,
@@ -20,11 +19,10 @@ export type ScanState =
 
 interface ReceiptsState {
   /**
-   * Receipts backing Home's feed and the History/drill-down screens. In
-   * mock dev it is seeded from `MOCK_RECEIPTS` and appended to by the mock
-   * save path; in real mode the Home feed query hydrates it from the
-   * `purchases` / `purchase_items` reads (all months), so every derived
-   * screen renders the same rows the feed does.
+   * Receipts backing Home's feed and the History/drill-down screens. The
+   * Home feed query hydrates it from the `purchases` / `purchase_items`
+   * reads (all months), so every derived screen renders the same rows the
+   * feed does.
    */
   list: HomeFeedReceiptRow[];
   /** The receipt currently being captured / parsed / reviewed. */
@@ -45,12 +43,15 @@ interface ReceiptsState {
   setDraftTotal: (total: number) => void;
   clearDraft: () => void;
   setList: (list: ReceiptsState['list']) => void;
+  /** Wipes every receipt-related field; called on SIGNED_OUT so no previous
+   *  user's rows or draft survive to the next session. */
+  resetAll: () => void;
 }
 
 const emptyDraft = (imageUrl: string): ReceiptDraft => ({
   store_name: '',
-  // Local calendar date (mirrors saveReceipt/mockParsedReceipt): the parse
-  // result overwrites this seed, and it must never drift to UTC's date.
+  // Local calendar date (mirrors saveReceipt and the parse result): the
+  // parse result overwrites this seed, and it must never drift to UTC's date.
   purchase_date: todayLocalISO(),
   total: 0,
   payment_method: 'card',
@@ -59,11 +60,9 @@ const emptyDraft = (imageUrl: string): ReceiptDraft => ({
 });
 
 export const useReceiptsStore = create<ReceiptsState>((set) => ({
-  // Offline dev seeds the feed with sample receipts so the Home tab fills
-  // the screen (no empty band under the floating FAB); prod starts empty —
-  // real hydration lands in Phase 5 (History/drill-downs are mock-only
-  // until then).
-  list: USE_MOCK_DATA ? MOCK_RECEIPTS : [],
+  // Starts empty; the Home feed query hydrates it from the `purchases` /
+  // `purchase_items` reads once a signed-in user exists.
+  list: [],
   draft: null,
   scanState: 'idle',
   scanError: null,
@@ -137,6 +136,9 @@ export const useReceiptsStore = create<ReceiptsState>((set) => ({
   clearDraft: () => set({ draft: null, scanState: 'idle', scanError: null }),
 
   setList: (list) => set({ list }),
+
+  resetAll: () =>
+    set({ list: [], draft: null, scanState: 'idle', scanError: null }),
 }));
 
 export { tempId };
