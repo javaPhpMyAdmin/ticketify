@@ -1,7 +1,14 @@
 export { useMonthlyTotals } from './hooks/useMonthlyTotals';
 export { usePriceAlerts } from './hooks/usePriceAlerts';
+export { useMonthlyOverview } from './hooks/useMonthlyOverview';
 export { CategoryBreakdownList } from './components/CategoryBreakdownList';
 export type { CategoryBreakdownListProps } from './components/CategoryBreakdownList';
+export { TopItemsBreakdown } from './components/TopItemsBreakdown';
+export type { TopItemsBreakdownProps } from './components/TopItemsBreakdown';
+export { MonthlyOverviewCard } from './components/MonthlyOverviewCard';
+export type { MonthlyOverviewCardProps } from './components/MonthlyOverviewCard';
 export { fetchMonthlyTotals, fetchCategoryBreakdown } from './api';
 export { computePriceAlerts } from './price-alerts';
 export type { PriceAlert } from './price-alerts';
+export { computeMonthOverview } from './monthly-overview';
+export type { MonthOverview } from './monthly-overview';
