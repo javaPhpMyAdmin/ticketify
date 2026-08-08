@@ -214,15 +214,24 @@ export function aggregateItemsByCategory(
  * mes", wherever it was bought. This is the item-level lens (identity) that
  * complements the category lens (label): the same product from a bakery, a
  * buffet, or a supermarket collapses into one row with one monthly total.
+ *
+ * `excludeCategories` drops whole categories before grouping (default: none,
+ * so History's item search keeps seeing every item). The analytics "Top
+ * Artículos" passes `['servicios']` — utility bills (Luz/Teléfono/Agua) are
+ * items on their receipts but are not consumption, and they would otherwise
+ * own every top-N rank.
  */
 export function aggregateItemsByMonth(
   list: ReceiptSpendRecord[],
   monthKey: string,
+  excludeCategories: string[] = [],
 ): CategoryItemSummary[] {
+  const excluded = new Set(excludeCategories);
   const totalsByItem = new Map<string, number>();
   for (const receipt of list) {
     if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
     for (const item of receipt.items ?? []) {
+      if (excluded.has(item.category)) continue;
       const key = normalizeItemName(item.name);
       totalsByItem.set(key, (totalsByItem.get(key) ?? 0) + item.amount);
     }

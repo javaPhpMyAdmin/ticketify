@@ -32,6 +32,8 @@ export type IconName =
   | 'chevron.down'
   | 'photo'
   | 'arrow.up.arrow.down'
+  | 'arrow.up.right'
+  | 'arrow.down.right'
   | 'doc.text'
   | 'ellipsis'
   | 'checkmark'
@@ -74,6 +76,8 @@ const materialMap: Record<IconName, string> = {
   'chevron.down': 'expand-more',
   photo: 'photo',
   'arrow.up.arrow.down': 'swap-vert',
+  'arrow.up.right': 'trending-up',
+  'arrow.down.right': 'trending-down',
   'doc.text': 'description',
   ellipsis: 'more-horiz',
   checkmark: 'check',

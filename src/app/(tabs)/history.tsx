@@ -46,6 +46,14 @@ export default function HistoryScreen() {
   const [query, setQuery] = useState('');
   const isSearching = query.trim().length > 0;
   const searchResults = useItemSearch(query, monthKey);
+  // Combined total across every result row: searching "yerba" matches both
+  // "Yerba 1kg" and "Yerba mate 1kg" as separate rows, and this subtotal
+  // answers "cuánto gasté en yerba en total" without forcing the mock to
+  // invent a product identity that merges them.
+  const searchTotal = searchResults.reduce(
+    (sum, item) => sum + item.amount,
+    0,
+  );
 
   const monthKeys = useMemo(() => getAvailableMonthKeys(list), [list]);
   const categories = useMemo(
@@ -157,6 +165,15 @@ export default function HistoryScreen() {
             </Text>
           ) : (
             <View style={styles.searchResults}>
+              <View style={styles.searchTotalRow}>
+                <Text style={styles.searchTotalLabel}>
+                  {searchResults.length}{' '}
+                  {searchResults.length === 1 ? 'artículo' : 'artículos'}
+                </Text>
+                <Text style={styles.searchTotalAmount}>
+                  {formatCurrency(searchTotal, currency)}
+                </Text>
+              </View>
               {searchResults.map((item) => (
                 <Pressable
                   key={item.name}
@@ -283,6 +300,21 @@ const styles = StyleSheet.create({
   },
   searchResults: {
     gap: spacing.sm,
+  },
+  searchTotalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  searchTotalLabel: {
+    ...typography.labelCaps,
+    color: colors.textSecondary,
+  },
+  searchTotalAmount: {
+    ...typography.headlineMd,
+    color: colors.primary,
   },
   searchResultRow: {
     flexDirection: 'row',
