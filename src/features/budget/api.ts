@@ -9,6 +9,7 @@ import {
   readMonthlyBudgetRow,
   type FeatureReadResult,
 } from '@/lib/supabase/feature-access';
+import type { CategoryMonthlyTotal } from '@/types';
 
 export interface MonthlyBudget {
   amount: number;
@@ -31,4 +32,21 @@ export async function fetchMonthlyBudget(
       currency: result.data.currency,
     },
   };
+}
+
+/**
+ * Sums the month's category totals into the amount spent so far. Pure —
+ * hooks derive `spent` via a TanStack `select` over the SHARED analytics
+ * cache key, so the cache always holds the ROWS shape (`CategoryMonthlyTotal[]`),
+ * never a pre-summed number (a number/rows shape mismatch on one key would
+ * crash the other surface).
+ *
+ * Malformed rows are skipped: a row whose `total` is not a finite number
+ * (missing or null) contributes nothing — it is never coerced into a fake 0.
+ */
+export function sumCategoryTotals(rows: CategoryMonthlyTotal[]): number {
+  return rows.reduce(
+    (acc, t) => (Number.isFinite(t.total) ? acc + t.total : acc),
+    0,
+  );
 }
