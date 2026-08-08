@@ -18,6 +18,12 @@
  *     the authenticated user: store resolution (reuse by name or create as
  *     the user's own row), category slug→id mapping, impulse flag
  *     persistence, and the compensating rollback on a failed item write.
+ *     The failure branches are exercised through the double's insert seam:
+ *     empty store name and store/purchase insert errors surface the
+ *     user-safe message with no partial writes; a failed item write fires
+ *     the compensating delete on `purchases`. The inserted payloads are
+ *     asserted via `__getInserted` (slug→uuid, purchase_id linkage,
+ *     user_id, is_impulse, sort_order).
  *   - pure query layer: `utcYearMonth` + key factories (userId-scoped, shared
  *     year-month) and the throwing adapters (`toQueryData` ok/throw branches,
  *     `shouldRetry` definitive-vs-transient gating, `toQueryErrorMessage`
@@ -484,6 +490,49 @@ async function run() {
       !log.some((e) => e.kind === 'delete'),
       'no rollback on success',
     );
+    // Payload seam: assert the exact writes the review said were unasserted —
+    // slug→id category resolution, parent linkage, user scoping, impulse
+    // flag and sort order.
+    const insertedStores = stubMod.__getInserted('stores');
+    assert.equal(insertedStores.length, 1, 'store created as the user own row');
+    assert.equal(insertedStores[0].user_id, 'u1');
+    assert.equal(insertedStores[0].name, 'Whole Foods Market');
+    const storeId = insertedStores[0].id;
+    const [insertedPurchase] = stubMod.__getInserted('purchases');
+    assert.equal(insertedPurchase.user_id, 'u1');
+    assert.equal(insertedPurchase.store_id, storeId, 'purchase links to the created store');
+    assert.equal(insertedPurchase.purchase_date, '2026-08-02');
+    assert.equal(insertedPurchase.total, 42.18);
+    assert.equal(insertedPurchase.payment_method, 'card');
+    assert.equal(insertedPurchase.image_url, 'file:///tmp/receipt.jpg');
+    assert.equal(insertedPurchase.status, 'confirmed');
+    const itemPayloads = stubMod.__getInserted('purchase_items').map((item) => {
+      const { id, ...payload } = item; // synthetic stub id, not app data
+      void id;
+      return payload;
+    });
+    assert.deepEqual(itemPayloads, [
+      {
+        purchase_id: insertedPurchase.id,
+        name: 'Leche',
+        quantity: 1,
+        unit_price: 3.5,
+        total_price: 3.5,
+        category_id: 'cat-lacteos',
+        is_impulse: false,
+        sort_order: 0,
+      },
+      {
+        purchase_id: insertedPurchase.id,
+        name: 'Papas fritas',
+        quantity: 2,
+        unit_price: 2,
+        total_price: 4,
+        category_id: 'cat-snacks',
+        is_impulse: true,
+        sort_order: 1,
+      },
+    ]);
   });
 
   await test('saveReceipt reuses an existing store by name', async () => {
@@ -499,6 +548,119 @@ async function run() {
       (e) => e.kind === 'insert' && e.table === 'stores',
     );
     assert.equal(storeInserts.length, 0, 'store already exists — no insert');
+  });
+
+  await test('saveReceipt rejects an empty store name with the user-safe message, no writes', async () => {
+    resetAll();
+    await assert.rejects(
+      () => ticketsMod.saveReceipt('u1', { ...DRAFT, store_name: '   ' }),
+      (err) => {
+        assert.equal(
+          err.message,
+          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+        );
+        return true;
+      },
+    );
+    assert.equal(
+      stubMod.__getCallLog().length,
+      0,
+      'no backend interaction for an empty store name',
+    );
+  });
+
+  await test('saveReceipt store insert failure surfaces the user-safe message, no purchase', async () => {
+    resetAll();
+    // No matching store row and the create fails: resolveStoreId yields null
+    // and the save must stop before touching purchases.
+    stubMod.__setTableRead('stores', { rows: [] });
+    stubMod.__failNextInsert('stores');
+    await assert.rejects(
+      () => ticketsMod.saveReceipt('u1', DRAFT),
+      (err) => {
+        assert.equal(
+          err.message,
+          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+        );
+        return true;
+      },
+    );
+    const log = stubMod.__getCallLog();
+    assert.ok(
+      !log.some((e) => e.kind === 'from' && e.table === 'purchases'),
+      'purchase never written',
+    );
+  });
+
+  await test('saveReceipt purchase insert failure: user-safe message, no item writes', async () => {
+    resetAll();
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__failNextInsert('purchases');
+    await assert.rejects(
+      () => ticketsMod.saveReceipt('u1', DRAFT),
+      (err) => {
+        assert.equal(
+          err.message,
+          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+        );
+        return true;
+      },
+    );
+    const log = stubMod.__getCallLog();
+    assert.ok(
+      !log.some((e) => e.kind === 'from' && e.table === 'purchase_items'),
+      'no item writes attempted',
+    );
+    assert.ok(!log.some((e) => e.kind === 'delete'), 'no rollback needed — the purchase never persisted');
+    assert.equal(stubMod.__getInserted('purchase_items'), null, 'items never inserted');
+  });
+
+  await test('saveReceipt item write failure rolls back the purchase and surfaces the user-safe message', async () => {
+    resetAll();
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', {
+      rows: [{ id: 'cat-lacteos', slug: 'lacteos' }],
+    });
+    stubMod.__failNextInsert('purchase_items');
+    const draft = {
+      ...DRAFT,
+      items: [
+        {
+          temp_id: 't1',
+          name: 'Leche',
+          quantity: 1,
+          unit_price: 3.5,
+          total_price: 3.5,
+          category_id: 'lacteos',
+          is_impulse: false,
+          ai_suggested_category_id: null,
+        },
+      ],
+    };
+    await assert.rejects(
+      () => ticketsMod.saveReceipt('u1', draft),
+      (err) => {
+        assert.equal(
+          err.message,
+          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+        );
+        return true;
+      },
+    );
+    const log = stubMod.__getCallLog();
+    const rollbackDeletes = log.filter(
+      (e) => e.kind === 'delete' && e.table === 'purchases',
+    );
+    assert.equal(
+      rollbackDeletes.length,
+      1,
+      'compensating delete fired on purchases',
+    );
+    assert.equal(stubMod.__getInserted('purchase_items'), null, 'items never persisted');
+    assert.ok(
+      stubMod.__getInserted('purchases'),
+      'the purchase row existed before the rollback (that is what the delete compensates)',
+    );
   });
 
   console.log('\n[tests] parseTicket edge-function wiring\n');

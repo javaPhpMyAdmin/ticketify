@@ -117,6 +117,12 @@ export default function RootLayout() {
             options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
           />
           <Stack.Screen name="categories/[key]" />
+          {/* The drill-downs render store data and are reached from the
+              Home/History drill-downs, so they must sit behind the same
+              session gate — without this they auto-register outside the
+              guard and render stale data via deep links when signed out. */}
+          <Stack.Screen name="receipts/[id]" />
+          <Stack.Screen name="items/[name]" />
         </Stack.Protected>
         <Stack.Screen name="(auth)" />
       </Stack>

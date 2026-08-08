@@ -217,6 +217,13 @@ export async function searchPurchaseItems(
     .ilike('name_search', `%${normalizedQuery}%`)
     .gte('purchases.purchase_date', `${monthKey}-01`)
     .lt('purchases.purchase_date', nextMonthKey(monthKey))
+    // Deterministic pagination: without an explicit order PostgREST's row
+    // order is unspecified, so equal-amount results could flip between
+    // requests. `purchases(purchase_date)` sorts the parent rows by the
+    // to-one purchase's date (bare `purchase_date` is not a column of
+    // `purchase_items`), then `name` breaks ties deterministically.
+    .order('purchases(purchase_date)', { ascending: true })
+    .order('name')
     .limit(200);
   if (error) {
     console.warn('[read] item search failed:', error.code, error.message);
