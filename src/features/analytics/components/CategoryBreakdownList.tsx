@@ -16,7 +16,10 @@ export interface CategoryBreakdownListProps {
  * Each row is a `Card` with the category kicker, total, percent of
  * the monthly total, and item count.
  */
-export function CategoryBreakdownList({ rows, title }: CategoryBreakdownListProps) {
+export function CategoryBreakdownList({
+  rows,
+  title,
+}: CategoryBreakdownListProps) {
   return (
     <View style={styles.wrap}>
       {title ? <Text style={styles.title}>{title}</Text> : null}
@@ -28,7 +31,9 @@ export function CategoryBreakdownList({ rows, title }: CategoryBreakdownListProp
               <Text style={styles.total}>{formatCurrency(t.total)}</Text>
             </View>
             <View style={styles.right}>
-              <Text style={styles.percent}>{Math.round(t.percent_of_total * 100)}%</Text>
+              <Text style={styles.percent}>
+                {Math.round(t.percent_of_total * 100)}%
+              </Text>
               <Text style={styles.items}>{t.item_count} artículos</Text>
             </View>
           </View>
@@ -50,18 +55,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
+    backgroundColor: colors.surface,
   },
   kicker: {
     ...typography.labelCaps,
     color: colors.textSecondary,
+    backgroundColor: colors.surface,
   },
   total: {
     ...typography.headlineMd,
     color: colors.textPrimary,
     marginTop: spacing.xs,
+    backgroundColor: colors.surface,
   },
   right: {
     alignItems: 'flex-end',
+    backgroundColor: colors.surface,
   },
   percent: {
     ...typography.headlineMd,
