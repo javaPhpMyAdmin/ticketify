@@ -45,6 +45,26 @@ export type CallLogEntry =
   | { kind: 'invoke'; fn: string; opts: unknown };
 
 /**
+ * One transform/filter call applied to a `from(table)` builder chain.
+ * Recorded per chain so the harness can assert the query the app builds
+ * (server-side filters, ordering, limits) without a real PostgREST —
+ * e.g. `status='confirmed'` filtering or a deterministic `.order()`.
+ */
+export type QueryOp =
+  | { op: 'eq'; column: string; value: unknown }
+  | { op: 'ilike'; column: string; pattern: string }
+  | { op: 'gte'; column: string; value: unknown }
+  | { op: 'lt'; column: string; value: unknown }
+  | { op: 'order'; column: string; opts?: { ascending?: boolean } }
+  | { op: 'limit'; count: number };
+
+/** One builder chain: the table it queried and the ops applied to it. */
+export interface QueryCall {
+  table: string;
+  ops: QueryOp[];
+}
+
+/**
  * The `from(table)` surface: upserts (auth), the select chain (reads), and
  * insert/update/delete (purchase writes, Phase 5).
  */
@@ -130,30 +150,81 @@ const functionInvokes = new Map<string, FunctionInvokeState>();
 const callLog: CallLogEntry[] = [];
 
 /**
+ * Every builder chain created via `from(table)`, in order (harness seam,
+ * see `__getQueryCalls`). The entry holds the SAME ops array the builder
+ * pushes into, so the recorded ops reflect the full chain once a terminal
+ * has been awaited.
+ */
+const queryLog: QueryCall[] = [];
+
+/**
+ * One-shot insert failures per table (harness seam, see `__failNextInsert`):
+ * the next `from(table).insert()` resolves `{ error }` and reverts, so a
+ * test can exercise the write-failure branches of `saveReceipt` without
+ * touching the default success behavior.
+ */
+const insertFailures = new Map<string, StubError>();
+
+/** Rows the app passed to `from(table).insert()`, per table (harness seam,
+ *  see `__getInserted`). Decorated with the synthetic ids, exactly as the
+ *  builder would resolve them. */
+const insertedRows = new Map<string, unknown[]>();
+
+/**
  * What a builder chain resolves to without an explicit terminal.
  * - read chains (select): the armed `tableReads` rows for the table,
  * - insert chains: the rows the app passed (decorated with a synthetic id,
  *   since the DB assigns one on insert),
+ * - insert-failure chains: an armed one-shot error (see `__failNextInsert`),
  * - write chains (update/delete without `.select()`): `data: null`,
  *   mirroring the real client.
  */
-type BuilderSource = { kind: 'read' } | { kind: 'insert'; rows: unknown[] } | { kind: 'write' };
+type BuilderSource =
+  | { kind: 'read' }
+  | { kind: 'insert'; rows: unknown[] }
+  | { kind: 'insert-failure'; error: StubError }
+  | { kind: 'write' };
 
 /**
  * Builds a chainable builder for a table. Terminal results come from
  * `tableReads` at CALL time, so a harness can arm rows for one test without
- * touching earlier assertions.
+ * touching earlier assertions. Every filter/order/limit call is recorded in
+ * the shared `queryLog` (see `__getQueryCalls`) so the harness can assert
+ * the query the app builds server-side.
  */
 function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' }): QueryBuilder {
+  const ops: QueryOp[] = [];
+  queryLog.push({ table, ops });
   const builder = {
-    eq: () => builder,
-    ilike: () => builder,
-    gte: () => builder,
-    lt: () => builder,
-    order: () => builder,
-    limit: () => builder,
+    eq: (column: string, value: unknown) => {
+      ops.push({ op: 'eq', column, value });
+      return builder;
+    },
+    ilike: (column: string, pattern: string) => {
+      ops.push({ op: 'ilike', column, pattern });
+      return builder;
+    },
+    gte: (column: string, value: unknown) => {
+      ops.push({ op: 'gte', column, value });
+      return builder;
+    },
+    lt: (column: string, value: unknown) => {
+      ops.push({ op: 'lt', column, value });
+      return builder;
+    },
+    order: (column: string, opts?: { ascending?: boolean }) => {
+      ops.push({ op: 'order', column, opts });
+      return builder;
+    },
+    limit: (count: number) => {
+      ops.push({ op: 'limit', count });
+      return builder;
+    },
     select: () => builder,
     async maybeSingle() {
+      if (source.kind === 'insert-failure') {
+        return { data: null, error: source.error };
+      }
       if (source.kind !== 'read') {
         return { data: source.kind === 'insert' ? source.rows[0] ?? null : null, error: null };
       }
@@ -163,6 +234,9 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
       return { data: rows.length > 0 ? rows[0] : null, error: null };
     },
     async single() {
+      if (source.kind === 'insert-failure') {
+        return { data: null, error: source.error };
+      }
       if (source.kind !== 'read') {
         return { data: source.kind === 'insert' ? source.rows[0] ?? null : null, error: null };
       }
@@ -185,12 +259,18 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
       onfulfilled?: (value: { data: unknown; error: StubError }) => unknown,
       onrejected?: (reason: unknown) => unknown,
     ): Promise<unknown> => {
-      const state =
-        source.kind === 'read'
-          ? tableReads.get(table) ?? { rows: null, error: null }
-          : { rows: null, error: null };
-      const data = source.kind === 'insert' ? source.rows : state.rows;
-      return Promise.resolve({ data, error: state.error }).then(onfulfilled, onrejected);
+      let data: unknown = null;
+      let error: StubError = null;
+      if (source.kind === 'read') {
+        const state = tableReads.get(table) ?? { rows: null, error: null };
+        data = state.rows;
+        error = state.error;
+      } else if (source.kind === 'insert') {
+        data = source.rows;
+      } else if (source.kind === 'insert-failure') {
+        error = source.error;
+      }
+      return Promise.resolve({ data, error }).then(onfulfilled, onrejected);
     },
   };
   return builder as QueryBuilder;
@@ -221,14 +301,25 @@ const defaultBehavior = (): SupabaseBehavior => ({
       select: () => makeQueryBuilder(table, { kind: 'read' }),
       insert: (rows: unknown) => {
         callLog.push({ kind: 'insert', table });
+        // One-shot armed failure (see `__failNextInsert`): the insert errors
+        // and reverts to success behavior for the next call, so `saveReceipt`'s
+        // write-failure branches can be exercised without a live backend.
+        const armedFailure = insertFailures.get(table);
+        if (armedFailure !== undefined) {
+          insertFailures.delete(table);
+          return makeQueryBuilder(table, { kind: 'insert-failure', error: armedFailure });
+        }
         // The DB assigns ids; decorate inserted rows so `.select('id')`
-        // flows can read one back (saveReceipt returns the new id).
+        // flows can read one back (saveReceipt returns the new id). The
+        // decorated rows are also exposed via `__getInserted` so tests can
+        // assert the exact payloads (slug→id mapping, purchase_id linkage).
         const decorated = (Array.isArray(rows) ? rows : [rows]).map(
           (row, index) => ({
             id: `stub-insert-${insertCounter++}-${index}`,
             ...(row as object),
           }),
         );
+        insertedRows.set(table, decorated);
         return makeQueryBuilder(table, { kind: 'insert', rows: decorated });
       },
       update: (columns: Record<string, unknown>) => {
@@ -320,6 +411,9 @@ export function __resetSupabaseBehavior(): void {
   rpcResults.clear();
   functionInvokes.clear();
   callLog.length = 0;
+  queryLog.length = 0;
+  insertFailures.clear();
+  insertedRows.clear();
   insertCounter = 0;
 }
 
@@ -351,6 +445,48 @@ export function __setFunctionInvoke(
 /** Snapshot of every backend interaction since the last reset. */
 export function __getCallLog(): CallLogEntry[] {
   return callLog.slice();
+}
+
+/**
+ * The transform/filter ops of the most recent builder chain for `table`
+ * (empty when none was built since the last reset). Lets the harness assert
+ * the server-side query the app builds — e.g. that `readPurchaseList`
+ * filters `status='confirmed'` and orders `created_at` desc, or that
+ * `searchPurchaseItems` bounds the purchase date to the month.
+ */
+export function __getQueryCalls(table: string): QueryOp[] {
+  for (let i = queryLog.length - 1; i >= 0; i -= 1) {
+    const entry = queryLog[i];
+    if (entry.table === table) return entry.ops;
+  }
+  return [];
+}
+
+/**
+ * Arms the next `from(table).insert()` to resolve `{ data: null, error }`
+ * (one-shot — the following insert succeeds again). Default behavior for
+ * every other call is unchanged, so suites that never call this seam keep
+ * their exact current semantics.
+ */
+export function __failNextInsert(
+  table: string,
+  error?: { message?: string; code?: string },
+): void {
+  insertFailures.set(table, {
+    message: error?.message ?? 'insert failed',
+    code: error?.code,
+  });
+}
+
+/**
+ * The rows the app passed to the most recent successful `from(table).insert()`
+ * (decorated with the synthetic ids the builder resolves), or null when no
+ * insert happened since the last reset. Lets the harness assert the exact
+ * write payload: slug→uuid category resolution, `purchase_id` linkage,
+ * `user_id`, `is_impulse`, `sort_order`.
+ */
+export function __getInserted(table: string): unknown[] | null {
+  return insertedRows.get(table) ?? null;
 }
 
 /** The most recent `rpc` call (fn + params), or null when none happened. */
