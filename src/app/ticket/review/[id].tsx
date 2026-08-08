@@ -230,8 +230,8 @@ export default function ReviewReceiptScreen() {
 
   const handleConfirm = async () => {
     // The save is async; guard against double-taps so the receipt is not
-    // persisted twice (two Home-feed rows in mock mode, two `purchases`
-    // rows in Phase 5) and the screen is dismissed exactly once.
+    // persisted twice (two `purchases` rows) and the screen is dismissed
+    // exactly once.
     if (savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
@@ -242,9 +242,8 @@ export default function ReviewReceiptScreen() {
       clear();
       router.dismiss();
     } catch (err) {
-      // Real-mode writes can reject (network, RLS); the review screen stays
-      // up with the draft intact so the user can retry. Mock-mode saves
-      // never reject, so this branch only fires in real mode.
+      // Writes can reject (network, RLS); the review screen stays up with
+      // the draft intact so the user can retry.
       savingRef.current = false;
       setSaving(false);
       Alert.alert(

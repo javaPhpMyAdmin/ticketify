@@ -1,9 +1,9 @@
 /**
- * The app gates its mock flags on React Native's `__DEV__` global (so a
- * Release build never compiles the mock branches). Plain-node harnesses
- * have no such global — declare it here for the isolated harness tsconfigs
- * (compile), and the harness scripts define it as `false` on
- * `globalThis` before loading compiled modules (runtime), so the mock
- * config modules load with the mock branches off.
+ * React Native's `__DEV__` global, which the app reads for dev-only
+ * behavior (e.g. `useHomeFeed`'s dev-only error log on failed reads).
+ * Plain-node harnesses have no such global — declare it here for the
+ * isolated harness tsconfigs (compile), and the harness scripts define it
+ * as `false` on `globalThis` before loading compiled modules (runtime),
+ * so the compiled modules behave like a Release build.
  */
 declare var __DEV__: boolean;

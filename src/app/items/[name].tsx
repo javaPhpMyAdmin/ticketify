@@ -9,7 +9,7 @@ import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 
 /**
- * Item drill-down (mock): one normalized product's monthly total plus each
+ * Item drill-down: one normalized product's monthly total plus each
  * individual purchase (store, ticket date, amount), wherever it was bought.
  * Answers "cuánto gasté en menú del día este mes" across categories and
  * stores — the identity lens that complements the category drill-down. The

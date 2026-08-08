@@ -111,9 +111,9 @@ export interface PurchaseWithItems extends Purchase {
 
 /**
  * One line item in the home-feed row shape. `category` is the category
- * SLUG (the app's item-level identity, same as the mock fixtures);
- * `quantity` / `unit_price` are optional because they are only present when
- * the source provides them (price-alert comparisons need the unit price).
+ * SLUG (the app's item-level identity); `quantity` / `unit_price` are
+ * optional because they are only present when the source provides them
+ * (price-alert comparisons need the unit price).
  * `is_impulse` marks impulse purchases — the Home "snacks" callout sums
  * their line totals.
  */

@@ -152,9 +152,10 @@ let adaptersMod;
 async function run() {
   console.log('\n[tests] compiling data-access modules…');
   await compile();
-  // The app gates its mock flags on React Native's `__DEV__` global; plain
-  // node has none. Declared for tsc via test-stubs/globals.d.ts; defined
-  // here so the compiled mock config modules load with the mock branches off.
+  // The app reads React Native's `__DEV__` global for dev-only behavior
+  // (e.g. the home-feed dev error log); plain node has none. Declared for
+  // tsc via test-stubs/globals.d.ts; defined here so the compiled modules
+  // behave like a Release build.
   globalThis.__DEV__ = false;
   installRequireHook();
   console.log('[tests] loading compiled modules…');

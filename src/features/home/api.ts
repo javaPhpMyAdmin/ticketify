@@ -10,14 +10,14 @@
  * request (nested `stores` + `purchase_items` + `categories` selects) so the
  * Home feed, History, Analytics, and the drill-downs all hydrate from one
  * round trip. `status = 'confirmed'` is filtered server-side so drafts never
- * surface in the feed (mirrors the mock, whose rows are all confirmed).
+ * surface in the feed.
  *
  * `scanned_at` is not a column: `purchases.created_at` IS the capture stamp,
- * so the row mapping surfaces it as `scanned_at` — the same field the mock
- * fixtures carry and `compareReceiptsByScan` orders by. `category_totals`
+ * so the row mapping surfaces it as `scanned_at`, the field
+ * `compareReceiptsByScan` orders by. `category_totals`
  * and `wants_snacks_total` are derived client-side from the line items
  * (slug + impulse flag), keeping the grouping logic in the pure helpers the
- * mock path also uses.
+ * reads share.
  */
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { READ_ERROR_MESSAGE } from '@/lib/supabase/feature-access';
@@ -64,7 +64,7 @@ function firstOrSelf<T>(value: T | T[] | null): T | null {
  * Maps a raw `purchases` row into the shared feed-row shape: items ordered
  * by `sort_order`, `category_totals` summed by slug, `wants_snacks_total`
  * summed over impulse items, and `scanned_at` from `created_at`. Unknown
- * store/category fall back to the same neutral values the mock uses.
+ * store/category fall back to the neutral values.
  */
 function mapPurchaseRow(row: RawPurchaseRow): HomeFeedReceiptRow {
   const items: HomeFeedItemRow[] = (row.purchase_items ?? [])
@@ -194,7 +194,7 @@ function mapSearchItemRow(row: RawSearchItemRow): HomeFeedReceiptRow {
  * query, user-scoped through RLS plus an explicit `purchases.user_id`
  * filter, and month-bounded by the purchase date. Returns matched items as
  * single-receipt rows; the caller aggregates them with the same pure month
- * aggregators the mock path uses, so both modes group identically.
+ * aggregators the reads use, so results group identically.
  *
  * The trigram GIN index on `name_search` keeps the leading-wildcard ilike
  * indexed as the catalog grows — the reason this search is server-side
