@@ -209,15 +209,27 @@ const SEARCH_ROW = {
   },
 };
 
+/**
+ * Real-looking URL + anon key: the double's `isSupabaseConfigured` derives
+ * `true` from these, so reads reach the network seam.
+ */
+const CONFIGURED_URL = 'https://real-project.supabase.co';
+const CONFIGURED_ANON_KEY = 'real-anon-key';
+
+/** The `app.json` fallback values: the real derivation must reject them. */
+const PLACEHOLDER_URL = 'https://YOUR-PROJECT.supabase.co';
+const PLACEHOLDER_ANON_KEY = 'YOUR-ANON-KEY';
+
 let seamMod;
 let stubMod;
 let homeApiMod;
 
 /** Resets the double (rows, RPCs, call log, insert seams) and re-arms the
- *  configured flag — mirrors the features harness `resetAll`. */
+ *  configured flag through the real derivation — mirrors the features
+ *  harness `resetAll`. */
 function resetAll() {
   stubMod.__resetSupabaseBehavior();
-  stubMod.__setSupabaseConfigured(true);
+  stubMod.__setSupabaseConfigInputs(CONFIGURED_URL, CONFIGURED_ANON_KEY);
 }
 
 async function run() {
@@ -341,7 +353,10 @@ async function run() {
 
   await test('readPurchaseList reports unconfigured without touching the network', async () => {
     resetAll();
-    stubMod.__setSupabaseConfigured(false);
+    // The double derives the flag through the real pure derivation: the
+    // app.json placeholder URL disqualifies the configuration (same contract
+    // the app runs at module load).
+    stubMod.__setSupabaseConfigInputs(PLACEHOLDER_URL, CONFIGURED_ANON_KEY);
     const result = await homeApiMod.readPurchaseList('u1');
     assert.equal(result.status, 'unconfigured');
     assert.equal(stubMod.__getCallLog().length, 0, 'no network when unconfigured');
@@ -573,7 +588,9 @@ async function run() {
 
   await test('searchPurchaseItems reports unconfigured without touching the network', async () => {
     resetAll();
-    stubMod.__setSupabaseConfigured(false);
+    // The anon-key placeholder side of the derivation (the URL test above
+    // covered the URL side): `YOUR-ANON-KEY` is the app.json fallback.
+    stubMod.__setSupabaseConfigInputs(CONFIGURED_URL, PLACEHOLDER_ANON_KEY);
     const result = await homeApiMod.searchPurchaseItems('u1', '2026-08', 'leche');
     assert.equal(result.status, 'unconfigured');
     assert.equal(stubMod.__getCallLog().length, 0, 'no network when unconfigured');
