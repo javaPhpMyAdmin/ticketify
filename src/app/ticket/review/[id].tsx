@@ -23,6 +23,7 @@ import {
 } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import {
+  CategoryPickerModal,
   ReceiptItemsList,
   useReceiptDraftActions,
   useReceiptDraftDraft,
@@ -32,7 +33,7 @@ import {
 import { formatCurrency } from '@/lib/format';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
-import type { CardType, PaymentMethod } from '@/types';
+import type { CardType, PaymentMethod, ReviewItem } from '@/types';
 
 const paymentMethods: { key: PaymentMethod; label: string }[] = [
   { key: 'card', label: 'Tarjeta' },
@@ -207,6 +208,21 @@ export default function ReviewReceiptScreen() {
       : '';
 
   const [saving, setSaving] = useState(false);
+  // Which item's category the picker is editing (null = closed). The user's
+  // tap writes the chosen key to `item.category_id`; the AI suggestion stays
+  // in `ai_suggested_category_id` and the save path prefers the user's pick.
+  // The modal stays mounted (visible=false) so its slide-out animation runs;
+  // `lastCategoryTarget` keeps the title/number on screen while it animates.
+  const [categoryTarget, setCategoryTarget] = useState<ReviewItem | null>(null);
+  const lastCategoryTarget = useRef<ReviewItem | null>(null);
+  if (categoryTarget) lastCategoryTarget.current = categoryTarget;
+  const sheetTarget = categoryTarget ?? lastCategoryTarget.current;
+
+  const handleSelectCategory = (categoryKey: string) => {
+    if (!sheetTarget) return;
+    upsertItem({ ...sheetTarget, category_id: categoryKey });
+    setCategoryTarget(null);
+  };
   // Synchronous double-tap guard: the `saving` state is async, so two taps
   // in the same frame would both read it as false and run the save twice.
   // The ref is set before any await, so a second tap in the same frame is
@@ -413,6 +429,7 @@ export default function ReviewReceiptScreen() {
                   <ReceiptItemsList
                     items={draft.items}
                     currency={currency}
+                    onPressCategory={(item) => setCategoryTarget(item)}
                     onToggleImpulse={(item, v) =>
                       upsertItem({ ...item, is_impulse: v })
                     }
@@ -456,6 +473,18 @@ export default function ReviewReceiptScreen() {
           </View>
         ) : null}
       </SafeAreaView>
+
+      <CategoryPickerModal
+        visible={!!categoryTarget}
+        itemName={sheetTarget?.name ?? ''}
+        selectedKey={
+          sheetTarget
+            ? (sheetTarget.category_id ?? sheetTarget.ai_suggested_category_id)
+            : null
+        }
+        onSelect={handleSelectCategory}
+        onClose={() => setCategoryTarget(null)}
+      />
     </>
   );
 }

@@ -1,6 +1,7 @@
 import { StyleSheet, Switch } from 'react-native';
 
 import { Chip, Text, View } from '@/components';
+import { getExpenseCategory } from '@/features/home/categories';
 import { formatCurrency } from '@/lib/format';
 import { colors, spacing, typography } from '@/theme';
 import type { ReviewItem } from '@/types';
@@ -9,16 +10,28 @@ export interface ReviewItemRowProps {
   item: ReviewItem;
   /** ISO 4217 code for the line price (defaults to the settings default, UYU). */
   currency?: string;
+  /** Called when the user taps the category chip to edit it. */
+  onPressCategory: () => void;
   /** Called when the user toggles the "impulse" switch. */
   onToggleImpulse: (isImpulse: boolean) => void;
 }
 
 /**
  * One row inside the receipt review list. Top half: name + qty on
- * the left, line price on the right. Bottom half: AI-suggested
- * category chip + impulse-buy switch.
+ * the left, line price on the right. Bottom half: the effective
+ * category chip (user-picked when set, else AI-suggested, else
+ * SIN CATEGORÍA) which opens the category picker on tap, plus the
+ * impulse-buy switch.
  */
-export function ReviewItemRow({ item, currency, onToggleImpulse }: ReviewItemRowProps) {
+export function ReviewItemRow({
+  item,
+  currency,
+  onPressCategory,
+  onToggleImpulse,
+}: ReviewItemRowProps) {
+  const categoryId = item.category_id ?? item.ai_suggested_category_id;
+  const category = categoryId ? getExpenseCategory(categoryId) : null;
+
   return (
     <View style={styles.row}>
       <View style={styles.top}>
@@ -33,7 +46,12 @@ export function ReviewItemRow({ item, currency, onToggleImpulse }: ReviewItemRow
         </Text>
       </View>
       <View style={styles.bottom}>
-        <Chip label={item.ai_suggested_category_id ?? 'SIN CATEGORÍA'} selected />
+        <Chip
+          label={category?.label ?? 'SIN CATEGORÍA'}
+          icon={category?.icon}
+          selected={!!category}
+          onPress={onPressCategory}
+        />
         <View style={styles.impulseWrap}>
           <Text style={styles.impulseLabel}>Compra impulsiva</Text>
           <Switch

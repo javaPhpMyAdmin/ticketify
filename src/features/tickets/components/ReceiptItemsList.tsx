@@ -10,6 +10,8 @@ export interface ReceiptItemsListProps {
   currency?: string;
   /** When true, the list is rendered without the wrapping Card chrome. */
   bare?: boolean;
+  /** Called when the user taps an item's category chip to edit it. */
+  onPressCategory: (item: ReviewItem) => void;
   /** Called when the user toggles the "impulse" switch on a row. */
   onToggleImpulse: (item: ReviewItem, isImpulse: boolean) => void;
 }
@@ -22,6 +24,7 @@ export function ReceiptItemsList({
   items,
   currency,
   bare,
+  onPressCategory,
   onToggleImpulse,
 }: ReceiptItemsListProps) {
   const content = (
@@ -31,6 +34,7 @@ export function ReceiptItemsList({
           <ReviewItemRow
             item={item}
             currency={currency}
+            onPressCategory={() => onPressCategory(item)}
             onToggleImpulse={(v) => onToggleImpulse(item, v)}
           />
           {idx < items.length - 1 ? <Divider /> : null}
