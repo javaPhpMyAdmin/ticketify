@@ -189,12 +189,33 @@ function mapSearchItemRow(row: RawSearchItemRow): HomeFeedReceiptRow {
 }
 
 /**
+ * Escapes LIKE/ILIKE wildcards so user-typed `%`, `_` and `\` are matched
+ * literally instead of acting as pattern metacharacters. Order matters:
+ * backslash is escaped FIRST — the backslashes this function itself inserts
+ * for `%`/`_` must not be re-escaped by a later pass — then `%` → `\%`,
+ * then `_` → `\_`. Postgres's default LIKE escape character is `\`, so the
+ * caller can safely interpolate the result inside its own `%…%` prefix and
+ * suffix wildcards.
+ */
+function escapeLikePattern(input: string): string {
+  return input
+    .replace(/\\/g, '\\\\')
+    .replace(/%/g, '\\%')
+    .replace(/_/g, '\\_');
+}
+
+/**
  * Item search (approved option B): accent-insensitive, indexed ilike on
  * `purchase_items.name_search` (migration 0006) with the accent-stripped
  * query, user-scoped through RLS plus an explicit `purchases.user_id`
  * filter, and month-bounded by the purchase date. Returns matched items as
  * single-receipt rows; the caller aggregates them with the same pure month
  * aggregators the reads use, so results group identically.
+ *
+ * LIKE wildcards the user typed (`%`, `_`, `\`) are escaped first via
+ * `escapeLikePattern`, so they match literally — `50%` finds names
+ * containing "50%", never every name containing "50". Only the surrounding
+ * `%…%` remains a wildcard (prefix/suffix matching is the intent).
  *
  * The trigram GIN index on `name_search` keeps the leading-wildcard ilike
  * indexed as the catalog grows — the reason this search is server-side
@@ -214,7 +235,9 @@ export async function searchPurchaseItems(
        purchases ( id, purchase_date, created_at, total, payment_method, image_url, status, stores ( name ) )`,
     )
     .eq('purchases.user_id', userId)
-    .ilike('name_search', `%${normalizedQuery}%`)
+    // User-typed wildcards are escaped so `%`, `_` and `\` match literally;
+    // only the `%…%` around the query keeps prefix/suffix matching.
+    .ilike('name_search', `%${escapeLikePattern(normalizedQuery)}%`)
     .gte('purchases.purchase_date', `${monthKey}-01`)
     .lt('purchases.purchase_date', nextMonthKey(monthKey))
     // Deterministic pagination: without an explicit order PostgREST's row

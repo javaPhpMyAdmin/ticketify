@@ -407,6 +407,103 @@ async function run() {
     assert.ok(ops.some((o) => o.op === 'limit' && o.count === 200), 'caps results at 200');
   });
 
+  await test('searchPurchaseItems escapes a user-typed % so it matches literally', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchase_items', { rows: [] });
+    await homeApiMod.searchPurchaseItems('u1', '2026-08', '50%');
+    const ops = stubMod.__getQueryCalls('purchase_items');
+    assert.ok(
+      ops.some(
+        (o) => o.op === 'ilike' && o.column === 'name_search' && o.pattern === '%50\\%%',
+      ),
+      // Without escaping, `%50%%` would match every name containing "50".
+      'the % the user typed is escaped, only the surrounding %…% stay wildcards',
+    );
+  });
+
+  await test('searchPurchaseItems escapes a user-typed _ so it matches literally', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchase_items', { rows: [] });
+    await homeApiMod.searchPurchaseItems('u1', '2026-08', 'c_la');
+    const ops = stubMod.__getQueryCalls('purchase_items');
+    assert.ok(
+      ops.some(
+        (o) => o.op === 'ilike' && o.column === 'name_search' && o.pattern === '%c\\_la%',
+      ),
+      // Without escaping, `_` matches any single character (a wildcard).
+      'the _ the user typed is escaped to \\_ (literal underscore)',
+    );
+  });
+
+  await test('searchPurchaseItems escapes a user-typed backslash so it matches literally', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchase_items', { rows: [] });
+    await homeApiMod.searchPurchaseItems('u1', '2026-08', 'a\\b');
+    const ops = stubMod.__getQueryCalls('purchase_items');
+    assert.ok(
+      ops.some(
+        (o) => o.op === 'ilike' && o.column === 'name_search' && o.pattern === '%a\\\\b%',
+      ),
+      // Escaped first, so the backslashes we insert for %/_ stay intact.
+      'backslash is escaped to \\\\ (and never re-escapes the \\% / \\_ we add)',
+    );
+  });
+
+  await test('searchPurchaseItems leaves wildcard-free queries unchanged', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchase_items', { rows: [] });
+    await homeApiMod.searchPurchaseItems('u1', '2026-08', 'leche');
+    const ops = stubMod.__getQueryCalls('purchase_items');
+    assert.ok(
+      ops.some((o) => o.op === 'ilike' && o.column === 'name_search' && o.pattern === '%leche%'),
+      'plain queries keep the prefix/suffix %…% matching',
+    );
+  });
+
+  await test('searchPurchaseItems handles a %-only query (fully escaped)', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchase_items', { rows: [] });
+    await homeApiMod.searchPurchaseItems('u1', '2026-08', '%');
+    const ops = stubMod.__getQueryCalls('purchase_items');
+    assert.ok(
+      ops.some((o) => o.op === 'ilike' && o.column === 'name_search' && o.pattern === '%\\%%'),
+      'a lone % becomes %\\%% — matches only names containing a literal %',
+    );
+  });
+
+  await test('searchPurchaseItems handles a _-only query (fully escaped)', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchase_items', { rows: [] });
+    await homeApiMod.searchPurchaseItems('u1', '2026-08', '_');
+    const ops = stubMod.__getQueryCalls('purchase_items');
+    assert.ok(
+      ops.some((o) => o.op === 'ilike' && o.column === 'name_search' && o.pattern === '%\\_%'),
+      'a lone _ becomes %\\_% — matches only names containing a literal _',
+    );
+  });
+
+  await test('searchPurchaseItems handles a backslash-only query (fully escaped)', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchase_items', { rows: [] });
+    await homeApiMod.searchPurchaseItems('u1', '2026-08', '\\');
+    const ops = stubMod.__getQueryCalls('purchase_items');
+    assert.ok(
+      ops.some((o) => o.op === 'ilike' && o.column === 'name_search' && o.pattern === '%\\\\%'),
+      'a lone backslash becomes %\\\\% — matches only names containing a literal backslash',
+    );
+  });
+
+  await test('searchPurchaseItems treats a trailing % in a real-world query as literal', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchase_items', { rows: [] });
+    await homeApiMod.searchPurchaseItems('u1', '2026-08', '100%');
+    const ops = stubMod.__getQueryCalls('purchase_items');
+    assert.ok(
+      ops.some((o) => o.op === 'ilike' && o.column === 'name_search' && o.pattern === '%100\\%%'),
+      'the trailing % the user typed is escaped, only the surrounding %…% stay wildcards',
+    );
+  });
+
 
   await test('searchPurchaseItems orders deterministically by purchase date, name, purchase id, then item id', async () => {
     resetAll();
