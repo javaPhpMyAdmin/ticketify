@@ -22,8 +22,8 @@ export type ExpenseCategoryKey =
   | 'alimentos'
   | 'higiene'
   | 'limpieza'
-  | 'carniceria'
-  | 'verduleria'
+  | 'carnes'
+  | 'frutas-verduras'
   | 'farmacia'
   | 'servicios'
   | 'otros';
@@ -75,13 +75,13 @@ export const EXPENSE_CATEGORIES: Record<ExpenseCategoryKey, ExpenseCategory> = {
     label: 'Limpieza',
     icon: 'bubbles.and.sparkles.fill',
   },
-  carniceria: {
-    key: 'carniceria',
+  carnes: {
+    key: 'carnes',
     label: 'Carnicería',
     icon: 'fork.knife',
   },
-  verduleria: {
-    key: 'verduleria',
+  'frutas-verduras': {
+    key: 'frutas-verduras',
     label: 'Frutas y verduras',
     icon: 'leaf.fill',
   },
