@@ -110,6 +110,48 @@ export interface PurchaseWithItems extends Purchase {
 }
 
 /**
+ * One line item in the home-feed row shape. `category` is the category
+ * SLUG (the app's item-level identity, same as the mock fixtures);
+ * `quantity` / `unit_price` are optional because they are only present when
+ * the source provides them (price-alert comparisons need the unit price).
+ * `is_impulse` marks impulse purchases — the Home "snacks" callout sums
+ * their line totals.
+ */
+export interface HomeFeedItemRow {
+  name: string;
+  /** Line total (amount = quantity × unit_price when both exist). */
+  amount: number;
+  quantity?: number;
+  unit_price?: number;
+  /** Category slug, e.g. 'lacteos'. */
+  category: string;
+  is_impulse?: boolean;
+}
+
+/**
+ * One receipt row the Home feed and the History/Analytics screens consume.
+ * Shared by the mock fixtures (`MOCK_RECEIPTS`), the receipts store list,
+ * and the real read (`features/home/api`), which derives the aggregates
+ * from the DB rows (`category_totals` / `wants_snacks_total` are sums over
+ * the line items; `scanned_at` is `purchases.created_at`).
+ */
+export interface HomeFeedReceiptRow {
+  id: string;
+  store_name: string;
+  purchase_date: string; // ISO date (YYYY-MM-DD)
+  /** When the ticket was captured (ISO). Orders "Recibos recientes". */
+  scanned_at: string | null;
+  total: number;
+  image_url: string | null;
+  status: PurchaseStatus;
+  /** Impulse-items total for the receipt, when the source provides it. */
+  wants_snacks_total?: number;
+  /** Per-category totals (slug -> amount), when the source provides them. */
+  category_totals?: Record<string, number>;
+  items?: HomeFeedItemRow[];
+}
+
+/**
  * Locally-built receipt the user reviews before committing to Supabase.
  * Lives in the `useReceiptsStore` zustand store during the scan flow.
  */

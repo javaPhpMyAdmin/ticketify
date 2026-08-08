@@ -1,5 +1,7 @@
+export { readPurchaseList, searchPurchaseItems } from './api';
 export { useHomeFeed } from './hooks/useHomeFeed';
 export type { HomeFeed } from './hooks/useHomeFeed';
+export { mapPurchaseRowsToHomeFeed } from './hooks/useHomeFeed';
 export { useCategoryDetail } from './hooks/useHomeFeed';
 export { useItemSearch, useItemDetail } from './hooks/useHomeFeed';
 export type {

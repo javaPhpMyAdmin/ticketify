@@ -39,17 +39,39 @@ export type CallLogEntry =
   | { kind: 'from'; table: string }
   | { kind: 'rpc'; fn: string; params: Record<string, unknown> | null }
   | { kind: 'upsert'; table: string }
+  | { kind: 'insert'; table: string }
+  | { kind: 'update'; table: string }
+  | { kind: 'delete'; table: string }
   | { kind: 'invoke'; fn: string; opts: unknown };
 
-/** The `from(table)` surface: upserts (auth) and a select chain (reads). */
+/**
+ * The `from(table)` surface: upserts (auth), the select chain (reads), and
+ * insert/update/delete (purchase writes, Phase 5).
+ */
 export interface FromBuilder {
   upsert: (row: unknown, opts?: unknown) => Promise<{ error: StubError }>;
   select: (columns?: string) => QueryBuilder;
+  insert: (rows: unknown, opts?: unknown) => QueryBuilder;
+  update: (columns: Record<string, unknown>, opts?: unknown) => QueryBuilder;
+  delete: (opts?: unknown) => QueryBuilder;
 }
 
-/** Chainable `select` builder with `.single` / `.maybeSingle` terminals. */
-export interface QueryBuilder {
+/**
+ * Chainable builder returned by `select` / `insert` / `update` / `delete`.
+ * Mirrors supabase-js: filter/order/limit calls chain, `.single` /
+ * `.maybeSingle` are explicit terminals, and the builder itself is
+ * thenable, so `await`-ing an unterminated chain resolves the PostgREST
+ * response `{ data, error }` (deletes/updates resolve `data: null` unless
+ * `.select()` was chained, like the real client).
+ */
+export interface QueryBuilder extends PromiseLike<{ data: unknown; error: StubError }> {
   eq: (column: string, value: unknown) => QueryBuilder;
+  ilike: (column: string, pattern: string) => QueryBuilder;
+  gte: (column: string, value: unknown) => QueryBuilder;
+  lt: (column: string, value: unknown) => QueryBuilder;
+  order: (column: string, opts?: { ascending?: boolean }) => QueryBuilder;
+  limit: (count: number) => QueryBuilder;
+  select: (columns?: string) => QueryBuilder;
   maybeSingle: () => Promise<{ data: unknown | null; error: StubError }>;
   single: () => Promise<{ data: unknown | null; error: StubError }>;
 }
@@ -108,20 +130,42 @@ const functionInvokes = new Map<string, FunctionInvokeState>();
 const callLog: CallLogEntry[] = [];
 
 /**
- * Builds the `select()…maybeSingle()/single()` chain for a table. Terminal
- * results come from `tableReads` at CALL time, so a harness can arm rows for
- * one test without touching earlier assertions.
+ * What a builder chain resolves to without an explicit terminal.
+ * - read chains (select): the armed `tableReads` rows for the table,
+ * - insert chains: the rows the app passed (decorated with a synthetic id,
+ *   since the DB assigns one on insert),
+ * - write chains (update/delete without `.select()`): `data: null`,
+ *   mirroring the real client.
  */
-function makeQueryBuilder(table: string): QueryBuilder {
-  const builder: QueryBuilder = {
+type BuilderSource = { kind: 'read' } | { kind: 'insert'; rows: unknown[] } | { kind: 'write' };
+
+/**
+ * Builds a chainable builder for a table. Terminal results come from
+ * `tableReads` at CALL time, so a harness can arm rows for one test without
+ * touching earlier assertions.
+ */
+function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' }): QueryBuilder {
+  const builder = {
     eq: () => builder,
+    ilike: () => builder,
+    gte: () => builder,
+    lt: () => builder,
+    order: () => builder,
+    limit: () => builder,
+    select: () => builder,
     async maybeSingle() {
+      if (source.kind !== 'read') {
+        return { data: source.kind === 'insert' ? source.rows[0] ?? null : null, error: null };
+      }
       const state = tableReads.get(table) ?? { rows: null, error: null };
       if (state.error) return { data: null, error: state.error };
       const rows = state.rows ?? [];
       return { data: rows.length > 0 ? rows[0] : null, error: null };
     },
     async single() {
+      if (source.kind !== 'read') {
+        return { data: source.kind === 'insert' ? source.rows[0] ?? null : null, error: null };
+      }
       const state = tableReads.get(table) ?? { rows: null, error: null };
       if (state.error) return { data: null, error: state.error };
       const rows = state.rows ?? [];
@@ -137,9 +181,23 @@ function makeQueryBuilder(table: string): QueryBuilder {
       }
       return { data: rows[0], error: null };
     },
+    then: (
+      onfulfilled?: (value: { data: unknown; error: StubError }) => unknown,
+      onrejected?: (reason: unknown) => unknown,
+    ): Promise<unknown> => {
+      const state =
+        source.kind === 'read'
+          ? tableReads.get(table) ?? { rows: null, error: null }
+          : { rows: null, error: null };
+      const data = source.kind === 'insert' ? source.rows : state.rows;
+      return Promise.resolve({ data, error: state.error }).then(onfulfilled, onrejected);
+    },
   };
-  return builder;
+  return builder as QueryBuilder;
 }
+
+/** Monotonic id assigned to inserted rows (the DB assigns uuids on insert). */
+let insertCounter = 0;
 
 const defaultBehavior = (): SupabaseBehavior => ({
   signInWithOAuth: async () => ({
@@ -160,7 +218,28 @@ const defaultBehavior = (): SupabaseBehavior => ({
         callLog.push({ kind: 'upsert', table });
         return Promise.resolve({ error: null as StubError, row });
       },
-      select: () => makeQueryBuilder(table),
+      select: () => makeQueryBuilder(table, { kind: 'read' }),
+      insert: (rows: unknown) => {
+        callLog.push({ kind: 'insert', table });
+        // The DB assigns ids; decorate inserted rows so `.select('id')`
+        // flows can read one back (saveReceipt returns the new id).
+        const decorated = (Array.isArray(rows) ? rows : [rows]).map(
+          (row, index) => ({
+            id: `stub-insert-${insertCounter++}-${index}`,
+            ...(row as object),
+          }),
+        );
+        return makeQueryBuilder(table, { kind: 'insert', rows: decorated });
+      },
+      update: (columns: Record<string, unknown>) => {
+        void columns;
+        callLog.push({ kind: 'update', table });
+        return makeQueryBuilder(table, { kind: 'write' });
+      },
+      delete: () => {
+        callLog.push({ kind: 'delete', table });
+        return makeQueryBuilder(table, { kind: 'write' });
+      },
     };
   },
   rpc: (fn: string, params?: Record<string, unknown>) => {
@@ -241,6 +320,7 @@ export function __resetSupabaseBehavior(): void {
   rpcResults.clear();
   functionInvokes.clear();
   callLog.length = 0;
+  insertCounter = 0;
 }
 
 export function __setSupabaseBehavior(next: Partial<SupabaseBehavior>): void {

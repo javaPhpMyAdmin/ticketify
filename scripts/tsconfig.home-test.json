@@ -19,6 +19,7 @@
     "rootDir": ".."
   },
   "include": [
+    "../src/features/home/api.ts",
     "../src/features/home/hooks/useHomeFeed.ts",
     "../src/features/home/categories.ts",
     "../src/features/auth/use-session-user.ts",

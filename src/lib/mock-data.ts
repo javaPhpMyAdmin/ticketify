@@ -52,10 +52,10 @@ if (USE_MOCK_AUTH && !USE_MOCK_DATA) {
   );
 }
 
-/** The monthly budget the budget card renders offline (ARS, like mock-parse). */
+/** The monthly budget the budget card renders offline (UYU, the demo currency). */
 export const MOCK_MONTHLY_BUDGET: MonthlyBudget = {
   amount: 45000,
-  currency: 'ARS',
+  currency: 'UYU',
 };
 
 /**

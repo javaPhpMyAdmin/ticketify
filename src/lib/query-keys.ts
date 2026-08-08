@@ -29,8 +29,11 @@ export const queryKeys = {
   /** The month's category totals via the RPC (analytics). */
   monthlyTotals: (userId: string, yearMonth: string) =>
     ['analytics', 'monthly-totals', userId, yearMonth] as const,
-  /** The home feed (stub until purchase reads land). */
+  /** The home feed (purchase list; all months, current-month derived). */
   homeFeed: (userId: string) => ['home', 'feed', userId] as const,
   /** The history entries (stub until purchase reads land). */
   historyEntries: (userId: string) => ['history', 'entries', userId] as const,
+  /** Item search results for a month + normalized query (user-scoped). */
+  itemSearch: (userId: string, monthKey: string, query: string) =>
+    ['home', 'item-search', userId, monthKey, query] as const,
 };

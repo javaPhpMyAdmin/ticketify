@@ -17,6 +17,7 @@
     "rootDir": ".."
   },
   "include": [
+    "../src/features/home/api.ts",
     "../src/lib/supabase/feature-access.ts",
     "../src/lib/supabase/query-adapters.ts",
     "../src/lib/query-keys.ts",

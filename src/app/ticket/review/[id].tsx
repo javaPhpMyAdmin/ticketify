@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Animated, Image, ScrollView, StyleSheet, TextInput } from 'react-native';
+import { Alert, Animated, Image, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -221,20 +221,21 @@ export default function ReviewReceiptScreen() {
     savingRef.current = true;
     setSaving(true);
     try {
-      // Persist the draft. In prod this is still a stub (returns a local
-      // id, writes nothing until Phase 5); in mock dev
-      // (EXPO_PUBLIC_MOCK_DATA=1) it appends to the receipts store so the
-      // Home feed shows the receipt.
       if (draft && userId) {
         await saveReceipt(userId, draft);
       }
-    } finally {
-      // Cleanup runs even if the write rejects — the review screen must
-      // never stay up with no feedback (Phase 5 will hit real network
-      // errors here).
-      savingRef.current = false;
       clear();
       router.dismiss();
+    } catch (err) {
+      // Real-mode writes can reject (network, RLS); the review screen stays
+      // up with the draft intact so the user can retry. Mock-mode saves
+      // never reject, so this branch only fires in real mode.
+      savingRef.current = false;
+      setSaving(false);
+      Alert.alert(
+        'No se pudo guardar el recibo',
+        err instanceof Error ? err.message : undefined,
+      );
     }
   };
 

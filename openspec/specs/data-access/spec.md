@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Authenticated reads for the existing feature APIs (profile, budget, tickets, analytics): real database rows for the signed-in user whenever a session exists. Purchase/receipt writes remain out of scope.
+Authenticated reads for the existing feature APIs (profile, budget, tickets, analytics): real database rows for the signed-in user whenever a session exists. Purchase/receipt writes persist real rows (Phase 5, scope amendment 2026-08-07): the save action inserts `purchases` + `purchase_items` for the signed-in user. Image upload to storage stays out of scope.
 
 ## Requirements
 
@@ -81,13 +81,21 @@ Ticket (scan usage) and analytics (monthly category totals) reads MUST return da
 - WHEN monthly category totals are read
 - THEN only the signed-in user's totals are returned
 
-### Requirement: Purchase Writes Out of Scope
+### Requirement: Purchase Writes Persist Real Rows
 
-Purchase and receipt writes MUST remain no-ops in this change: the save action MUST NOT persist data and MUST NOT crash.
+Purchase and receipt writes MUST persist real rows for the signed-in user: the save action inserts the `purchases` row and its `purchase_items` rows. The client MUST resolve item category slugs to `categories.id` uuids before inserting. Storage upload for the ticket image stays out of scope in this change. A failed write MUST surface a detectable error state and MUST NOT report success.
 
-#### Scenario: Purchase save attempt
+#### Scenario: Purchase save persists rows
 
 - GIVEN a signed-in user
 - WHEN the user triggers purchase save
-- THEN no data is persisted
-- AND the app responds without crashing
+- THEN a `purchases` row is inserted for the user
+- AND its `purchase_items` rows are inserted with resolved `category_id` uuids
+- AND the save returns the new purchase id
+
+#### Scenario: Purchase save failure
+
+- GIVEN a write that fails (network, constraint, missing session)
+- WHEN the user triggers purchase save
+- THEN a detectable error state is surfaced
+- AND no partial success is reported
