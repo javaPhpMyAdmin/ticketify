@@ -136,10 +136,21 @@ function load(mod) {
   return import(pathToFileURL(join(outDir, mod)).href);
 }
 
+/**
+ * Real-looking URL + anon key: the double's `isSupabaseConfigured` derives
+ * `true` from these, so reads reach the network seam.
+ */
+const CONFIGURED_URL = 'https://real-project.supabase.co';
+const CONFIGURED_ANON_KEY = 'real-anon-key';
+
+/** The `app.json` fallback values: the real derivation must reject them. */
+const PLACEHOLDER_URL = 'https://YOUR-PROJECT.supabase.co';
+const PLACEHOLDER_ANON_KEY = 'YOUR-ANON-KEY';
+
 /** Resets the double (rows, RPCs, invoke results, file sources, call log). */
 function resetAll() {
   stubMod.__resetSupabaseBehavior();
-  stubMod.__setSupabaseConfigured(true);
+  stubMod.__setSupabaseConfigInputs(CONFIGURED_URL, CONFIGURED_ANON_KEY);
   expoFsMod.__resetFileSources();
 }
 
@@ -154,6 +165,7 @@ let keysMod;
 let pictureSizeMod;
 let cardMod;
 let adaptersMod;
+let configStatusMod;
 
 async function run() {
   console.log('\n[tests] compiling data-access modules…');
@@ -175,6 +187,9 @@ async function run() {
   ticketsMod = await load('src/features/tickets/api.js');
   keysMod = await load('src/lib/query-keys.js');
   adaptersMod = await load('src/lib/supabase/query-adapters.js');
+  // The real pure derivation (no native deps): the double derives its
+  // `isSupabaseConfigured` from this same function.
+  configStatusMod = await load('src/lib/supabase/config-status.js');
   pictureSizeMod = await load('src/features/tickets/lib/picture-size.js');
   cardMod = await load('supabase/functions/parse-ticket/lib/card.js');
 
@@ -221,7 +236,10 @@ async function run() {
 
   await test('unconfigured client reports unconfigured and skips the network', async () => {
     resetAll();
-    stubMod.__setSupabaseConfigured(false);
+    // The double derives the flag through the real pure derivation: the
+    // app.json placeholder URL disqualifies the configuration (same contract
+    // the app runs at module load).
+    stubMod.__setSupabaseConfigInputs(PLACEHOLDER_URL, CONFIGURED_ANON_KEY);
     const result = await profileMod.fetchProfile('u1');
     assert.equal(result.status, 'unconfigured');
     assert.equal(stubMod.__getCallLog().length, 0, 'no network when unconfigured');
@@ -304,7 +322,7 @@ async function run() {
     assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
   });
 
-  console.log('\n[tests] pure query layer (keys + throwing adapters)\n');
+  console.log('\n[tests] pure query layer (keys + throwing adapters + config-status)\n');
 
   await test('utcYearMonth derives the shared UTC year-month with zero padding', async () => {
     assert.equal(keysMod.utcYearMonth(new Date(Date.UTC(2026, 7, 15))), '2026-08');
@@ -427,6 +445,62 @@ async function run() {
   await test('toQueryErrorMessage maps non-adapter errors to the generic copy', async () => {
     assert.equal(adaptersMod.toQueryErrorMessage(new Error('raw text')), seamMod.READ_ERROR_MESSAGE);
     assert.equal(adaptersMod.toQueryErrorMessage('not an error'), seamMod.READ_ERROR_MESSAGE);
+  });
+
+  await test('config-status: a missing URL disqualifies the configuration', async () => {
+    assert.equal(
+      configStatusMod.isSupabaseConfigured(undefined, CONFIGURED_ANON_KEY),
+      false,
+    );
+  });
+
+  await test('config-status: a missing anon key disqualifies the configuration', async () => {
+    assert.equal(
+      configStatusMod.isSupabaseConfigured(CONFIGURED_URL, undefined),
+      false,
+    );
+  });
+
+  await test('config-status: empty strings (the real module-load unconfigured state) disqualify', async () => {
+    // The module falls back to `''` when env + app.json are both absent —
+    // that is the most common unconfigured path at load time.
+    assert.equal(configStatusMod.isSupabaseConfigured('', CONFIGURED_ANON_KEY), false);
+    assert.equal(configStatusMod.isSupabaseConfigured(CONFIGURED_URL, ''), false);
+    assert.equal(configStatusMod.isSupabaseConfigured('', ''), false);
+  });
+
+  await test('config-status: the app.json placeholder URL is rejected', async () => {
+    assert.equal(
+      configStatusMod.isSupabaseConfigured(PLACEHOLDER_URL, CONFIGURED_ANON_KEY),
+      false,
+    );
+  });
+
+  await test('config-status: the app.json placeholder anon key is rejected', async () => {
+    assert.equal(
+      configStatusMod.isSupabaseConfigured(CONFIGURED_URL, PLACEHOLDER_ANON_KEY),
+      false,
+    );
+  });
+
+  await test('config-status: the defensive placeholder marker is rejected', async () => {
+    // The marker list also guards `'placeholder'` (e.g. the fallback client
+    // domain `https://placeholder.supabase.co` and `placeholder-anon-key`).
+    assert.equal(
+      configStatusMod.isSupabaseConfigured('https://placeholder.supabase.co', CONFIGURED_ANON_KEY),
+      false,
+    );
+    assert.equal(
+      configStatusMod.isSupabaseConfigured(CONFIGURED_URL, 'placeholder-anon-key'),
+      false,
+    );
+  });
+
+  await test('config-status: real URL + anon key derive configured', async () => {
+    assert.equal(
+      configStatusMod.isSupabaseConfigured(CONFIGURED_URL, CONFIGURED_ANON_KEY),
+      true,
+    );
   });
 
   console.log('\n[tests] purchase write boundary\n');
@@ -983,7 +1057,9 @@ async function run() {
 
   await test('parseTicket reports unconfigured before invoking', async () => {
     resetAll();
-    stubMod.__setSupabaseConfigured(false);
+    // The anon-key placeholder side of the derivation (`YOUR-ANON-KEY` is
+    // the app.json fallback); the profile test above covered the URL side.
+    stubMod.__setSupabaseConfigInputs(CONFIGURED_URL, PLACEHOLDER_ANON_KEY);
     expoFsMod.__setFileSource('file:///u.jpg', { size: 1024, type: 'image/jpeg', base64: 'aGk=' });
     await assert.rejects(
       () => ticketsMod.parseTicket('file:///u.jpg'),

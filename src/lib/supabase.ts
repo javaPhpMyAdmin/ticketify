@@ -6,6 +6,7 @@ import Constants from 'expo-constants';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import { secureStoreAdapter } from '@/lib/supabase/storage-adapter';
+import { isSupabaseConfigured as computeIsSupabaseConfigured } from '@/lib/supabase/config-status';
 
 type ExtraConfig = {
   supabaseUrl?: string;
@@ -23,12 +24,6 @@ const supabaseUrl =
   process.env.EXPO_PUBLIC_SUPABASE_URL || extra.supabaseUrl || '';
 const supabaseAnonKey =
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || extra.supabaseAnonKey || '';
-
-const PLACEHOLDER_MARKERS = ['placeholder', 'YOUR-PROJECT', 'YOUR-ANON-KEY'];
-
-function isPlaceholder(value: string): boolean {
-  return PLACEHOLDER_MARKERS.some((marker) => value.includes(marker));
-}
 
 /**
  * The client is created even when configuration is missing so importing this
@@ -92,11 +87,11 @@ export const supabase: SupabaseClient = createClient(
 /**
  * True only when a real URL and anon key are present. Empty values and
  * placeholder markers (from `app.json` or the fallback constants above) both
- * disqualify the configuration.
+ * disqualify the configuration. The derivation lives in the pure
+ * `config-status` helper (shared with the test harnesses), so this const is
+ * just its application to the env-parsed inputs at module load.
  */
-export const isSupabaseConfigured = Boolean(
-  supabaseUrl &&
-    supabaseAnonKey &&
-    !isPlaceholder(supabaseUrl) &&
-    !isPlaceholder(supabaseAnonKey),
+export const isSupabaseConfigured = computeIsSupabaseConfigured(
+  supabaseUrl,
+  supabaseAnonKey,
 );
