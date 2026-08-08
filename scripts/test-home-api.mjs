@@ -460,6 +460,50 @@ async function run() {
     );
   });
 
+  await test('searchPurchaseItems handles a %-only query (fully escaped)', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchase_items', { rows: [] });
+    await homeApiMod.searchPurchaseItems('u1', '2026-08', '%');
+    const ops = stubMod.__getQueryCalls('purchase_items');
+    assert.ok(
+      ops.some((o) => o.op === 'ilike' && o.column === 'name_search' && o.pattern === '%\\%%'),
+      'a lone % becomes %\\%% — matches only names containing a literal %',
+    );
+  });
+
+  await test('searchPurchaseItems handles a _-only query (fully escaped)', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchase_items', { rows: [] });
+    await homeApiMod.searchPurchaseItems('u1', '2026-08', '_');
+    const ops = stubMod.__getQueryCalls('purchase_items');
+    assert.ok(
+      ops.some((o) => o.op === 'ilike' && o.column === 'name_search' && o.pattern === '%\\_%'),
+      'a lone _ becomes %\\_% — matches only names containing a literal _',
+    );
+  });
+
+  await test('searchPurchaseItems handles a backslash-only query (fully escaped)', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchase_items', { rows: [] });
+    await homeApiMod.searchPurchaseItems('u1', '2026-08', '\\');
+    const ops = stubMod.__getQueryCalls('purchase_items');
+    assert.ok(
+      ops.some((o) => o.op === 'ilike' && o.column === 'name_search' && o.pattern === '%\\\\%'),
+      'a lone backslash becomes %\\\\% — matches only names containing a literal backslash',
+    );
+  });
+
+  await test('searchPurchaseItems treats a trailing % in a real-world query as literal', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchase_items', { rows: [] });
+    await homeApiMod.searchPurchaseItems('u1', '2026-08', '100%');
+    const ops = stubMod.__getQueryCalls('purchase_items');
+    assert.ok(
+      ops.some((o) => o.op === 'ilike' && o.column === 'name_search' && o.pattern === '%100\\%%'),
+      'the trailing % the user typed is escaped, only the surrounding %…% stay wildcards',
+    );
+  });
+
 
   await test('searchPurchaseItems orders deterministically by purchase date, name, purchase id, then item id', async () => {
     resetAll();
