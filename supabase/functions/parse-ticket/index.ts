@@ -140,13 +140,14 @@ const PAYMENT_METHODS = new Set([
 ]);
 
 /**
- * Category slugs the Gemini prompt may emit. These are the descriptive
- * vocabulary fed to the model; they are NOT the client taxonomy — the
- * canonical registry lives in `src/features/home/categories.ts` and the
- * output is mapped there via CATEGORY_SLUG_ALIASES below, so real parse
- * data never misbuckets into "Otros" on the client.
+ * Category slugs the Gemini prompt may emit. Canonical vocabulary shared
+ * with the DB (`public.categories.slug`) and the client taxonomy
+ * (`src/features/home/categories.ts`), so a slug emitted by the parser
+ * always has a matching DB row and never misbuckets into "Otros" on the
+ * client. Keep this set in sync with the DB seed and the client registry.
  */
 const CATEGORY_SLUGS = new Set([
+  'bebidas',
   'frutas-verduras',
   'refrescos',
   'panaderia',
@@ -154,18 +155,12 @@ const CATEGORY_SLUGS = new Set([
   'lacteos',
   'limpieza',
   'snacks',
+  'alimentos',
+  'higiene',
+  'farmacia',
+  'servicios',
   'otros',
 ]);
-
-/**
- * Maps the edge vocabulary to the client-canonical slugs
- * (`src/features/home/categories.ts`). Slugs with no alias pass through
- * unchanged.
- */
-const CATEGORY_SLUG_ALIASES: Record<string, string> = {
-  'frutas-verduras': 'verduleria',
-  carnes: 'carniceria',
-};
 
 /**
  * Cheap structural validation for a base64 string: non-empty, only base64
@@ -211,7 +206,7 @@ Rules:
 - card_brand: the card network printed on the receipt, e.g. Visa, Mastercard, Maestro, OCA, American Express, Diners, etc. null when the receipt shows no card (e.g. cash or transfer) or the brand cannot be determined. Never guess or infer a brand from unrelated text.
 - card_type: "debit" or "credit" when the receipt states the card kind. null when it does not state it or the receipt shows no card. Never guess or infer the card kind from unrelated text.
 - items: one entry per line item, skipping taxes, subtotals, discounts and total-only lines. quantity is how many units, unit_price is the price of one unit, total_price is the line total.
-- suggested_category_slug: exactly one of frutas-verduras, refrescos, panaderia, carnes, lacteos, limpieza, snacks, otros, or null when you are not confident.
+- suggested_category_slug: exactly one of bebidas, frutas-verduras, refrescos, panaderia, carnes, lacteos, limpieza, snacks, alimentos, higiene, farmacia, servicios, otros, or null when you are not confident.
 - All money values must be plain numbers without currency symbols or thousands separators.`;
 
 async function callGemini(
@@ -369,10 +364,9 @@ function normalizePaymentMethod(
 /** Unknown category slugs degrade to null (the review chip shows SIN CATEGORÍA). */
 function normalizeCategorySlug(value: unknown): string | null {
   if (typeof value !== 'string' || !CATEGORY_SLUGS.has(value)) return null;
-  // Emit the client-canonical slug (e.g. 'frutas-verduras' → 'verduleria',
-  // 'carnes' → 'carniceria') so the Home registry buckets parse data into
-  // the right category instead of a duplicate "Otros" card.
-  return CATEGORY_SLUG_ALIASES[value] ?? value;
+  // Slugs are already canonical (shared with the DB and the client
+  // taxonomy), so they pass through unchanged.
+  return value;
 }
 
 function parseReceiptJson(raw: unknown): ParsedReceipt {
