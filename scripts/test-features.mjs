@@ -461,6 +461,14 @@ async function run() {
     );
   });
 
+  await test('config-status: empty strings (the real module-load unconfigured state) disqualify', async () => {
+    // The module falls back to `''` when env + app.json are both absent —
+    // that is the most common unconfigured path at load time.
+    assert.equal(configStatusMod.isSupabaseConfigured('', CONFIGURED_ANON_KEY), false);
+    assert.equal(configStatusMod.isSupabaseConfigured(CONFIGURED_URL, ''), false);
+    assert.equal(configStatusMod.isSupabaseConfigured('', ''), false);
+  });
+
   await test('config-status: the app.json placeholder URL is rejected', async () => {
     assert.equal(
       configStatusMod.isSupabaseConfigured(PLACEHOLDER_URL, CONFIGURED_ANON_KEY),
