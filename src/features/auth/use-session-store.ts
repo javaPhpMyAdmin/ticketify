@@ -23,6 +23,7 @@ import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
 import { supabase } from '@/lib/supabase';
 import { isSecureStoreAvailable } from '@/lib/supabase/storage-adapter';
+import { useReceiptsStore } from '@/stores/use-receipts-store';
 
 /** A store action result: a user-displayable message, or null on success. */
 export type AuthActionError = string | null;
@@ -302,6 +303,7 @@ function initAuthStateListener(): void {
         // expired token — a layout effect would miss events fired before it
         // subscribed (D6).
         queryClient.clear();
+        useReceiptsStore.getState().resetAll();
         useSessionStore.setState({ session: null });
         return;
       }

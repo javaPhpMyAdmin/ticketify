@@ -43,6 +43,9 @@ interface ReceiptsState {
   setDraftTotal: (total: number) => void;
   clearDraft: () => void;
   setList: (list: ReceiptsState['list']) => void;
+  /** Wipes every receipt-related field; called on SIGNED_OUT so no previous
+   *  user's rows or draft survive to the next session. */
+  resetAll: () => void;
 }
 
 const emptyDraft = (imageUrl: string): ReceiptDraft => ({
@@ -133,6 +136,9 @@ export const useReceiptsStore = create<ReceiptsState>((set) => ({
   clearDraft: () => set({ draft: null, scanState: 'idle', scanError: null }),
 
   setList: (list) => set({ list }),
+
+  resetAll: () =>
+    set({ list: [], draft: null, scanState: 'idle', scanError: null }),
 }));
 
 export { tempId };
