@@ -1,8 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { fetchMonthlyBudget, type MonthlyBudget } from '../api';
+import {
+  fetchMonthlyBudget,
+  sumCategoryTotals,
+  type MonthlyBudget,
+} from '../api';
 import { useSessionUser } from '@/features/auth';
+import { currentMonthKey } from '@/features/home/hooks/useHomeFeed';
 import { queryKeys } from '@/lib/query-keys';
+import { readCategoryTotals } from '@/lib/supabase/feature-access';
 import {
   toQueryData,
   toQueryErrorMessage,
@@ -12,9 +18,13 @@ import {
  * Returns the user's monthly budget plus the amount spent so far (data-access
  * spec) through TanStack Query (server-state-caching spec). The read is
  * authenticated-only and disabled until a signed-in user exists. The budget
- * comes from the profile row's `monthly_budget`. The "spent" aggregation has
- * no backend read yet (purchase reads are out of scope), so it reports 0 —
- * never a hardcoded value.
+ * comes from the profile row's `monthly_budget`. The "spent" amount comes
+ * from the shared `monthly_category_totals` RPC summed via `select`: the
+ * query reads ROWS on the SAME cache key the analytics screen uses
+ * (`queryKeys.monthlyTotals(userId, currentMonthKey())` — the local current
+ * month the analytics month selector starts on), so both surfaces share one
+ * rows-shaped cache entry and the sum happens per-observer, never in the
+ * cache.
  */
 export interface BudgetSnapshot {
   budget: MonthlyBudget;
@@ -37,13 +47,28 @@ export function useBudget(): BudgetSnapshot {
     queryFn: () => fetchMonthlyBudget(userId!).then(toQueryData),
   });
 
+  // The local current month — the same value the analytics screen passes to
+  // `useMonthlyTotals`, so the shared cache key collides with analytics by
+  // design and the entry always holds rows.
+  const monthKey = currentMonthKey();
+  const spentQuery = useQuery({
+    queryKey: queryKeys.monthlyTotals(userId!, monthKey),
+    enabled: !!userId,
+    queryFn: () => readCategoryTotals(monthKey).then(toQueryData),
+    select: (rows) => sumCategoryTotals(rows),
+  });
+
   const budget = budgetQuery.data ?? NEUTRAL_BUDGET;
-  const spent = 0;
+  const spent = spentQuery.data ?? 0;
   const percent = budget.amount > 0 ? Math.min(1, spent / budget.amount) : 0;
   return {
     budget,
     spent,
     percent,
-    error: budgetQuery.error ? toQueryErrorMessage(budgetQuery.error) : null,
+    error: budgetQuery.error
+      ? toQueryErrorMessage(budgetQuery.error)
+      : spentQuery.error
+        ? toQueryErrorMessage(spentQuery.error)
+        : null,
   };
 }

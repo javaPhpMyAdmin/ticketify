@@ -14,6 +14,12 @@
  *     normal ok/null),
  *   - analytics reads call `rpc('monthly_category_totals', { p_year_month })`
  *     and a not-deployed RPC fails safe,
+ *   - budget spent: the pure `sumCategoryTotals` helper (fixture sum, empty
+ *     month → 0) plus the `readCategoryTotals` seam the budget hook's queryFn
+ *     calls — RPC year-month argument via `__lastRpcCall` and the PGRST202
+ *     fails-safe path. (The hook itself is out of scope here: it imports
+ *     react, so the harness cannot compile it; its cache-collision behavior
+ *     is proven by a standalone TanStack probe.)
  *   - `saveReceipt` persists real `purchases` + `purchase_items` rows for
  *     the authenticated user: store resolution (reuse by name or create as
  *     the user's own row), category slug→id mapping, impulse flag
@@ -283,6 +289,42 @@ async function run() {
     assert.equal(result.status, 'missing-profile');
   });
 
+  await test('sumCategoryTotals sums the category rows into the spent amount', async () => {
+    assert.equal(
+      budgetMod.sumCategoryTotals([
+        {
+          category_id: '1',
+          category_name: 'Groceries',
+          category_slug: 'groceries',
+          total: 1200,
+          item_count: 20,
+          percent_of_total: 0.22,
+        },
+        {
+          category_id: '2',
+          category_name: 'Snacks',
+          category_slug: 'snacks',
+          total: 3500,
+          item_count: 40,
+          percent_of_total: 0.64,
+        },
+        {
+          category_id: '3',
+          category_name: 'Transport',
+          category_slug: 'transport',
+          total: 800,
+          item_count: 10,
+          percent_of_total: 0.14,
+        },
+      ]),
+      5500,
+    );
+  });
+
+  await test('sumCategoryTotals of an empty month is 0', async () => {
+    assert.equal(budgetMod.sumCategoryTotals([]), 0);
+  });
+
   console.log('\n[tests] authenticated analytics reads (ADR-7 RPC)\n');
 
   await test('category totals call the RPC with p_year_month only (no user id)', async () => {
@@ -318,6 +360,50 @@ async function run() {
       },
     });
     const result = await analyticsMod.fetchMonthlyTotals('2026-08');
+    assert.equal(result.status, 'error');
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+  });
+
+  await test('readCategoryTotals (the budget spent seam) reaches the RPC with p_year_month only and sums via sumCategoryTotals', async () => {
+    resetAll();
+    stubMod.__setRpcResult('monthly_category_totals', {
+      rows: [
+        {
+          category_id: '1',
+          category_name: 'Groceries',
+          category_slug: 'groceries',
+          total: 450,
+          item_count: 24,
+          percent_of_total: 0.79,
+        },
+        {
+          category_id: '2',
+          category_name: 'Snacks',
+          category_slug: 'snacks',
+          total: 120,
+          item_count: 6,
+          percent_of_total: 0.21,
+        },
+      ],
+    });
+    const result = await seamMod.readCategoryTotals('2026-08');
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(stubMod.__lastRpcCall(), {
+      fn: 'monthly_category_totals',
+      params: { p_year_month: '2026-08' },
+    });
+    assert.equal(budgetMod.sumCategoryTotals(result.data), 570);
+  });
+
+  await test('readCategoryTotals (the budget spent seam) fails safe on a not-deployed RPC', async () => {
+    resetAll();
+    stubMod.__setRpcResult('monthly_category_totals', {
+      error: {
+        message: 'function monthly_category_totals(text) does not exist',
+        code: 'PGRST202',
+      },
+    });
+    const result = await seamMod.readCategoryTotals('2026-08');
     assert.equal(result.status, 'error');
     assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
   });
