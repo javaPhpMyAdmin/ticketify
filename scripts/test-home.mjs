@@ -4,7 +4,7 @@
  * (`src/features/home/hooks/useHomeFeed.ts`).
  *
  * Compiles the home-feed module plus its dependency graph (auth store,
- * receipts store, mock-data, react-query) into a temp directory with an
+ * receipts store, react-query) into a temp directory with an
  * isolated tsconfig that remaps the native/backend imports to the
  * hand-written test doubles (react-native, supabase, storage-adapter,
  * components), then asserts the item-matching contract:

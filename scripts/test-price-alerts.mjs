@@ -4,7 +4,7 @@
  * (`src/features/analytics/price-alerts.ts`).
  *
  * Compiles the price-alerts module plus its dependency graph (home feed,
- * auth store, receipts store, mock-data, react-query) into a temp directory
+ * auth store, receipts store, react-query) into a temp directory
  * with an isolated tsconfig that remaps the native/backend imports to the
  * hand-written test doubles, then asserts the alert contract:
  *

@@ -4,7 +4,7 @@
  * (`src/features/analytics/monthly-overview.ts`).
  *
  * Compiles the monthly-overview module plus its dependency graph (home feed,
- * auth store, receipts store, mock-data, react-query) into a temp directory
+ * auth store, receipts store, react-query) into a temp directory
  * with an isolated tsconfig that remaps the native/backend imports to the
  * hand-written test doubles, then asserts the overview contract:
  *

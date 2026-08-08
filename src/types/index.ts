@@ -130,8 +130,8 @@ export interface HomeFeedItemRow {
 
 /**
  * One receipt row the Home feed and the History/Analytics screens consume.
- * Shared by the mock fixtures (`MOCK_RECEIPTS`), the receipts store list,
- * and the real read (`features/home/api`), which derives the aggregates
+ * Shared by the receipts store list and the real read
+ * (`features/home/api`), which derives the aggregates
  * from the DB rows (`category_totals` / `wants_snacks_total` are sums over
  * the line items; `scanned_at` is `purchases.created_at`).
  */

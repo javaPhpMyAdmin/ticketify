@@ -144,11 +144,10 @@ export default function ReviewReceiptScreen() {
     return () => loop.stop();
   }, [dotOpacity]);
 
-  // The scan is the only mock delay: the hook already holds the mock path
-  // for MOCK_PARSE_DELAY_MS (2.5s) so "Procesando recibo" reads like a
-  // real scan — stacking a second beat here would double the wait. The
-  // floor below just keeps a fast (real) parse from flashing a sub-second
-  // processing beat.
+  // A fast real parse would flash a sub-second "Procesando recibo" beat,
+  // so the floor below keeps the processing phase readable. The scan runs
+  // the real parse with no artificial delay of its own, so this floor is
+  // the only pacing on the screen.
   const MIN_PROCESSING_MS = 800;
   // How long the green success check stays on screen before the form.
   const SUCCESS_MS = 750;
