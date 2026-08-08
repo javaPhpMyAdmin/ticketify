@@ -13,6 +13,7 @@ import type {
   Session,
   Subscription,
 } from '@supabase/supabase-js';
+import { isSupabaseConfigured as computeIsSupabaseConfigured } from '@/lib/supabase/config-status';
 
 export type StubError = { message: string; code?: string } | null;
 
@@ -539,13 +540,37 @@ export const supabase = {
 };
 
 /**
- * Test-only mirror of the app's `isSupabaseConfigured` (the real module exports
- * a boolean const gating reads on a real URL + anon key). `export let` keeps a
- * live binding so the harness can flip it per test; compiled CommonJS exposes
- * it through a getter, so the seam always sees the current value.
+ * The configured URL/anon key the double's `isSupabaseConfigured` derives
+ * from (harness seam, see `__setSupabaseConfigInputs`). Defaults to
+ * real-looking values so the flag starts `true`, exactly as the pre-seam
+ * behavior expected.
  */
-export let isSupabaseConfigured = true;
+let configuredUrl = 'https://real-project.supabase.co';
+let configuredAnonKey = 'real-anon-key';
 
-export function __setSupabaseConfigured(configured: boolean): void {
-  isSupabaseConfigured = configured;
+/**
+ * Test-only mirror of the app's `isSupabaseConfigured` (the real module
+ * derives a boolean const from a real URL + anon key). The flag is DERIVED
+ * through the real pure derivation (`config-status`) over the armed inputs,
+ * so the unconfigured branch is exercised via the real contract — env
+ * parsing + placeholder rejection — not a fake boolean. `export let` keeps a
+ * live binding so the harness can flip it per test; compiled CommonJS
+ * exposes it through a getter, so the seam always sees the current value.
+ */
+export let isSupabaseConfigured = computeIsSupabaseConfigured(
+  configuredUrl,
+  configuredAnonKey,
+);
+
+/**
+ * Arms the inputs the double's `isSupabaseConfigured` derives from (harness
+ * seam). Passing the `app.json` fallback placeholders (e.g.
+ * `https://YOUR-PROJECT.supabase.co`, `YOUR-ANON-KEY`) makes the flag derive
+ * `false` through the real placeholder-rejection contract, so the compiled
+ * feature modules' unconfigured branch is reached without faking the flag.
+ */
+export function __setSupabaseConfigInputs(url: string, anonKey: string): void {
+  configuredUrl = url;
+  configuredAnonKey = anonKey;
+  isSupabaseConfigured = computeIsSupabaseConfigured(url, anonKey);
 }
