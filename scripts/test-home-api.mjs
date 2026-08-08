@@ -408,6 +408,27 @@ async function run() {
   });
 
 
+  await test('searchPurchaseItems orders deterministically by purchase date then name', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchase_items', { rows: [] });
+    await homeApiMod.searchPurchaseItems('u1', '2026-08', 'leche');
+    const ops = stubMod.__getQueryCalls('purchase_items');
+    const orders = ops.filter((o) => o.op === 'order');
+    // `purchase_date` is not a column of purchase_items: the order must
+    // target the to-one purchase (parens form), or PostgREST would 400.
+    assert.equal(orders.length, 2, 'orders by purchase date then name');
+    assert.deepEqual(orders[0], {
+      op: 'order',
+      column: 'purchases(purchase_date)',
+      opts: { ascending: true },
+    });
+    assert.deepEqual(orders[1], {
+      op: 'order',
+      column: 'name',
+      opts: undefined,
+    });
+  });
+
   await test('searchPurchaseItems wraps the year boundary (December → January)', async () => {
     resetAll();
     stubMod.__setTableRead('purchase_items', { rows: [] });
