@@ -1,17 +1,20 @@
 /**
- * Tickets feature — Supabase Storage + the `parse-ticket` edge function.
+ * Tickets feature — Supabase Storage + the `parse-ticket` edge function +
+ * purchase persistence.
  *
  * `parseTicket` reads the local receipt image, sends it base64-encoded to the
  * `parse-ticket` edge function, and maps the parsed payload into the client
- * `ParsedReceipt` shape. `uploadToStorage` and `saveReceipt` stay stubs until
- * Phase 5 wires Storage upload and purchase writes.
+ * `ParsedReceipt` shape. `saveReceipt` persists the confirmed draft into
+ * `purchases` / `purchase_items` (data-access spec scope amendment
+ * 2026-08-07). `uploadToStorage` stays a stub until Phase 5 wires Storage
+ * upload (image_url keeps the local uri until then).
  */
 import { FunctionsHttpError, FunctionsFetchError } from '@supabase/supabase-js';
 
 import { tempId, todayLocalISO } from '@/lib/format';
 import { USE_MOCK_DATA } from '@/lib/mock-data';
 import { queryClient } from '@/lib/query-client';
-import { queryKeys } from '@/lib/query-keys';
+import { queryKeys, utcYearMonth } from '@/lib/query-keys';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import type { CardType, PaymentMethod, ReceiptDraft, ReviewItem } from '@/types';
@@ -287,14 +290,71 @@ export async function parseTicket(imageUri: string): Promise<ParsedReceipt> {
 }
 
 /**
+ * User-safe copy when the purchase write fails (real mode). Raw backend
+ * text never reaches the user (same posture as the auth and read paths).
+ */
+const SAVE_ERROR_MESSAGE = 'No se pudo guardar el recibo. Inténtalo de nuevo.';
+
+/**
+ * Resolves a store row for `name`: reuses an existing global or user-owned
+ * store (case-insensitive match through RLS, `limit(1)` guards the
+ * maybeSingle against duplicates), or creates the store as the user's own
+ * row (`stores_insert_own`). Returns null when the lookup/insert fails so
+ * the caller surfaces the user-safe message.
+ */
+async function resolveStoreId(userId: string, name: string): Promise<string | null> {
+  const trimmed = name.trim();
+  if (trimmed === '') return null;
+  const { data: existing } = await supabase
+    .from('stores')
+    .select('id')
+    .ilike('name', trimmed)
+    .limit(1)
+    .maybeSingle();
+  if (existing) return (existing as { id: string }).id;
+  const { data: inserted, error } = await supabase
+    .from('stores')
+    .insert({ user_id: userId, name: trimmed })
+    .select('id')
+    .single();
+  if (error || !inserted) return null;
+  return (inserted as { id: string }).id;
+}
+
+/**
+ * Fetches the category slug → id map once per save so each line item can
+ * resolve its chosen slug (user pick preferred over the AI suggestion) to a
+ * real uuid FK. Categories are seeded by migration and rarely change, so
+ * this is one small read.
+ */
+async function fetchCategoryIdsBySlug(): Promise<Record<string, string>> {
+  const { data, error } = await supabase
+    .from('categories')
+    .select('id, slug')
+    .limit(200);
+  if (error) return {};
+  const map: Record<string, string> = {};
+  const rows = (data as Array<{ id: string; slug: string }> | null) ?? [];
+  for (const row of rows) {
+    map[row.slug] = row.id;
+  }
+  return map;
+}
+
+/**
  * Persists the confirmed draft to the DB. Returns the new
- * purchase id on success.
+ * purchase id on success. Throws a user-safe Error on failure (the review
+ * screen keeps the draft and lets the user retry).
  *
- * ADR-8 + data-access spec ("Purchase Writes Out of Scope"): purchase and
- * receipt writes stay no-ops in this change. The call returns a local id so
- * the flow completes, but nothing is persisted until Phase 5 wires the real
- * `purchases` / `purchase_items` insert (the remote schema is not applied
- * yet).
+ * Real mode (data-access spec scope amendment 2026-08-07): writes the
+ * `purchases` row plus its `purchase_items`, sequential inserts under RLS
+ * (`purchases_insert_own`, `purchase_items_insert_own` scope both to the
+ * session user). A failed item write rolls back the purchase row
+ * (best-effort) so a partial save never renders in the feed. Storage
+ * upload stays out of scope: `image_url` keeps the local draft uri until
+ * `uploadToStorage` lands. The reads the new receipt feeds (home feed,
+ * budget, scan usage, analytics totals) are cached, so they are invalidated
+ * after the write (server-state-caching spec, same as the mock branch).
  *
  * Offline dev (EXPO_PUBLIC_MOCK_DATA=1): instead of hitting Supabase, the
  * receipt is appended to the `useReceiptsStore` list so the mock Home feed
@@ -308,13 +368,15 @@ export async function saveReceipt(
   if (USE_MOCK_DATA) {
     const id = `mock-${tempId()}`;
     const { list, setList } = useReceiptsStore.getState();
-    // Persist the line items (name + amount + suggested category) so the
+    // Persist the line items (name + amount + category) so the
     // per-category drill-down can break this receipt down by item type.
-    // Unknown/absent suggestions bucket into 'otros'.
+    // The category is the user's pick when they corrected the AI
+    // suggestion in review (`category_id`), falling back to the
+    // suggestion itself, then to 'otros' for unknown/absent values.
     const items = draft.items.map((item) => ({
       name: item.name,
       amount: item.total_price,
-      category: item.ai_suggested_category_id ?? 'otros',
+      category: item.category_id ?? item.ai_suggested_category_id ?? 'otros',
     }));
     const category_totals = items.reduce<Record<string, number>>(
       (totals, item) => {
@@ -357,8 +419,72 @@ export async function saveReceipt(
     });
     return { id };
   }
-  // TODO(Phase 5): insert into `purchases` and `purchase_items` for the
-  // authenticated user. Deliberately still a no-op: writes are out of scope
-  // and the remote schema does not exist yet.
-  return { id: tempId() };
+
+  const storeId = await resolveStoreId(userId, draft.store_name);
+  if (!storeId) throw new Error(SAVE_ERROR_MESSAGE);
+
+  const { data: purchase, error: purchaseError } = await supabase
+    .from('purchases')
+    .insert({
+      user_id: userId,
+      store_id: storeId,
+      purchase_date: draft.purchase_date,
+      total: draft.total,
+      payment_method: draft.payment_method,
+      image_url: draft.image_url || null,
+      status: 'confirmed',
+    })
+    .select('id')
+    .single();
+  if (purchaseError || !purchase) throw new Error(SAVE_ERROR_MESSAGE);
+  const purchaseId = (purchase as { id: string }).id;
+
+  const categoryIds = await fetchCategoryIdsBySlug();
+  const itemRows = draft.items.map((item, index) => ({
+    purchase_id: purchaseId,
+    name: item.name,
+    quantity: item.quantity,
+    unit_price: item.unit_price,
+    total_price: item.total_price,
+    // The review screen stores the category as a slug (user pick preferred
+    // over the AI suggestion); the DB column is a uuid FK, so resolve here.
+    category_id:
+      categoryIds[item.category_id ?? ''] ??
+      categoryIds[item.ai_suggested_category_id ?? ''] ??
+      null,
+    is_impulse: item.is_impulse,
+    sort_order: index,
+  }));
+
+  const { error: itemsError } = await supabase
+    .from('purchase_items')
+    .insert(itemRows);
+  if (itemsError) {
+    // Best-effort compensating delete: without it a confirmed purchase with
+    // no line items would render in the feed with empty drill-downs.
+    const { error: rollbackError } = await supabase
+      .from('purchases')
+      .delete()
+      .eq('id', purchaseId);
+    if (rollbackError) {
+      console.warn(
+        '[save] rollback failed:',
+        rollbackError.code,
+        rollbackError.message,
+      );
+    }
+    throw new Error(SAVE_ERROR_MESSAGE);
+  }
+
+  // The reads the new receipt feeds are cached per user: invalidate them so
+  // the next focus refetches (server-state-caching spec, D5).
+  void queryClient.invalidateQueries({ queryKey: queryKeys.homeFeed(userId) });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.budget(userId) });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.scanUsage(userId, utcYearMonth()),
+  });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.monthlyTotals(userId, utcYearMonth()),
+  });
+  return { id: purchaseId };
 }

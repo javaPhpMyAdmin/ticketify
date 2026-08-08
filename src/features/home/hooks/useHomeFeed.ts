@@ -1,11 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo } from 'react';
 
 import type { IconName } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import { formatYearMonth } from '@/lib/format';
 import { USE_MOCK_DATA } from '@/lib/mock-data';
 import { queryKeys } from '@/lib/query-keys';
+import { toQueryData } from '@/lib/supabase/query-adapters';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
+import type { HomeFeedReceiptRow } from '@/types';
+import { readPurchaseList, searchPurchaseItems } from '../api';
 import { getExpenseCategory } from '../categories';
 
 /**
@@ -62,6 +66,12 @@ export interface ReceiptSpendRecord {
   id?: string;
   store_name?: string;
   purchase_date: string;
+  /**
+   * Line total of the receipt. Optional on the minimal record shape: the
+   * mock receipts and the store list rows always carry it, but declaring it
+   * optional keeps the aggregators (monthly overview, etc.) defensive.
+   */
+  total?: number;
   category_totals?: Record<string, number>;
   items?: {
     name: string;
@@ -250,18 +260,47 @@ export interface ItemPurchaseSummary {
 }
 
 /**
- * Item search (mock): every normalized item in the month, cross-category,
- * sorted by amount desc — "en qué se me fue la plata", product by product.
+ * Item search: every normalized item in the month, cross-category, sorted
+ * by amount desc — "en qué se me fue la plata", product by product.
  * `query` filters by normalized substring (e.g. "menú" matches "menú del
  * día"); an empty query returns the full month item list. Works for any
  * month via `monthKey` (defaults to the current month).
+ *
+ * Mock mode filters the receipts store in memory (no network). Real mode
+ * (option B, approved) runs an indexed, accent-insensitive ilike on
+ * `purchase_items.name_search`, user-scoped via RLS, month-bounded by the
+ * purchase date; matched items come back as single-receipt rows and
+ * re-aggregate through the same pure month aggregators, so both modes
+ * group identically. Empty queries never hit the network (the History
+ * screen renders the category list in that case).
  */
 export function useItemSearch(query: string, monthKey = currentMonthKey()) {
+  const { userId } = useSessionUser();
   const list = useReceiptsStore((s) => s.list);
-  const items = aggregateItemsByMonth(list, monthKey);
   const normalizedQuery = normalizeItemName(query);
-  if (!normalizedQuery) return items;
-  return items.filter((item) => item.name.includes(normalizedQuery));
+
+  const searchQuery = useQuery<CategoryItemSummary[]>({
+    queryKey: queryKeys.itemSearch(userId!, monthKey, normalizedQuery),
+    enabled: !!userId && !USE_MOCK_DATA && normalizedQuery.length > 0,
+    queryFn: async () => {
+      const result = await searchPurchaseItems(
+        userId!,
+        monthKey,
+        normalizedQuery,
+      );
+      const rows = toQueryData(result);
+      return aggregateItemsByMonth(rows, monthKey).filter((item) =>
+        item.name.includes(normalizedQuery),
+      );
+    },
+  });
+
+  if (USE_MOCK_DATA) {
+    const items = aggregateItemsByMonth(list, monthKey);
+    if (!normalizedQuery) return items;
+    return items.filter((item) => item.name.includes(normalizedQuery));
+  }
+  return searchQuery.data ?? [];
 }
 
 /**
@@ -301,8 +340,8 @@ export function useItemDetail(itemName: string, monthKey = currentMonthKey()) {
  * sign); the `?? purchase_date` fallback keeps both sides comparable.
  */
 export function compareReceiptsByScan(
-  a: { scanned_at?: string; purchase_date: string },
-  b: { scanned_at?: string; purchase_date: string },
+  a: { scanned_at?: string | null; purchase_date: string },
+  b: { scanned_at?: string | null; purchase_date: string },
 ): number {
   const aScanned = a.scanned_at ?? a.purchase_date;
   const bScanned = b.scanned_at ?? b.purchase_date;
@@ -316,27 +355,19 @@ export function compareReceiptsByScan(
 }
 
 /**
- * Mock feed derived from the receipts store (EXPO_PUBLIC_MOCK_DATA=1),
- * scoped to the current month: recent receipts map 1:1 to the saved list
- * (current month only), category cards aggregate the per-item totals
- * across those receipts through the expense-category registry (so the
- * strip answers "en qué se me va el dinero" by item type, not by store),
- * and the snacks total sums the persisted impulse totals on them (0 when
- * none). Reads the store imperatively via `getState()` so it can run
- * inside the queryFn without a React subscription, and so a save that
- * appended to the list is picked up on refetch.
+ * Pure derivation: receipt rows → the Home feed, scoped to the current
+ * month. Shared by mock and real modes so both render identically: recent
+ * receipts map 1:1 to the current-month rows ordered by `scanned_at`
+ * (when the ticket was captured — scanning an older ticket surfaces it at
+ * the top; ties break by purchase date), category cards aggregate the
+ * per-item totals through the expense-category registry (so the strip
+ * answers "en qué se me va el dinero" by item type, not by store), and
+ * the snacks total sums the impulse totals (0 when none).
  */
-function buildMockHomeFeed(): HomeFeed {
-  const { list } = useReceiptsStore.getState();
+export function mapPurchaseRowsToHomeFeed(rows: HomeFeedReceiptRow[]): HomeFeed {
   const monthKey = currentMonthKey();
 
-  // The Home feed is scoped to the current month: past receipts drop off
-  // the recent list, the category strip, and the impulse total. Older
-  // months live in the History tab. "Recibos recientes" orders by
-  // `scanned_at` (when the ticket was captured), not by purchase date, so
-  // scanning an older ticket surfaces it at the top; ties break by purchase
-  // date (newer first) for a stable list.
-  const receipts: ReceiptSummary[] = list
+  const receipts: ReceiptSummary[] = rows
     .filter((item) => getMonthKey(item.purchase_date) === monthKey)
     .sort(compareReceiptsByScan)
     .map((item) => ({
@@ -347,9 +378,9 @@ function buildMockHomeFeed(): HomeFeed {
       imageUrl: item.image_url ?? null,
     }));
 
-  const categories = aggregateCategoriesByMonth(list, monthKey);
+  const categories = aggregateCategoriesByMonth(rows, monthKey);
 
-  const wantsSnacksTotal = list
+  const wantsSnacksTotal = rows
     .filter((item) => getMonthKey(item.purchase_date) === monthKey)
     .reduce((sum, item) => sum + (item.wants_snacks_total ?? 0), 0);
 
@@ -360,33 +391,50 @@ function buildMockHomeFeed(): HomeFeed {
  * Home screen feed through TanStack Query (server-state-caching spec, D7).
  * The feed is scoped to the current month: categories, recent receipts,
  * and the impulse total only cover receipts whose purchase month matches
- * `currentMonthKey()` — past months live in the History tab. Purchase-list
- * reads are out of scope for this change, so the queryFn resolves the
- * neutral empty state; Phase 5 swaps only the queryFn. In offline dev
- * (EXPO_PUBLIC_MOCK_DATA=1) the feed is derived from the receipts store
- * instead. The query is disabled until a signed-in user exists, so no read
- * ever runs without a session.
+ * `currentMonthKey()` — past months live in the History tab. The query
+ * source is the full purchase list (all months): real mode reads
+ * `purchases` / `purchase_items` (one batched round trip); offline dev
+ * (EXPO_PUBLIC_MOCK_DATA=1) reads the receipts store back. Real mode also
+ * hydrates the receipts store with the full list, so the store-based
+ * History/Analytics screens and drill-downs render the same rows. The
+ * query is disabled until a signed-in user exists, so no read ever runs
+ * without a session.
  */
 export function useHomeFeed(): HomeFeed {
   const { userId } = useSessionUser();
 
-  const feedQuery = useQuery({
+  const rowsQuery = useQuery<HomeFeedReceiptRow[]>({
     queryKey: queryKeys.homeFeed(userId!),
     enabled: !!userId,
     queryFn: async () => {
       if (USE_MOCK_DATA) {
-        return buildMockHomeFeed();
+        return useReceiptsStore.getState().list;
       }
-      return EMPTY_FEED;
+      return toQueryData(await readPurchaseList(userId!));
     },
   });
 
-  // The production queryFn is a Phase 5 placeholder that currently resolves
-  // the neutral empty state; if it ever rejects (a broken read), don't let
-  // the swallow be silent — log it so the failure is visible in dev.
-  if (__DEV__ && feedQuery.isError) {
-    console.error('[HomeFeed] feed query failed:', feedQuery.error);
+  // Real mode hydrates the receipts store with the full purchase list so
+  // the store-subscribing screens (History, Analytics, drill-downs, price
+  // alerts) render the same rows the feed does. Mock mode keeps the seeded
+  // store untouched — the mock queryFn reads it back as its data source.
+  const rows = rowsQuery.data;
+  useEffect(() => {
+    if (!USE_MOCK_DATA && rows) {
+      useReceiptsStore.setState({ list: rows });
+    }
+  }, [rows]);
+
+  const feed = useMemo(
+    () => (rows ? mapPurchaseRowsToHomeFeed(rows) : EMPTY_FEED),
+    [rows],
+  );
+
+  // A failed read must not be silent — log it so the failure is visible in
+  // dev (the feed still renders the neutral empty state, never crashes).
+  if (__DEV__ && rowsQuery.isError) {
+    console.error('[HomeFeed] feed query failed:', rowsQuery.error);
   }
 
-  return feedQuery.data ?? EMPTY_FEED;
+  return feed;
 }

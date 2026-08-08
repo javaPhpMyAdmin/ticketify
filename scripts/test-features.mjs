@@ -14,7 +14,10 @@
  *     normal ok/null),
  *   - analytics reads call `rpc('monthly_category_totals', { p_year_month })`
  *     and a not-deployed RPC fails safe,
- *   - `saveReceipt` stays a documented no-op (writes are out of scope).
+ *   - `saveReceipt` persists real `purchases` + `purchase_items` rows for
+ *     the authenticated user: store resolution (reuse by name or create as
+ *     the user's own row), category slug→id mapping, impulse flag
+ *     persistence, and the compensating rollback on a failed item write.
  *   - pure query layer: `utcYearMonth` + key factories (userId-scoped, shared
  *     year-month) and the throwing adapters (`toQueryData` ok/throw branches,
  *     `shouldRetry` definitive-vs-transient gating, `toQueryErrorMessage`
@@ -421,11 +424,80 @@ async function run() {
 
   console.log('\n[tests] purchase write boundary\n');
 
-  await test('saveReceipt stays a documented no-op (writes out of scope)', async () => {
+  await test('saveReceipt persists purchase + items (real mode)', async () => {
     resetAll();
+    // No matching store row yet → the save creates the store as the user's
+    // own row; categories arm the slug→id map; purchases insert returns the
+    // new id via `.select('id').single()`.
+    stubMod.__setTableRead('stores', { rows: [] });
+    stubMod.__setTableRead('categories', {
+      rows: [
+        { id: 'cat-lacteos', slug: 'lacteos' },
+        { id: 'cat-snacks', slug: 'snacks' },
+      ],
+    });
+    const result = await ticketsMod.saveReceipt('u1', {
+      ...DRAFT,
+      items: [
+        {
+          temp_id: 't1',
+          name: 'Leche',
+          quantity: 1,
+          unit_price: 3.5,
+          total_price: 3.5,
+          category_id: 'lacteos',
+          is_impulse: false,
+          ai_suggested_category_id: null,
+        },
+        {
+          temp_id: 't2',
+          name: 'Papas fritas',
+          quantity: 2,
+          unit_price: 2,
+          total_price: 4,
+          category_id: null,
+          is_impulse: true,
+          ai_suggested_category_id: 'snacks',
+        },
+      ],
+    });
+    assert.ok(
+      result && typeof result.id === 'string' && result.id.length > 0,
+      'returns the new purchase id',
+    );
+    const log = stubMod.__getCallLog();
+    assert.ok(
+      log.some((e) => e.kind === 'from' && e.table === 'stores'),
+      'resolves/creates the store',
+    );
+    assert.ok(
+      log.some((e) => e.kind === 'from' && e.table === 'purchases'),
+      'writes the purchase row',
+    );
+    assert.ok(
+      log.some((e) => e.kind === 'from' && e.table === 'purchase_items'),
+      'writes the line items',
+    );
+    assert.ok(log.some((e) => e.kind === 'insert'), 'inserted rows');
+    assert.ok(
+      !log.some((e) => e.kind === 'delete'),
+      'no rollback on success',
+    );
+  });
+
+  await test('saveReceipt reuses an existing store by name', async () => {
+    resetAll();
+    stubMod.__setTableRead('stores', {
+      rows: [{ id: 'store-global-1' }],
+    });
+    stubMod.__setTableRead('categories', { rows: [] });
     const result = await ticketsMod.saveReceipt('u1', DRAFT);
-    assert.ok(result && typeof result.id === 'string' && result.id.length > 0);
-    assert.equal(stubMod.__getCallLog().length, 0, 'no backend interaction');
+    assert.ok(result.id.length > 0);
+    const log = stubMod.__getCallLog();
+    const storeInserts = log.filter(
+      (e) => e.kind === 'insert' && e.table === 'stores',
+    );
+    assert.equal(storeInserts.length, 0, 'store already exists — no insert');
   });
 
   console.log('\n[tests] parseTicket edge-function wiring\n');
