@@ -656,6 +656,19 @@ async function run() {
       1,
       'compensating delete fired on purchases',
     );
+    // The contract is `delete().eq('id', purchaseId)` (see tickets/api.ts):
+    // a bare delete would remove every purchase of the user, and the call
+    // log above cannot tell them apart — only the chain ops can. The
+    // delete chain is the most recent `purchases` chain, so the query-call
+    // seam returns exactly its filters.
+    const purchaseId = stubMod.__getInserted('purchases')[0].id;
+    const deleteOps = stubMod.__getQueryCalls('purchases');
+    assert.ok(
+      deleteOps.some(
+        (o) => o.op === 'eq' && o.column === 'id' && o.value === purchaseId,
+      ),
+      'compensating delete targets the persisted purchase id (eq filter, not a bare table delete)',
+    );
     assert.equal(stubMod.__getInserted('purchase_items'), null, 'items never persisted');
     assert.ok(
       stubMod.__getInserted('purchases'),
