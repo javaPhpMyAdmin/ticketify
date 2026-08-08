@@ -221,9 +221,12 @@ export async function searchPurchaseItems(
     // order is unspecified, so equal-amount results could flip between
     // requests. `purchases(purchase_date)` sorts the parent rows by the
     // to-one purchase's date (bare `purchase_date` is not a column of
-    // `purchase_items`), then `name` breaks ties deterministically.
+    // `purchase_items`), then `name` breaks ties. The final
+    // `purchases(id)` is a unique key, so the sort is total and the
+    // `.limit(200)` cutoff can never flip between requests.
     .order('purchases(purchase_date)', { ascending: true })
     .order('name')
+    .order('purchases(id)')
     .limit(200);
   if (error) {
     console.warn('[read] item search failed:', error.code, error.message);

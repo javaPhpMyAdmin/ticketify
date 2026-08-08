@@ -408,7 +408,7 @@ async function run() {
   });
 
 
-  await test('searchPurchaseItems orders deterministically by purchase date then name', async () => {
+  await test('searchPurchaseItems orders deterministically by purchase date, name, then a unique id tie-break', async () => {
     resetAll();
     stubMod.__setTableRead('purchase_items', { rows: [] });
     await homeApiMod.searchPurchaseItems('u1', '2026-08', 'leche');
@@ -416,7 +416,7 @@ async function run() {
     const orders = ops.filter((o) => o.op === 'order');
     // `purchase_date` is not a column of purchase_items: the order must
     // target the to-one purchase (parens form), or PostgREST would 400.
-    assert.equal(orders.length, 2, 'orders by purchase date then name');
+    assert.equal(orders.length, 3, 'orders by purchase date, name, then unique id');
     assert.deepEqual(orders[0], {
       op: 'order',
       column: 'purchases(purchase_date)',
@@ -425,6 +425,14 @@ async function run() {
     assert.deepEqual(orders[1], {
       op: 'order',
       column: 'name',
+      opts: undefined,
+    });
+    // `purchases(id)` is a unique key, so rows sharing a (purchase_date,
+    // name) pair still sort deterministically and the `.limit(200)` cutoff
+    // never flips between requests.
+    assert.deepEqual(orders[2], {
+      op: 'order',
+      column: 'purchases(id)',
       opts: undefined,
     });
   });
