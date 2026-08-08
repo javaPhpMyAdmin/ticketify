@@ -6,7 +6,10 @@
  * the feature APIs (profile, budget, analytics, tickets) into a temp
  * directory with an isolated tsconfig that remaps `@/lib/supabase` to the
  * hand-written test double (scripts/test-stubs/supabase.ts), then asserts the
- * data-access spec boundaries:
+ * data-access spec boundaries. (The home-feed hooks module is compiled in a
+ * second pass with `tsconfig.home-test.json` so `currentMonthKey` — the LOCAL
+ * current month the budget spent query shares with analytics as its cache
+ * key — can be asserted directly, its local counterpart to `utcYearMonth`.)
  *
  *   - authenticated profile / budget reads hit `profiles` (ok, missing-profile,
  *     unconfigured, error → user-safe message),
@@ -15,11 +18,11 @@
  *   - analytics reads call `rpc('monthly_category_totals', { p_year_month })`
  *     and a not-deployed RPC fails safe,
  *   - budget spent: the pure `sumCategoryTotals` helper (fixture sum, empty
- *     month → 0) plus the `readCategoryTotals` seam the budget hook's queryFn
- *     calls — RPC year-month argument via `__lastRpcCall` and the PGRST202
- *     fails-safe path. (The hook itself is out of scope here: it imports
- *     react, so the harness cannot compile it; its cache-collision behavior
- *     is proven by a standalone TanStack probe.)
+ *     month → 0, malformed rows skipped) plus the `readCategoryTotals` seam
+ *     the budget hook's queryFn calls — RPC year-month argument via
+ *     `__lastRpcCall` and the PGRST202 fails-safe path. (The hook itself is
+ *     out of scope here: it imports react, so the harness cannot compile it;
+ *     its cache-collision behavior is proven by a standalone TanStack probe.)
  *   - `saveReceipt` persists real `purchases` + `purchase_items` rows for
  *     the authenticated user: store resolution (reuse by name or create as
  *     the user's own row), category slug→id mapping, impulse flag
@@ -31,9 +34,11 @@
  *     asserted via `__getInserted` (slug→uuid, purchase_id linkage,
  *     user_id, is_impulse, sort_order).
  *   - pure query layer: `utcYearMonth` + key factories (userId-scoped, shared
- *     year-month) and the throwing adapters (`toQueryData` ok/throw branches,
- *     `shouldRetry` definitive-vs-transient gating, `toQueryErrorMessage`
- *     copy mapping).
+ *     year-month), `currentMonthKey` (the LOCAL current month — local
+ *     counterpart of `utcYearMonth`, and the month the budget spent query's
+ *     shared key is built on), and the throwing adapters (`toQueryData`
+ *     ok/throw branches, `shouldRetry` definitive-vs-transient gating,
+ *     `toQueryErrorMessage` copy mapping).
  *
  * The double is type-checked against the compiled production code, so a
  * signature drift between the app and its tests fails the typecheck here.
@@ -53,6 +58,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 const tscBin = require.resolve('typescript/bin/tsc');
 const harnessConfig = join(__dirname, 'tsconfig.feature-test.json');
+// Second compile pass (see `compile`): the home-feed hooks module holds the
+// LOCAL current-month key the budget spent query shares with analytics.
+const homeHarnessConfig = join(__dirname, 'tsconfig.home-test.json');
 
 // Same module instance as the compiled `api.js` (which requires
 // '@supabase/supabase-js'), so `instanceof FunctionsHttpError` works in the
@@ -117,6 +125,10 @@ function installRequireHook() {
   Module._resolveFilename = function rewrittenResolve(request, ...rest) {
     if (request === '@/lib/supabase') {
       request = join(outDir, 'scripts', 'test-stubs', 'supabase.js');
+    } else if (request === '@/lib/supabase/storage-adapter') {
+      // Only the home-feed pass (tsconfig.home-test) emits this stub; the
+      // auth graph pulled in by `useHomeFeed.js` needs it in plain node.
+      request = join(outDir, 'scripts', 'test-stubs', 'storage-adapter.js');
     } else if (request === 'expo-file-system') {
       request = join(outDir, 'scripts', 'test-stubs', 'expo-file-system.js');
     } else if (request === 'react-native') {
@@ -134,6 +146,16 @@ async function compile() {
   execFileSync(
     process.execPath,
     [tscBin, '-p', harnessConfig, '--outDir', outDir],
+    { cwd: root, stdio: ['ignore', 'inherit', 'inherit'] },
+  );
+  // Second pass into the SAME output tree: the features tsconfig cannot
+  // compile `useHomeFeed.ts` (react graph, no jsx), but the home-feed
+  // harness config compiles it and its dependencies with the matching
+  // stubs. The emitted modules are additive; files both configs compile
+  // (e.g. query-keys, format, the supabase stub) emit identically.
+  execFileSync(
+    process.execPath,
+    [tscBin, '-p', homeHarnessConfig, '--outDir', outDir],
     { cwd: root, stdio: ['ignore', 'inherit', 'inherit'] },
   );
 }
@@ -168,6 +190,7 @@ let budgetMod;
 let analyticsMod;
 let ticketsMod;
 let keysMod;
+let homeHooksMod;
 let pictureSizeMod;
 let cardMod;
 let adaptersMod;
@@ -192,6 +215,9 @@ async function run() {
   analyticsMod = await load('src/features/analytics/api.js');
   ticketsMod = await load('src/features/tickets/api.js');
   keysMod = await load('src/lib/query-keys.js');
+  // From the home-feed pass: the LOCAL current-month key derivation the
+  // budget spent query's shared cache key is built on.
+  homeHooksMod = await load('src/features/home/hooks/useHomeFeed.js');
   adaptersMod = await load('src/lib/supabase/query-adapters.js');
   // The real pure derivation (no native deps): the double derives its
   // `isSupabaseConfigured` from this same function.
@@ -408,12 +434,65 @@ async function run() {
     assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
   });
 
+  await test('sumCategoryTotals skips malformed rows (missing/null total) and sums the valid ones only', async () => {
+    assert.equal(
+      budgetMod.sumCategoryTotals([
+        {
+          category_id: '1',
+          category_name: 'Groceries',
+          category_slug: 'groceries',
+          total: 1200,
+          item_count: 24,
+          percent_of_total: 0.26,
+        },
+        {
+          category_id: '2',
+          category_name: 'Snacks',
+          category_slug: 'snacks',
+          total: null,
+          item_count: 6,
+          percent_of_total: 0.12,
+        },
+        {
+          // The `total` key itself is missing entirely — also skipped.
+          category_id: '3',
+          category_name: 'Otros',
+          category_slug: 'otros',
+          item_count: 1,
+        },
+        {
+          category_id: '4',
+          category_name: 'Lácteos',
+          category_slug: 'lacteos',
+          total: 3500,
+          item_count: 12,
+          percent_of_total: 0.75,
+        },
+      ]),
+      4700,
+      // 1200 + 3500: a null total is NOT coerced into a fake 0, so the
+      // malformed rows can never fabricate spend.
+    );
+  });
+
   console.log('\n[tests] pure query layer (keys + throwing adapters + config-status)\n');
 
   await test('utcYearMonth derives the shared UTC year-month with zero padding', async () => {
     assert.equal(keysMod.utcYearMonth(new Date(Date.UTC(2026, 7, 15))), '2026-08');
     assert.equal(keysMod.utcYearMonth(new Date(Date.UTC(2026, 0, 1))), '2026-01');
     assert.equal(keysMod.utcYearMonth(new Date(Date.UTC(2026, 11, 31))), '2026-12');
+  });
+
+  await test('currentMonthKey returns the LOCAL current month as YYYY-MM (the budget spent key source — a UTC slice would drift a month in UTC-x zones)', () => {
+    // Local counterpart of the `utcYearMonth` test above: the derivation
+    // reads the clock internally, so the expected value is computed from the
+    // LOCAL parts of `new Date()` — never `getUTCMonth`, which is exactly
+    // the drift the function exists to avoid (useBudget's spent query builds
+    // its shared cache key on this LOCAL month).
+    const local = new Date();
+    const expected = `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}`;
+    assert.equal(homeHooksMod.currentMonthKey(), expected);
+    assert.match(homeHooksMod.currentMonthKey(), /^\d{4}-\d{2}$/);
   });
 
   await test('query key factories are userId-scoped with the designed shapes', async () => {

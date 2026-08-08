@@ -16,15 +16,23 @@ import {
 
 /**
  * Returns the user's monthly budget plus the amount spent so far (data-access
- * spec) through TanStack Query (server-state-caching spec). The read is
+ * spec) through TanStack Query (server-state-caching spec). Both reads are
  * authenticated-only and disabled until a signed-in user exists. The budget
- * comes from the profile row's `monthly_budget`. The "spent" amount comes
- * from the shared `monthly_category_totals` RPC summed via `select`: the
- * query reads ROWS on the SAME cache key the analytics screen uses
- * (`queryKeys.monthlyTotals(userId, currentMonthKey())` — the local current
- * month the analytics month selector starts on), so both surfaces share one
- * rows-shaped cache entry and the sum happens per-observer, never in the
- * cache.
+ * comes from the profile row's `monthly_budget`.
+ *
+ * Spent-failure contract: the "spent" amount is a SECOND read (`spentQuery`)
+ * — the shared `monthly_category_totals` RPC summed via `select`. When
+ * `error` is non-null, `spent === 0` is a FAILURE FALLBACK, never real
+ * spend: the progress UI cannot render null, so the 0 exists only as a
+ * stand-in while the spent read loads or fails. No number is ever
+ * fabricated — a progress bar showing 0% with `error` set means "unknown",
+ * not "spent nothing".
+ *
+ * Cache contract: `spentQuery` reads ROWS on the SAME cache key the
+ * analytics screen uses (`queryKeys.monthlyTotals(userId, currentMonthKey())`
+ * — the local current month the analytics month selector starts on), so both
+ * surfaces share one rows-shaped cache entry and the sum happens
+ * per-observer, never in the cache.
  */
 export interface BudgetSnapshot {
   budget: MonthlyBudget;

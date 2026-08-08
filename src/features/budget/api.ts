@@ -40,7 +40,13 @@ export async function fetchMonthlyBudget(
  * cache key, so the cache always holds the ROWS shape (`CategoryMonthlyTotal[]`),
  * never a pre-summed number (a number/rows shape mismatch on one key would
  * crash the other surface).
+ *
+ * Malformed rows are skipped: a row whose `total` is not a finite number
+ * (missing or null) contributes nothing — it is never coerced into a fake 0.
  */
 export function sumCategoryTotals(rows: CategoryMonthlyTotal[]): number {
-  return rows.reduce((acc, t) => acc + t.total, 0);
+  return rows.reduce(
+    (acc, t) => (Number.isFinite(t.total) ? acc + t.total : acc),
+    0,
+  );
 }
