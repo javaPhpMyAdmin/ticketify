@@ -30,7 +30,7 @@ import { colors, radii, spacing, typography } from '@/theme';
 const TAB_BAR_HEIGHT = Platform.select({ ios: 49, android: 80, default: 49 });
 
 /**
- * Monthly spending history (mock): navigate month → categories, each card
+ * Monthly spending history: navigate month → categories, each card
  * drilling into `/categories/[key]?month=…`. The month selector moves
  * within the months that actually have receipts (`getAvailableMonthKeys`),
  * so empty months never appear as steps; the current month stays reachable
@@ -48,8 +48,8 @@ export default function HistoryScreen() {
   const searchResults = useItemSearch(query, monthKey);
   // Combined total across every result row: searching "yerba" matches both
   // "Yerba 1kg" and "Yerba mate 1kg" as separate rows, and this subtotal
-  // answers "cuánto gasté en yerba en total" without forcing the mock to
-  // invent a product identity that merges them.
+  // answers "cuánto gasté en yerba en total" without inventing a product
+  // identity that merges them.
   const searchTotal = searchResults.reduce(
     (sum, item) => sum + item.amount,
     0,

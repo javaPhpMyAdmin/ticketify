@@ -6,10 +6,10 @@ import { computeMonthOverview, type MonthOverview } from '../monthly-overview';
 
 /**
  * Reactive month-over-month overview for the analytics tab (data-access
- * spec). Mock-local like `usePriceAlerts`: subscribes to the receipts store
- * and derives the comparison with `useMemo`, re-running only when the
- * receipt list or the selected month changes. Phase 5 swaps the source, not
- * the derivation. `monthKey` defaults to the current month so callers that
+ * spec). Store-backed like `usePriceAlerts`: subscribes to the receipts
+ * store and derives the comparison with `useMemo`, re-running only when
+ * the receipt list or the selected month changes. `monthKey` defaults to
+ * the current month so callers that
  * only ever show "now" (Home) need no argument; the analytics month
  * selector passes the chosen month explicitly.
  */

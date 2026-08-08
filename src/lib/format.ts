@@ -111,8 +111,7 @@ export function formatRelativeDay(iso: string, now: Date = new Date()): string {
  * (`new Date().toISOString().slice(0, 10)`) drifts a day for late-evening
  * timestamps in UTC-x zones (in UTC-3, from ~21:00 a "today" stamp lands on
  * the NEXT day), which would push a saved receipt into the next month and
- * out of Home's current-month view. Mirrors the local-calendar logic of
- * `daysAgoISO` in `src/lib/mock-data.ts` (days = 0).
+ * out of Home's current-month view. Today's own date in local calendar time.
  */
 export function todayLocalISO(): string {
   const date = new Date();

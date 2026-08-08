@@ -6,11 +6,11 @@ import { computePriceAlerts, type PriceAlert } from '../price-alerts';
 
 /**
  * Reactive price alerts (data-access spec). The receipts store is
- * mock-local for now, so there is no server query: the hook subscribes to
- * the store (like `useCategoryDetail`) and derives the alerts with
- * `useMemo` — `computePriceAlerts` re-runs only when the receipt list or
- * the selected month changes. Phase 5 swaps the source, not the
- * derivation. `monthKey` defaults to the current month; the analytics
+ * store-backed — the Home feed query hydrates it from `purchases` — so
+ * there is no server query in this hook: it subscribes to the store (like
+ * `useCategoryDetail`) and derives the alerts with `useMemo` —
+ * `computePriceAlerts` re-runs only when the receipt list or the selected
+ * month changes. `monthKey` defaults to the current month; the analytics
  * month selector passes the chosen month so alerts compare that month
  * against its predecessor.
  */
