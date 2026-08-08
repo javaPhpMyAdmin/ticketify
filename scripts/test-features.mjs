@@ -32,7 +32,13 @@
  *     user-safe message with no partial writes; a failed item write fires
  *     the compensating delete on `purchases`. The inserted payloads are
  *     asserted via `__getInserted` (slug→uuid, purchase_id linkage,
- *     user_id, is_impulse, sort_order).
+ *     user_id, is_impulse, sort_order). A successful save invalidates the
+ *     shared monthlyTotals cache by USER PREFIX: the behavioral proof seeds
+ *     the real TanStack client (the singleton the compiled api requires)
+ *     with the current-UTC-month key and a different-month key, then asserts
+ *     BOTH turn isInvalidated after the save while another user's entry
+ *     stays untouched — the pinned-UTC-month invalidation this replaces
+ *     could only ever hit one of them (the UTC/local month-boundary miss).
  *   - pure query layer: `utcYearMonth` + key factories (userId-scoped, shared
  *     year-month), `currentMonthKey` (the LOCAL current month — local
  *     counterpart of `utcYearMonth`, and the month the budget spent query's
@@ -195,6 +201,7 @@ let pictureSizeMod;
 let cardMod;
 let adaptersMod;
 let configStatusMod;
+let queryClientMod;
 
 async function run() {
   console.log('\n[tests] compiling data-access modules…');
@@ -224,6 +231,10 @@ async function run() {
   configStatusMod = await load('src/lib/supabase/config-status.js');
   pictureSizeMod = await load('src/features/tickets/lib/picture-size.js');
   cardMod = await load('supabase/functions/parse-ticket/lib/card.js');
+  // The REAL TanStack singleton the compiled tickets api requires — seeding
+  // its cache and reading `isInvalidated` after a save proves the
+  // invalidation behavior on the actual library, not a stub.
+  queryClientMod = await load('src/lib/query-client.js');
 
   console.log('\n[tests] authenticated profile reads\n');
 
@@ -772,6 +783,54 @@ async function run() {
         sort_order: 1,
       },
     ]);
+  });
+
+  await test('saveReceipt invalidates monthly totals by user prefix: every month variant, own user only', async () => {
+    resetAll();
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [] });
+    // Seed the shared monthlyTotals cache on the REAL TanStack client the
+    // compiled api uses: the current UTC month (what the old pinned-UTC
+    // invalidation hit) plus a DIFFERENT month (the local-month variant the
+    // budget spent / analytics readers hold at the UTC/local boundary), and
+    // another user's entry to prove the prefix stays user-scoped. A
+    // pinned-month invalidation can only ever hit one of the two u1 keys;
+    // the user-prefix invalidation must hit both and leave u2 alone.
+    const qc = queryClientMod.queryClient;
+    qc.getQueryCache().clear();
+    const utcNow = new Date();
+    const prevMonth = new Date(
+      Date.UTC(utcNow.getUTCFullYear(), utcNow.getUTCMonth() - 1, 1),
+    );
+    const currentYm = keysMod.utcYearMonth(utcNow);
+    const otherYm = keysMod.utcYearMonth(prevMonth);
+    assert.notEqual(currentYm, otherYm, 'the two seeded months must differ');
+    const keyCurrent = keysMod.queryKeys.monthlyTotals('u1', currentYm);
+    const keyOther = keysMod.queryKeys.monthlyTotals('u1', otherYm);
+    const keyOtherUser = keysMod.queryKeys.monthlyTotals('u2', currentYm);
+    qc.setQueryData(keyCurrent, [{ category_id: '1', total: 10 }]);
+    qc.setQueryData(keyOther, [{ category_id: '1', total: 20 }]);
+    qc.setQueryData(keyOtherUser, [{ category_id: '1', total: 30 }]);
+
+    const result = await ticketsMod.saveReceipt('u1', DRAFT);
+    assert.ok(result.id.length > 0, 'save succeeded');
+
+    const find = (key) => qc.getQueryCache().find({ queryKey: key });
+    assert.equal(
+      find(keyCurrent).state.isInvalidated,
+      true,
+      'current-month variant invalidated',
+    );
+    assert.equal(
+      find(keyOther).state.isInvalidated,
+      true,
+      'different-month (local boundary) variant invalidated',
+    );
+    assert.equal(
+      find(keyOtherUser).state.isInvalidated,
+      false,
+      'another user untouched — the prefix keeps the userId',
+    );
   });
 
   await test('saveReceipt reuses an existing store by name', async () => {
