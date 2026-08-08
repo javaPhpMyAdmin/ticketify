@@ -23,7 +23,7 @@ import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 
 /**
- * Analytics (mock + RPC): a month-scoped dashboard. The month selector moves
+ * Analytics (RPC): a month-scoped dashboard. The month selector moves
  * within the months that actually have receipts (`getAvailableMonthKeys`),
  * same pattern as the History tab, and every block follows the chosen month —
  * overview card, price alerts, top items, and category totals. The current

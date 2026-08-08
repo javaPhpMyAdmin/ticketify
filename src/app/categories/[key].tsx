@@ -9,7 +9,7 @@ import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 
 /**
- * Category drill-down (mock): the selected month's total for one spending
+ * Category drill-down: the selected month's total for one spending
  * category, followed by the item-level breakdown ("cuánto gasté en cada
  * cosa"), sorted by amount desc. Identical items across receipts are
  * grouped and summed so repeated purchases collapse into one row. The

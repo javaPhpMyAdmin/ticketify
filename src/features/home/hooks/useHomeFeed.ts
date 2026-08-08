@@ -67,7 +67,7 @@ export interface ReceiptSpendRecord {
   purchase_date: string;
   /**
    * Line total of the receipt. Optional on the minimal record shape: the
-   * mock receipts and the store list rows always carry it, but declaring it
+   * store list rows always carry it, but declaring it
    * optional keeps the aggregators (monthly overview, etc.) defensive.
    */
   total?: number;
@@ -76,9 +76,9 @@ export interface ReceiptSpendRecord {
     name: string;
     amount: number;
     /**
-     * Quantity and unit price are optional, matching the mock receipts:
-     * present only when the item participates in price alerts, where the
-     * unit price is the comparable figure across months.
+     * Quantity and unit price are optional, matching the price-alert
+     * source rows: present only when the item participates in price
+     * alerts, where the unit price is the comparable figure across months.
      */
     quantity?: number;
     unit_price?: number;
@@ -97,9 +97,9 @@ export interface ReceiptSpendRecord {
  * ("ú" in "menú") are single codepoints that the combining-mark range
  * never matches. Grouping AND matching are accent-insensitive ("menú" and
  * "menu" collapse into one row, and the query "menu" matches "menú del
- * día"). Best-effort: the mock matches by normalized name; Phase 5
- * matches products properly (category_id + product group from the parse
- * + catalog keywords).
+ * día"). Best-effort: normalized-name matching today; Phase 5 will match
+ * products properly (category_id + product group from the parse + catalog
+ * keywords).
  */
 export function normalizeItemName(name: string): string {
   return name
@@ -123,8 +123,8 @@ export function getMonthKey(isoDate: string): string {
 
 /**
  * The current month bucket (`YYYY-MM`) in local calendar time, matching the
- * local-date keys `daysAgoISO` produces in the mock fixtures (a UTC slice
- * would drift a day on late-evening timestamps in UTC-x zones).
+ * local-date keys `todayLocalISO` produces (a UTC slice would drift a day
+ * on late-evening timestamps in UTC-x zones).
  */
 export function currentMonthKey(): string {
   const now = new Date();

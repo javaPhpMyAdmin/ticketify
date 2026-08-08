@@ -9,9 +9,9 @@ import type { IconName } from '@/components';
  * items and sums them, so "cuánto gasté en cada cosa al mes" comes from
  * the item rows, not from the taxonomy.
  *
- * Mock slice: the feed aggregates each receipt's `category_totals` through
- * this registry. Phase 5 persists `category_id` per item server-side and
- * moves the taxonomy to a DB table.
+ * The feed aggregates each receipt's `category_totals` through this
+ * registry. Phase 5 persists `category_id` per item server-side and moves
+ * the taxonomy to a DB table.
  */
 export type ExpenseCategoryKey =
   | 'bebidas'

@@ -144,11 +144,10 @@ export default function ReviewReceiptScreen() {
     return () => loop.stop();
   }, [dotOpacity]);
 
-  // The scan is the only mock delay: the hook already holds the mock path
-  // for MOCK_PARSE_DELAY_MS (2.5s) so "Procesando recibo" reads like a
-  // real scan — stacking a second beat here would double the wait. The
-  // floor below just keeps a fast (real) parse from flashing a sub-second
-  // processing beat.
+  // A fast real parse would flash a sub-second "Procesando recibo" beat,
+  // so the floor below keeps the processing phase readable. The scan runs
+  // the real parse with no artificial delay of its own, so this floor is
+  // the only pacing on the screen.
   const MIN_PROCESSING_MS = 800;
   // How long the green success check stays on screen before the form.
   const SUCCESS_MS = 750;
@@ -231,8 +230,8 @@ export default function ReviewReceiptScreen() {
 
   const handleConfirm = async () => {
     // The save is async; guard against double-taps so the receipt is not
-    // persisted twice (two Home-feed rows in mock mode, two `purchases`
-    // rows in Phase 5) and the screen is dismissed exactly once.
+    // persisted twice (two `purchases` rows) and the screen is dismissed
+    // exactly once.
     if (savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
@@ -243,9 +242,8 @@ export default function ReviewReceiptScreen() {
       clear();
       router.dismiss();
     } catch (err) {
-      // Real-mode writes can reject (network, RLS); the review screen stays
-      // up with the draft intact so the user can retry. Mock-mode saves
-      // never reject, so this branch only fires in real mode.
+      // Writes can reject (network, RLS); the review screen stays up with
+      // the draft intact so the user can retry.
       savingRef.current = false;
       setSaving(false);
       Alert.alert(
