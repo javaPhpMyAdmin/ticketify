@@ -976,6 +976,87 @@ async function run() {
     );
   });
 
+  await test('saveReceipt cleans up the uploaded photo object when a later write fails', async () => {
+    resetAll();
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [{ id: 'cat-a', slug: 'a' }] });
+    expoFsMod.__setFileSource('file:///scan.jpg', {
+      size: 2048,
+      type: 'image/jpeg',
+      base64: 'c2FtcGxl',
+    });
+    stubMod.__failNextInsert('purchase_items', { message: 'items boom' });
+    const draft = { ...DRAFT, image_url: 'file:///scan.jpg' };
+    await assert.rejects(() => ticketsMod.saveReceipt('u1', draft), 'error');
+    const log = stubMod.__getCallLog();
+    const uploadCall = log.find((e) => e.kind === 'storage-upload');
+    assert.ok(uploadCall, 'photo was uploaded before the failing write');
+    const removeCall = log.find((e) => e.kind === 'storage-remove');
+    assert.ok(removeCall, 'cleanup attempted after the failed write');
+    assert.equal(removeCall.bucket, 'receipts');
+    assert.deepEqual(
+      removeCall.paths,
+      [uploadCall.path],
+      'cleanup targets exactly the object uploaded by this save',
+    );
+  });
+
+  await test('saveReceipt cleans up the uploaded photo when the purchase insert itself fails', async () => {
+    resetAll();
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [{ id: 'cat-a', slug: 'a' }] });
+    expoFsMod.__setFileSource('file:///scan.jpg', {
+      size: 2048,
+      type: 'image/jpeg',
+      base64: 'c2FtcGxl',
+    });
+    stubMod.__failNextInsert('purchases', { message: 'purchase boom' });
+    const draft = { ...DRAFT, image_url: 'file:///scan.jpg' };
+    await assert.rejects(() => ticketsMod.saveReceipt('u1', draft), 'error');
+    const log = stubMod.__getCallLog();
+    const uploadCall = log.find((e) => e.kind === 'storage-upload');
+    assert.ok(uploadCall, 'photo was uploaded before the failing purchase insert');
+    const removeCall = log.find((e) => e.kind === 'storage-remove');
+    assert.ok(removeCall, 'cleanup attempted after the purchase insert failure');
+    assert.deepEqual(
+      removeCall.paths,
+      [uploadCall.path],
+      'cleanup targets exactly the uploaded object',
+    );
+    assert.equal(
+      stubMod.__getInserted('purchase_items'),
+      null,
+      'no item writes when the purchase never persisted',
+    );
+  });
+
+  await test('saveReceipt still surfaces the user-safe error when cleanup fails', async () => {
+    resetAll();
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [{ id: 'cat-a', slug: 'a' }] });
+    expoFsMod.__setFileSource('file:///scan.jpg', {
+      size: 2048,
+      type: 'image/jpeg',
+      base64: 'c2FtcGxl',
+    });
+    stubMod.__failNextInsert('purchase_items', { message: 'items boom' });
+    stubMod.__setStorageBehavior('receipts', {
+      removeError: { message: 'cleanup denied', code: '403' },
+    });
+    const draft = { ...DRAFT, image_url: 'file:///scan.jpg' };
+    await assert.rejects(
+      () => ticketsMod.saveReceipt('u1', draft),
+      (err) => {
+        assert.equal(
+          err.message,
+          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+          'cleanup failure must not mask the original save error',
+        );
+        return true;
+      },
+    );
+  });
+
   console.log('\n[tests] receipt photo storage\n');
 
   await test('uploadToStorage uploads the local image and returns the object path', async () => {
