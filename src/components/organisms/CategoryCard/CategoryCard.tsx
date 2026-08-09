@@ -78,7 +78,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.primary,
   },
   // List layout (History tab): row with the name and amount pushed to the
   // edges. The card's own `width: 150` is overridden by the caller's style
@@ -114,6 +114,6 @@ const styles = StyleSheet.create({
     // balanced without the card growing.
     color: colors.textPrimary,
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '600',
   },
 });

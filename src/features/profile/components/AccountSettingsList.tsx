@@ -1,7 +1,7 @@
 import { StyleSheet, Switch } from 'react-native';
 
 import { Card, Divider, Icon, Text, View, type IconName } from '@/components';
-import { colors, radii, spacing, typography } from '@/theme';
+import { colors, radii, spacing } from '@/theme';
 
 export type SettingTrailing =
   | { type: 'switch'; value: boolean; onChange: (value: boolean) => void }
@@ -38,7 +38,11 @@ export function AccountSettingsList({ rows }: AccountSettingsListProps) {
             <Text style={styles.label}>{row.label}</Text>
             {row.value ? <Text style={styles.value}>{row.value}</Text> : null}
             {row.trailing.type === 'chevron' ? (
-              <Icon name="chevron.right" size={18} color={colors.textSecondary} />
+              <Icon
+                name="chevron.right"
+                size={18}
+                color={colors.textSecondary}
+              />
             ) : row.trailing.type === 'switch' ? (
               <Switch
                 value={row.trailing.value}
@@ -72,11 +76,15 @@ const styles = StyleSheet.create({
   },
   label: {
     flex: 1,
-    ...typography.bodyLg,
+    // ...typography.bodyLg,
+    fontSize: 17,
+    fontWeight: '600',
     color: colors.textPrimary,
   },
   value: {
-    ...typography.bodyMd,
+    // ...typography.bodyMd,
+    fontSize: 17,
+    fontWeight: '600',
     color: colors.textSecondary,
   },
 });

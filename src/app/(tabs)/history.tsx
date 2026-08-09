@@ -110,7 +110,7 @@ export default function HistoryScreen() {
           )}
         </Pressable>
         <Text style={styles.title}>Ticketify</Text>
-        <Icon name="calendar" size={30} color={colors.textSecondary} />
+        <Icon name="calendar" size={30} color={colors.primary} />
       </View>
 
       {/* Month selector + total stay pinned above the scroll so the user
@@ -389,8 +389,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   monthLabel: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
+    // ...typography.headlineMd,
+    fontSize: 20,
+    fontWeight: '900',
+    color: colors.textSecondary,
   },
   totalRow: {
     flexDirection: 'row',

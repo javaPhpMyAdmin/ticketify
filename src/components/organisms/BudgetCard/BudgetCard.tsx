@@ -2,6 +2,7 @@ import { StyleSheet } from 'react-native';
 
 import { AmountDisplay, Card, ProgressBar, Text, View } from '@/components';
 import { colors, spacing } from '@/theme';
+import { formatCurrency } from '../../../lib/format';
 
 export interface BudgetCardProps {
   /** How much has been spent this month. */
@@ -30,7 +31,12 @@ export function BudgetCard({
 }: BudgetCardProps) {
   const percent = limit > 0 ? Math.min(1, spent / limit) : 0;
   return (
-    <Card style={{ borderLeftWidth: 4, borderLeftColor: colors.primary }}>
+    <Card
+      style={{
+        borderLeftWidth: 4,
+        borderLeftColor: colors.primary,
+      }}
+    >
       <View
         style={{
           flexDirection: 'row',
@@ -48,13 +54,13 @@ export function BudgetCard({
         <View style={styles.budgetMeta}>
           <Text style={styles.limitLabel}>Límite:</Text>
           <Text style={styles.limitLabel}>
-            $600.000,00{/*formatCurrency(limit, currency)*/}
+            {formatCurrency(limit, currency)}
           </Text>
           <Text style={styles.percent}>{Math.round(percent * 100)}% usado</Text>
         </View>
-        <View style={styles.progressWrap}>
-          <ProgressBar value={percent} />
-        </View>
+      </View>
+      <View style={styles.progressWrap}>
+        <ProgressBar value={percent} />
       </View>
     </Card>
   );
@@ -74,7 +80,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   limitLabel: {
-    fontSize: 17,
+    fontSize: 15.5,
     fontWeight: '800',
     color: colors.textSecondary,
   },
@@ -91,6 +97,7 @@ const styles = StyleSheet.create({
     width: '35%',
     alignItems: 'flex-end',
     justifyContent: 'center',
+    gap: spacing.xs,
   },
   percent: {
     // ...typography.labelSm,

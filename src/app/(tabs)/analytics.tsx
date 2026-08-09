@@ -100,7 +100,7 @@ export default function AnalyticsScreen() {
           )}
         </Pressable>
         <Text style={styles.title}>Ticketify</Text>
-        <Icon name="calendar" size={30} color={colors.textSecondary} />
+        <Icon name="arrow.up.right" size={33} color={colors.primary} />
       </View>
       <View style={styles.fixedHeader}>
         <View style={styles.monthSelector}>
@@ -255,8 +255,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   monthLabel: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
+    // ...typography.headlineMd,
+    fontSize: 20,
+    fontWeight: '900',
+    color: colors.textSecondary,
   },
   alertBanner: {
     height: 100,

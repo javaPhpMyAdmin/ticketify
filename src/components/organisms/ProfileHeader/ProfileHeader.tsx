@@ -36,7 +36,7 @@ export function ProfileHeader({
   // gets a chance to render (and a failed URL does not stick permanently).
   useEffect(() => setAvatarFailed(false), [avatarUrl]);
   return (
-    <Card>
+    <Card style={{ backgroundColor: colors.surface }}>
       <View style={styles.row}>
         <View style={styles.avatar}>
           {avatarUrl && !avatarFailed ? (
@@ -66,12 +66,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
+    backgroundColor: colors.surface,
   },
   avatar: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: colors.primaryContainer,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -85,17 +86,22 @@ const styles = StyleSheet.create({
     ...typography.headlineMd,
     color: colors.primaryDark,
     fontWeight: '700',
+    backgroundColor: colors.surface,
   },
   info: {
     flex: 1,
     gap: spacing.xs,
+    backgroundColor: colors.surface,
   },
   name: {
-    ...typography.headlineMd,
+    // ...typography.headlineMd,
+    fontSize: 18,
+    fontWeight: '800',
     color: colors.textPrimary,
   },
   subtitle: {
     ...typography.bodyMd,
     color: colors.textSecondary,
+    backgroundColor: colors.surface,
   },
 });

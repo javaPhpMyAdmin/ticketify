@@ -53,7 +53,7 @@ export default function CategoryDetailScreen() {
           <View style={styles.iconCircle}>
             <Icon name={category.icon} size={24} color={colors.primary} />
           </View>
-          <Text style={styles.totalLabel}>Total del mes</Text>
+          <Text style={styles.totalLabel}>TOTAL DEL MES</Text>
           <Text style={styles.totalAmount}>
             {formatCurrency(total, currency)}
           </Text>
@@ -69,7 +69,7 @@ export default function CategoryDetailScreen() {
               <View key={item.name}>
                 <View style={styles.itemRow}>
                   <Text style={styles.itemName} numberOfLines={1}>
-                    {item.name}
+                    {item.name.charAt(0).toUpperCase() + item.name.slice(1)}
                   </Text>
                   <Text style={styles.itemAmount}>
                     {formatCurrency(item.amount, currency)}
@@ -98,8 +98,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
   },
   title: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
+    // ...typography.headlineMd,
+    fontSize: 20,
+    fontWeight: '900',
+    color: colors.textSecondary,
   },
   headerText: {
     flex: 1,
@@ -132,7 +134,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   totalLabel: {
-    ...typography.labelCaps,
+    fontSize: 17,
+    fontWeight: '900',
     color: colors.textSecondary,
   },
   totalAmount: {
@@ -152,14 +155,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
     paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
   },
   itemName: {
-    ...typography.bodyMd,
-    color: colors.textPrimary,
+    // ...typography.bodyMd,
+    fontSize: 17,
+    fontWeight: '600',
+    color: colors.textSecondary,
     flex: 1,
   },
   itemAmount: {
-    ...typography.headlineMd,
+    // ...typography.headlineMd,
+    fontSize: 17,
+    fontWeight: '600',
     color: colors.textPrimary,
   },
   empty: {

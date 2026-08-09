@@ -1,7 +1,12 @@
-import { StyleSheet, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
+import {
+  StyleSheet,
+  type StyleProp,
+  type TextStyle,
+  type ViewStyle,
+} from 'react-native';
 
 import { Icon, Pressable, Text, View, type IconName } from '@/components';
-import { colors, radii, spacing, typography } from '@/theme';
+import { colors, radii, spacing } from '@/theme';
 
 export interface ChipProps {
   label: string;
@@ -61,7 +66,9 @@ export function Chip({
       </Pressable>
     );
   }
-  return <View style={[styles.base, { backgroundColor: bg }, style]}>{content}</View>;
+  return (
+    <View style={[styles.base, { backgroundColor: bg }, style]}>{content}</View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -70,18 +77,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     alignSelf: 'flex-start',
     gap: spacing.xs,
-    borderRadius: radii.sm,
+    borderRadius: radii.lg,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
+    backgroundColor: 'red',
   },
   iconBubble: {
     width: 18,
     height: 18,
-    borderRadius: 9,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'green',
   },
   label: {
-    ...typography.labelCaps,
+    // ...typography.labelCaps,
+    fontSize: 15,
+    fontWeight: '900',
+    color: colors.textSecondary,
   },
 });
