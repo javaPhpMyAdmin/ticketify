@@ -83,7 +83,7 @@ export default function ProfileScreen() {
           <ProfileHeader
             name={user.full_name ?? 'Tú'}
             avatarUrl={user.avatar_url}
-            subtitle={email ?? undefined}
+            // subtitle={email ?? undefined}
             tier={user.tier}
           />
         ) : null}
@@ -93,7 +93,7 @@ export default function ProfileScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Configuración de la cuenta</Text>
+          <Text style={styles.sectionTitle}>CONFIGURACIÓN </Text>
           <AccountSettingsList rows={settings} />
         </View>
 
@@ -135,8 +135,10 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   sectionTitle: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
+    // ...typography.headlineMd,
+    fontSize: 20,
+    fontWeight: '900',
+    color: colors.textSecondary,
   },
   error: {
     ...typography.labelSm,

@@ -79,7 +79,7 @@ const styles = StyleSheet.create({
   percent: {
     color: colors.primary,
     fontSize: 19,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   items: {
     color: colors.textSecondary,

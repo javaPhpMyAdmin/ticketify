@@ -181,7 +181,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: colors.textPrimary,
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: '600',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -195,8 +195,8 @@ const styles = StyleSheet.create({
   },
   historyLinkText: {
     color: colors.primary,
-    fontWeight: '800',
-    fontSize: 17.6,
+    fontWeight: '600',
+    fontSize: 17,
   },
   categoryStrip: {
     gap: spacing.md,

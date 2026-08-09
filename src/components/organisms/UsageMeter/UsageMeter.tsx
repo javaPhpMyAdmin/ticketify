@@ -19,23 +19,25 @@ export interface UsageMeterProps {
 export function UsageMeter({
   used,
   limit,
-  kicker = 'Escaneos de IA gratuitos mensuales',
+  kicker = 'Escaneos gratuitos mensuales',
   resetLabel = 'Se restablece en 12 días',
   upgradeLabel = 'Actualiza para obtener escaneos ilimitados.',
 }: UsageMeterProps) {
   const ratio = limit > 0 ? Math.min(1, used / limit) : 0;
   return (
     <Card>
+      <Text style={styles.kicker}>LÍMITE DE USO</Text>
       <Text style={styles.kicker}>{kicker}</Text>
       <View style={styles.row}>
-        <Text style={styles.used}>
-          Escaneos usados {used}/{limit}
+        <Text style={styles.used}>Escaneos usados</Text>
+        <Text style={{ color: colors.textPrimary, fontWeight: '900' }}>
+          {used}/{limit}
         </Text>
-        <Text style={styles.reset}>{resetLabel}</Text>
       </View>
       <View style={styles.progressWrap}>
         <ProgressBar value={ratio} />
       </View>
+      <Text style={styles.reset}>{resetLabel}</Text>
       <Text style={styles.upgrade}>{upgradeLabel}</Text>
     </Card>
   );
@@ -43,7 +45,9 @@ export function UsageMeter({
 
 const styles = StyleSheet.create({
   kicker: {
-    ...typography.labelCaps,
+    // ...typography.labelCaps,
+    fontSize: 17,
+    fontWeight: '900',
     color: colors.textSecondary,
   },
   row: {
@@ -51,22 +55,27 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-end',
     marginTop: spacing.sm,
+    backgroundColor: colors.surface,
   },
   used: {
     ...typography.headlineMd,
     color: colors.textPrimary,
   },
   reset: {
-    ...typography.labelSm,
+    // ...typography.labelSm,
+    fontSize: 15,
+    fontWeight: '600',
     color: colors.textSecondary,
+    marginTop: spacing.md,
   },
   progressWrap: {
     marginTop: spacing.md,
   },
   upgrade: {
-    ...typography.bodyMd,
-    color: colors.primary,
-    fontWeight: '600',
-    marginTop: spacing.md,
+    // ...typography.bodyMd,
+    fontSize: 15,
+    color: 'green',
+    fontWeight: '800',
+    marginTop: spacing.xs,
   },
 });

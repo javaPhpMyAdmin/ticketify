@@ -45,7 +45,7 @@ export function TopItemsBreakdown({
               <View key={row.name} style={styles.row}>
                 <View style={styles.rowHeader}>
                   <Text style={styles.name} numberOfLines={1}>
-                    {row.name}
+                    {row.name.charAt(0).toUpperCase() + row.name.slice(1)}
                   </Text>
                   <View style={styles.rowMeta}>
                     <Text style={styles.amount}>

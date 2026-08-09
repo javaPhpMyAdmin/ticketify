@@ -89,13 +89,14 @@ const styles = StyleSheet.create({
   calloutLabel: {
     // ...typography.bodyLg,
     color: colors.textPrimary,
-    fontWeight: '900',
+    top: 2,
+    fontWeight: '600',
     fontSize: 22,
   },
   calloutAmount: {
     // ...typography.labelSm,
     color: colors.textSecondary,
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
