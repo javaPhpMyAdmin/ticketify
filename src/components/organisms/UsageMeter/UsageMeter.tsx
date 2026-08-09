@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import { Card, ProgressBar, Text, View } from '@/components';
+import { Card, Icon, ProgressBar, Text, View } from '@/components';
 import { colors, spacing, typography } from '@/theme';
 
 export interface UsageMeterProps {
@@ -26,8 +26,20 @@ export function UsageMeter({
   const ratio = limit > 0 ? Math.min(1, used / limit) : 0;
   return (
     <Card>
-      <Text style={styles.kicker}>LÍMITE DE USO</Text>
-      <Text style={styles.kicker}>{kicker}</Text>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          backgroundColor: colors.surface,
+        }}
+      >
+        <View style={{ backgroundColor: colors.surface }}>
+          <Text style={styles.kicker}>LÍMITE DE USO</Text>
+          <Text style={styles.kicker}>{kicker}</Text>
+        </View>
+        <Icon name="qrcode.viewfinder" size={33} color={colors.primary} />
+      </View>
       <View style={styles.row}>
         <Text style={styles.used}>Escaneos usados</Text>
         <Text style={{ color: colors.textPrimary, fontWeight: '900' }}>
