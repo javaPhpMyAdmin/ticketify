@@ -49,7 +49,6 @@ export {
   CategoryCard,
   BudgetCard,
   UsageMeter,
-  TransactionItem,
   ProfileHeader,
 } from './organisms';
 export type {
@@ -57,7 +56,5 @@ export type {
   CategoryCardProps,
   BudgetCardProps,
   UsageMeterProps,
-  TransactionItemProps,
-  TransactionKind,
   ProfileHeaderProps,
 } from './organisms';
