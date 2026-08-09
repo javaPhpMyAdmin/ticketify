@@ -6,8 +6,11 @@
  * `parse-ticket` edge function, and maps the parsed payload into the client
  * `ParsedReceipt` shape. `saveReceipt` persists the confirmed draft into
  * `purchases` / `purchase_items` (data-access spec scope amendment
- * 2026-08-07). `uploadToStorage` stays a stub until Phase 5 wires Storage
- * upload (image_url keeps the local uri until then).
+ * 2026-08-07). `uploadToStorage` uploads the local image to the private
+ * `receipts` bucket (path `userId/tempId.jpg`) and returns the OBJECT PATH;
+ * reads resolve a signed URL at render time (see receipt-photo.ts). The
+ * upload runs on CONFIRM, inside `saveReceipt`, so a cancelled scan never
+ * leaves an orphaned object in the bucket.
  */
 import { FunctionsHttpError, FunctionsFetchError } from '@supabase/supabase-js';
 
@@ -18,20 +21,37 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import type { CardType, PaymentMethod, ReceiptDraft, ReviewItem } from '@/types';
 
 export interface UploadResult {
-  /** Public URL where the receipt image is served from. */
-  url: string;
+  /** Object path in the private `receipts` bucket, e.g. `userId/tempId.jpg`. */
+  path: string;
 }
 
 /**
- * Uploads the local image to the `receipts` bucket and returns a
- * public URL the rest of the flow can attach to the draft.
+ * Uploads the local image to the `receipts` bucket under the signed-in
+ * user's storage namespace (`userId/tempId.jpg` — the per-owner RLS policy
+ * scopes on `storage.foldername(name)[1] = auth.uid()`) and returns the
+ * object path. The bucket is private, so this is a path, NOT a renderable
+ * URL: readers must resolve a signed URL (receipt-photo.ts).
+ *
+ * The image is read via `readLocalImage` (the same base64 seam the parse
+ * uses) and decoded to bytes for the upload — no `fetch(file://)` that some
+ * Expo runtimes reject.
  */
 export async function uploadToStorage(
-  _userId: string,
-  _imageUri: string,
+  userId: string,
+  imageUri: string,
 ): Promise<UploadResult> {
-  // TODO(Phase 5): upload to the `receipts` bucket (path: userId/tempId.jpg).
-  return { url: _imageUri };
+  if (!isSupabaseConfigured) throw new Error(SAVE_ERROR_MESSAGE);
+  const { base64, mimeType } = await readLocalImage(imageUri);
+  const path = `${userId}/${tempId()}.jpg`;
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const { error } = await supabase.storage
+    .from('receipts')
+    .upload(path, bytes, { contentType: mimeType });
+  if (error) {
+    console.warn('[upload] storage failed:', error.statusCode ?? error.message);
+    throw new Error(SAVE_ERROR_MESSAGE);
+  }
+  return { path };
 }
 
 export interface ParsedReceipt {
@@ -348,9 +368,17 @@ async function fetchCategoryIdsBySlug(): Promise<Record<string, string>> {
  * `purchases` row plus its `purchase_items`, sequential inserts under RLS
  * (`purchases_insert_own`, `purchase_items_insert_own` scope both to the
  * session user). A failed item write rolls back the purchase row
- * (best-effort) so a partial save never renders in the feed. Storage
- * upload stays out of scope: `image_url` keeps the local draft uri until
- * `uploadToStorage` lands. The reads the new receipt feeds (home feed,
+ * (best-effort) so a partial save never renders in the feed.
+ *
+ * The ticket photo upload runs HERE, on confirm (product decision
+ * 2026-08-09): when the draft still carries a LOCAL image uri (the scan
+ * preview), it is uploaded to the private `receipts` bucket first and the
+ * OBJECT PATH is persisted as `image_url`; readers resolve a signed URL at
+ * render time (receipt-photo.ts). Already-remote values (seed/demo picsum
+ * URLs, or a storage path on a re-save) pass through unchanged. Uploading
+ * on confirm means a cancelled scan never leaves an orphaned object.
+ *
+ * The reads the new receipt feeds (home feed,
  * budget, scan usage, analytics totals) are cached, so they are invalidated
  * after the write (server-state-caching spec).
  */
@@ -361,6 +389,16 @@ export async function saveReceipt(
   const storeId = await resolveStoreId(userId, draft.store_name);
   if (!storeId) throw new Error(SAVE_ERROR_MESSAGE);
 
+  // The draft carries the LOCAL photo uri during capture/review. Upload it
+  // on confirm so `image_url` persists a storage path (private bucket →
+  // signed URL on read). Only device-local schemes (file:/content:/ph:) are
+  // uploaded — http(s) seed rows AND already-persisted storage paths
+  // (no scheme) pass through unchanged (a path must never be re-uploaded).
+  let imageUrl: string | null = draft.image_url || null;
+  if (imageUrl && /^(file|content|ph):/i.test(imageUrl)) {
+    imageUrl = (await uploadToStorage(userId, imageUrl)).path;
+  }
+
   const { data: purchase, error: purchaseError } = await supabase
     .from('purchases')
     .insert({
@@ -369,7 +407,7 @@ export async function saveReceipt(
       purchase_date: draft.purchase_date,
       total: draft.total,
       payment_method: draft.payment_method,
-      image_url: draft.image_url || null,
+      image_url: imageUrl,
       status: 'confirmed',
     })
     .select('id')
