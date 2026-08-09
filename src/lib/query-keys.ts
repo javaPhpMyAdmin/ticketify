@@ -29,6 +29,14 @@ export const queryKeys = {
   /** The month's category totals via the RPC (analytics). */
   monthlyTotals: (userId: string, yearMonth: string) =>
     ['analytics', 'monthly-totals', userId, yearMonth] as const,
+  /**
+   * Prefix of the monthlyTotals keys for a user, used to invalidate every
+   * month variant at once (e.g. after a receipt save). The month is appended
+   * unconditionally by `monthlyTotals`, so this prefix matches all of them
+   * and nothing else.
+   */
+  monthlyTotalsPrefix: (userId: string) =>
+    ['analytics', 'monthly-totals', userId] as const,
   /** The home feed (purchase list; all months, current-month derived). */
   homeFeed: (userId: string) => ['home', 'feed', userId] as const,
   /** The history entries (stub until purchase reads land). */

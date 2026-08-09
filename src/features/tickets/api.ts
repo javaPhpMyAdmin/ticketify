@@ -425,10 +425,9 @@ export async function saveReceipt(
   // analytics selector) while a pinned UTC month here would miss the cached
   // entry they hold at the UTC/local month boundary. Invalidate by the user
   // prefix instead: the factory appends the month unconditionally, so the
-  // prefix is written out to match EVERY month variant of the key and
-  // nothing else (only monthlyTotals produces ['analytics','monthly-totals',…]).
+  // prefix matches EVERY month variant of the key and nothing else.
   void queryClient.invalidateQueries({
-    queryKey: ['analytics', 'monthly-totals', userId],
+    queryKey: queryKeys.monthlyTotalsPrefix(userId),
   });
   return { id: purchaseId };
 }
