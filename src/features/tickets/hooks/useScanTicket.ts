@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
-import { parseTicket, uploadToStorage } from '../api';
+import { parseTicket } from '../api';
 import { useSessionUser } from '@/features/auth';
 import { tempId } from '@/lib/format';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
@@ -43,15 +43,16 @@ export function useScanTicket(): UseScanTicketResult {
 
   const mutation = useMutation({
     mutationFn: async (imageUri: string) => {
-      // Step 1: upload (stubbed for now) — scoped to the signed-in user's
-      // storage namespace (session-gated, so the user is always present).
-      const { url } = await uploadToStorage(userId ?? 'anon', imageUri);
-      // Step 2: parse.
-      const parsed = await parseTicket(url);
-      return { url, parsed };
+      // Parse only: the photo upload happens on CONFIRM inside `saveReceipt`
+      // (product decision 2026-08-09) so a cancelled scan never leaves an
+      // orphaned object in the `receipts` bucket. `parseTicket` reads the
+      // LOCAL image (base64) — it never touches Storage.
+      const parsed = await parseTicket(imageUri);
+      return { url: imageUri, parsed };
     },
     onSuccess: ({ url, parsed }) => {
-      // Step 3: seed the store, then expose the draft id for navigation.
+      // Step 2: seed the store, then expose the draft id for navigation.
+      // The draft keeps the LOCAL uri for preview; `saveReceipt` uploads it.
       startDraft(url);
       setDraftStore(parsed.store);
       setDraftDate(parsed.date);

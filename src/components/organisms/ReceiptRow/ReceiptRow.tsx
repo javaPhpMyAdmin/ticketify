@@ -1,8 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, StyleSheet } from 'react-native';
 
 import { Icon, Pressable, Text, View, type IconName } from '@/components';
 import { formatCurrency, formatShortDate } from '@/lib/format';
+import {
+  getSignedReceiptPhotoUrl,
+  resolveReceiptPhotoPath,
+} from '@/lib/supabase/receipt-photo';
 import { colors, radii, spacing } from '@/theme';
 
 export interface ReceiptRowProps {
@@ -30,14 +34,38 @@ export function ReceiptRow({
   onPress,
   imageUrl,
 }: ReceiptRowProps) {
+  // The stored photo reference may be a ready http(s) URL (seed/demo rows)
+  // or an object path in the private `receipts` bucket — resolve the path
+  // to a signed URL (expires ~1h) before rendering. The effect keys on the
+  // RAW string so re-renders never re-resolve the signed URL.
+  const [photoSource, setPhotoSource] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const classified = resolveReceiptPhotoPath(imageUrl);
+    if (!classified) {
+      setPhotoSource(null);
+      return;
+    }
+    if (classified.kind === 'url') {
+      setPhotoSource(classified.value);
+      return;
+    }
+    getSignedReceiptPhotoUrl(classified.value).then((signed) => {
+      if (!cancelled) setPhotoSource(signed);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [imageUrl]);
+
   // Demo images (picsum) and remote ticket photos can fail offline; fall
   // back to the icon circle instead of rendering a blank box.
   const [imageFailed, setImageFailed] = useState(false);
   const row = (
     <>
-      {imageUrl && !imageFailed ? (
+      {photoSource && !imageFailed ? (
         <Image
-          source={{ uri: imageUrl }}
+          source={{ uri: photoSource }}
           style={styles.thumbnail}
           onError={() => setImageFailed(true)}
         />

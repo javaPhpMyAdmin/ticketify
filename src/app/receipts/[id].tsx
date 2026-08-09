@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, Modal, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -10,6 +10,10 @@ import {
 } from '@/features/home';
 import { getExpenseCategory } from '@/features/home/categories';
 import { formatCurrency, formatShortDate } from '@/lib/format';
+import {
+  getSignedReceiptPhotoUrl,
+  resolveReceiptPhotoPath,
+} from '@/lib/supabase/receipt-photo';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -32,6 +36,30 @@ export default function ReceiptDetailScreen() {
   // back to the "Sin foto del ticket" placeholder instead of a blank box.
   const [photoFailed, setPhotoFailed] = useState(false);
   const receipt = list.find((r) => r.id === id);
+
+  // The stored photo reference may be a ready http(s) URL (seed/demo rows)
+  // or an object path in the private `receipts` bucket — resolve the path
+  // to a signed URL (expires ~1h) before rendering. The effect keys on the
+  // RAW string so re-renders (photo modal toggle) never re-resolve.
+  const [photoSource, setPhotoSource] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const classified = resolveReceiptPhotoPath(receipt?.image_url);
+    if (!classified) {
+      setPhotoSource(null);
+      return;
+    }
+    if (classified.kind === 'url') {
+      setPhotoSource(classified.value);
+      return;
+    }
+    getSignedReceiptPhotoUrl(classified.value).then((signed) => {
+      if (!cancelled) setPhotoSource(signed);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [receipt?.image_url]);
 
   const header = (
     <View style={styles.header}>
@@ -76,14 +104,14 @@ export default function ReceiptDetailScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {receipt.image_url && !photoFailed ? (
+        {photoSource && !photoFailed ? (
           <Pressable
             onPress={() => setPhotoOpen(true)}
             accessibilityRole="button"
             accessibilityLabel="Ver foto en pantalla completa"
           >
             <Image
-              source={{ uri: receipt.image_url }}
+              source={{ uri: photoSource }}
               style={styles.photo}
               resizeMode="cover"
               onError={() => setPhotoFailed(true)}
@@ -200,7 +228,7 @@ export default function ReceiptDetailScreen() {
             <Icon name="xmark" size={24} color={colors.surface} />
           </View>
           <Image
-            source={receipt.image_url ? { uri: receipt.image_url } : undefined}
+            source={photoSource ? { uri: photoSource } : undefined}
             style={styles.photoModalImage}
             resizeMode="contain"
             // If the photo fails to load fullscreen (offline dev), close the

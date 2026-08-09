@@ -15,7 +15,7 @@ import type {
 } from '@supabase/supabase-js';
 import { isSupabaseConfigured as computeIsSupabaseConfigured } from '@/lib/supabase/config-status';
 
-export type StubError = { message: string; code?: string } | null;
+export type StubError = { message: string; code?: string; statusCode?: number } | null;
 
 /** What a `from(table).select()…` chain resolves to (per table). */
 export interface TableReadState {
@@ -43,7 +43,9 @@ export type CallLogEntry =
   | { kind: 'insert'; table: string }
   | { kind: 'update'; table: string }
   | { kind: 'delete'; table: string }
-  | { kind: 'invoke'; fn: string; opts: unknown };
+  | { kind: 'invoke'; fn: string; opts: unknown }
+  | { kind: 'storage-upload'; bucket: string; path: string; contentType?: string }
+  | { kind: 'storage-signed'; bucket: string; path: string; expiresIn: number };
 
 /**
  * One transform/filter call applied to a `from(table)` builder chain.
@@ -136,6 +138,19 @@ export type SupabaseBehavior = {
       opts?: { body?: unknown; timeout?: number },
     ) => Promise<{ data: unknown; error: Error | null }>;
   };
+  /** Storage surface: the `receipts` bucket upload + signed-URL reads. */
+  storage: {
+    upload: (
+      bucket: string,
+      path: string,
+      contentType?: string,
+    ) => Promise<{ data: { path: string } | null; error: StubError }>;
+    createSignedUrl: (
+      bucket: string,
+      path: string,
+      expiresIn: number,
+    ) => Promise<{ data: { signedUrl: string } | null; error: StubError }>;
+  };
 };
 
 /** Per-table read results (harness seam, see `__setTableRead`). */
@@ -166,6 +181,12 @@ const queryLog: QueryCall[] = [];
  */
 const insertFailures = new Map<string, StubError>();
 
+/** Storage bucket behaviors: per-bucket upload/signed-url error, armed via
+ *  the `__setStorageBehavior` seam; uploads log to `callLog`. */
+const storageBehaviors = new Map<
+  string,
+  { uploadError?: StubError; signedUrlError?: StubError; signedUrl?: string | null }
+>();
 /** Rows the app passed to `from(table).insert()`, per table (harness seam,
  *  see `__getInserted`). Decorated with the synthetic ids, exactly as the
  *  builder would resolve them. */
@@ -347,6 +368,27 @@ const defaultBehavior = (): SupabaseBehavior => ({
       return Promise.resolve({ data: state.data, error: state.error });
     },
   },
+  storage: {
+    upload: (bucket: string, path: string, contentType?: string) => {
+      callLog.push({ kind: 'storage-upload', bucket, path, contentType });
+      const state = storageBehaviors.get(bucket) ?? {};
+      if (state.uploadError) {
+        return Promise.resolve({ data: null, error: state.uploadError });
+      }
+      return Promise.resolve({ data: { path }, error: null });
+    },
+    createSignedUrl: (bucket: string, path: string, expiresIn: number) => {
+      callLog.push({ kind: 'storage-signed', bucket, path, expiresIn });
+      const state = storageBehaviors.get(bucket) ?? {};
+      if (state.signedUrlError) {
+        return Promise.resolve({ data: null, error: state.signedUrlError });
+      }
+      return Promise.resolve({
+        data: { signedUrl: state.signedUrl ?? `https://signed.example/${path}` },
+        error: null,
+      });
+    },
+  },
 });
 
 let behavior = defaultBehavior();
@@ -416,6 +458,21 @@ export function __resetSupabaseBehavior(): void {
   insertFailures.clear();
   insertedRows.clear();
   insertCounter = 0;
+  storageBehaviors.clear();
+}
+
+/** Arms per-bucket storage behavior for the `receipts` bucket (upload /
+ *  signed-url failures, or a fixed signed URL); a fresh object replaces any
+ *  prior state for that bucket. */
+export function __setStorageBehavior(
+  bucket: string,
+  state: {
+    uploadError?: StubError;
+    signedUrlError?: StubError;
+    signedUrl?: string | null;
+  },
+): void {
+  storageBehaviors.set(bucket, state);
 }
 
 export function __setSupabaseBehavior(next: Partial<SupabaseBehavior>): void {
@@ -536,6 +593,17 @@ export const supabase = {
       fn: string,
       opts?: { body?: unknown; timeout?: number },
     ) => behavior.functions.invoke(fn, opts),
+  },
+  storage: {
+    from: (bucket: string) => ({
+      upload: (
+        path: string,
+        _body?: unknown,
+        opts?: { contentType?: string },
+      ) => behavior.storage.upload(bucket, path, opts?.contentType),
+      createSignedUrl: (path: string, expiresIn: number) =>
+        behavior.storage.createSignedUrl(bucket, path, expiresIn),
+    }),
   },
 };
 

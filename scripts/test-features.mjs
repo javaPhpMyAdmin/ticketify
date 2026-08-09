@@ -83,7 +83,7 @@ const DRAFT = {
   purchase_date: '2026-08-02',
   total: 42.18,
   payment_method: 'card',
-  image_url: 'file:///tmp/receipt.jpg',
+  image_url: 'https://picsum.photos/seed/ticketify-test/800/1200',
   items: [],
 };
 
@@ -195,6 +195,7 @@ let profileMod;
 let budgetMod;
 let analyticsMod;
 let ticketsMod;
+let photoMod;
 let keysMod;
 let homeHooksMod;
 let pictureSizeMod;
@@ -221,6 +222,7 @@ async function run() {
   budgetMod = await load('src/features/budget/api.js');
   analyticsMod = await load('src/features/analytics/api.js');
   ticketsMod = await load('src/features/tickets/api.js');
+  photoMod = await load('src/lib/supabase/receipt-photo.js');
   keysMod = await load('src/lib/query-keys.js');
   // From the home-feed pass: the LOCAL current-month key derivation the
   // budget spent query's shared cache key is built on.
@@ -754,7 +756,7 @@ async function run() {
     assert.equal(insertedPurchase.purchase_date, '2026-08-02');
     assert.equal(insertedPurchase.total, 42.18);
     assert.equal(insertedPurchase.payment_method, 'card');
-    assert.equal(insertedPurchase.image_url, 'file:///tmp/receipt.jpg');
+    assert.equal(insertedPurchase.image_url, 'https://picsum.photos/seed/ticketify-test/800/1200');
     assert.equal(insertedPurchase.status, 'confirmed');
     const itemPayloads = stubMod.__getInserted('purchase_items').map((item) => {
       const { id, ...payload } = item; // synthetic stub id, not app data
@@ -972,6 +974,178 @@ async function run() {
       stubMod.__getInserted('purchases'),
       'the purchase row existed before the rollback (that is what the delete compensates)',
     );
+  });
+
+  console.log('\n[tests] receipt photo storage\n');
+
+  await test('uploadToStorage uploads the local image and returns the object path', async () => {
+    resetAll();
+    expoFsMod.__setFileSource('file:///scan.jpg', {
+      size: 2048,
+      type: 'image/jpeg',
+      base64: 'c2FtcGxl',
+    });
+    const result = await ticketsMod.uploadToStorage('u1', 'file:///scan.jpg');
+    assert.match(result.path, /^u1\/.+\.jpg$/, 'path is scoped under the user');
+    const uploadCall = stubMod.__getCallLog().find(
+      (e) => e.kind === 'storage-upload',
+    );
+    assert.ok(uploadCall, 'storage upload was attempted');
+    assert.equal(uploadCall.bucket, 'receipts');
+    assert.equal(uploadCall.path, result.path);
+    assert.equal(uploadCall.contentType, 'image/jpeg');
+  });
+
+  await test('uploadToStorage failure surfaces the user-safe message, no partial path', async () => {
+    resetAll();
+    expoFsMod.__setFileSource('file:///scan.jpg', {
+      size: 2048,
+      type: 'image/jpeg',
+      base64: 'c2FtcGxl',
+    });
+    stubMod.__setStorageBehavior('receipts', {
+      uploadError: { message: 'storage denied', code: '403' },
+    });
+    await assert.rejects(
+      () => ticketsMod.uploadToStorage('u1', 'file:///scan.jpg'),
+      (err) => {
+        assert.equal(
+          err.message,
+          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+        );
+        return true;
+      },
+    );
+  });
+
+  await test('uploadToStorage is gated on configured supabase', async () => {
+    resetAll();
+    stubMod.__setSupabaseConfigInputs(PLACEHOLDER_URL, CONFIGURED_ANON_KEY);
+    await assert.rejects(
+      () => ticketsMod.uploadToStorage('u1', 'file:///scan.jpg'),
+      (err) => {
+        assert.equal(
+          err.message,
+          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+        );
+        return true;
+      },
+    );
+    assert.equal(
+      stubMod.__getCallLog().filter((e) => e.kind === 'storage-upload').length,
+      0,
+      'no upload attempt when unconfigured',
+    );
+  });
+
+  await test('saveReceipt uploads a local draft image and persists the storage path', async () => {
+    resetAll();
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [{ id: 'cat-a', slug: 'a' }] });
+    expoFsMod.__setFileSource('file:///scan.jpg', {
+      size: 2048,
+      type: 'image/jpeg',
+      base64: 'c2FtcGxl',
+    });
+    const draft = {
+      ...DRAFT,
+      image_url: 'file:///scan.jpg',
+    };
+    const saved = await ticketsMod.saveReceipt('u1', draft);
+    assert.ok(saved && saved.id, 'purchase persisted');
+    const insertedPurchase = stubMod.__getInserted('purchases')[0];
+    assert.match(
+      insertedPurchase.image_url,
+      /^u1\/.+\.jpg$/,
+      'image_url stores the storage object path, not the local uri',
+    );
+    assert.ok(
+      stubMod.__getCallLog().some((e) => e.kind === 'storage-upload'),
+      'upload fired during save',
+    );
+  });
+
+  await test('saveReceipt keeps a remote image_url untouched (no upload)', async () => {
+    resetAll();
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [{ id: 'cat-a', slug: 'a' }] });
+    const saved = await ticketsMod.saveReceipt('u1', DRAFT);
+    assert.ok(saved && saved.id, 'purchase persisted');
+    const insertedPurchase = stubMod.__getInserted('purchases')[0];
+    assert.equal(
+      insertedPurchase.image_url,
+      DRAFT.image_url,
+      'remote urls pass through unchanged',
+    );
+    assert.equal(
+      stubMod.__getCallLog().filter((e) => e.kind === 'storage-upload').length,
+      0,
+      'no upload for remote urls',
+    );
+  });
+
+  await test('saveReceipt passes an already-persisted storage path through (no re-upload)', async () => {
+    resetAll();
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [{ id: 'cat-a', slug: 'a' }] });
+    const draft = {
+      ...DRAFT,
+      image_url: 'u1/abc.jpg',
+    };
+    const saved = await ticketsMod.saveReceipt('u1', draft);
+    assert.ok(saved && saved.id, 'purchase persisted');
+    const insertedPurchase = stubMod.__getInserted('purchases')[0];
+    assert.equal(
+      insertedPurchase.image_url,
+      'u1/abc.jpg',
+      'storage paths pass through unchanged',
+    );
+    assert.equal(
+      stubMod.__getCallLog().filter((e) => e.kind === 'storage-upload').length,
+      0,
+      'no upload for already-persisted storage paths',
+    );
+  });
+
+  await test('resolveReceiptPhotoPath classifies urls vs storage paths vs null', () => {
+    assert.deepEqual(photoMod.resolveReceiptPhotoPath('https://picsum.photos/x'), {
+      kind: 'url',
+      value: 'https://picsum.photos/x',
+    });
+    assert.deepEqual(photoMod.resolveReceiptPhotoPath('http://example.com/x.jpg'), {
+      kind: 'url',
+      value: 'http://example.com/x.jpg',
+    });
+    assert.deepEqual(photoMod.resolveReceiptPhotoPath('u1/abc.jpg'), {
+      kind: 'path',
+      value: 'u1/abc.jpg',
+    });
+    assert.equal(photoMod.resolveReceiptPhotoPath(null), null);
+    assert.equal(photoMod.resolveReceiptPhotoPath(''), null);
+  });
+
+  await test('getSignedReceiptPhotoUrl resolves a storage path to a signed url', async () => {
+    resetAll();
+    stubMod.__setStorageBehavior('receipts', {
+      signedUrl: 'https://signed.example/u1/abc.jpg?token=xyz',
+    });
+    const url = await photoMod.getSignedReceiptPhotoUrl('u1/abc.jpg');
+    assert.equal(url, 'https://signed.example/u1/abc.jpg?token=xyz');
+    const signedCall = stubMod.__getCallLog().find(
+      (e) => e.kind === 'storage-signed',
+    );
+    assert.ok(signedCall, 'signed-url request was made');
+    assert.equal(signedCall.bucket, 'receipts');
+    assert.equal(signedCall.path, 'u1/abc.jpg');
+  });
+
+  await test('getSignedReceiptPhotoUrl returns null on failure (never throws)', async () => {
+    resetAll();
+    stubMod.__setStorageBehavior('receipts', {
+      signedUrlError: { message: 'forbidden', code: '403' },
+    });
+    const url = await photoMod.getSignedReceiptPhotoUrl('u1/abc.jpg');
+    assert.equal(url, null);
   });
 
   console.log('\n[tests] parseTicket edge-function wiring\n');
