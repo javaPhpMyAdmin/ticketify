@@ -54,6 +54,24 @@ export async function uploadToStorage(
   return { path };
 }
 
+/**
+ * Best-effort removal of an object uploaded moments ago by `saveReceipt`.
+ * Called on the failure paths so a retried confirm does not leave orphaned
+ * objects in the bucket. Never throws: a failed cleanup must not mask the
+ * original save error — the orphan is the cheaper failure to accept.
+ */
+async function removeUploadedObject(path: string | null): Promise<void> {
+  if (!path) return;
+  try {
+    const { error } = await supabase.storage.from('receipts').remove([path]);
+    if (error) {
+      console.warn('[save] photo cleanup failed:', error.statusCode ?? error.message);
+    }
+  } catch (err) {
+    console.warn('[save] photo cleanup threw:', String(err));
+  }
+}
+
 export interface ParsedReceipt {
   store: string;
   date: string;
@@ -394,9 +412,14 @@ export async function saveReceipt(
   // signed URL on read). Only device-local schemes (file:/content:/ph:) are
   // uploaded — http(s) seed rows AND already-persisted storage paths
   // (no scheme) pass through unchanged (a path must never be re-uploaded).
+  // The path is tracked so a failed save best-effort removes the object it
+  // just uploaded (no orphaned object on a retried confirm).
   let imageUrl: string | null = draft.image_url || null;
+  let uploadedPath: string | null = null;
   if (imageUrl && /^(file|content|ph):/i.test(imageUrl)) {
-    imageUrl = (await uploadToStorage(userId, imageUrl)).path;
+    const uploaded = await uploadToStorage(userId, imageUrl);
+    uploadedPath = uploaded.path;
+    imageUrl = uploaded.path;
   }
 
   const { data: purchase, error: purchaseError } = await supabase
@@ -412,7 +435,10 @@ export async function saveReceipt(
     })
     .select('id')
     .single();
-  if (purchaseError || !purchase) throw new Error(SAVE_ERROR_MESSAGE);
+  if (purchaseError || !purchase) {
+    await removeUploadedObject(uploadedPath);
+    throw new Error(SAVE_ERROR_MESSAGE);
+  }
   const purchaseId = (purchase as { id: string }).id;
 
   const categoryIds = await fetchCategoryIdsBySlug();
@@ -449,6 +475,9 @@ export async function saveReceipt(
         rollbackError.message,
       );
     }
+    // The upload already happened before the insert: clean the object up so
+    // a retried confirm does not pile up orphans in the bucket.
+    await removeUploadedObject(uploadedPath);
     throw new Error(SAVE_ERROR_MESSAGE);
   }
 

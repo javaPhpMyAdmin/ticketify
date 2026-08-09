@@ -45,7 +45,8 @@ export type CallLogEntry =
   | { kind: 'delete'; table: string }
   | { kind: 'invoke'; fn: string; opts: unknown }
   | { kind: 'storage-upload'; bucket: string; path: string; contentType?: string }
-  | { kind: 'storage-signed'; bucket: string; path: string; expiresIn: number };
+  | { kind: 'storage-signed'; bucket: string; path: string; expiresIn: number }
+  | { kind: 'storage-remove'; bucket: string; paths: string[] };
 
 /**
  * One transform/filter call applied to a `from(table)` builder chain.
@@ -150,6 +151,10 @@ export type SupabaseBehavior = {
       path: string,
       expiresIn: number,
     ) => Promise<{ data: { signedUrl: string } | null; error: StubError }>;
+    remove: (
+      bucket: string,
+      paths: string[],
+    ) => Promise<{ data: { path: string }[] | null; error: StubError }>;
   };
 };
 
@@ -181,11 +186,16 @@ const queryLog: QueryCall[] = [];
  */
 const insertFailures = new Map<string, StubError>();
 
-/** Storage bucket behaviors: per-bucket upload/signed-url error, armed via
- *  the `__setStorageBehavior` seam; uploads log to `callLog`. */
+/** Storage bucket behaviors: per-bucket upload/signed-url/remove error, armed
+ *  via the `__setStorageBehavior` seam; uploads log to `callLog`. */
 const storageBehaviors = new Map<
   string,
-  { uploadError?: StubError; signedUrlError?: StubError; signedUrl?: string | null }
+  {
+    uploadError?: StubError;
+    signedUrlError?: StubError;
+    removeError?: StubError;
+    signedUrl?: string | null;
+  }
 >();
 /** Rows the app passed to `from(table).insert()`, per table (harness seam,
  *  see `__getInserted`). Decorated with the synthetic ids, exactly as the
@@ -388,6 +398,17 @@ const defaultBehavior = (): SupabaseBehavior => ({
         error: null,
       });
     },
+    remove: (bucket: string, paths: string[]) => {
+      callLog.push({ kind: 'storage-remove', bucket, paths });
+      const state = storageBehaviors.get(bucket) ?? {};
+      if (state.removeError) {
+        return Promise.resolve({ data: null, error: state.removeError });
+      }
+      return Promise.resolve({
+        data: paths.map((path) => ({ path })),
+        error: null,
+      });
+    },
   },
 });
 
@@ -469,6 +490,7 @@ export function __setStorageBehavior(
   state: {
     uploadError?: StubError;
     signedUrlError?: StubError;
+    removeError?: StubError;
     signedUrl?: string | null;
   },
 ): void {
@@ -603,6 +625,7 @@ export const supabase = {
       ) => behavior.storage.upload(bucket, path, opts?.contentType),
       createSignedUrl: (path: string, expiresIn: number) =>
         behavior.storage.createSignedUrl(bucket, path, expiresIn),
+      remove: (paths: string[]) => behavior.storage.remove(bucket, paths),
     }),
   },
 };
