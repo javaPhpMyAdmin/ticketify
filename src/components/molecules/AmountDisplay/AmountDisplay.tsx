@@ -1,8 +1,8 @@
 import { StyleSheet, type StyleProp, type TextStyle } from 'react-native';
 
 import { Text } from '@/components';
-import { colors, typography } from '@/theme';
 import { formatCurrency } from '@/lib/format';
+import { colors } from '@/theme';
 
 export interface AmountDisplayProps {
   value: number;
@@ -21,7 +21,7 @@ export interface AmountDisplayProps {
  */
 export function AmountDisplay({
   value,
-  currency = 'USD',
+  currency = 'UYU',
   negative = false,
   small = false,
   style,
@@ -41,9 +41,12 @@ export function AmountDisplay({
 
 const styles = StyleSheet.create({
   large: {
-    ...typography.displayCurrency,
+    // ...typography.displayCurrency,
+    fontSize: 33,
+    fontWeight: '900',
+    height: 30,
   },
   small: {
-    ...typography.headlineMd,
+    // ...typography.headlineMd,
   },
 });

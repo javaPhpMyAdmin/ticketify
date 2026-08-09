@@ -2,7 +2,7 @@ import { StyleSheet } from 'react-native';
 
 import { Card, Text, View } from '@/components';
 import { formatCurrency } from '@/lib/format';
-import { colors, spacing, typography } from '@/theme';
+import { colors, spacing } from '@/theme';
 import type { CategoryMonthlyTotal } from '@/types';
 
 export interface CategoryBreakdownListProps {
@@ -26,7 +26,7 @@ export function CategoryBreakdownList({
       {rows.map((t) => (
         <Card key={t.category_id}>
           <View style={styles.row}>
-            <View>
+            <View style={{ backgroundColor: colors.surface }}>
               <Text style={styles.kicker}>{t.category_slug.toUpperCase()}</Text>
               <Text style={styles.total}>{formatCurrency(t.total)}</Text>
             </View>
@@ -48,8 +48,10 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
   title: {
-    ...typography.headlineMd,
     color: colors.textPrimary,
+    fontSize: 22,
+    fontWeight: '900',
+    backgroundColor: colors.surface,
   },
   row: {
     flexDirection: 'row',
@@ -58,26 +60,30 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   kicker: {
-    ...typography.labelCaps,
     color: colors.textSecondary,
     backgroundColor: colors.surface,
+    fontSize: 17,
+    fontWeight: '900',
   },
   total: {
-    ...typography.headlineMd,
     color: colors.textPrimary,
     marginTop: spacing.xs,
     backgroundColor: colors.surface,
+    fontSize: 19,
+    fontWeight: '700',
   },
   right: {
     alignItems: 'flex-end',
     backgroundColor: colors.surface,
   },
   percent: {
-    ...typography.headlineMd,
     color: colors.primary,
+    fontSize: 19,
+    fontWeight: '700',
   },
   items: {
-    ...typography.labelSm,
     color: colors.textSecondary,
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

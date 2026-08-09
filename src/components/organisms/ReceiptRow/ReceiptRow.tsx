@@ -3,7 +3,7 @@ import { Image, StyleSheet } from 'react-native';
 
 import { Icon, Pressable, Text, View, type IconName } from '@/components';
 import { formatCurrency, formatShortDate } from '@/lib/format';
-import { colors, radii, spacing, typography } from '@/theme';
+import { colors, radii, spacing } from '@/theme';
 
 export interface ReceiptRowProps {
   name: string;
@@ -46,13 +46,23 @@ export function ReceiptRow({
           <Icon name={iconName} size={18} color={iconColor} />
         </View>
       )}
-      <View style={styles.middle}>
-        <Text style={styles.name} numberOfLines={1}>
-          {name}
-        </Text>
-        <Text style={styles.date}>{formatShortDate(date)}</Text>
+      <View style={{ width: '80%', height: 60 }}>
+        <View style={styles.middle}>
+          <Text style={styles.name} numberOfLines={1}>
+            {name}
+          </Text>
+        </View>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Text style={styles.date}>{formatShortDate(date)}</Text>
+          <Text style={styles.amount}>{formatCurrency(amount, currency)}</Text>
+        </View>
       </View>
-      <Text style={styles.amount}>{formatCurrency(amount, currency)}</Text>
     </>
   );
 
@@ -76,13 +86,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.lg,
     borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.primary,
+    borderWidth: 2.5,
+    borderColor: '#d8d7d7',
     gap: spacing.md,
   },
   // Same active state as the History screen's cards (DESIGN.md).
   pressed: {
     transform: [{ scale: 0.98 }],
+    backgroundColor: 'transparent',
   },
   thumbnail: {
     width: 40,
@@ -101,16 +112,18 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   name: {
-    ...typography.bodyLg,
     fontWeight: '600',
-    color: colors.textPrimary,
-  },
-  date: {
-    ...typography.bodyMd,
+    fontSize: 20,
     color: colors.textSecondary,
   },
+  date: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
   amount: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
+    color: '#606060',
+    fontSize: 20,
+    fontWeight: '900',
   },
 });

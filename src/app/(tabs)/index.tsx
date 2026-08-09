@@ -15,7 +15,7 @@ import {
   View,
 } from '@/components';
 import { MonthlyBudgetCard, useBudget } from '@/features/budget';
-import { ScanQuotaCard, useHomeFeed } from '@/features/home';
+import { useHomeFeed } from '@/features/home';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
 import { useSessionStore } from '../../features/auth';
@@ -80,8 +80,6 @@ export default function HomeScreen() {
           wantsSnacksTotal={wantsSnacksTotal}
         />
 
-        <ScanQuotaCard />
-
         {/* Categories */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -117,7 +115,7 @@ export default function HomeScreen() {
 
         {/* Recent receipts */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recibos recientes</Text>
+          <Text style={styles.sectionTitle}>Tickets recientes</Text>
           <View style={styles.receiptList}>
             {receipts.map((r) => (
               <ReceiptRow
@@ -181,8 +179,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   sectionTitle: {
-    ...typography.headlineMd,
     color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '900',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -195,9 +194,9 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   historyLinkText: {
-    ...typography.labelSm,
     color: colors.primary,
-    fontWeight: '600',
+    fontWeight: '800',
+    fontSize: 17.6,
   },
   categoryStrip: {
     gap: spacing.md,

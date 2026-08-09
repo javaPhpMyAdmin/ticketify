@@ -1,5 +1,6 @@
+import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon, Pressable, Text } from '@/components';
@@ -21,6 +22,7 @@ import {
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
+import { useSessionStore } from '../../features/auth';
 
 /**
  * Analytics (RPC): a month-scoped dashboard. The month selector moves
@@ -40,6 +42,14 @@ export default function AnalyticsScreen() {
   const { totals, error } = useMonthlyTotals(monthKey);
   const alerts = usePriceAlerts(monthKey);
   const overview = useMonthlyOverview(monthKey);
+  const { session } = useSessionStore();
+  const fullName =
+    session?.user?.user_metadata?.full_name ??
+    session?.user?.user_metadata?.name ??
+    '';
+  const firstName = fullName.trim().split(' ')[0];
+  const displayName = firstName || 'Usuario';
+  const avatarUrl = session?.user?.user_metadata?.avatar_url;
 
   // Full month item list feeds the bar denominator (percent of the whole
   // month, not of the top-N slice); only the top 5 rows render. Utility
@@ -73,9 +83,26 @@ export default function AnalyticsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.content}>
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => router.push('/profile')}
+          accessibilityLabel="Abrir perfil"
+          accessibilityRole="button"
+        >
+          {avatarUrl ? (
+            <Image source={{ uri: avatarUrl }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, styles.avatarFallback]}>
+              <Text style={styles.avatarInitial}>
+                {displayName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+        </Pressable>
+        <Text style={styles.title}>Ticketify</Text>
+        <Icon name="calendar" size={30} color={colors.textSecondary} />
+      </View>
+      <View style={styles.fixedHeader}>
         <View style={styles.monthSelector}>
           <Pressable
             onPress={goOlder}
@@ -107,6 +134,10 @@ export default function AnalyticsScreen() {
             />
           </Pressable>
         </View>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.content}>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <MonthlyOverviewCard
           overview={overview}
@@ -149,6 +180,33 @@ export default function AnalyticsScreen() {
 }
 
 const styles = StyleSheet.create({
+  fixedHeader: {
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.md,
+    gap: spacing.md,
+  },
+  header: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 25,
+  },
+  avatarFallback: {
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    ...typography.headlineMd,
+    color: colors.background,
+  },
   wrapTextIcon: {
     flexDirection: 'column',
     paddingLeft: 5,
@@ -172,8 +230,9 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
   title: {
-    ...typography.headlineLg,
-    color: colors.textPrimary,
+    fontSize: 25,
+    fontWeight: '900',
+    color: colors.primary,
   },
   subtitle: {
     ...typography.bodyMd,

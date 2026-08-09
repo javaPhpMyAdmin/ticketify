@@ -2,7 +2,7 @@ import { StyleSheet } from 'react-native';
 
 import { Card, Icon, Text, View, type IconName } from '@/components';
 import { formatCurrency } from '@/lib/format';
-import { colors, radii, spacing, typography } from '@/theme';
+import { colors, radii, spacing } from '@/theme';
 import type { MonthOverview } from '../monthly-overview';
 
 export interface MonthlyOverviewCardProps {
@@ -41,22 +41,22 @@ export function MonthlyOverviewCard({
         <View
           style={[
             styles.badge,
-            { backgroundColor: up ? colors.danger : colors.primaryContainer },
+            { backgroundColor: up ? '#fbe3e3' : colors.primaryContainer },
           ]}
         >
           <Icon
             name={trendIcon}
             size={14}
-            color={up ? colors.onDanger : colors.primaryDark}
+            color={up ? 'red' : colors.primaryDark}
           />
           <Text
             style={[
               styles.badgeText,
-              { color: up ? colors.onDanger : colors.primaryDark },
+              { color: up ? 'red' : colors.primaryDark },
             ]}
           >
             {up ? '+' : ''}
-            {changePct}% vs {previousMonthLabel}
+            {changePct}% vs {previousMonthLabel.split(' ')[0]}
           </Text>
         </View>
       ) : null}
@@ -75,17 +75,14 @@ const styles = StyleSheet.create({
     paddingRight: 120,
   },
   kicker: {
-    ...typography.labelCaps,
+    fontSize: 17,
+    fontWeight: 900,
     color: colors.textSecondary,
   },
   total: {
-    width: '150%',
-    fontSize: 40,
+    fontSize: 33,
     fontWeight: 900,
     lineHeight: 40,
-    letterSpacing: 2,
-    paddingHorizontal: spacing.sm,
-    // ...typography.displayCurrency,
     color: colors.textPrimary,
     marginTop: spacing.xs + 15,
   },
@@ -95,17 +92,19 @@ const styles = StyleSheet.create({
   // box — aligned with the content edge (spacing.lg = the Card's padding).
   badge: {
     position: 'absolute',
-    top: spacing.lg,
-    right: spacing.lg,
+    top: spacing.xl,
+    right: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: radii.full,
   },
   badgeText: {
-    ...typography.labelSm,
-    fontWeight: '700',
+    fontWeight: '900',
+    fontSize: 14,
+    fontStyle: 'normal',
+    color: 'red',
   },
 });

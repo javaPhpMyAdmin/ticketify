@@ -2,7 +2,7 @@ import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Icon, Pressable, Text, View, type IconName } from '@/components';
 import { formatCurrency } from '@/lib/format';
-import { colors, radii, spacing, typography } from '@/theme';
+import { colors, radii, spacing } from '@/theme';
 
 export interface CategoryCardProps {
   icon: IconName;
@@ -103,16 +103,17 @@ const styles = StyleSheet.create({
     padding: spacing.sm - 5,
   },
   name: {
-    ...typography.labelCaps,
     color: colors.textSecondary,
+    fontSize: 20,
+    fontWeight: '600',
+    lineHeight: 24,
   },
   amount: {
     // Deliberately smaller than headlineMd (20pt): the amount sits next
     // to a labelCaps name inside a 150px card, so 16pt/600 keeps the pair
     // balanced without the card growing.
     color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '600',
-    lineHeight: 24,
+    fontSize: 18,
+    fontWeight: '900',
   },
 });
