@@ -10,8 +10,5 @@ export type { BudgetCardProps } from './BudgetCard';
 export { UsageMeter } from './UsageMeter';
 export type { UsageMeterProps } from './UsageMeter';
 
-export { TransactionItem } from './TransactionItem';
-export type { TransactionItemProps, TransactionKind } from './TransactionItem';
-
 export { ProfileHeader } from './ProfileHeader';
 export type { ProfileHeaderProps } from './ProfileHeader';
