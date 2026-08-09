@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
-import { SymbolView } from 'expo-symbols';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { SymbolView } from 'expo-symbols';
 
 import { useTheme } from '@/hooks/use-theme';
 
@@ -11,6 +11,8 @@ import { useTheme } from '@/hooks/use-theme';
  * app actually uses. The Material map below mirrors it for Android.
  */
 export type IconName =
+  | 'qr-code-scanner'
+  | 'qrcode.viewfinder'
   | 'house.fill'
   | 'chart.bar.fill'
   | 'camera.fill'
@@ -55,6 +57,8 @@ export type IconName =
  * but TS can't infer the per-key literal type through the index access.
  */
 const materialMap: Record<IconName, string> = {
+  'qr-code-scanner': 'qr-code',
+  'qrcode.viewfinder': 'qr-code',
   'house.fill': 'home',
   'chart.bar.fill': 'bar-chart',
   'camera.fill': 'camera-alt',
@@ -106,7 +110,23 @@ export function Icon({ name, size = 22, color }: IconProps) {
   if (Platform.OS === 'ios') {
     // `name` is a literal string that happens to be a valid SFSymbol;
     // we accept the cast here because IconName is a curated subset.
-    return <SymbolView name={name as Parameters<typeof SymbolView>[0]['name']} size={size} tintColor={fill} />;
+    return (
+      <SymbolView
+        name={name as Parameters<typeof SymbolView>[0]['name']}
+        size={size}
+        tintColor={fill}
+      />
+    );
   }
-  return <MaterialIcons name={(materialMap[name] ?? 'help-outline') as React.ComponentProps<typeof MaterialIcons>['name']} size={size} color={fill} />;
+  return (
+    <MaterialIcons
+      name={
+        (materialMap[name] ?? 'help-outline') as React.ComponentProps<
+          typeof MaterialIcons
+        >['name']
+      }
+      size={size}
+      color={fill}
+    />
+  );
 }

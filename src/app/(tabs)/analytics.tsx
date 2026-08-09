@@ -100,7 +100,7 @@ export default function AnalyticsScreen() {
           )}
         </Pressable>
         <Text style={styles.title}>Ticketify</Text>
-        <Icon name="arrow.up.right" size={33} color={colors.primary} />
+        <Icon name="qr-code-scanner" size={33} color={colors.primary} />
       </View>
       <View style={styles.fixedHeader}>
         <View style={styles.monthSelector}>
