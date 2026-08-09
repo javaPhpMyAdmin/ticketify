@@ -1,8 +1,7 @@
 import { StyleSheet } from 'react-native';
 
 import { AmountDisplay, Card, ProgressBar, Text, View } from '@/components';
-import { formatCurrency } from '@/lib/format';
-import { colors, spacing, typography } from '@/theme';
+import { colors, spacing } from '@/theme';
 
 export interface BudgetCardProps {
   /** How much has been spent this month. */
@@ -26,26 +25,36 @@ export function BudgetCard({
   spent,
   limit,
   currency,
-  kicker = 'PRESUPUESTO OBJETIVO MENSUAL',
+  kicker = 'PRESUPUESTO MENSUAL',
   limitLabel,
 }: BudgetCardProps) {
   const percent = limit > 0 ? Math.min(1, spent / limit) : 0;
-  const resolvedLimitLabel =
-    limitLabel ?? `Límite: ${formatCurrency(limit, currency)}`;
   return (
-    <Card>
-      <View style={styles.cardHeader}>
-        <Text style={styles.kicker}>{kicker}</Text>
-        <Text style={styles.limitLabel}>{resolvedLimitLabel}</Text>
-      </View>
-      <View style={styles.budgetRow}>
-        <AmountDisplay value={spent} currency={currency} />
+    <Card style={{ borderLeftWidth: 4, borderLeftColor: colors.primary }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.sm,
+          justifyContent: 'space-between',
+          backgroundColor: colors.surface,
+          width: '100%',
+        }}
+      >
+        <View style={styles.cardHeader}>
+          <Text style={styles.kicker}>{kicker}</Text>
+          <AmountDisplay value={spent} currency={currency} />
+        </View>
         <View style={styles.budgetMeta}>
+          <Text style={styles.limitLabel}>Límite:</Text>
+          <Text style={styles.limitLabel}>
+            $600.000,00{/*formatCurrency(limit, currency)*/}
+          </Text>
           <Text style={styles.percent}>{Math.round(percent * 100)}% usado</Text>
         </View>
-      </View>
-      <View style={styles.progressWrap}>
-        <ProgressBar value={percent} />
+        <View style={styles.progressWrap}>
+          <ProgressBar value={percent} />
+        </View>
       </View>
     </Card>
   );
@@ -53,16 +62,20 @@ export function BudgetCard({
 
 const styles = StyleSheet.create({
   cardHeader: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    backgroundColor: colors.surface,
+    height: 80,
   },
   kicker: {
-    ...typography.labelCaps,
     color: colors.textSecondary,
+    fontSize: 17,
+    fontWeight: '900',
   },
   limitLabel: {
-    ...typography.labelSm,
+    fontSize: 17,
+    fontWeight: '800',
     color: colors.textSecondary,
   },
   budgetRow: {
@@ -70,14 +83,20 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'space-between',
     marginTop: spacing.sm,
+    backgroundColor: colors.surface,
   },
   budgetMeta: {
     paddingBottom: spacing.xs,
+    backgroundColor: colors.surface,
+    width: '35%',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   percent: {
-    ...typography.labelSm,
+    // ...typography.labelSm,
+    fontSize: 16,
     color: colors.primary,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   progressWrap: {
     marginTop: spacing.lg,

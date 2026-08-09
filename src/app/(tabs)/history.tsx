@@ -1,6 +1,12 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, TextInput } from 'react-native';
+import {
+  Image,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+} from 'react-native';
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -19,6 +25,7 @@ import { formatCurrency } from '@/lib/format';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
+import { useSessionStore } from '../../features/auth';
 
 /**
  * NativeTabs (iOS) does not push screen content up: the ScrollView must clear
@@ -46,23 +53,25 @@ export default function HistoryScreen() {
   const [query, setQuery] = useState('');
   const isSearching = query.trim().length > 0;
   const searchResults = useItemSearch(query, monthKey);
+  const { session } = useSessionStore();
+  const fullName =
+    session?.user?.user_metadata?.full_name ??
+    session?.user?.user_metadata?.name ??
+    '';
+  const firstName = fullName.trim().split(' ')[0];
+  const displayName = firstName || 'Usuario';
+  const avatarUrl = session?.user?.user_metadata?.avatar_url;
+
   // Combined total across every result row: searching "yerba" matches both
   // "Yerba 1kg" and "Yerba mate 1kg" as separate rows, and this subtotal
   // answers "cuánto gasté en yerba en total" without inventing a product
   // identity that merges them.
-  const searchTotal = searchResults.reduce(
-    (sum, item) => sum + item.amount,
-    0,
-  );
+  const searchTotal = searchResults.reduce((sum, item) => sum + item.amount, 0);
 
   const monthKeys = useMemo(() => getAvailableMonthKeys(list), [list]);
   const categories = useMemo(
     () => aggregateCategoriesByMonth(list, monthKey),
     [list, monthKey],
-  );
-  const monthTotal = categories.reduce(
-    (sum, category) => sum + category.amount,
-    0,
   );
 
   // `monthKeys` is newest-first. The selected month may not be in it (e.g.
@@ -85,7 +94,23 @@ export default function HistoryScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Historial</Text>
+        <Pressable
+          onPress={() => router.push('/profile')}
+          accessibilityLabel="Abrir perfil"
+          accessibilityRole="button"
+        >
+          {avatarUrl ? (
+            <Image source={{ uri: avatarUrl }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, styles.avatarFallback]}>
+              <Text style={styles.avatarInitial}>
+                {displayName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+        </Pressable>
+        <Text style={styles.title}>Ticketify</Text>
+        <Icon name="calendar" size={30} color={colors.textSecondary} />
       </View>
 
       {/* Month selector + total stay pinned above the scroll so the user
@@ -122,13 +147,6 @@ export default function HistoryScreen() {
               color={canGoNewer ? colors.textPrimary : colors.textSecondary}
             />
           </Pressable>
-        </View>
-
-        <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Total del mes</Text>
-          <Text style={styles.totalAmount}>
-            {formatCurrency(monthTotal, currency)}
-          </Text>
         </View>
 
         <View style={styles.searchBox}>
@@ -240,6 +258,20 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 25,
+  },
+  avatarFallback: {
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    ...typography.headlineMd,
+    color: colors.background,
+  },
   searchWrapGo: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -263,10 +295,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.sm,
     paddingBottom: spacing.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   title: {
-    ...typography.headlineLgMobile,
-    color: colors.textPrimary,
+    // ...typography.headlineLgMobile,
+    fontSize: 25,
+    fontWeight: '900',
+    color: colors.primary,
   },
   scroll: {
     flex: 1,

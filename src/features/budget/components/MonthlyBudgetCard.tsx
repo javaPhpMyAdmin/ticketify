@@ -2,7 +2,7 @@ import { StyleSheet } from 'react-native';
 
 import { BudgetCard, Card, Text, View } from '@/components';
 import { formatCurrency } from '@/lib/format';
-import { colors, spacing, typography } from '@/theme';
+import { colors, spacing } from '@/theme';
 
 export interface MonthlyBudgetCardProps {
   spent: number;
@@ -30,12 +30,30 @@ export function MonthlyBudgetCard({
       <BudgetCard spent={spent} limit={limit} currency={currency} />
       {showCallout ? (
         <Card style={styles.callout}>
-          <Text style={styles.kicker}>MICROGASTOS</Text>
+          <View style={{ backgroundColor: colors.surface }}>
+            <Text style={styles.kicker}>MICROGASTOS</Text>
+            <Text style={styles.calloutLabel}>Antojos/Snacks</Text>
+          </View>
           <View style={styles.calloutRow}>
-            <Text style={styles.calloutLabel}>Deseos / Snacks</Text>
-            <Text style={styles.calloutAmount}>
-              {formatCurrency(wantsSnacksTotal, currency)} este mes
-            </Text>
+            <View
+              style={{
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: colors.surface,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 18,
+                  fontWeight: '900',
+                  color: colors.primary,
+                }}
+              >
+                {formatCurrency(wantsSnacksTotal, currency)}
+              </Text>
+              <Text style={styles.calloutAmount}>este mes</Text>
+            </View>
           </View>
         </Card>
       ) : null}
@@ -49,9 +67,16 @@ const styles = StyleSheet.create({
   },
   callout: {
     gap: spacing.sm,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   kicker: {
-    ...typography.labelCaps,
+    // ...typography.labelCaps,
+    fontSize: 17,
+    fontWeight: '900',
     color: colors.textSecondary,
   },
   calloutRow: {
@@ -59,15 +84,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: spacing.sm,
+    backgroundColor: colors.surface,
   },
   calloutLabel: {
-    ...typography.bodyLg,
+    // ...typography.bodyLg,
     color: colors.textPrimary,
-    fontWeight: '600',
+    fontWeight: '900',
+    fontSize: 22,
   },
   calloutAmount: {
-    ...typography.labelSm,
-    color: colors.primary,
-    fontWeight: '700',
+    // ...typography.labelSm,
+    color: colors.textSecondary,
+    fontSize: 17,
+    fontWeight: '800',
   },
 });

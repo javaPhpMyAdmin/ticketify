@@ -74,8 +74,8 @@ const styles = StyleSheet.create({
   },
   title: {
     // ...typography.headlineMd,
-    fontWeight: '600',
-    fontSize: 18,
+    fontWeight: '800',
+    fontSize: 19,
     color: colors.textPrimary,
   },
   card: {
@@ -96,8 +96,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   name: {
-    ...typography.bodyMd,
     color: colors.textPrimary,
+    fontSize: 17.5,
+    fontWeight: '500',
     flex: 1,
   },
   rowMeta: {
@@ -106,12 +107,14 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   amount: {
-    ...typography.bodyMd,
-    color: colors.textPrimary,
+    color: colors.textSecondary,
+    fontSize: 17.5,
+    fontWeight: '700',
   },
   percent: {
-    ...typography.labelSm,
     color: colors.primary,
+    fontSize: 17.5,
+    fontWeight: '700',
   },
   track: {
     height: 8,
