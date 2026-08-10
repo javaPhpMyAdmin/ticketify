@@ -361,12 +361,15 @@ async function resolveStoreId(userId: string, name: string): Promise<string | nu
  * Fetches the category slug → id map once per save so each line item can
  * resolve its chosen slug (user pick preferred over the AI suggestion) to a
  * real uuid FK. Categories are seeded by migration and rarely change, so
- * this is one small read.
+ * this is one small read. The fetch is ordered by slug so the 200-row cap
+ * truncates deterministically — 'otros' (sort_order 99, last in the seed)
+ * can never be excluded by arbitrary physical row order.
  */
 async function fetchCategoryIdsBySlug(): Promise<Record<string, string>> {
   const { data, error } = await supabase
     .from('categories')
     .select('id, slug')
+    .order('slug')
     .limit(200);
   if (error) return {};
   const map: Record<string, string> = {};
@@ -450,9 +453,17 @@ export async function saveReceipt(
     total_price: item.total_price,
     // The review screen stores the category as a slug (user pick preferred
     // over the AI suggestion); the DB column is a uuid FK, so resolve here.
+    // An unresolved slug (no user pick AND no AI suggestion) falls back to
+    // the 'otros' category so NULLs never persist — the backfill in
+    // 0009_fix_null_category_items.sql only fixes rows already in the DB.
+    // The trailing `?? null` guards the pathological case where 'otros' is
+    // missing from the map (fetchCategoryIdsBySlug caps at 200 rows, ordered
+    // by slug so the cap can never skip 'otros'); the RPC's LEFT
+    // JOIN/COALESCE buckets those NULLs under 'otros' read-side.
     category_id:
       categoryIds[item.category_id ?? ''] ??
       categoryIds[item.ai_suggested_category_id ?? ''] ??
+      categoryIds['otros'] ??
       null,
     is_impulse: item.is_impulse,
     sort_order: index,

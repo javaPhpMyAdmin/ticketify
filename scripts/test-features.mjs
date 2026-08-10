@@ -484,6 +484,57 @@ async function run() {
     assert.equal(budgetMod.sumCategoryTotals(result.data), 570);
   });
 
+  await test('sumCategoryTotals includes the NULL-category money: total covers every item and lands in the otros bucket (0009 regression)', async () => {
+    resetAll();
+    // Regression pin for the NULL category_id fix (0009): the hardened RPC
+    // LEFT JOINs categories and COALESCEs `category_id IS NULL` items onto
+    // the 'otros' row, so a month mixing N categorized items and M
+    // NULL-category items returns an explicit 'otros' row holding the M
+    // money. The budget spent must count EVERYTHING (N+M) — the pre-fix RPC
+    // (INNER JOIN on categories) dropped the M items from the breakdown
+    // entirely, understating spend. The stub arms exactly the rows the RPC
+    // contract now returns for such a month.
+    const normalItems = [
+      {
+        category_id: 'cat-lacteos',
+        category_name: 'Lácteos',
+        category_slug: 'lacteos',
+        total: 3500,
+        item_count: 20,
+        percent_of_total: 0.64,
+      },
+      {
+        category_id: 'cat-snacks',
+        category_name: 'Snacks / Galletas',
+        category_slug: 'snacks',
+        total: 1200,
+        item_count: 8,
+        percent_of_total: 0.22,
+      },
+    ];
+    // M = the NULL-category items' money, aggregated under 'otros' by the
+    // RPC's COALESCE (category_id NULL → the fallback_otros row).
+    const nullMoneyBucket = {
+      category_id: 'cat-otros',
+      category_name: 'Otros',
+      category_slug: 'otros',
+      total: 800,
+      item_count: 3,
+      percent_of_total: 0.14,
+    };
+    stubMod.__setRpcResult('monthly_category_totals', {
+      rows: [...normalItems, nullMoneyBucket],
+    });
+    const result = await seamMod.readCategoryTotals('2026-08');
+    assert.equal(result.status, 'ok');
+    // 3500 + 1200 + 800: N + M — the 'otros' money is never dropped.
+    assert.equal(budgetMod.sumCategoryTotals(result.data), 5500);
+    const otros = result.data.find((row) => row.category_slug === 'otros');
+    assert.ok(otros, 'NULL-category items land under the otros bucket');
+    assert.equal(otros.total, 800, 'the M NULL items money sits in otros');
+    assert.equal(otros.item_count, 3, 'every NULL-category item is counted');
+  });
+
   await test('readCategoryTotals (the budget spent seam) fails safe on a not-deployed RPC', async () => {
     resetAll();
     stubMod.__setRpcResult('monthly_category_totals', {
@@ -829,6 +880,69 @@ async function run() {
         is_impulse: true,
         sort_order: 1,
       },
+    ]);
+  });
+
+  await test('saveReceipt falls back to the otros category when user pick AND AI suggestion are both absent', async () => {
+    resetAll();
+    stubMod.__setTableRead('stores', { rows: [] });
+    // The stub map carries the seeded 'otros' row (0001_initial_schema.sql
+    // L226 seeds slug 'otros', kind 'need') — without it, the
+    // `?? categoryIds['otros'] ?? null` fallback is never exercised. The
+    // row shape matches the app's `select('id, slug')`, exactly like the
+    // other stub categories.
+    stubMod.__setTableRead('categories', {
+      rows: [
+        { id: 'cat-lacteos', slug: 'lacteos' },
+        { id: 'cat-snacks', slug: 'snacks' },
+        { id: 'cat-otros', slug: 'otros' },
+      ],
+    });
+    const result = await ticketsMod.saveReceipt('u1', {
+      ...DRAFT,
+      items: [
+        {
+          temp_id: 't1',
+          name: 'Leche',
+          quantity: 1,
+          unit_price: 3.5,
+          total_price: 3.5,
+          category_id: 'lacteos',
+          is_impulse: false,
+          ai_suggested_category_id: null,
+        },
+        {
+          temp_id: 't2',
+          name: 'Chicle',
+          quantity: 1,
+          unit_price: 1,
+          total_price: 1,
+          // The regression seam: NO user pick AND NO AI suggestion — the
+          // slug-resolution chain ends at `categoryIds['otros'] ?? null`.
+          category_id: null,
+          is_impulse: false,
+          ai_suggested_category_id: null,
+        },
+      ],
+    });
+    assert.ok(result.id.length > 0, 'save succeeded');
+    const itemPayloads = stubMod.__getInserted('purchase_items').map((item) => {
+      const { id, ...payload } = item; // synthetic stub id, not app data
+      void id;
+      return payload;
+    });
+    assert.equal(itemPayloads[0].category_id, 'cat-lacteos');
+    assert.equal(
+      itemPayloads[1].category_id,
+      'cat-otros',
+      'an unresolved slug (no user pick, no AI suggestion) persists the otros id — never NULL',
+    );
+    // Deterministic category map (review fix): the fetch is ordered by slug,
+    // so the 200-row cap truncates by a stable key and cannot exclude
+    // 'otros' through arbitrary physical row order.
+    assert.deepEqual(stubMod.__getQueryCalls('categories'), [
+      { op: 'order', column: 'slug', opts: undefined },
+      { op: 'limit', count: 200 },
     ]);
   });
 
