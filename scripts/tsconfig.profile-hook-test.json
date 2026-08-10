@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020", "dom"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "..",
+    "paths": {
+      "@/lib/supabase": ["./scripts/test-stubs/supabase.ts"],
+      "@/lib/supabase/storage-adapter": ["./scripts/test-stubs/storage-adapter.ts"],
+      "react-native": ["./scripts/test-stubs/react-native.ts"],
+      "@/*": ["./src/*"]
+    },
+    "rootDir": ".."
+  },
+  "include": [
+    "../src/features/profile/api.ts",
+    "../src/features/profile/hooks/useProfile.ts",
+    "../src/features/auth/index.ts",
+    "../src/features/auth/use-session-user.ts",
+    "../src/features/auth/use-session-store.ts",
+    "../src/lib/auth/auth-listener-registry.ts",
+    "../src/lib/auth/profile-sync.ts",
+    "../src/lib/query-client.ts",
+    "../src/lib/query-keys.ts",
+    "../src/lib/format.ts",
+    "../src/lib/supabase/config-status.ts",
+    "../src/lib/supabase/feature-access.ts",
+    "../src/lib/supabase/query-adapters.ts",
+    "../src/stores/use-receipts-store.ts",
+    "../src/stores/use-settings-store.ts",
+    "../src/types/index.ts",
+    "../scripts/test-stubs/globals.d.ts",
+    "../scripts/test-stubs/supabase.ts",
+    "../scripts/test-stubs/storage-adapter.ts",
+    "../scripts/test-stubs/react-native.ts"
+  ]
+}

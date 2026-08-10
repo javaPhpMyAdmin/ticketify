@@ -19,7 +19,8 @@
     "test:home-api": "node scripts/test-home-api.mjs",
     "test:monthly-overview": "node scripts/test-monthly-overview.mjs",
     "test:price-alerts": "node scripts/test-price-alerts.mjs",
-    "test": "pnpm test:format && pnpm test:adapter && pnpm test:auth && pnpm test:features && pnpm test:home && pnpm test:home-api && pnpm test:monthly-overview && pnpm test:price-alerts"
+    "test:profile-hook": "node scripts/test-profile-hook.mjs",
+    "test": "pnpm test:format && pnpm test:adapter && pnpm test:auth && pnpm test:features && pnpm test:profile-hook && pnpm test:home && pnpm test:home-api && pnpm test:monthly-overview && pnpm test:price-alerts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
@@ -62,6 +63,7 @@
     "eslint": "^9.0.0",
     "eslint-config-expo": "~10.0.0",
     "patch-package": "^8.0.1",
+    "react-test-renderer": "19.1.0",
     "supabase": "^2.111.0",
     "typescript": "~5.9.0"
   },
