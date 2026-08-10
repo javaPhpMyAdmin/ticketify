@@ -53,6 +53,15 @@ export default function HistoryScreen() {
   const [query, setQuery] = useState('');
   const isSearching = query.trim().length > 0;
   const searchResults = useItemSearch(query, monthKey);
+  // Visually excluded search results ("eliminar" del listado). Local-only:
+  // never touches the DB, and it resets whenever the query changes so a new
+  // search starts from the full result set.
+  const [hiddenItems, setHiddenItems] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const visibleResults = searchResults.filter(
+    (item) => !hiddenItems.has(item.name),
+  );
   const { session } = useSessionStore();
   const fullName =
     session?.user?.user_metadata?.full_name ??
@@ -62,11 +71,15 @@ export default function HistoryScreen() {
   const displayName = firstName || 'Usuario';
   const avatarUrl = session?.user?.user_metadata?.avatar_url;
 
-  // Combined total across every result row: searching "yerba" matches both
-  // "Yerba 1kg" and "Yerba mate 1kg" as separate rows, and this subtotal
-  // answers "cuánto gasté en yerba en total" without inventing a product
-  // identity that merges them.
-  const searchTotal = searchResults.reduce((sum, item) => sum + item.amount, 0);
+  // Combined total across every VISIBLE result row: searching "yerba"
+  // matches both "Yerba 1kg" and "Yerba mate 1kg" as separate rows, and this
+  // subtotal answers "cuánto gasté en yerba en total" without inventing a
+  // product identity that merges them. Items excluded from the list are
+  // excluded from this total too.
+  const searchTotal = visibleResults.reduce(
+    (sum, item) => sum + item.amount,
+    0,
+  );
 
   const monthKeys = useMemo(() => getAvailableMonthKeys(list), [list]);
   const categories = useMemo(
@@ -85,11 +98,16 @@ export default function HistoryScreen() {
       ? monthKeys.length > 0
       : currentIndex < monthKeys.length - 1;
 
-  const goOlder = () =>
+  const goOlder = () => {
     setMonthKey(
       currentIndex === -1 ? monthKeys[0] : monthKeys[currentIndex + 1],
     );
-  const goNewer = () => setMonthKey(monthKeys[currentIndex - 1]);
+    setHiddenItems(new Set());
+  };
+  const goNewer = () => {
+    setMonthKey(monthKeys[currentIndex - 1]);
+    setHiddenItems(new Set());
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -154,7 +172,10 @@ export default function HistoryScreen() {
           <TextInput
             style={styles.searchInput}
             value={query}
-            onChangeText={setQuery}
+            onChangeText={(text) => {
+              setQuery(text);
+              setHiddenItems(new Set());
+            }}
             placeholder="Buscar producto…"
             placeholderTextColor={colors.textSecondary}
             autoCorrect={false}
@@ -181,50 +202,111 @@ export default function HistoryScreen() {
             <Text style={styles.empty}>
               Sin resultados para “{query.trim()}”.
             </Text>
-          ) : (
+          ) : visibleResults.length === 0 ? (
             <View style={styles.searchResults}>
               <View style={styles.searchTotalRow}>
                 <Text style={styles.searchTotalLabel}>
-                  {searchResults.length}{' '}
-                  {searchResults.length === 1 ? 'artículo' : 'artículos'}
+                  {hiddenItems.size === searchResults.length
+                    ? 'Todos ocultos'
+                    : '0 artículos'}
                 </Text>
+                <Text style={styles.searchTotalAmount}>
+                  {formatCurrency(0, currency)}
+                </Text>
+              </View>
+              <Text style={styles.empty}>
+                Ocultaste todos los resultados de “{query.trim()}”.
+              </Text>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.restoreButton,
+                  pressed && styles.searchResultPressed,
+                ]}
+                onPress={() => setHiddenItems(new Set())}
+                accessibilityRole="button"
+                accessibilityLabel="Restaurar resultados"
+              >
+                <Text style={styles.restoreButtonText}>
+                  Restaurar resultados
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.searchResults}>
+              <View style={styles.searchTotalRow}>
+                <View style={styles.searchTotalLeft}>
+                  <Text style={styles.searchTotalLabel}>
+                    {visibleResults.length}{' '}
+                    {visibleResults.length === 1 ? 'artículo' : 'artículos'}
+                  </Text>
+                  {hiddenItems.size > 0 ? (
+                    <Pressable
+                      onPress={() => setHiddenItems(new Set())}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Restaurar resultados"
+                    >
+                      <Text style={styles.restoreLink}>Restaurar</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
                 <Text style={styles.searchTotalAmount}>
                   {formatCurrency(searchTotal, currency)}
                 </Text>
               </View>
-              {searchResults.map((item) => (
-                <Pressable
-                  key={item.name}
-                  style={({ pressed }) => [
-                    styles.searchResultRow,
-                    pressed && styles.searchResultPressed,
-                  ]}
-                  onPress={() =>
-                    router.push(
-                      `/items/${encodeURIComponent(
-                        item.name,
-                      )}?month=${monthKey}`,
-                    )
-                  }
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.searchResultName} numberOfLines={1}>
-                    {item.name}
-                  </Text>
-                  <Text style={styles.searchResultAmount}>
-                    {formatCurrency(item.amount, currency)}
-                  </Text>
-                  <View style={styles.searchWrapGo}>
-                    <Text style={styles.searchGo} numberOfLines={1}>
-                      VER
+              {visibleResults.map((item) => (
+                <View key={item.name} style={styles.searchResultWrap}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.searchResultRow,
+                      pressed && styles.searchResultPressed,
+                    ]}
+                    onPress={() =>
+                      router.push(
+                        `/items/${encodeURIComponent(
+                          item.name,
+                        )}?month=${monthKey}`,
+                      )
+                    }
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.searchResultName} numberOfLines={1}>
+                      {item.name}
                     </Text>
+                    <Text style={styles.searchResultAmount}>
+                      {formatCurrency(item.amount, currency)}
+                    </Text>
+                    <View style={styles.searchWrapGo}>
+                      <Text style={styles.searchGo} numberOfLines={1}>
+                        VER
+                      </Text>
+                      <Icon
+                        name="chevron.right"
+                        size={16}
+                        color={colors.onPrimary}
+                      />
+                    </View>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.hideItemButton,
+                      pressed && styles.hideItemPressed,
+                    ]}
+                    onPress={() =>
+                      setHiddenItems(
+                        (prev) => new Set(prev).add(item.name),
+                      )
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel={`Ocultar ${item.name}`}
+                  >
                     <Icon
-                      name="chevron.right"
-                      size={16}
-                      color={colors.onPrimary}
+                      name="xmark"
+                      size={14}
+                      color={colors.textSecondary}
                     />
-                  </View>
-                </Pressable>
+                  </Pressable>
+                </View>
               ))}
             </View>
           )
@@ -345,6 +427,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
     paddingVertical: spacing.xs,
   },
+  searchTotalLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
   searchTotalLabel: {
     ...typography.labelCaps,
     color: colors.textSecondary,
@@ -353,7 +440,13 @@ const styles = StyleSheet.create({
     ...typography.headlineMd,
     color: colors.primary,
   },
+  searchResultWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   searchResultRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -367,6 +460,39 @@ const styles = StyleSheet.create({
   },
   searchResultPressed: {
     transform: [{ scale: 0.98 }],
+  },
+  hideItemButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  hideItemPressed: {
+    opacity: 0.6,
+  },
+  restoreLink: {
+    ...typography.labelCaps,
+    color: colors.primary,
+    textDecorationLine: 'underline',
+  },
+  restoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.primary,
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  restoreButtonText: {
+    ...typography.bodyMd,
+    color: colors.onPrimary,
+    fontWeight: '700',
   },
   searchResultName: {
     ...typography.bodyMd,

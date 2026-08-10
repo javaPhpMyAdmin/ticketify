@@ -189,7 +189,13 @@ export default function ReviewReceiptScreen() {
 
   const itemsTotal =
     draft?.items.reduce((acc, i) => acc + i.total_price, 0) ?? 0;
-  const matches = draft ? Math.abs(itemsTotal - draft.total) < 0.01 : false;
+  // The declared total may legitimately be LOWER than the item sum when the
+  // payment method earned a discount (e.g. "Desc. de ley 19210" debit-card
+  // discount, printed on the receipt AFTER the items). A total that is
+  // HIGHER than the item sum, on the other hand, can never be explained by a
+  // discount and signals a parse error. So the check only flags the
+  // impossible direction (paid more than the items add up to).
+  const matches = draft ? draft.total <= itemsTotal + 0.01 : false;
 
   // Read-only card detail shown inside the "Tarjeta" chip, e.g.
   // "Tarjeta · Maestro Débito". Gated on the selected payment method:
@@ -443,7 +449,7 @@ export default function ReviewReceiptScreen() {
             <View style={styles.totalRow}>
               <Text style={styles.kicker}>Total del recibo</Text>
               <Text style={styles.totalValue}>
-                {formatCurrency(itemsTotal, currency)}
+                {formatCurrency(draft?.total ?? itemsTotal, currency)}
               </Text>
             </View>
             <View style={styles.matchesRow}>
@@ -458,6 +464,11 @@ export default function ReviewReceiptScreen() {
               {!matches ? (
                 <Text style={styles.matchesDetail}>
                   Declarado {formatCurrency(draft?.total ?? 0, currency)}
+                </Text>
+              ) : itemsTotal > (draft?.total ?? 0) + 0.01 ? (
+                <Text style={styles.matchesDetail}>
+                  Incluye descuento de{' '}
+                  {formatCurrency(itemsTotal - (draft?.total ?? 0), currency)}
                 </Text>
               ) : null}
             </View>
