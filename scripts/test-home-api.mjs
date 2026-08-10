@@ -412,12 +412,16 @@ async function run() {
     );
     assert.ok(
       ops.some(
-        (o) => o.op === 'lt' && o.column === 'purchases.purchase_date' && o.value === '2026-09',
+        (o) =>
+          o.op === 'lt' &&
+          o.column === 'purchases.purchase_date' &&
+          o.value === '2026-09-01',
       ),
-      // nextMonthKey returns the bare YYYY-MM prefix; ISO dates sort
-      // lexicographically, so `< '2026-09'` excludes every September date
-      // (>= '2026-09-01') — a correct exclusive upper bound.
-      'month upper bound exclusive (bare YYYY-MM prefix, string math)',
+      // `purchase_date` is a `date` column: the exclusive upper bound must
+      // be the first day of the next month so Postgres can parse it. The
+      // bare `YYYY-MM` prefix (`nextMonthKey` alone) raised
+      // `22007 invalid input syntax for type date` and broke the search.
+      'month upper bound exclusive (first day of next month, valid date)',
     );
     assert.ok(ops.some((o) => o.op === 'limit' && o.count === 200), 'caps results at 200');
   });
@@ -570,8 +574,8 @@ async function run() {
       'December lower bound',
     );
     assert.ok(
-      ops.some((o) => o.op === 'lt' && o.value === '2027-01'),
-      'upper bound rolls into the next year (bare YYYY-MM prefix)',
+      ops.some((o) => o.op === 'lt' && o.value === '2027-01-01'),
+      'upper bound rolls into the next year (first day of January, valid date)',
     );
   });
 

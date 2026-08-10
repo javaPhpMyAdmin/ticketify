@@ -239,7 +239,11 @@ export async function searchPurchaseItems(
     // only the `%…%` around the query keeps prefix/suffix matching.
     .ilike('name_search', `%${escapeLikePattern(normalizedQuery)}%`)
     .gte('purchases.purchase_date', `${monthKey}-01`)
-    .lt('purchases.purchase_date', nextMonthKey(monthKey))
+    // `purchase_date` is a real `date` column: Postgres must be able to
+    // parse the bound, so the exclusive upper bound is the FIRST day of the
+    // next month (`2026-09-01`), never the bare `YYYY-MM` prefix — a bare
+    // prefix raised `22007 invalid input syntax for type date: "2026-09"`.
+    .lt('purchases.purchase_date', `${nextMonthKey(monthKey)}-01`)
     // Deterministic pagination: without an explicit order PostgREST's row
     // order is unspecified, so equal-amount results could flip between
     // requests. `purchases(purchase_date)` sorts the parent rows by the
