@@ -30,6 +30,20 @@ export const queryKeys = {
   monthlyTotals: (userId: string, yearMonth: string) =>
     ['analytics', 'monthly-totals', userId, yearMonth] as const,
   /**
+   * The month's TOTAL PAID via the `monthly_purchases_total` RPC — the SUM
+   * of `purchases.total` (post-discount). Separate key from `monthlyTotals`
+   * on purpose: the cache must never mix the category-rows shape with the
+   * single-total shape under one key (server-state-caching spec).
+   */
+  monthlyPurchasesTotal: (userId: string, yearMonth: string) =>
+    ['analytics', 'monthly-purchases-total', userId, yearMonth] as const,
+  /**
+   * Prefix of the monthlyPurchasesTotal keys for a user, used to invalidate
+   * every month variant at once (e.g. after a receipt save).
+   */
+  monthlyPurchasesTotalPrefix: (userId: string) =>
+    ['analytics', 'monthly-purchases-total', userId] as const,
+  /**
    * Prefix of the monthlyTotals keys for a user, used to invalidate every
    * month variant at once (e.g. after a receipt save). The month is appended
    * unconditionally by `monthlyTotals`, so this prefix matches all of them
