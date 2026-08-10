@@ -8,4 +8,11 @@ export type {
   AccountSettingRow,
   SettingTrailing,
 } from './components/AccountSettingsList';
-export { fetchProfile, fetchScanUsage, setHouseholdSharing } from './api';
+export {
+  fetchProfile,
+  fetchScanUsage,
+  setHouseholdSharing,
+  setProfileCurrency,
+  WRITE_ERROR_MESSAGE,
+} from './api';
+export type { ProfileWriteResult } from './api';

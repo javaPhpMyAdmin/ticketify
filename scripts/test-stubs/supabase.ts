@@ -186,6 +186,14 @@ const queryLog: QueryCall[] = [];
  */
 const insertFailures = new Map<string, StubError>();
 
+/**
+ * One-shot update failures per table (harness seam, see `__failNextUpdate`):
+ * the next `from(table).update()` resolves `{ error }` and reverts, so a
+ * test can exercise the write-failure branches of `setProfileCurrency`
+ * without touching the default success behavior.
+ */
+const updateFailures = new Map<string, StubError>();
+
 /** Storage bucket behaviors: per-bucket upload/signed-url/remove error, armed
  *  via the `__setStorageBehavior` seam; uploads log to `callLog`. */
 const storageBehaviors = new Map<
@@ -202,6 +210,10 @@ const storageBehaviors = new Map<
  *  builder would resolve them. */
 const insertedRows = new Map<string, unknown[]>();
 
+/** Columns the app passed to `from(table).update()`, per table (harness
+ *  seam, see `__getUpdated`). */
+const updatedColumns = new Map<string, Record<string, unknown>>();
+
 /**
  * What a builder chain resolves to without an explicit terminal.
  * - read chains (select): the armed `tableReads` rows for the table,
@@ -215,7 +227,8 @@ type BuilderSource =
   | { kind: 'read' }
   | { kind: 'insert'; rows: unknown[] }
   | { kind: 'insert-failure'; error: StubError }
-  | { kind: 'write' };
+  | { kind: 'write' }
+  | { kind: 'update-failure'; error: StubError };
 
 /**
  * Builds a chainable builder for a table. Terminal results come from
@@ -254,7 +267,7 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
     },
     select: () => builder,
     async maybeSingle() {
-      if (source.kind === 'insert-failure') {
+      if (source.kind === 'insert-failure' || source.kind === 'update-failure') {
         return { data: null, error: source.error };
       }
       if (source.kind !== 'read') {
@@ -266,7 +279,7 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
       return { data: rows.length > 0 ? rows[0] : null, error: null };
     },
     async single() {
-      if (source.kind === 'insert-failure') {
+      if (source.kind === 'insert-failure' || source.kind === 'update-failure') {
         return { data: null, error: source.error };
       }
       if (source.kind !== 'read') {
@@ -299,7 +312,10 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
         error = state.error;
       } else if (source.kind === 'insert') {
         data = source.rows;
-      } else if (source.kind === 'insert-failure') {
+      } else if (
+        source.kind === 'insert-failure' ||
+        source.kind === 'update-failure'
+      ) {
         error = source.error;
       }
       return Promise.resolve({ data, error }).then(onfulfilled, onrejected);
@@ -355,8 +371,18 @@ const defaultBehavior = (): SupabaseBehavior => ({
         return makeQueryBuilder(table, { kind: 'insert', rows: decorated });
       },
       update: (columns: Record<string, unknown>) => {
-        void columns;
         callLog.push({ kind: 'update', table });
+        // Expose the exact payload so tests can assert the columns written
+        // (e.g. `setProfileCurrency` writes `{ currency }`).
+        updatedColumns.set(table, columns);
+        // One-shot armed failure (see `__failNextUpdate`): the update errors
+        // and reverts to success behavior for the next call, so write-failure
+        // branches can be exercised without a live backend.
+        const armedFailure = updateFailures.get(table);
+        if (armedFailure !== undefined) {
+          updateFailures.delete(table);
+          return makeQueryBuilder(table, { kind: 'update-failure', error: armedFailure });
+        }
         return makeQueryBuilder(table, { kind: 'write' });
       },
       delete: () => {
@@ -477,7 +503,9 @@ export function __resetSupabaseBehavior(): void {
   callLog.length = 0;
   queryLog.length = 0;
   insertFailures.clear();
+  updateFailures.clear();
   insertedRows.clear();
+  updatedColumns.clear();
   insertCounter = 0;
   storageBehaviors.clear();
 }
@@ -559,6 +587,22 @@ export function __failNextInsert(
 }
 
 /**
+ * Arms the next `from(table).update()` to resolve `{ data: null, error }`
+ * (one-shot — the following update succeeds again). Default behavior for
+ * every other call is unchanged, so suites that never call this seam keep
+ * their exact current semantics.
+ */
+export function __failNextUpdate(
+  table: string,
+  error?: { message?: string; code?: string },
+): void {
+  updateFailures.set(table, {
+    message: error?.message ?? 'update failed',
+    code: error?.code,
+  });
+}
+
+/**
  * The rows the app passed to the most recent successful `from(table).insert()`
  * (decorated with the synthetic ids the builder resolves), or null when no
  * insert happened since the last reset. Lets the harness assert the exact
@@ -567,6 +611,16 @@ export function __failNextInsert(
  */
 export function __getInserted(table: string): unknown[] | null {
   return insertedRows.get(table) ?? null;
+}
+
+/**
+ * The columns the app passed to the most recent `from(table).update()`
+ * (harness seam), or null when no update happened since the last reset.
+ * Lets the harness assert the exact write payload — e.g.
+ * `setProfileCurrency` writes `{ currency }`.
+ */
+export function __getUpdated(table: string): Record<string, unknown> | null {
+  return updatedColumns.get(table) ?? null;
 }
 
 /** The most recent `rpc` call (fn + params), or null when none happened. */

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 
 import { Pressable, ProfileHeader, Spinner, Text, View } from '@/components';
 import { useSessionStore, useSessionUser } from '@/features/auth';
@@ -37,6 +38,7 @@ export default function ProfileScreen() {
       value: `${currency}`,
       icon: 'creditcard',
       trailing: { type: 'chevron' },
+      onPress: () => router.push('/settings/currency'),
     },
     {
       id: 'household',
