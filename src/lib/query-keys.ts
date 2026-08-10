@@ -39,8 +39,6 @@ export const queryKeys = {
     ['analytics', 'monthly-totals', userId] as const,
   /** The home feed (purchase list; all months, current-month derived). */
   homeFeed: (userId: string) => ['home', 'feed', userId] as const,
-  /** The history entries (stub until purchase reads land). */
-  historyEntries: (userId: string) => ['history', 'entries', userId] as const,
   /** Item search results for a month + normalized query (user-scoped). */
   itemSearch: (userId: string, monthKey: string, query: string) =>
     ['home', 'item-search', userId, monthKey, query] as const,

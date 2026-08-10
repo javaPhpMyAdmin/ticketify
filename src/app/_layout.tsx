@@ -123,6 +123,10 @@ export default function RootLayout() {
               guard and render stale data via deep links when signed out. */}
           <Stack.Screen name="receipts/[id]" />
           <Stack.Screen name="items/[name]" />
+          {/* Renders the user's current currency and writes their profile
+              row, so it must sit behind the same session gate (same
+              rationale as the drill-downs below). */}
+          <Stack.Screen name="settings/currency" />
         </Stack.Protected>
         <Stack.Screen name="(auth)" />
       </Stack>

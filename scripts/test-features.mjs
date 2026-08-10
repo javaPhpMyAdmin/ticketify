@@ -309,6 +309,56 @@ async function run() {
     assert.equal(result.data, null);
   });
 
+  console.log('\n[tests] profile currency write\n');
+
+  await test('setProfileCurrency writes profiles.currency for the signed-in user row', async () => {
+    resetAll();
+    const result = await profileMod.setProfileCurrency('u1', 'USD');
+    assert.equal(result.status, 'ok');
+    // Payload seam: the exact columns written (not just "an update happened").
+    assert.deepEqual(stubMod.__getUpdated('profiles'), { currency: 'USD' });
+    // Target seam: the update chain filters on the user's own row id — a
+    // bare table update would hit every profile row.
+    const ops = stubMod.__getQueryCalls('profiles');
+    assert.ok(
+      ops.some((o) => o.op === 'eq' && o.column === 'id' && o.value === 'u1'),
+      'update targets the user row via eq(id, userId)',
+    );
+    assert.ok(
+      stubMod.__getCallLog().some((e) => e.kind === 'update' && e.table === 'profiles'),
+      'update call logged on profiles',
+    );
+  });
+
+  await test('setProfileCurrency surfaces a user-safe error on DB failure, never raw text', async () => {
+    resetAll();
+    stubMod.__failNextUpdate('profiles', {
+      message: 'permission denied for table profiles',
+      code: '42501',
+    });
+    const result = await profileMod.setProfileCurrency('u1', 'USD');
+    assert.equal(result.status, 'error');
+    assert.equal(result.message, profileMod.WRITE_ERROR_MESSAGE);
+    assert.equal(result.message, 'No se pudo guardar el cambio. Inténtalo de nuevo.');
+    assert.notEqual(result.message, 'permission denied for table profiles');
+  });
+
+  await test('setProfileCurrency reports unconfigured without touching the network', async () => {
+    resetAll();
+    // The double derives the flag through the real pure derivation: the
+    // app.json placeholder URL disqualifies the configuration (same contract
+    // the app runs at module load).
+    stubMod.__setSupabaseConfigInputs(PLACEHOLDER_URL, CONFIGURED_ANON_KEY);
+    const result = await profileMod.setProfileCurrency('u1', 'USD');
+    assert.equal(result.status, 'error');
+    assert.equal(result.message, profileMod.WRITE_ERROR_MESSAGE);
+    assert.equal(
+      stubMod.__getCallLog().length,
+      0,
+      'no network when unconfigured',
+    );
+  });
+
   console.log('\n[tests] authenticated budget reads\n');
 
   await test('fetchMonthlyBudget reads profiles.monthly_budget and currency', async () => {
@@ -523,11 +573,6 @@ async function run() {
       '2026-08',
     ]);
     assert.deepEqual(keysMod.queryKeys.homeFeed('u1'), ['home', 'feed', 'u1']);
-    assert.deepEqual(keysMod.queryKeys.historyEntries('u1'), [
-      'history',
-      'entries',
-      'u1',
-    ]);
   });
 
   await test('two users never share a key (cross-user isolation)', async () => {
