@@ -201,11 +201,12 @@ const PROMPT = `You are a receipt parser. Extract the purchase data from the rec
 Rules:
 - store_name: the merchant name printed on the receipt.
 - purchase_date: the receipt date formatted as YYYY-MM-DD.
-- total: the final amount paid, as a plain number (no currency symbol).
+- total: the FINAL amount the customer actually pays — the "amount to pay" / "total a pagar" / "total a abonar" figure, which is the last money total printed on the receipt. Receipts often show a discount AFTER the items: a payment-method discount (debit/card), a legal discount ("descuento de ley", "descuento por débito", "bonificación", "descuento promocional", "cupón"), or any negative adjustment, followed by a final total to pay that is LOWER than the pre-discount total. The total must ALWAYS be that FINAL amount after the discount (what the card/account is actually charged), in ANY country or language, NEVER the subtotal printed before the discount. When in doubt, prefer the LOWEST money total printed at the end of the receipt. The discount line itself is not an item and must not be added to the total.
 - payment_method: one of cash, card, apple_pay, google_pay, transfer, other.
 - card_brand: the card network printed on the receipt, e.g. Visa, Mastercard, Maestro, OCA, American Express, Diners, etc. null when the receipt shows no card (e.g. cash or transfer) or the brand cannot be determined. Never guess or infer a brand from unrelated text.
-- card_type: "debit" or "credit" when the receipt states the card kind. null when it does not state it or the receipt shows no card. Never guess or infer the card kind from unrelated text.
+- card_type: "debit" or "credit" when the receipt states the card kind. A payment-method discount (e.g. "descuento por débito", "debit discount", "ley 19.210", "Ley de Inclusión Financiera") is direct evidence of a debit payment — set card_type to "debit" even when the card kind is not spelled out. null when there is no evidence. Never guess or infer the card kind from unrelated text.
 - items: one entry per line item, skipping taxes, subtotals, discounts and total-only lines. quantity is how many units, unit_price is the price of one unit, total_price is the line total.
+- Multi-unit lines: receipts show the same product multiple times in different ways — a leading count column ("CANT 2"), a "2 x 47.00" notation, or two identical consecutive lines. When that happens, emit ONE item with quantity = the unit count, unit_price = the price of one unit, and total_price = the line total (quantity × unit_price). NEVER collapse a multi-unit line into quantity=1 with unit_price=total_price: a line "2 x 47.00" must become {"name": "...", "quantity": 2, "unit_price": 47, "total_price": 94}, never quantity=1 / unit_price=94.
 - suggested_category_slug: exactly one of bebidas, frutas-verduras, refrescos, panaderia, carnes, lacteos, limpieza, snacks, alimentos, higiene, farmacia, servicios, otros, or null when you are not confident.
 - All money values must be plain numbers without currency symbols or thousands separators.`;
 
@@ -430,12 +431,26 @@ function parseItem(entry: unknown, index: number): ParsedItem {
     1,
     Math.floor(requireFiniteNumber(entry.quantity, `items[${index}].quantity`)),
   );
-  const unit_price = round2(
+  let unit_price = round2(
     requireFiniteNumber(entry.unit_price, `items[${index}].unit_price`),
   );
   const total_price = round2(
     requireFiniteNumber(entry.total_price, `items[${index}].total_price`),
   );
+  // Consistency guard (scan-quantity bug): when the model emits a multi-unit
+  // line whose unit_price × quantity does not close against the line total
+  // (e.g. {quantity: 2, unit_price: 94, total_price: 94} instead of
+  // unit_price: 47), re-derive the unit price from the total — the printed
+  // line total is the most reliable figure on the receipt. The guard only
+  // fires on an actual mismatch (> 2 cents) and always keeps the total as
+  // the anchor, so legitimate multi-buy offers that happen to close are
+  // untouched. It never produces a fractional quantity.
+  if (Math.abs(quantity * unit_price - total_price) > 0.02) {
+    const rederived = round2(total_price / quantity);
+    if (Number.isFinite(rederived) && rederived > 0) {
+      unit_price = rederived;
+    }
+  }
   const suggested_category_slug = normalizeCategorySlug(
     entry.suggested_category_slug,
   );
