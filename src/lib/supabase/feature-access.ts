@@ -115,3 +115,26 @@ export async function readCategoryTotals(
   }
   return { status: 'ok', data: (data ?? []) as CategoryMonthlyTotal[] };
 }
+
+/**
+ * The month's TOTAL PAID via the `monthly_purchases_total(p_year_month)`
+ * RPC — the SUM of `purchases.total` (what the user was actually charged,
+ * after payment-method discounts). This is the single-total counterpart to
+ * `readCategoryTotals`: the category RPC sums gross line items and cannot
+ * answer "cuánto pagué" without double-counting multi-category receipts.
+ * Scoped to `auth.uid()` server-side. An empty result is a valid month (no
+ * confirmed purchases), so it resolves to `ok` with an empty array.
+ */
+export async function readMonthlyPurchasesTotal(
+  yearMonth: string,
+): Promise<FeatureReadResult<{ total: number }[]>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { data, error } = await supabase.rpc('monthly_purchases_total', {
+    p_year_month: yearMonth,
+  });
+  if (error) {
+    console.warn('[read] monthly purchases total failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: (data ?? []) as { total: number }[] };
+}

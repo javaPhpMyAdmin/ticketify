@@ -499,13 +499,20 @@ export async function saveReceipt(
   void queryClient.invalidateQueries({
     queryKey: queryKeys.scanUsage(userId, utcYearMonth()),
   });
-  // monthlyTotals readers build the key on the LOCAL month (budget spent,
-  // analytics selector) while a pinned UTC month here would miss the cached
-  // entry they hold at the UTC/local month boundary. Invalidate by the user
-  // prefix instead: the factory appends the month unconditionally, so the
-  // prefix matches EVERY month variant of the key and nothing else.
+  // monthlyTotals readers build the key on the LOCAL month (analytics
+  // selector) while a pinned UTC month here would miss the cached entry they
+  // hold at the UTC/local month boundary. Invalidate by the user prefix
+  // instead: the factory appends the month unconditionally, so the prefix
+  // matches EVERY month variant of the key and nothing else.
   void queryClient.invalidateQueries({
     queryKey: queryKeys.monthlyTotalsPrefix(userId),
+  });
+  // The Home budget spent reads the `monthly_purchases_total` RPC under its
+  // OWN key (single-total shape, separate from the category rows): a new
+  // receipt changes the month total, so that key must be invalidated too or
+  // the budget card keeps showing the pre-save spent.
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.monthlyPurchasesTotalPrefix(userId),
   });
   return { id: purchaseId };
 }

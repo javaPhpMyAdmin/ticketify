@@ -17,12 +17,15 @@
  *     normal ok/null),
  *   - analytics reads call `rpc('monthly_category_totals', { p_year_month })`
  *     and a not-deployed RPC fails safe,
- *   - budget spent: the pure `sumCategoryTotals` helper (fixture sum, empty
- *     month → 0, malformed rows skipped) plus the `readCategoryTotals` seam
- *     the budget hook's queryFn calls — RPC year-month argument via
- *     `__lastRpcCall` and the PGRST202 fails-safe path. (The hook itself is
- *     out of scope here: it imports react, so the harness cannot compile it;
- *     its cache-collision behavior is proven by a standalone TanStack probe.)
+ *   - budget spent: the `monthly_purchases_total` RPC seam
+ *     (`readMonthlyPurchasesTotal`) — the SUM of `purchases.total`
+ *     (post-discount, what the user was actually charged), asserted via
+ *     `__lastRpcCall` and the PGRST202 fails-safe path, plus the pure
+ *     `sumCategoryTotals` helper (fixture sum, empty month → 0, malformed
+ *     rows skipped) that still aggregates the category-rows shape the
+ *     analytics breakdown reads. (The hook itself is out of scope here: it
+ *     imports react, so the harness cannot compile it; its cache-collision
+ *     behavior is proven by a standalone TanStack probe.)
  *   - `saveReceipt` persists real `purchases` + `purchase_items` rows for
  *     the authenticated user: store resolution (reuse by name or create as
  *     the user's own row), category slug→id mapping, impulse flag
@@ -453,7 +456,7 @@ async function run() {
     assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
   });
 
-  await test('readCategoryTotals (the budget spent seam) reaches the RPC with p_year_month only and sums via sumCategoryTotals', async () => {
+  await test('readCategoryTotals reaches the RPC with p_year_month only and aggregates via sumCategoryTotals', async () => {
     resetAll();
     stubMod.__setRpcResult('monthly_category_totals', {
       rows: [
@@ -535,7 +538,7 @@ async function run() {
     assert.equal(otros.item_count, 3, 'every NULL-category item is counted');
   });
 
-  await test('readCategoryTotals (the budget spent seam) fails safe on a not-deployed RPC', async () => {
+  await test('readCategoryTotals fails safe on a not-deployed RPC', async () => {
     resetAll();
     stubMod.__setRpcResult('monthly_category_totals', {
       error: {
@@ -544,6 +547,42 @@ async function run() {
       },
     });
     const result = await seamMod.readCategoryTotals('2026-08');
+    assert.equal(result.status, 'error');
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+  });
+
+  await test('readMonthlyPurchasesTotal (budget spent seam) calls monthly_purchases_total with the month only', async () => {
+    resetAll();
+    stubMod.__setRpcResult('monthly_purchases_total', {
+      rows: [{ total: 301.45 }],
+    });
+    const result = await seamMod.readMonthlyPurchasesTotal('2026-08');
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(stubMod.__lastRpcCall(), {
+      fn: 'monthly_purchases_total',
+      params: { p_year_month: '2026-08' },
+    });
+    assert.equal(result.data.length, 1);
+    assert.equal(result.data[0].total, 301.45);
+  });
+
+  await test('readMonthlyPurchasesTotal of an empty month is ok with an empty array (no fabricated zero)', async () => {
+    resetAll();
+    stubMod.__setRpcResult('monthly_purchases_total', { rows: [] });
+    const result = await seamMod.readMonthlyPurchasesTotal('2026-08');
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(result.data, []);
+  });
+
+  await test('readMonthlyPurchasesTotal fails safe on a not-deployed RPC (user-safe message)', async () => {
+    resetAll();
+    stubMod.__setRpcResult('monthly_purchases_total', {
+      error: {
+        message: 'function monthly_purchases_total(text) does not exist',
+        code: 'PGRST202',
+      },
+    });
+    const result = await seamMod.readMonthlyPurchasesTotal('2026-08');
     assert.equal(result.status, 'error');
     assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
   });
@@ -1760,4 +1799,9 @@ try {
   process.exitCode = 1;
 } finally {
   rmSync(workdir, { recursive: true, force: true });
+  // The compiled `query-client.js` (real TanStack singleton) keeps a handle
+  // alive after the last assertion, so the event loop never drains and the
+  // process appears hung in foreground even though every test already ran.
+  // Exit explicitly after the cleanup instead of waiting for the loop.
+  process.exit(process.exitCode ?? 0);
 }
