@@ -269,6 +269,9 @@ async function run() {
       total: 14,
       image_url: 'file:///receipts/scan.jpg',
       status: 'confirmed',
+      // The review flow does not supply the (optional) payment method, so
+      // the built row carries it as undefined — the key is always present.
+      payment_method: undefined,
       wants_snacks_total: 4,
       category_totals: { lacteos: 7, snacks: 4, otros: 3 },
       items: [

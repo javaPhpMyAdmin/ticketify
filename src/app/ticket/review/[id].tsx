@@ -41,16 +41,15 @@ import {
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
+import { PAYMENT_METHOD_LABELS } from '@/types';
 import type { CardType, PaymentMethod, ReviewItem } from '@/types';
 
-const paymentMethods: { key: PaymentMethod; label: string }[] = [
-  { key: 'card', label: 'Tarjeta' },
-  { key: 'cash', label: 'Efectivo' },
-  { key: 'apple_pay', label: 'Apple Pay' },
-  { key: 'google_pay', label: 'Google Pay' },
-  { key: 'transfer', label: 'Transferencia' },
-  { key: 'other', label: 'Otro' },
-];
+// Picker order: card first (the most common scan result), then the rest.
+// Labels come from the shared `PAYMENT_METHOD_LABELS` map (types/index.ts),
+// the same source the export builders use — the six pairs live in one place.
+const paymentMethods: { key: PaymentMethod; label: string }[] = (
+  ['card', 'cash', 'apple_pay', 'google_pay', 'transfer', 'other'] as const
+).map((key) => ({ key, label: PAYMENT_METHOD_LABELS[key] }));
 
 /** Spanish labels for the card kind detected on the receipt. */
 const cardTypeLabels: Record<CardType, string> = {
