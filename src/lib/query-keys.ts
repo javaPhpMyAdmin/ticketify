@@ -56,4 +56,11 @@ export const queryKeys = {
   /** Item search results for a month + normalized query (user-scoped). */
   itemSearch: (userId: string, monthKey: string, query: string) =>
     ['home', 'item-search', userId, monthKey, query] as const,
+  /**
+   * Prefix of the itemSearch keys for a user, used to invalidate every
+   * month/query variant at once (e.g. after a receipt edit/delete that
+   * renames or removes items).
+   */
+  itemSearchPrefix: (userId: string) =>
+    ['home', 'item-search', userId] as const,
 };

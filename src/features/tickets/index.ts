@@ -12,5 +12,9 @@ export {
   uploadToStorage,
   parseTicket,
   saveReceipt,
+  fetchPurchaseDetail,
+  purchaseToDraft,
+  updateReceipt,
+  deleteReceipt,
 } from './api';
-export type { UploadResult, ParsedReceipt } from './api';
+export type { UploadResult, ParsedReceipt, PurchaseWithItems } from './api';

@@ -6,11 +6,15 @@
  * `parse-ticket` edge function, and maps the parsed payload into the client
  * `ParsedReceipt` shape. `saveReceipt` persists the confirmed draft into
  * `purchases` / `purchase_items` (data-access spec scope amendment
- * 2026-08-07). `uploadToStorage` uploads the local image to the private
- * `receipts` bucket (path `userId/tempId.jpg`) and returns the OBJECT PATH;
- * reads resolve a signed URL at render time (see receipt-photo.ts). The
- * upload runs on CONFIRM, inside `saveReceipt`, so a cancelled scan never
- * leaves an orphaned object in the bucket.
+ * 2026-08-07). `updateReceipt` edits an existing purchase (items replaced;
+ * a failed write RESTORES the pre-edit row + items — it never deletes a
+ * receipt the user already had) and `deleteReceipt` removes one (row first,
+ * fail-closed on a 0-row RLS miss, then the storage photo best-effort).
+ * `uploadToStorage` uploads the local
+ * image to the private `receipts` bucket (path `userId/tempId.jpg`) and
+ * returns the OBJECT PATH; reads resolve a signed URL at render time (see
+ * receipt-photo.ts). The upload runs on CONFIRM, inside `saveReceipt`, so a
+ * cancelled scan never leaves an orphaned object in the bucket.
  */
 import { FunctionsHttpError, FunctionsFetchError } from '@supabase/supabase-js';
 
@@ -18,7 +22,15 @@ import { tempId } from '@/lib/format';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys, utcYearMonth } from '@/lib/query-keys';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import type { CardType, PaymentMethod, ReceiptDraft, ReviewItem } from '@/types';
+import { resolveReceiptPhotoPath } from '@/lib/supabase/receipt-photo';
+import type {
+  CardType,
+  Category,
+  PaymentMethod,
+  PurchaseStatus,
+  ReceiptDraft,
+  ReviewItem,
+} from '@/types';
 
 export interface UploadResult {
   /** Object path in the private `receipts` bucket, e.g. `userId/tempId.jpg`. */
@@ -65,11 +77,25 @@ async function removeUploadedObject(path: string | null): Promise<void> {
   try {
     const { error } = await supabase.storage.from('receipts').remove([path]);
     if (error) {
-      console.warn('[save] photo cleanup failed:', error.statusCode ?? error.message);
+      console.warn('[photo] cleanup failed:', path, error.statusCode ?? error.message);
     }
   } catch (err) {
-    console.warn('[save] photo cleanup threw:', String(err));
+    console.warn('[photo] cleanup threw:', path, String(err));
   }
+}
+
+/**
+ * Defense-in-depth ownership guard before ANY `storage.remove`: only object
+ * paths shaped `userId/<object>` (uuid folder — the per-owner RLS storage
+ * namespace) may be deleted, the first folder segment must equal the session
+ * user, and `..` traversal is rejected outright. A path failing this check
+ * is never passed to the storage API — the receipt row is still deleted, the
+ * object is simply left for a future GC pass.
+ */
+function isOwnedReceiptPath(userId: string, path: string): boolean {
+  if (path.includes('..')) return false;
+  if (!/^[0-9a-f-]{36}\/.+$/.test(path)) return false;
+  return path.startsWith(`${userId}/`);
 }
 
 export interface ParsedReceipt {
@@ -331,6 +357,12 @@ export async function parseTicket(imageUri: string): Promise<ParsedReceipt> {
  */
 const SAVE_ERROR_MESSAGE = 'No se pudo guardar el recibo. Inténtalo de nuevo.';
 
+/** User-safe copy when the purchase read for editing fails (same posture). */
+const LOAD_ERROR_MESSAGE = 'No se pudo cargar el recibo. Inténtalo de nuevo.';
+
+/** User-safe copy when the purchase delete fails (same posture). */
+const DELETE_ERROR_MESSAGE = 'No se pudo eliminar el recibo. Inténtalo de nuevo.';
+
 /**
  * Resolves a store row for `name`: reuses an existing global or user-owned
  * store (case-insensitive match through RLS, `limit(1)` guards the
@@ -492,27 +524,460 @@ export async function saveReceipt(
     throw new Error(SAVE_ERROR_MESSAGE);
   }
 
-  // The reads the new receipt feeds are cached per user: invalidate them so
-  // the next focus refetches (server-state-caching spec, D5).
-  void queryClient.invalidateQueries({ queryKey: queryKeys.homeFeed(userId) });
-  void queryClient.invalidateQueries({ queryKey: queryKeys.budget(userId) });
+  // A new receipt changes every cached feed read (server-state-caching spec,
+  // D5); scan usage is invalidated here too — only a SAVE consumes a scan.
   void queryClient.invalidateQueries({
     queryKey: queryKeys.scanUsage(userId, utcYearMonth()),
   });
-  // monthlyTotals readers build the key on the LOCAL month (analytics
-  // selector) while a pinned UTC month here would miss the cached entry they
-  // hold at the UTC/local month boundary. Invalidate by the user prefix
-  // instead: the factory appends the month unconditionally, so the prefix
-  // matches EVERY month variant of the key and nothing else.
+  invalidateReceiptFeeds(userId);
+  return { id: purchaseId };
+}
+
+/**
+ * Invalidates the cached receipt feeds after a write (server-state-caching
+ * spec, D5) — the shared seam `saveReceipt`, `updateReceipt` and
+ * `deleteReceipt` all use:
+ * - monthlyTotals readers build the key on the LOCAL month (analytics
+ *   selector) while a pinned UTC month here would miss the cached entry they
+ *   hold at the UTC/local month boundary. Invalidate by the user prefix
+ *   instead: the factory appends the month unconditionally, so the prefix
+ *   matches EVERY month variant of the key and nothing else.
+ * - The Home budget spent reads the `monthly_purchases_total` RPC under its
+ *   OWN key (single-total shape, separate from the category rows): a write
+ *   changes the month total, so that key must be invalidated too or the
+ *   budget card keeps showing the pre-write spent.
+ * - Item search reads the same rows: a write can rename or remove items
+ *   (and a save adds new ones), so EVERY month/query variant of the
+ *   itemSearch keys must refetch — invalidated by the user prefix.
+ * scanUsage is deliberately NOT invalidated here: only a SAVE consumes a
+ * scan — updates and deletes do not.
+ */
+function invalidateReceiptFeeds(userId: string): void {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.homeFeed(userId) });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.budget(userId) });
   void queryClient.invalidateQueries({
     queryKey: queryKeys.monthlyTotalsPrefix(userId),
   });
-  // The Home budget spent reads the `monthly_purchases_total` RPC under its
-  // OWN key (single-total shape, separate from the category rows): a new
-  // receipt changes the month total, so that key must be invalidated too or
-  // the budget card keeps showing the pre-save spent.
   void queryClient.invalidateQueries({
     queryKey: queryKeys.monthlyPurchasesTotalPrefix(userId),
   });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.itemSearchPrefix(userId),
+  });
+}
+
+/**
+ * The full purchase row the edit flow works on: the store name is
+ * flattened from the `stores` join and each item carries its category
+ * object (slug/name/icon) so the UI can render without another lookup.
+ */
+export interface PurchaseWithItems {
+  id: string;
+  store_id: string | null;
+  store_name: string | null;
+  purchase_date: string;
+  total: number;
+  payment_method: PaymentMethod;
+  image_url: string | null;
+  status: PurchaseStatus;
+  items: PurchaseItemDetail[];
+}
+
+/** One item row inside `PurchaseWithItems`. */
+export interface PurchaseItemDetail {
+  id: string;
+  name: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  category_id: string | null;
+  category: Category | null;
+  is_impulse: boolean;
+  /** Original line order — preserved through the edit round trip. */
+  sort_order: number;
+}
+
+/**
+ * PostgREST returns a to-one relation (single FK embed) either as a single
+ * object or a one-element array depending on the select — normalizes both to
+ * the object (or null). Same helper the home read path uses
+ * (`features/home/api.ts`).
+ */
+function firstOrSelf<T>(value: T | T[] | null): T | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+/**
+ * Loads the full purchase row + its items (with store and category names)
+ * for the edit flow, scoped to the session user (defense in depth — RLS
+ * already scopes). Object paths resolve to signed urls at render time —
+ * the review screen reuses the same `resolveReceiptPhotoPath` /
+ * `getSignedReceiptPhotoUrl` pair the detail read uses, so the photo keeps
+ * working when the edit form is open. Items come back ordered by
+ * `sort_order` so the seeded draft preserves the original line order.
+ */
+export async function fetchPurchaseDetail(
+  userId: string,
+  purchaseId: string,
+): Promise<PurchaseWithItems> {
+  if (!isSupabaseConfigured) {
+    throw new Error(LOAD_ERROR_MESSAGE);
+  }
+
+  const { data: purchase, error } = await supabase
+    .from('purchases')
+    .select(
+      `id, store_id, total, purchase_date, payment_method, image_url, status,
+       stores ( name ),
+       purchase_items ( id, name, quantity, unit_price, total_price, category_id, is_impulse, sort_order, categories ( id, slug, name, kind, icon, color, sort_order ) )`,
+    )
+    .eq('id', purchaseId)
+    .eq('user_id', userId)
+    .order('sort_order', { referencedTable: 'purchase_items' })
+    .maybeSingle();
+  if (error || !purchase) {
+    console.warn('[receipts] fetch detail:', purchaseId, error?.message ?? 'not found');
+    throw new Error(LOAD_ERROR_MESSAGE);
+  }
+  // The client is untyped (schema lives in Supabase): shape the raw row the
+  // same way the read path does, so the mapping below is type-safe. To-one
+  // embeds (stores, categories) arrive as an object OR a one-element array
+  // (see `firstOrSelf`).
+  const row = purchase as unknown as {
+    id: string;
+    store_id: string | null;
+    total: number;
+    purchase_date: string;
+    payment_method: PaymentMethod;
+    image_url: string | null;
+    status: PurchaseStatus;
+    stores: { name: string | null } | { name: string | null }[] | null;
+    purchase_items:
+      | {
+          id: string;
+          name: string;
+          quantity: number;
+          unit_price: number;
+          total_price: number;
+          category_id: string | null;
+          is_impulse: boolean;
+          sort_order: number;
+          categories: Category | Category[] | null;
+        }[]
+      | null;
+  };
+
+  const store = firstOrSelf(row.stores);
+  const items: PurchaseItemDetail[] = (row.purchase_items ?? []).map(
+    (item) => ({
+      id: item.id,
+      name: item.name,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      total_price: item.total_price,
+      category_id: item.category_id,
+      is_impulse: item.is_impulse,
+      category: firstOrSelf(item.categories),
+      sort_order: item.sort_order,
+    }),
+  );
+
+  return {
+    id: row.id,
+    store_id: row.store_id,
+    store_name: store?.name ?? null,
+    purchase_date: row.purchase_date,
+    total: row.total,
+    payment_method: row.payment_method,
+    image_url: row.image_url,
+    status: row.status,
+    items,
+  };
+}
+
+/**
+ * Maps an existing purchase back into the review `ReceiptDraft` shape, so
+ * the review screen can edit it like any other draft. Item category ids are
+ * normalized to SLUGS — the review's category picker and the item rows key
+ * off slugs, not uuids (parseTicket already delivers slugs, so the round
+ * trip stays consistent). Items keep their `sort_order` order (the fetch
+ * orders by it), so an edit round trip never reorders the lines.
+ */
+export function purchaseToDraft(purchase: PurchaseWithItems): ReceiptDraft {
+  const items: ReviewItem[] = (purchase.items ?? []).map((item) => ({
+    temp_id: tempId(),
+    name: item.name,
+    quantity: item.quantity,
+    unit_price: item.unit_price,
+    total_price: item.total_price,
+    category_id: item.category?.slug ?? null,
+    ai_suggested_category_id: null,
+    is_impulse: item.is_impulse,
+  }));
+  return {
+    store_name: purchase.store_name ?? '',
+    purchase_date: purchase.purchase_date,
+    total: purchase.total,
+    payment_method: purchase.payment_method,
+    image_url: purchase.image_url ?? '',
+    items,
+  };
+}
+
+/**
+ * Best-effort restore of the PRE-EDIT purchase after a failed `updateReceipt`
+ * write: re-applies the original row fields (the in-place update may already
+ * have applied) and, when the draft's item insert failed, re-inserts the
+ * original items (the wholesale delete already removed them). Never deletes
+ * the receipt — an edit failure must not destroy a purchase the user already
+ * had, or retries would fail forever. Failures are logged; the caller still
+ * surfaces the user-safe error (the restore is best-effort, not a guarantee).
+ */
+async function restorePurchase(
+  userId: string,
+  purchaseId: string,
+  original: PurchaseWithItems,
+  restoreItems: boolean,
+): Promise<void> {
+  const { error: rowError } = await supabase
+    .from('purchases')
+    .update({
+      store_id: original.store_id,
+      purchase_date: original.purchase_date,
+      total: original.total,
+      payment_method: original.payment_method,
+      image_url: original.image_url,
+      status: original.status,
+    })
+    .eq('id', purchaseId)
+    .eq('user_id', userId);
+  if (rowError) {
+    console.warn('[receipts] restore row failed:', purchaseId, rowError.code, rowError.message);
+  }
+  if (!restoreItems) return;
+  // The original item rows are re-inserted with their ORIGINAL values — the
+  // category FK is already a uuid, no slug resolution needed — and their
+  // original sort_order, so the receipt looks exactly as before the edit.
+  const { error: itemsError } = await supabase
+    .from('purchase_items')
+    .insert(
+      original.items.map((item) => ({
+        purchase_id: purchaseId,
+        name: item.name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total_price: item.total_price,
+        category_id: item.category_id,
+        is_impulse: item.is_impulse,
+        sort_order: item.sort_order,
+      })),
+    );
+  if (itemsError) {
+    console.warn(
+      '[receipts] restore items failed:',
+      purchaseId,
+      itemsError.code,
+      itemsError.message,
+    );
+  }
+}
+
+/**
+ * Persists the review draft over an EXISTING purchase (edit flow):
+ * - the pre-edit row + items are captured FIRST (fetchPurchaseDetail, scoped
+ *   to the session user) so a failed write can restore them;
+ * - resolveStoreId is shared with saveReceipt — a re-typed store name
+ *   creates the store row, a match reuses the existing one;
+ * - the purchase row is updated in place and its items are REPLACED by
+ *   the draft's (delete-all + re-insert);
+ * - a failed write RESTORES the pre-edit row + items — unlike saveReceipt
+ *   (whose row was created in this same call) this receipt already existed,
+ *   so deleting it on failure would destroy user data on a transient error;
+ * - photo handling: an existing object path is kept as-is; a local file
+ *   (camera edit) is uploaded first; null clears the photo. A photo that
+ *   changed is best-effort removed from storage after the edit succeeds.
+ * On success the cached receipt feeds are invalidated.
+ */
+export async function updateReceipt(
+  userId: string,
+  purchaseId: string,
+  draft: ReceiptDraft,
+): Promise<{ id: string }> {
+  if (!isSupabaseConfigured) {
+    throw new Error(SAVE_ERROR_MESSAGE);
+  }
+
+  // Capture the pre-edit state before ANY write (throws LOAD_ERROR when the
+  // row is missing or belongs to another user — a 0-row fetch is a miss).
+  const original = await fetchPurchaseDetail(userId, purchaseId);
+
+  const storeId = await resolveStoreId(userId, draft.store_name);
+  if (!storeId) throw new Error(SAVE_ERROR_MESSAGE);
+
+  // The seeded draft carries the already-persisted storage path (or a
+  // remote url) and passes through unchanged; only a device-local uri
+  // (never produced by the edit flow today) would be uploaded — the same
+  // scheme gate saveReceipt uses. The uploaded object is tracked so a
+  // failed save best-effort removes it (no orphan on a retried confirm).
+  let imageUrl: string | null = draft.image_url || null;
+  let uploadedPath: string | null = null;
+  if (imageUrl && /^(file|content|ph):/i.test(imageUrl)) {
+    const uploaded = await uploadToStorage(userId, imageUrl);
+    uploadedPath = uploaded.path;
+    imageUrl = uploaded.path;
+  }
+
+  // `.select('id')` returns the updated row: a 0-row result (an RLS miss or
+  // a row deleted mid-edit) fails closed instead of silently "succeeding" —
+  // same fail-closed pattern deleteReceipt uses.
+  const { data: updatedRow, error: purchaseError } = (await supabase
+    .from('purchases')
+    .update({
+      store_id: storeId,
+      purchase_date: draft.purchase_date,
+      total: draft.total,
+      payment_method: draft.payment_method,
+      image_url: imageUrl,
+      status: 'confirmed',
+    })
+    .eq('id', purchaseId)
+    .eq('user_id', userId)
+    .select('id')) as unknown as {
+    data: { id: string }[] | null;
+    error: { message: string; code?: string } | null;
+  };
+  if (purchaseError || !updatedRow || updatedRow.length === 0) {
+    await removeUploadedObject(uploadedPath);
+    console.warn(
+      '[receipts] update purchase:',
+      purchaseId,
+      purchaseError?.message ?? 'no row matched',
+      purchaseError?.code ?? '0-rows',
+    );
+    throw new Error(SAVE_ERROR_MESSAGE);
+  }
+
+  // Items are replaced wholesale: delete the current rows, then insert the
+  // draft's. Delete first (not upsert) so a removed line is never left
+  // behind.
+  const { error: deleteError } = await supabase
+    .from('purchase_items')
+    .delete()
+    .eq('purchase_id', purchaseId);
+  if (deleteError) {
+    // The row update already applied but the original items are still in
+    // place (the delete never ran): restore the original row fields only.
+    await restorePurchase(userId, purchaseId, original, false);
+    await removeUploadedObject(uploadedPath);
+    console.warn('[receipts] delete items:', purchaseId, deleteError.code, deleteError.message);
+    throw new Error(SAVE_ERROR_MESSAGE);
+  }
+
+  const categoryIds = await fetchCategoryIdsBySlug();
+  const itemRows = draft.items.map((item, index) => ({
+    purchase_id: purchaseId,
+    name: item.name,
+    quantity: item.quantity,
+    unit_price: item.unit_price,
+    total_price: item.total_price,
+    category_id:
+      categoryIds[item.category_id ?? ''] ??
+      categoryIds[item.ai_suggested_category_id ?? ''] ??
+      categoryIds['otros'] ??
+      null,
+    is_impulse: item.is_impulse,
+    sort_order: index,
+  }));
+  const { error: itemsError } = await supabase
+    .from('purchase_items')
+    .insert(itemRows);
+  if (itemsError) {
+    // The wholesale delete already ran AND the row update applied: restore
+    // BOTH the row fields and the original items. The receipt must survive
+    // an edit failure — deleting it would destroy data on a transient error
+    // and make every retry fail forever.
+    await restorePurchase(userId, purchaseId, original, true);
+    await removeUploadedObject(uploadedPath);
+    console.warn('[receipts] insert items:', purchaseId, itemsError.code, itemsError.message);
+    throw new Error(SAVE_ERROR_MESSAGE);
+  }
+
+  // The photo changed (re-upload or clear): best-effort remove the previous
+  // object — it is unreachable now that image_url points elsewhere. A failed
+  // remove only orphans the object (future GC), it never fails the edit.
+  // Only owned object paths are ever passed to storage.remove.
+  if (original.image_url && original.image_url !== imageUrl) {
+    const previous = resolveReceiptPhotoPath(original.image_url);
+    if (previous?.kind === 'path' && isOwnedReceiptPath(userId, previous.value)) {
+      await removeUploadedObject(previous.value);
+    }
+  }
+
+  invalidateReceiptFeeds(userId);
   return { id: purchaseId };
+}
+
+/**
+ * Deletes a purchase. The ROW goes first, fail-closed: `.select('id,
+ * image_url')` returns the deleted rows, so a 0-row result (RLS miss, wrong
+ * user, already gone) surfaces the delete error instead of silently
+ * "succeeding" — and the response still carries the photo path for the
+ * cleanup below. The storage photo (object path) is then removed
+ * best-effort — storage deletes do not cascade from the row, and a leftover
+ * object is unreachable once the row is gone; a failed remove is logged but
+ * does not block the delete. Only owned object paths are ever passed to
+ * storage.remove. On success the cached receipt feeds are invalidated.
+ */
+export async function deleteReceipt(
+  userId: string,
+  purchaseId: string,
+): Promise<void> {
+  if (!isSupabaseConfigured) return;
+
+  // The client is untyped (schema lives in Supabase): shape the awaited
+  // delete-with-select response so the fail-closed 0-row check and the
+  // photo cleanup below are type-safe (same pattern saveReceipt uses).
+  const { data: deleted, error: deleteError } = (await supabase
+    .from('purchases')
+    .delete()
+    .eq('id', purchaseId)
+    .eq('user_id', userId)
+    .select('id, image_url')) as unknown as {
+    data: Array<{ id: string; image_url: string | null }> | null;
+    error: { message: string; code?: string } | null;
+  };
+  if (deleteError || !deleted || deleted.length === 0) {
+    console.warn(
+      '[receipts] delete row:',
+      purchaseId,
+      deleteError?.message ?? 'no row matched',
+      deleteError?.code ?? '0-rows',
+    );
+    throw new Error(DELETE_ERROR_MESSAGE);
+  }
+
+  // Best-effort photo removal AFTER the row: a failed remove leaves an
+  // orphaned object (future GC) but never resurrects the row, and never
+  // fails the delete.
+  const imageUrl = deleted[0].image_url;
+  const classified = imageUrl ? resolveReceiptPhotoPath(imageUrl) : null;
+  // Only owned object paths live in the bucket: remote http(s) urls
+  // (demo/seed rows) and foreign/untraversable paths are never passed to
+  // `remove`.
+  if (
+    classified?.kind === 'path' &&
+    isOwnedReceiptPath(userId, classified.value)
+  ) {
+    // storage-js re-throws non-StorageError exceptions from handleOperation:
+    // a network failure REJECTS instead of returning {error}. The removal
+    // must NEVER fail the delete — the row is already gone, a retry would
+    // hit the fail-closed 0-row check above, and the invalidation below
+    // would be skipped (the store + feed caches would keep the ghost
+    // receipt). The try/catch-wrapped helper absorbs both the error and the
+    // rejection path.
+    await removeUploadedObject(classified.value);
+  }
+
+  invalidateReceiptFeeds(userId);
 }

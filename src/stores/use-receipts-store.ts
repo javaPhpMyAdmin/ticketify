@@ -29,10 +29,14 @@ interface ReceiptsState {
   draft: ReceiptDraft | null;
   scanState: ScanState;
   scanError: string | null;
+  /** The purchase being edited (uuid), or null during the normal scan flow. */
+  editingId: string | null;
 
   setScanState: (state: ScanState) => void;
   setScanError: (error: string | null) => void;
   startDraft: (imageUrl: string) => void;
+  /** Seeds the review draft for an existing purchase (edit flow). */
+  seedEdit: (draft: ReceiptDraft, purchaseId: string) => void;
   updateDraft: (patch: Partial<ReceiptDraft>) => void;
   upsertItem: (item: ReviewItem) => void;
   removeItem: (tempId: string) => void;
@@ -43,6 +47,12 @@ interface ReceiptsState {
   setDraftTotal: (total: number) => void;
   clearDraft: () => void;
   setList: (list: ReceiptsState['list']) => void;
+  /** Replaces (or prepends) one receipt row — used after an edit so the
+   *  detail screen never shows stale data before the feed refetches. */
+  upsertReceiptRow: (row: HomeFeedReceiptRow) => void;
+  /** Removes one receipt row — used after a delete so the detail screen
+   *  never renders a row that no longer exists. */
+  removeReceiptRow: (id: string) => void;
   /** Wipes every receipt-related field; called on SIGNED_OUT so no previous
    *  user's rows or draft survive to the next session. */
   resetAll: () => void;
@@ -66,6 +76,7 @@ export const useReceiptsStore = create<ReceiptsState>((set) => ({
   draft: null,
   scanState: 'idle',
   scanError: null,
+  editingId: null,
 
   setScanState: (scanState) => set({ scanState }),
   setScanError: (scanError) =>
@@ -74,6 +85,19 @@ export const useReceiptsStore = create<ReceiptsState>((set) => ({
   startDraft: (imageUrl) =>
     set({
       draft: emptyDraft(imageUrl),
+      scanState: 'reviewing',
+      scanError: null,
+      editingId: null,
+    }),
+
+  // Edit flow: seeds the review draft for an existing purchase. editingId
+  // is the purchase uuid, which never collides with the camera temp ids —
+  // the review screen uses it to know a draft came from the detail screen
+  // (skip parse, save via updateReceipt).
+  seedEdit: (draft, purchaseId) =>
+    set({
+      draft,
+      editingId: purchaseId,
       scanState: 'reviewing',
       scanError: null,
     }),
@@ -133,12 +157,32 @@ export const useReceiptsStore = create<ReceiptsState>((set) => ({
       state.draft ? { draft: { ...state.draft, total } } : state,
     ),
 
-  clearDraft: () => set({ draft: null, scanState: 'idle', scanError: null }),
+  clearDraft: () =>
+    set({ draft: null, scanState: 'idle', scanError: null, editingId: null }),
 
   setList: (list) => set({ list }),
 
+  upsertReceiptRow: (row) =>
+    set((state) => {
+      const idx = state.list.findIndex((r) => r.id === row.id);
+      const list =
+        idx >= 0
+          ? state.list.map((r, k) => (k === idx ? row : r))
+          : [row, ...state.list];
+      return { list };
+    }),
+
+  removeReceiptRow: (id) =>
+    set((state) => ({ list: state.list.filter((r) => r.id !== id) })),
+
   resetAll: () =>
-    set({ list: [], draft: null, scanState: 'idle', scanError: null }),
+    set({
+      list: [],
+      draft: null,
+      scanState: 'idle',
+      scanError: null,
+      editingId: null,
+    }),
 }));
 
 export { tempId };
