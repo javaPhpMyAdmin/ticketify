@@ -1,14 +1,20 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Image, Modal, ScrollView, StyleSheet } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Image, Modal, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Card, Divider, Icon, Pressable, Text, View } from '@/components';
+import { useSessionUser } from '@/features/auth';
 import {
   currentMonthKey,
   getMonthKey,
 } from '@/features/home';
 import { getExpenseCategory } from '@/features/home/categories';
+import {
+  deleteReceipt,
+  fetchPurchaseDetail,
+  purchaseToDraft,
+} from '@/features/tickets';
 import { formatCurrency, formatShortDate } from '@/lib/format';
 import {
   getSignedReceiptPhotoUrl,
@@ -29,12 +35,33 @@ import { colors, radii, spacing, typography } from '@/theme';
  */
 export default function ReceiptDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { userId } = useSessionUser();
   const list = useReceiptsStore((s) => s.list);
   const currency = useSettingsStore((s) => s.currency);
   const [photoOpen, setPhotoOpen] = useState(false);
   // Demo images (picsum) and remote ticket photos can fail offline; fall
   // back to the "Sin foto del ticket" placeholder instead of a blank box.
   const [photoFailed, setPhotoFailed] = useState(false);
+  // Guards the destructive delete while its mutation is in flight.
+  const [deleting, setDeleting] = useState(false);
+  // Guards the edit fetch + navigation while it is in flight (a double tap
+  // must not stack two review screens).
+  const [loading, setLoading] = useState(false);
+  // Tracks whether this screen is still mounted: an awaited fetch that
+  // resolves after the user already backed out must not push a review
+  // screen on top of wherever they navigated.
+  const mounted = useRef(true);
+  // Ref guard for the edit navigation: the `loading` STATE alone is racy
+  // (it commits on the next render), so a fast double tap would pass the
+  // check twice and stack two review screens — same savingRef pattern the
+  // review screen uses.
+  const editInFlight = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const receipt = list.find((r) => r.id === id);
 
   // The stored photo reference may be a ready http(s) URL (seed/demo rows)
@@ -61,10 +88,74 @@ export default function ReceiptDetailScreen() {
     };
   }, [receipt?.image_url]);
 
+  // Edit flow: loads the full purchase row (the feed list row only carries
+  // display data), seeds the review draft in the store, then pushes the
+  // review screen in EDIT mode — the same form, seeded draft, no parse.
+  const handleEditPress = async () => {
+    if (editInFlight.current || loading || deleting || !userId) return;
+    editInFlight.current = true;
+    setLoading(true);
+    try {
+      const purchase = await fetchPurchaseDetail(userId, id);
+      useReceiptsStore.getState().seedEdit(purchaseToDraft(purchase), id);
+      if (mounted.current) router.push(`/ticket/review/${id}`);
+    } catch (err) {
+      if (mounted.current) {
+        Alert.alert(
+          'No se pudo editar el recibo',
+          err instanceof Error ? err.message : undefined,
+        );
+      }
+    } finally {
+      editInFlight.current = false;
+      if (mounted.current) setLoading(false);
+    }
+  };
+
+  // Delete flow: confirm first (destructive), then remove the row + storage
+  // photo and pop back — the home feed refetches via the invalidation inside
+  // deleteReceipt. The store list row is purged too, so the detail screen
+  // can't render a deleted receipt before the refetch lands (or offline).
+  const deleteAndBack = async () => {
+    if (!userId || deleting || loading) return;
+    setDeleting(true);
+    try {
+      await deleteReceipt(userId, id);
+      useReceiptsStore.getState().removeReceiptRow(id);
+      // `disabled={deleting}` only disables the custom header/footer
+      // buttons — the native back gesture stays active. Guard the pop with
+      // `mounted` so a manual back out mid-delete never double-pops.
+      if (mounted.current) router.back();
+    } catch (err) {
+      setDeleting(false);
+      Alert.alert(
+        'No se pudo eliminar el recibo',
+        err instanceof Error ? err.message : undefined,
+      );
+    }
+  };
+
+  const handleDeletePress = () => {
+    if (deleting || loading) return;
+    Alert.alert(
+      'Eliminar recibo',
+      'Se eliminará el recibo y su foto. Esta acción no se puede deshacer.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: () => void deleteAndBack(),
+        },
+      ],
+    );
+  };
+
   const header = (
     <View style={styles.header}>
       <Pressable
-        onPress={() => router.back()}
+        onPress={deleting ? undefined : () => router.back()}
+        disabled={deleting}
         hitSlop={12}
         accessibilityRole="button"
         accessibilityLabel="Volver"
@@ -212,6 +303,39 @@ export default function ReceiptDetailScreen() {
         </View>
       </ScrollView>
 
+      {/* Footer actions */}
+      <View style={styles.footerWrap}>
+        <Pressable
+          onPress={() => void handleEditPress()}
+          disabled={loading || deleting}
+          style={[
+            styles.footerAction,
+            (loading || deleting) && styles.footerActionDisabled,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Editar recibo"
+        >
+          <Text style={styles.footerActionLabel}>
+            {loading ? 'Cargando…' : 'Editar'}
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={handleDeletePress}
+          disabled={loading || deleting}
+          style={[
+            styles.footerAction,
+            styles.footerActionDanger,
+            (loading || deleting) && styles.footerActionDisabled,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Eliminar recibo"
+        >
+          <Text style={styles.footerActionLabel}>
+            {deleting ? 'Eliminando…' : 'Eliminar'}
+          </Text>
+        </Pressable>
+      </View>
+
       <Modal
         visible={photoOpen}
         transparent
@@ -262,7 +386,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xxl,
+    // Leaves room for the sticky edit/delete footer overlay.
+    paddingBottom: 200,
     gap: spacing.lg,
   },
   photo: {
@@ -376,5 +501,38 @@ const styles = StyleSheet.create({
   notFoundText: {
     ...typography.bodyMd,
     color: colors.textSecondary,
+  },
+  footerWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  footerAction: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    borderRadius: radii.full,
+    backgroundColor: colors.primary,
+    minHeight: 48,
+  },
+  footerActionDanger: {
+    backgroundColor: colors.danger,
+  },
+  footerActionDisabled: {
+    opacity: 0.5,
+  },
+  footerActionLabel: {
+    ...typography.headlineMd,
+    color: colors.textInverse,
   },
 });

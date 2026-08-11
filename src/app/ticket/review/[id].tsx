@@ -29,17 +29,25 @@ import {
   useReceiptDraftDraft,
   useScanTicket,
   saveReceipt,
+  updateReceipt,
 } from '@/features/tickets';
-import { formatCurrency } from '@/lib/format';
+import { formatCurrency, todayLocalISO } from '@/lib/format';
+import {
+  getSignedReceiptPhotoUrl,
+  resolveReceiptPhotoPath,
+} from '@/lib/supabase/receipt-photo';
+import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
-import type { CardType, PaymentMethod, ReviewItem } from '@/types';
+import type { CardType, HomeFeedReceiptRow, PaymentMethod, ReviewItem } from '@/types';
 
 const paymentMethods: { key: PaymentMethod; label: string }[] = [
   { key: 'card', label: 'Tarjeta' },
   { key: 'cash', label: 'Efectivo' },
   { key: 'apple_pay', label: 'Apple Pay' },
+  { key: 'google_pay', label: 'Google Pay' },
   { key: 'transfer', label: 'Transferencia' },
+  { key: 'other', label: 'Otro' },
 ];
 
 /** Spanish labels for the card kind detected on the receipt. */
@@ -78,6 +86,11 @@ class LottieErrorBoundary extends Component<
 export default function ReviewReceiptScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const { userId } = useSessionUser();
+  // Edit mode only when the route id matches the stored editing id: the
+  // camera flow pushes a fresh temp id that never equals a purchase uuid,
+  // so a stale edit session can't hijack a new scan.
+  const editingId = useReceiptsStore((s) => s.editingId);
+  const editingMode = editingId !== null && editingId === params.id;
   // The receipt is denominated in the user's currency setting (default
   // UYU), the same store Home/History read — never a hardcoded code.
   const currency = useSettingsStore((s) => s.currency);
@@ -89,7 +102,9 @@ export default function ReviewReceiptScreen() {
   // instead of a half-empty form.
   const { scan, error: scanError, reset } = useScanTicket();
 
-  const [parsing, setParsing] = useState(true);
+  // Edit skips the parse entirely: the draft was seeded before navigation,
+  // so the form is ready on mount (no processing flash).
+  const [parsing, setParsing] = useState(!editingMode);
   // Once the parse resolves the screen shows a short success beat before
   // revealing the review form: `processing` -> `success` -> form.
   const [phase, setPhase] = useState<'processing' | 'success'>('processing');
@@ -181,6 +196,18 @@ export default function ReviewReceiptScreen() {
   }, [checkScale, draft?.image_url, reset, scan]);
 
   useEffect(() => {
+    if (editingMode) {
+      // Editing an existing receipt: the draft was already seeded by the
+      // detail screen (seedEdit), so no parse runs here — there is no local
+      // file to scan and re-parsing would clobber the seeded draft.
+      if (!draft) {
+        // The store was reset between seed and mount (rare): back out
+        // instead of rendering an empty form.
+        router.back();
+        return;
+      }
+      return;
+    }
     void runParse();
     // We intentionally key this on the route id only — the parse is
     // a one-shot effect for the lifetime of the review screen.
@@ -213,6 +240,44 @@ export default function ReviewReceiptScreen() {
       : '';
 
   const [saving, setSaving] = useState(false);
+  // Edit-mode thumbnail: the seeded draft carries the persisted storage path
+  // (private bucket) which is NOT renderable — resolve a signed URL for
+  // DISPLAY only, never mutating the `image_url` value updateReceipt will
+  // save. In scan mode the draft carries a LOCAL file uri that renders
+  // directly.
+  const [thumbSource, setThumbSource] = useState<string | null>(null);
+  // Signed URLs expire (RECEIPT_PHOTO_EXPIRY_SECONDS) and remote photos can
+  // fail offline: once the Image errors, fall back to the placeholder
+  // instead of a broken box (same pattern the detail screen uses).
+  const [thumbFailed, setThumbFailed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setThumbFailed(false);
+    const raw = draft?.image_url;
+    if (!raw) {
+      setThumbSource(null);
+      return;
+    }
+    if (editingMode) {
+      const classified = resolveReceiptPhotoPath(raw);
+      if (!classified) {
+        setThumbSource(null);
+        return;
+      }
+      if (classified.kind === 'url') {
+        setThumbSource(classified.value);
+        return;
+      }
+      getSignedReceiptPhotoUrl(classified.value).then((signed) => {
+        if (!cancelled) setThumbSource(signed);
+      });
+    } else {
+      setThumbSource(raw);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [draft?.image_url, editingMode]);
   // Which item's category the picker is editing (null = closed). The user's
   // tap writes the chosen key to `item.category_id`; the AI suggestion stays
   // in `ai_suggested_category_id` and the save path prefers the user's pick.
@@ -243,7 +308,48 @@ export default function ReviewReceiptScreen() {
     setSaving(true);
     try {
       if (draft && userId) {
-        await saveReceipt(userId, draft);
+        if (editingMode) {
+          // editingMode guarantees editingId === params.id, so the route id
+          // IS the purchase being edited.
+          await updateReceipt(userId, params.id, draft);
+          // The store list row is derived from the edited draft so the
+          // detail screen shows the NEW values immediately — the home feed
+          // refetch confirms later, but without this the detail screen would
+          // keep the stale row forever while offline.
+          const current = useReceiptsStore.getState();
+          const existing = current.list.find((r) => r.id === params.id);
+          const row: HomeFeedReceiptRow = {
+            id: params.id,
+            store_name: draft.store_name,
+            purchase_date: draft.purchase_date,
+            scanned_at: existing?.scanned_at ?? todayLocalISO(),
+            total: draft.total,
+            image_url: draft.image_url || null,
+            status: 'confirmed',
+            wants_snacks_total: draft.items
+              .filter((i) => i.is_impulse)
+              .reduce((sum, i) => sum + i.total_price, 0),
+            category_totals: draft.items.reduce<Record<string, number>>(
+              (acc, i) => {
+                const slug = i.category_id ?? i.ai_suggested_category_id ?? 'otros';
+                acc[slug] = (acc[slug] ?? 0) + i.total_price;
+                return acc;
+              },
+              {},
+            ),
+            items: draft.items.map((i) => ({
+              name: i.name,
+              amount: i.total_price,
+              quantity: i.quantity,
+              unit_price: i.unit_price,
+              category: i.category_id ?? i.ai_suggested_category_id ?? 'otros',
+              is_impulse: i.is_impulse,
+            })),
+          };
+          current.upsertReceiptRow(row);
+        } else {
+          await saveReceipt(userId, draft);
+        }
       }
       clear();
       router.dismiss();
@@ -274,8 +380,12 @@ export default function ReviewReceiptScreen() {
             }}
             accessibilityLabel="Cerrar revisión"
           />
-          {draft?.image_url ? (
-            <Image source={{ uri: draft.image_url }} style={styles.thumb} />
+          {thumbSource && !thumbFailed ? (
+            <Image
+              source={{ uri: thumbSource }}
+              style={styles.thumb}
+              onError={() => setThumbFailed(true)}
+            />
           ) : (
             <View style={[styles.thumb, styles.thumbEmpty]}>
               <Icon name="doc.text" size={18} color={colors.textSecondary} />

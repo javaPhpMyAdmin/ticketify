@@ -59,7 +59,7 @@ export type QueryOp =
   | { op: 'ilike'; column: string; pattern: string }
   | { op: 'gte'; column: string; value: unknown }
   | { op: 'lt'; column: string; value: unknown }
-  | { op: 'order'; column: string; opts?: { ascending?: boolean } }
+  | { op: 'order'; column: string; opts?: { ascending?: boolean; referencedTable?: string } }
   | { op: 'limit'; count: number };
 
 /** One builder chain: the table it queried and the ops applied to it. */
@@ -93,7 +93,7 @@ export interface QueryBuilder extends PromiseLike<{ data: unknown; error: StubEr
   ilike: (column: string, pattern: string) => QueryBuilder;
   gte: (column: string, value: unknown) => QueryBuilder;
   lt: (column: string, value: unknown) => QueryBuilder;
-  order: (column: string, opts?: { ascending?: boolean }) => QueryBuilder;
+  order: (column: string, opts?: { ascending?: boolean; referencedTable?: string }) => QueryBuilder;
   limit: (count: number) => QueryBuilder;
   select: (columns?: string) => QueryBuilder;
   maybeSingle: () => Promise<{ data: unknown | null; error: StubError }>;
@@ -194,6 +194,20 @@ const insertFailures = new Map<string, StubError>();
  */
 const updateFailures = new Map<string, StubError>();
 
+/**
+ * One-shot delete failures per table (harness seam, see `__failNextDelete`):
+ * the next `from(table).delete()` resolves `{ error }` and reverts.
+ */
+const deleteFailures = new Map<string, StubError>();
+
+/**
+ * Rows a `from(table).delete().select()` chain resolves to (harness seam,
+ * see `__setDeleteRead`): the real client returns the DELETED rows
+ * (`Prefer: return=representation`), so the stub mirrors that — an UNARMED
+ * delete-with-select resolves `[]` (a 0-row result, the fail-closed case).
+ */
+const deleteReads = new Map<string, unknown[]>();
+
 /** Storage bucket behaviors: per-bucket upload/signed-url/remove error, armed
  *  via the `__setStorageBehavior` seam; uploads log to `callLog`. */
 const storageBehaviors = new Map<
@@ -202,6 +216,7 @@ const storageBehaviors = new Map<
     uploadError?: StubError;
     signedUrlError?: StubError;
     removeError?: StubError;
+    removeThrows?: boolean;
     signedUrl?: string | null;
   }
 >();
@@ -228,7 +243,8 @@ type BuilderSource =
   | { kind: 'insert'; rows: unknown[] }
   | { kind: 'insert-failure'; error: StubError }
   | { kind: 'write' }
-  | { kind: 'update-failure'; error: StubError };
+  | { kind: 'update-failure'; error: StubError }
+  | { kind: 'delete-failure'; error: StubError };
 
 /**
  * Builds a chainable builder for a table. Terminal results come from
@@ -239,6 +255,7 @@ type BuilderSource =
  */
 function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' }): QueryBuilder {
   const ops: QueryOp[] = [];
+  let selected = false;
   queryLog.push({ table, ops });
   const builder = {
     eq: (column: string, value: unknown) => {
@@ -265,9 +282,19 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
       ops.push({ op: 'limit', count });
       return builder;
     },
-    select: () => builder,
+    select: () => {
+      // `delete().select()` / `update().select()` return the affected rows
+      // in the real client (Prefer: return=representation); the terminal
+      // below resolves the armed deleteReads for a selected write chain.
+      selected = true;
+      return builder;
+    },
     async maybeSingle() {
-      if (source.kind === 'insert-failure' || source.kind === 'update-failure') {
+      if (
+        source.kind === 'insert-failure' ||
+        source.kind === 'update-failure' ||
+        source.kind === 'delete-failure'
+      ) {
         return { data: null, error: source.error };
       }
       if (source.kind !== 'read') {
@@ -279,7 +306,11 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
       return { data: rows.length > 0 ? rows[0] : null, error: null };
     },
     async single() {
-      if (source.kind === 'insert-failure' || source.kind === 'update-failure') {
+      if (
+        source.kind === 'insert-failure' ||
+        source.kind === 'update-failure' ||
+        source.kind === 'delete-failure'
+      ) {
         return { data: null, error: source.error };
       }
       if (source.kind !== 'read') {
@@ -312,9 +343,14 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
         error = state.error;
       } else if (source.kind === 'insert') {
         data = source.rows;
+      } else if (source.kind === 'write' && selected) {
+        // `delete().select()` resolves the armed deleted rows (default: a
+        // 0-row result — the fail-closed delete case needs no arm).
+        data = deleteReads.get(table) ?? [];
       } else if (
         source.kind === 'insert-failure' ||
-        source.kind === 'update-failure'
+        source.kind === 'update-failure' ||
+        source.kind === 'delete-failure'
       ) {
         error = source.error;
       }
@@ -387,6 +423,13 @@ const defaultBehavior = (): SupabaseBehavior => ({
       },
       delete: () => {
         callLog.push({ kind: 'delete', table });
+        // One-shot armed failure (see `__failNextDelete`): the delete errors
+        // and reverts to success behavior for the next call.
+        const armedFailure = deleteFailures.get(table);
+        if (armedFailure !== undefined) {
+          deleteFailures.delete(table);
+          return makeQueryBuilder(table, { kind: 'delete-failure', error: armedFailure });
+        }
         return makeQueryBuilder(table, { kind: 'write' });
       },
     };
@@ -427,6 +470,13 @@ const defaultBehavior = (): SupabaseBehavior => ({
     remove: (bucket: string, paths: string[]) => {
       callLog.push({ kind: 'storage-remove', bucket, paths });
       const state = storageBehaviors.get(bucket) ?? {};
+      if (state.removeThrows) {
+        // storage-js re-throws non-StorageError exceptions from
+        // handleOperation: a network failure REJECTS instead of returning
+        // {error}. The seam proves the delete path survives a rejected
+        // remove (the try/catch wrapper in removeUploadedObject).
+        return Promise.reject(new Error('network down'));
+      }
       if (state.removeError) {
         return Promise.resolve({ data: null, error: state.removeError });
       }
@@ -504,8 +554,10 @@ export function __resetSupabaseBehavior(): void {
   queryLog.length = 0;
   insertFailures.clear();
   updateFailures.clear();
+  deleteFailures.clear();
   insertedRows.clear();
   updatedColumns.clear();
+  deleteReads.clear();
   insertCounter = 0;
   storageBehaviors.clear();
 }
@@ -519,6 +571,7 @@ export function __setStorageBehavior(
     uploadError?: StubError;
     signedUrlError?: StubError;
     removeError?: StubError;
+    removeThrows?: boolean;
     signedUrl?: string | null;
   },
 ): void {
@@ -600,6 +653,32 @@ export function __failNextUpdate(
     message: error?.message ?? 'update failed',
     code: error?.code,
   });
+}
+
+/**
+ * Arms the next `from(table).delete()` to resolve `{ data: null, error }`
+ * (one-shot — the following delete succeeds again). Default behavior for
+ * every other call is unchanged, so suites that never call this seam keep
+ * their exact current semantics.
+ */
+export function __failNextDelete(
+  table: string,
+  error?: { message?: string; code?: string },
+): void {
+  deleteFailures.set(table, {
+    message: error?.message ?? 'delete failed',
+    code: error?.code,
+  });
+}
+
+/**
+ * Arms the rows a `from(table).delete().select()` chain resolves to — the
+ * real client returns the DELETED rows (`Prefer: return=representation`),
+ * so the stub mirrors that. UNARMED deletes-with-select resolve `[]` (the
+ * fail-closed 0-row case), so a 0-row test needs no arm.
+ */
+export function __setDeleteRead(table: string, rows: unknown[]): void {
+  deleteReads.set(table, rows);
 }
 
 /**

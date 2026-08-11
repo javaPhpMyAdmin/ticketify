@@ -1255,6 +1255,731 @@ async function run() {
     );
   });
 
+  console.log('\n[tests] edit/delete receipt flow\n');
+
+  // Real user ids are uuids (auth.users.id): the storage photo ownership
+  // guard (`isOwnedReceiptPath`) only passes uuid-shaped `userId/<object>`
+  // paths, so the fixtures below use a uuid-shaped id, NOT the 'u1' shorthands
+  // the rest of the harness uses for query-key/user-scope assertions.
+  const USER_ID = '11111111-1111-4111-8111-111111111111';
+  const OTHER_USER_ID = '22222222-2222-4222-8222-222222222222';
+
+  // Pre-edit state armed for every updateReceipt test: updateReceipt now
+  // captures the row + items via fetchPurchaseDetail BEFORE any write, so a
+  // failed write can restore them (it never deletes the pre-existing receipt).
+  const PRE_EDIT_PURCHASE = {
+    id: 'p-1',
+    store_id: 'store-1',
+    total: 42.18,
+    purchase_date: '2026-08-02',
+    payment_method: 'card',
+    image_url: `${USER_ID}/p-1.jpg`,
+    status: 'confirmed',
+    stores: { name: 'Whole Foods Market' },
+    purchase_items: [
+      {
+        id: 'item-old-1',
+        name: 'Pan',
+        quantity: 1,
+        unit_price: 2.5,
+        total_price: 2.5,
+        category_id: 'cat-pan',
+        is_impulse: false,
+        sort_order: 0,
+        categories: {
+          id: 'cat-pan',
+          slug: 'panaderia',
+          name: 'Panadería',
+          kind: 'grocery',
+          icon: 'cart',
+          color: '#ffffff',
+          sort_order: 2,
+        },
+      },
+    ],
+  };
+
+  await test('fetchPurchaseDetail loads the full row: store name + item categories', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchases', {
+      rows: [
+        {
+          id: 'p-1',
+          store_id: 'store-1',
+          total: 42.18,
+          purchase_date: '2026-08-02',
+          payment_method: 'card',
+          image_url: 'u1/p-1.jpg',
+          status: 'confirmed',
+          // PostgREST returns to-one embeds (single FK: purchases.store_id,
+          // purchase_items.category_id) as JSON OBJECTS — not arrays.
+          stores: { name: 'Whole Foods Market' },
+          purchase_items: [
+            {
+              id: 'item-1',
+              name: 'Leche',
+              quantity: 1,
+              unit_price: 3.5,
+              total_price: 3.5,
+              category_id: 'cat-lacteos',
+              is_impulse: false,
+              sort_order: 0,
+              categories: {
+                id: 'cat-lacteos',
+                slug: 'lacteos',
+                name: 'Lácteos',
+                kind: 'grocery',
+                icon: 'cart',
+                color: '#ffffff',
+                sort_order: 1,
+              },
+            },
+            {
+              id: 'item-2',
+              name: 'Galletas',
+              quantity: 2,
+              unit_price: 1.25,
+              total_price: 2.5,
+              category_id: null,
+              is_impulse: true,
+              sort_order: 1,
+              categories: null,
+            },
+          ],
+        },
+      ],
+    });
+    const purchase = await ticketsMod.fetchPurchaseDetail('u1', 'p-1');
+    assert.equal(purchase.id, 'p-1');
+    assert.equal(purchase.store_name, 'Whole Foods Market');
+    assert.equal(purchase.items.length, 2);
+    assert.equal(purchase.items[0].category?.slug, 'lacteos');
+    assert.equal(purchase.items[1].category, null);
+    assert.equal(purchase.status, 'confirmed');
+    assert.equal(purchase.image_url, 'u1/p-1.jpg');
+    assert.equal(purchase.items[0].sort_order, 0);
+    assert.equal(purchase.items[1].sort_order, 1);
+    // The detail read is scoped to the edited purchase AND the session user
+    // (defense in depth — RLS already scopes) and ordered by sort_order.
+    const ops = stubMod.__getQueryCalls('purchases');
+    assert.ok(
+      ops.some((o) => o.op === 'eq' && o.column === 'id' && o.value === 'p-1'),
+      'fetch is scoped with eq(id)',
+    );
+    assert.ok(
+      ops.some((o) => o.op === 'eq' && o.column === 'user_id' && o.value === 'u1'),
+      'fetch is scoped to the session user',
+    );
+    const orderOp = ops.find((o) => o.op === 'order');
+    assert.ok(
+      orderOp && orderOp.column === 'sort_order',
+      'items are fetched in sort_order (edit round trips keep line order)',
+    );
+  });
+
+  await test('fetchPurchaseDetail also handles array-shaped to-one embeds', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchases', {
+      rows: [
+        {
+          id: 'p-2',
+          store_id: 'store-2',
+          total: 7,
+          purchase_date: '2026-08-04',
+          payment_method: 'cash',
+          image_url: null,
+          status: 'confirmed',
+          // Some selects deliver the to-one embed as a ONE-ELEMENT ARRAY —
+          // both shapes must map to the same object (firstOrSelf).
+          stores: [{ name: 'Feria Vecinal' }],
+          purchase_items: [
+            {
+              id: 'item-3',
+              name: 'Tomates',
+              quantity: 1,
+              unit_price: 7,
+              total_price: 7,
+              category_id: 'cat-verduras',
+              is_impulse: false,
+              sort_order: 0,
+              categories: [
+                {
+                  id: 'cat-verduras',
+                  slug: 'verduras',
+                  name: 'Verduras',
+                  kind: 'grocery',
+                  icon: 'cart',
+                  color: '#ffffff',
+                  sort_order: 3,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const purchase = await ticketsMod.fetchPurchaseDetail('u1', 'p-2');
+    assert.equal(purchase.store_name, 'Feria Vecinal');
+    assert.equal(purchase.items[0].category?.slug, 'verduras');
+  });
+
+  await test('purchaseToDraft preserves the purchase fields and maps category uuids to slugs', async () => {
+    resetAll();
+    const purchase = {
+      id: 'p-1',
+      store_id: 'store-1',
+      store_name: 'Whole Foods Market',
+      purchase_date: '2026-08-02',
+      total: 42.18,
+      payment_method: 'card',
+      image_url: 'u1/p-1.jpg',
+      status: 'confirmed',
+      items: [
+        {
+          id: 'item-1',
+          name: 'Leche',
+          quantity: 1,
+          unit_price: 3.5,
+          total_price: 3.5,
+          category_id: 'cat-lacteos',
+          category: {
+            id: 'cat-lacteos',
+            slug: 'lacteos',
+            name: 'Lácteos',
+            kind: 'grocery',
+            icon: 'cart',
+            color: '#ffffff',
+            sort_order: 1,
+          },
+          is_impulse: false,
+          sort_order: 0,
+        },
+        {
+          id: 'item-2',
+          name: 'Galletas',
+          quantity: 2,
+          unit_price: 1.25,
+          total_price: 2.5,
+          category_id: null,
+          category: null,
+          is_impulse: true,
+          sort_order: 1,
+        },
+      ],
+    };
+    const draft = ticketsMod.purchaseToDraft(purchase);
+    assert.equal(draft.store_name, 'Whole Foods Market');
+    assert.equal(draft.purchase_date, '2026-08-02');
+    assert.equal(draft.total, 42.18);
+    assert.equal(draft.payment_method, 'card');
+    assert.equal(draft.image_url, 'u1/p-1.jpg');
+    assert.equal(draft.items.length, 2);
+    assert.equal(draft.items[0].category_id, 'lacteos', 'category uuid maps to its slug');
+    assert.equal(draft.items[0].ai_suggested_category_id, null);
+    assert.equal(draft.items[0].is_impulse, false);
+    assert.equal(draft.items[1].category_id, null);
+    assert.equal(draft.items[1].is_impulse, true);
+    assert.equal(draft.items[0].name, 'Leche', 'line order is preserved');
+    assert.equal(draft.items[1].name, 'Galletas', 'line order is preserved');
+    assert.ok(draft.items[0].temp_id && draft.items[1].temp_id, 'fresh temp ids for the review list keys');
+  });
+
+  await test('fetchPurchaseDetail surfaces the user-safe load message when the row is missing', async () => {
+    resetAll();
+    await assert.rejects(
+      () => ticketsMod.fetchPurchaseDetail('u1', 'missing'),
+      (err) => {
+        assert.equal(
+          err.message,
+          'No se pudo cargar el recibo. Inténtalo de nuevo.',
+        );
+        return true;
+      },
+    );
+  });
+
+  await test('updateReceipt updates the purchase in place and replaces its items', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('purchases', [{ id: 'p-1' }]);
+    stubMod.__setTableRead('purchases', { rows: [PRE_EDIT_PURCHASE] });
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', {
+      rows: [{ id: 'cat-lacteos', slug: 'lacteos' }],
+    });
+    const draft = {
+      store_name: 'Whole Foods Market',
+      purchase_date: '2026-08-03',
+      total: 9.5,
+      payment_method: 'cash',
+      image_url: `${USER_ID}/p-1.jpg`,
+      items: [
+        {
+          temp_id: 't1',
+          name: 'Leche',
+          quantity: 1,
+          unit_price: 3.5,
+          total_price: 3.5,
+          category_id: 'lacteos',
+          is_impulse: false,
+          ai_suggested_category_id: null,
+        },
+        {
+          temp_id: 't2',
+          name: 'Galletas',
+          quantity: 2,
+          unit_price: 3,
+          total_price: 6,
+          category_id: null,
+          is_impulse: true,
+          ai_suggested_category_id: null,
+        },
+      ],
+    };
+    const result = await ticketsMod.updateReceipt(USER_ID, 'p-1', draft);
+    assert.equal(result.id, 'p-1');
+
+    const updated = stubMod.__getUpdated('purchases');
+    assert.equal(updated.store_id, 'store-global-1');
+    assert.equal(updated.purchase_date, '2026-08-03');
+    assert.equal(updated.total, 9.5);
+    assert.equal(updated.payment_method, 'cash');
+    assert.equal(updated.status, 'confirmed');
+    assert.equal(
+      updated.image_url,
+      `${USER_ID}/p-1.jpg`,
+      'an already-persisted storage path passes through — no re-upload',
+    );
+
+    const log = stubMod.__getCallLog();
+    const itemDeletes = log.filter(
+      (e) => e.kind === 'delete' && e.table === 'purchase_items',
+    );
+    assert.equal(
+      itemDeletes.length,
+      1,
+      'items are replaced wholesale: delete first, then re-insert',
+    );
+    assert.ok(
+      !log.some((e) => e.kind === 'storage-upload'),
+      'storage paths are never re-uploaded',
+    );
+
+    const itemPayloads = stubMod.__getInserted('purchase_items');
+    assert.equal(itemPayloads.length, 2);
+    assert.equal(itemPayloads[0].category_id, 'cat-lacteos');
+    assert.equal(itemPayloads[1].category_id, null);
+    assert.equal(itemPayloads[0].sort_order, 0);
+    assert.equal(itemPayloads[1].sort_order, 1);
+    assert.equal(itemPayloads[1].is_impulse, true);
+    assert.ok(
+      itemPayloads.every((i) => i.purchase_id === 'p-1'),
+      'item rows link back to the edited purchase',
+    );
+    const updateOps = stubMod.__getQueryCalls('purchases');
+    assert.ok(
+      updateOps.some(
+        (o) => o.op === 'eq' && o.column === 'user_id' && o.value === USER_ID,
+      ),
+      'the row update is scoped to the session user',
+    );
+  });
+
+  await test('updateReceipt uploads a device-local photo and persists the storage path', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('purchases', [{ id: 'p-1' }]);
+    stubMod.__setTableRead('purchases', { rows: [PRE_EDIT_PURCHASE] });
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [] });
+    expoFsMod.__setFileSource('file:///edit.jpg', {
+      size: 2048,
+      type: 'image/jpeg',
+      base64: 'c2FtcGxl',
+    });
+    const draft = { ...DRAFT, image_url: 'file:///edit.jpg' };
+    const result = await ticketsMod.updateReceipt(USER_ID, 'p-1', draft);
+    assert.equal(result.id, 'p-1');
+    const log = stubMod.__getCallLog();
+    assert.ok(
+      log.some((e) => e.kind === 'storage-upload'),
+      'device-local photo is uploaded before the update',
+    );
+    const updated = stubMod.__getUpdated('purchases');
+    assert.match(
+      updated.image_url,
+      new RegExp(`^${USER_ID}/.+\\.jpg$`),
+      'persists the storage path under the user folder',
+    );
+  });
+
+  await test('updateReceipt best-effort removes the previous photo when image_url changed', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('purchases', [{ id: 'p-1' }]);
+    stubMod.__setTableRead('purchases', { rows: [PRE_EDIT_PURCHASE] }); // image_url `${USER_ID}/p-1.jpg`
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [] });
+    expoFsMod.__setFileSource('file:///new-photo.jpg', {
+      size: 2048,
+      type: 'image/jpeg',
+      base64: 'c2FtcGxl',
+    });
+    const draft = { ...DRAFT, image_url: 'file:///new-photo.jpg' };
+    await ticketsMod.updateReceipt(USER_ID, 'p-1', draft);
+    const log = stubMod.__getCallLog();
+    const removeCall = log.find((e) => e.kind === 'storage-remove');
+    assert.ok(removeCall, 'previous photo object is removed after the edit succeeds');
+    assert.deepEqual(removeCall.paths, [`${USER_ID}/p-1.jpg`]);
+    // The cleanup runs only AFTER the item write succeeded — a failed edit
+    // restores the old photo reference instead.
+    const insertIndex = log.findIndex(
+      (e) => e.kind === 'insert' && e.table === 'purchase_items',
+    );
+    const removeIndex = log.findIndex((e) => e.kind === 'storage-remove');
+    assert.ok(insertIndex < removeIndex, 'photo cleanup runs only after a successful update');
+  });
+
+  await test('updateReceipt item write failure RESTORES the original row + items (never deletes the receipt)', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('purchases', [{ id: 'p-1' }]);
+    stubMod.__setTableRead('purchases', { rows: [PRE_EDIT_PURCHASE] });
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [] });
+    stubMod.__failNextInsert('purchase_items');
+    const draft = {
+      ...DRAFT,
+      items: [
+        {
+          temp_id: 't1',
+          name: 'Leche',
+          quantity: 1,
+          unit_price: 3.5,
+          total_price: 3.5,
+          category_id: 'lacteos',
+          is_impulse: false,
+          ai_suggested_category_id: null,
+        },
+      ],
+    };
+    await assert.rejects(
+      () => ticketsMod.updateReceipt(USER_ID, 'p-1', draft),
+      (err) => {
+        assert.equal(
+          err.message,
+          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+        );
+        return true;
+      },
+    );
+    const log = stubMod.__getCallLog();
+    assert.ok(
+      !log.some((e) => e.kind === 'delete' && e.table === 'purchases'),
+      'the pre-existing purchase is NEVER deleted on an edit failure',
+    );
+    // The restore update re-applies the ORIGINAL row fields (the draft
+    // update had already applied before the item insert failed).
+    const restored = stubMod.__getUpdated('purchases');
+    assert.equal(restored.store_id, 'store-1');
+    assert.equal(restored.purchase_date, '2026-08-02');
+    assert.equal(restored.total, 42.18);
+    assert.equal(restored.payment_method, 'card');
+    assert.equal(restored.image_url, `${USER_ID}/p-1.jpg`);
+    assert.equal(restored.status, 'confirmed');
+    // The original items are re-inserted with their ORIGINAL values (the
+    // wholesale delete had already removed them).
+    const restoredItems = stubMod.__getInserted('purchase_items');
+    assert.equal(restoredItems.length, 1);
+    assert.equal(restoredItems[0].name, 'Pan');
+    assert.equal(restoredItems[0].category_id, 'cat-pan');
+    assert.equal(restoredItems[0].sort_order, 0);
+    assert.equal(restoredItems[0].is_impulse, false);
+    assert.equal(restoredItems[0].purchase_id, 'p-1');
+  });
+
+  await test('updateReceipt surfaces the user-safe message when the purchase update fails', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchases', { rows: [PRE_EDIT_PURCHASE] });
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [] });
+    stubMod.__failNextUpdate('purchases');
+    await assert.rejects(
+      () => ticketsMod.updateReceipt(USER_ID, 'p-1', DRAFT),
+      (err) => {
+        assert.equal(
+          err.message,
+          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+        );
+        return true;
+      },
+    );
+    assert.equal(
+      stubMod.__getInserted('purchase_items'),
+      null,
+      'no item writes when the update never persisted',
+    );
+  });
+
+  await test('updateReceipt fails with the save message when the update matches no rows', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchases', { rows: [PRE_EDIT_PURCHASE] });
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [] });
+    // No delete-read armed: `update().select('id')` resolves a 0-row result
+    // (an RLS miss or a row deleted mid-edit) — the edit must fail closed
+    // like deleteReceipt does, and the pre-edit items must stay untouched.
+    await assert.rejects(
+      () => ticketsMod.updateReceipt(USER_ID, 'p-1', DRAFT),
+      (err) => {
+        assert.equal(
+          err.message,
+          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+        );
+        return true;
+      },
+    );
+    const log = stubMod.__getCallLog();
+    assert.ok(
+      !log.some((e) => e.kind === 'delete' && e.table === 'purchase_items'),
+      'item rows are untouched when the update matches no rows',
+    );
+    assert.equal(
+      stubMod.__getInserted('purchase_items'),
+      null,
+      'no item writes on a 0-row update',
+    );
+  });
+
+  await test('updateReceipt fails with the load message when the purchase is missing', async () => {
+    resetAll();
+    // No purchases read armed: the pre-edit fetch resolves null (a miss) —
+    // the edit must not proceed (and must not write anything).
+    await assert.rejects(
+      () => ticketsMod.updateReceipt(USER_ID, 'missing', DRAFT),
+      (err) => {
+        assert.equal(
+          err.message,
+          'No se pudo cargar el recibo. Inténtalo de nuevo.',
+        );
+        return true;
+      },
+    );
+    const log = stubMod.__getCallLog();
+    assert.ok(!log.some((e) => e.kind === 'update'), 'no row update when the purchase does not exist');
+    assert.ok(!log.some((e) => e.kind === 'insert'), 'no item writes when the purchase does not exist');
+  });
+
+  await test('updateReceipt invalidates the cached receipt feeds (monthly totals prefix, own user only)', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('purchases', [{ id: 'p-1' }]);
+    stubMod.__setTableRead('purchases', { rows: [PRE_EDIT_PURCHASE] });
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [] });
+    // Same shared-cache probe saveReceipt uses: BOTH month variants of the
+    // monthlyTotals key must turn invalidated, another user's untouched.
+    const qc = queryClientMod.queryClient;
+    qc.getQueryCache().clear();
+    const utcNow = new Date();
+    const prevMonth = new Date(
+      Date.UTC(utcNow.getUTCFullYear(), utcNow.getUTCMonth() - 1, 1),
+    );
+    const currentYm = keysMod.utcYearMonth(utcNow);
+    const otherYm = keysMod.utcYearMonth(prevMonth);
+    const keyCurrent = keysMod.queryKeys.monthlyTotals(USER_ID, currentYm);
+    const keyOther = keysMod.queryKeys.monthlyTotals(USER_ID, otherYm);
+    const keyOtherUser = keysMod.queryKeys.monthlyTotals('u2', currentYm);
+    qc.setQueryData(keyCurrent, [{ category_id: '1', total: 10 }]);
+    qc.setQueryData(keyOther, [{ category_id: '1', total: 20 }]);
+    qc.setQueryData(keyOtherUser, [{ category_id: '1', total: 30 }]);
+    // The home feed + budget spent keys must be invalidated too, and scan
+    // usage must NOT (only a SAVE consumes a scan).
+    const keyFeed = keysMod.queryKeys.homeFeed(USER_ID);
+    const keyBudget = keysMod.queryKeys.budget(USER_ID);
+    const keyScan = keysMod.queryKeys.scanUsage(USER_ID, currentYm);
+    qc.setQueryData(keyFeed, []);
+    qc.setQueryData(keyBudget, { budget: 100 });
+    qc.setQueryData(keyScan, { scans_used: 1, scans_limit: 10 });
+    // Item search reads the same rows: EVERY month/query variant must
+    // refetch (an edit can rename or remove items).
+    const keySearch = keysMod.queryKeys.itemSearch(USER_ID, currentYm, 'leche');
+    const keySearchOtherMonth = keysMod.queryKeys.itemSearch(USER_ID, otherYm, 'pan');
+    qc.setQueryData(keySearch, []);
+    qc.setQueryData(keySearchOtherMonth, []);
+
+    await ticketsMod.updateReceipt(USER_ID, 'p-1', DRAFT);
+
+    const find = (key) => qc.getQueryCache().find({ queryKey: key });
+    assert.equal(find(keyCurrent).state.isInvalidated, true);
+    assert.equal(find(keyOther).state.isInvalidated, true);
+    assert.equal(find(keyOtherUser).state.isInvalidated, false);
+    assert.equal(find(keyFeed).state.isInvalidated, true, 'home feed refetches');
+    assert.equal(find(keyBudget).state.isInvalidated, true, 'budget spent refetches');
+    assert.equal(find(keySearch).state.isInvalidated, true, 'item search refetches (any query)');
+    assert.equal(
+      find(keySearchOtherMonth).state.isInvalidated,
+      true,
+      'item search refetches for every month variant',
+    );
+    assert.equal(
+      find(keyScan).state.isInvalidated,
+      false,
+      'scan usage untouched — an edit consumes no scan',
+    );
+  });
+
+  await test('deleteReceipt removes the row first (fail-closed), then the storage photo', async () => {
+    resetAll();
+    // `delete().select('id, image_url')` returns the DELETED rows — the
+    // stub mirrors that via the delete-read seam (unarmed = 0 rows).
+    stubMod.__setDeleteRead('purchases', [{ id: 'p-1', image_url: `${USER_ID}/p-1.jpg` }]);
+    await ticketsMod.deleteReceipt(USER_ID, 'p-1');
+    const log = stubMod.__getCallLog();
+    const deleteIndex = log.findIndex(
+      (e) => e.kind === 'delete' && e.table === 'purchases',
+    );
+    const removeCall = log.find((e) => e.kind === 'storage-remove');
+    assert.ok(removeCall, 'storage photo removal attempted');
+    assert.equal(removeCall.bucket, 'receipts');
+    assert.deepEqual(removeCall.paths, [`${USER_ID}/p-1.jpg`]);
+    const removeIndex = log.findIndex((e) => e.kind === 'storage-remove');
+    assert.ok(
+      deleteIndex < removeIndex,
+      'the ROW is deleted before the photo is removed',
+    );
+    const deleteOps = stubMod.__getQueryCalls('purchases');
+    assert.ok(
+      deleteOps.some(
+        (o) => o.op === 'eq' && o.column === 'id' && o.value === 'p-1',
+      ),
+      'row delete is scoped to the purchase id (eq filter)',
+    );
+    assert.ok(
+      deleteOps.some(
+        (o) => o.op === 'eq' && o.column === 'user_id' && o.value === USER_ID,
+      ),
+      'row delete is scoped to the session user',
+    );
+  });
+
+  await test('deleteReceipt still deletes when the storage remove THROWS (rejected promise)', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('purchases', [{ id: 'p-1', image_url: `${USER_ID}/p-1.jpg` }]);
+    // storage-js re-throws non-StorageError exceptions from handleOperation:
+    // a network failure REJECTS the remove instead of returning {error}. The
+    // delete must survive — the row is already gone, a retry would hit the
+    // fail-closed 0-row check, and a skipped invalidation would leave a
+    // ghost receipt in the store + feed caches.
+    stubMod.__setStorageBehavior('receipts', { removeThrows: true });
+    const qc = queryClientMod.queryClient;
+    qc.getQueryCache().clear();
+    const keyFeed = keysMod.queryKeys.homeFeed(USER_ID);
+    qc.setQueryData(keyFeed, []);
+    await ticketsMod.deleteReceipt(USER_ID, 'p-1');
+    const log = stubMod.__getCallLog();
+    assert.ok(log.some((e) => e.kind === 'storage-remove'), 'photo remove attempted');
+    assert.ok(
+      qc.getQueryCache().find({ queryKey: keyFeed }).state.isInvalidated,
+      'feed still invalidated after a rejected remove',
+    );
+  });
+
+  await test('deleteReceipt skips the storage remove for a remote photo', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('purchases', [
+      {
+        id: 'p-1',
+        image_url: 'https://picsum.photos/seed/ticketify-test/800/1200',
+      },
+    ]);
+    await ticketsMod.deleteReceipt(USER_ID, 'p-1');
+    const log = stubMod.__getCallLog();
+    assert.ok(
+      !log.some((e) => e.kind === 'storage-remove'),
+      'remote urls are not storage objects — no remove',
+    );
+    assert.ok(
+      log.some((e) => e.kind === 'delete' && e.table === 'purchases'),
+      'row is still deleted',
+    );
+  });
+
+  await test('deleteReceipt never removes a storage object owned by another user', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('purchases', [
+      { id: 'p-1', image_url: `${OTHER_USER_ID}/p-1.jpg` },
+    ]);
+    await ticketsMod.deleteReceipt(USER_ID, 'p-1');
+    const log = stubMod.__getCallLog();
+    assert.ok(
+      !log.some((e) => e.kind === 'storage-remove'),
+      'foreign object paths are never passed to storage.remove',
+    );
+    assert.ok(
+      log.some((e) => e.kind === 'delete' && e.table === 'purchases'),
+      'row is still deleted',
+    );
+  });
+
+  await test('deleteReceipt fails closed when the delete matches no rows', async () => {
+    resetAll();
+    // No delete-read armed: the delete resolves a 0-row result (RLS miss or
+    // already gone) — that must NOT be treated as success.
+    await assert.rejects(
+      () => ticketsMod.deleteReceipt(USER_ID, 'missing'),
+      (err) => {
+        assert.equal(
+          err.message,
+          'No se pudo eliminar el recibo. Inténtalo de nuevo.',
+        );
+        return true;
+      },
+    );
+    const log = stubMod.__getCallLog();
+    assert.ok(
+      !log.some((e) => e.kind === 'storage-remove'),
+      'no photo remove on a 0-row delete',
+    );
+  });
+
+  await test('deleteReceipt surfaces the user-safe message when the row delete fails', async () => {
+    resetAll();
+    stubMod.__failNextDelete('purchases', { message: 'permission denied', code: '42501' });
+    await assert.rejects(
+      () => ticketsMod.deleteReceipt(USER_ID, 'p-1'),
+      (err) => {
+        assert.equal(
+          err.message,
+          'No se pudo eliminar el recibo. Inténtalo de nuevo.',
+        );
+        return true;
+      },
+    );
+    const log = stubMod.__getCallLog();
+    assert.ok(
+      !log.some((e) => e.kind === 'storage-remove'),
+      'no photo remove when the row delete failed',
+    );
+  });
+
+  await test('deleteReceipt invalidates the cached receipt feeds', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('purchases', [{ id: 'p-1', image_url: null }]);
+    const qc = queryClientMod.queryClient;
+    qc.getQueryCache().clear();
+    const keyFeed = keysMod.queryKeys.homeFeed(USER_ID);
+    const keyBudget = keysMod.queryKeys.budget(USER_ID);
+    const keySearch = keysMod.queryKeys.itemSearch(USER_ID, '2026-08', 'leche');
+    qc.setQueryData(keyFeed, []);
+    qc.setQueryData(keyBudget, { budget: 100 });
+    qc.setQueryData(keySearch, []);
+    await ticketsMod.deleteReceipt(USER_ID, 'p-1');
+    const find = (key) => qc.getQueryCache().find({ queryKey: key });
+    assert.equal(find(keyFeed).state.isInvalidated, true, 'home feed refetches');
+    assert.equal(find(keyBudget).state.isInvalidated, true, 'budget spent refetches');
+    assert.equal(
+      find(keySearch).state.isInvalidated,
+      true,
+      'item search refetches — a delete removes items from results',
+    );
+  });
+
   console.log('\n[tests] receipt photo storage\n');
 
   await test('uploadToStorage uploads the local image and returns the object path', async () => {
