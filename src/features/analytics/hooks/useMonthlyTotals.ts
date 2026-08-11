@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type QueryObserverResult } from '@tanstack/react-query';
 
 import { fetchMonthlyTotals } from '../api';
 import { useSessionUser } from '@/features/auth';
@@ -28,6 +28,14 @@ export function useMonthlyTotals(
   monthTotal: number;
   isLoading: boolean;
   error: string | null;
+  /**
+   * True once the read succeeded, even if a background refetch later
+   * fails (TanStack keeps the data and sets `error`). The analytics
+   * screen renders the error state only when `error && !hasData`.
+   */
+  hasData: boolean;
+  /** Refetches the read (retry action on the error state). */
+  refetch: () => Promise<QueryObserverResult<CategoryMonthlyTotal[], Error>>;
 } {
   const { userId } = useSessionUser();
 
@@ -48,5 +56,7 @@ export function useMonthlyTotals(
     monthTotal,
     isLoading: totalsQuery.isLoading,
     error: totalsQuery.error ? toQueryErrorMessage(totalsQuery.error) : null,
+    hasData: totalsQuery.data !== undefined,
+    refetch: totalsQuery.refetch,
   };
 }

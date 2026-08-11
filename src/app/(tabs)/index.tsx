@@ -6,11 +6,15 @@ import {
 } from 'react-native-safe-area-context';
 
 import {
+  MonthlyBudgetCardSkeleton,
   CategoryCard,
+  CategoryCardSkeleton,
+  EmptyState,
   Fab,
   Icon,
   Pressable,
   ReceiptRow,
+  ReceiptRowSkeleton,
   Text,
   View,
 } from '@/components';
@@ -33,8 +37,21 @@ const TAB_BAR_HEIGHT = Platform.select({ ios: 49, android: 80, default: 49 });
 
 export default function HomeScreen() {
   const currency = useSettingsStore((s) => s.currency);
-  const { budget, spent } = useBudget();
-  const { categories, receipts, wantsSnacksTotal } = useHomeFeed();
+  const {
+    budget,
+    spent,
+    error: budgetError,
+    isLoading: budgetLoading,
+    hasData: budgetHasData,
+  } = useBudget();
+  const {
+    categories,
+    receipts,
+    wantsSnacksTotal,
+    isLoading: feedLoading,
+    error: feedError,
+    hasData: feedHasData,
+  } = useHomeFeed();
   const insets = useSafeAreaInsets();
   const { session } = useSessionStore();
   // Canonical name key is `full_name` (see profile-sync); `name` is kept as a
@@ -72,64 +89,123 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        <MonthlyBudgetCard
-          spent={spent}
-          limit={budget.amount}
-          currency={currency}
-          showCallout
-          wantsSnacksTotal={wantsSnacksTotal}
-        />
+        {budgetLoading ? (
+          <MonthlyBudgetCardSkeleton />
+        ) : budgetError && !budgetHasData ? (
+          // A failed budget read must never look like "Límite: $0" —
+          // surface the user-safe message instead of a card claiming a
+          // limit that was never read.
+          <Text style={styles.error}>{budgetError}</Text>
+        ) : (
+          <>
+            <MonthlyBudgetCard
+              spent={spent}
+              limit={budget.amount}
+              currency={currency}
+              showCallout
+              wantsSnacksTotal={wantsSnacksTotal}
+            />
+            {/* Background refetch failed but the last good budget is on
+                screen — keep it and add a subtle inline note. */}
+            {budgetError ? (
+              <Text style={styles.error}>{budgetError}</Text>
+            ) : null}
+          </>
+        )}
 
-        {/* Categories */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Categorías de gastos</Text>
-            <Pressable
-              onPress={() => router.push('/history')}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Ver historial"
-              style={styles.historyLink}
-            >
-              <Icon name="calendar" size={16} color={colors.primary} />
-              <Text style={styles.historyLinkText}>Historial</Text>
-            </Pressable>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoryStrip}
-          >
-            {categories.map((c) => (
-              <CategoryCard
-                key={c.key}
-                name={c.name}
-                amount={c.amount}
-                currency={currency}
-                icon={c.icon}
-                onPress={() => router.push(`/categories/${c.key}`)}
-              />
-            ))}
-          </ScrollView>
-        </View>
+        {feedError && !feedHasData ? (
+          // A failed feed read with nothing to show must never render as
+          // a false empty feed — surface the message instead of sections.
+          <Text style={styles.error}>{feedError}</Text>
+        ) : (
+          <>
+            {/* Background refetch failed but the last good feed is on
+                screen — keep the sections and add a subtle inline note. */}
+            {feedError ? (
+              <Text style={styles.error}>{feedError}</Text>
+            ) : null}
+            {/* Categories */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Categorías de gastos</Text>
+                <Pressable
+                  onPress={() => router.push('/history')}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Ver historial"
+                  style={styles.historyLink}
+                >
+                  <Icon name="calendar" size={16} color={colors.primary} />
+                  <Text style={styles.historyLinkText}>Historial</Text>
+                </Pressable>
+              </View>
+              {feedLoading ? (
+                <View style={styles.categoryStripRow}>
+                  {[0, 1, 2].map((i) => (
+                    <CategoryCardSkeleton key={i} />
+                  ))}
+                </View>
+              ) : categories.length === 0 ? (
+                <EmptyState
+                  icon="chart.bar.fill"
+                  title="Aún no hay categorías de gastos."
+                  body="Tus gastos por categoría aparecerán cuando escanees tus primeros tickets."
+                />
+              ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.categoryStrip}
+                >
+                  {categories.map((c) => (
+                    <CategoryCard
+                      key={c.key}
+                      name={c.name}
+                      amount={c.amount}
+                      currency={currency}
+                      icon={c.icon}
+                      onPress={() => router.push(`/categories/${c.key}`)}
+                    />
+                  ))}
+                </ScrollView>
+              )}
+            </View>
 
-        {/* Recent receipts */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Tickets recientes</Text>
-          <View style={styles.receiptList}>
-            {receipts.map((r) => (
-              <ReceiptRow
-                key={r.id}
-                name={r.name}
-                date={r.date}
-                amount={r.amount}
-                currency={currency}
-                imageUrl={r.imageUrl}
-                onPress={() => router.push(`/receipts/${r.id}`)}
-              />
-            ))}
-          </View>
-        </View>
+            {/* Recent receipts */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Tickets recientes</Text>
+              {feedLoading ? (
+                <View style={styles.receiptList}>
+                  {[0, 1, 2].map((i) => (
+                    <ReceiptRowSkeleton key={i} />
+                  ))}
+                </View>
+              ) : receipts.length === 0 ? (
+                <EmptyState
+                  icon="doc.text"
+                  title="Aún no hay tickets recientes."
+                  body="Escanea tu primer recibo para empezar."
+                  actionLabel="Escanear recibo"
+                  onAction={() => router.push('/ticket/camera')}
+                />
+              ) : (
+                <View style={styles.receiptList}>
+                  {receipts.map((r) => (
+                    <ReceiptRow
+                      key={r.id}
+                      name={r.name}
+                      date={r.date}
+                      amount={r.amount}
+                      currency={currency}
+                      imageUrl={r.imageUrl}
+                      onPress={() => router.push(`/receipts/${r.id}`)}
+                    />
+                  ))}
+                </View>
+              )}
+            </View>
+          </>
+        )}
       </ScrollView>
 
       <View
@@ -202,8 +278,16 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingRight: spacing.xl,
   },
+  categoryStripRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
   receiptList: {
     gap: spacing.md,
+  },
+  error: {
+    ...typography.labelSm,
+    color: colors.danger,
   },
   fabWrap: {
     position: 'absolute',
