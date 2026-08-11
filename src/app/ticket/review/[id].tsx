@@ -25,6 +25,8 @@ import { useSessionUser } from '@/features/auth';
 import {
   CategoryPickerModal,
   ReceiptItemsList,
+  buildFeedRow,
+  reviewItemsToFeedItems,
   useReceiptDraftActions,
   useReceiptDraftDraft,
   useScanTicket,
@@ -39,7 +41,7 @@ import {
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
-import type { CardType, HomeFeedReceiptRow, PaymentMethod, ReviewItem } from '@/types';
+import type { CardType, PaymentMethod, ReviewItem } from '@/types';
 
 const paymentMethods: { key: PaymentMethod; label: string }[] = [
   { key: 'card', label: 'Tarjeta' },
@@ -318,34 +320,21 @@ export default function ReviewReceiptScreen() {
           // keep the stale row forever while offline.
           const current = useReceiptsStore.getState();
           const existing = current.list.find((r) => r.id === params.id);
-          const row: HomeFeedReceiptRow = {
-            id: params.id,
-            store_name: draft.store_name,
-            purchase_date: draft.purchase_date,
-            scanned_at: existing?.scanned_at ?? todayLocalISO(),
-            total: draft.total,
-            image_url: draft.image_url || null,
-            status: 'confirmed',
-            wants_snacks_total: draft.items
-              .filter((i) => i.is_impulse)
-              .reduce((sum, i) => sum + i.total_price, 0),
-            category_totals: draft.items.reduce<Record<string, number>>(
-              (acc, i) => {
-                const slug = i.category_id ?? i.ai_suggested_category_id ?? 'otros';
-                acc[slug] = (acc[slug] ?? 0) + i.total_price;
-                return acc;
-              },
-              {},
-            ),
-            items: draft.items.map((i) => ({
-              name: i.name,
-              amount: i.total_price,
-              quantity: i.quantity,
-              unit_price: i.unit_price,
-              category: i.category_id ?? i.ai_suggested_category_id ?? 'otros',
-              is_impulse: i.is_impulse,
-            })),
-          };
+          // Aggregates through the same shared builder the home reads use
+          // (category_totals / wants_snacks_total), so the edited row and
+          // the feed can never drift apart.
+          const row = buildFeedRow(
+            {
+              id: params.id,
+              store_name: draft.store_name,
+              purchase_date: draft.purchase_date,
+              scanned_at: existing?.scanned_at ?? todayLocalISO(),
+              total: draft.total,
+              image_url: draft.image_url || null,
+              status: 'confirmed',
+            },
+            reviewItemsToFeedItems(draft.items),
+          );
           current.upsertReceiptRow(row);
         } else {
           await saveReceipt(userId, draft);
