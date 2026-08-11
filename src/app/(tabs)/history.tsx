@@ -12,7 +12,7 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 
-import { Icon, Pressable, Text, View } from '@/components';
+import { EmptyState, Icon, Pressable, SearchRowSkeleton, Text, View } from '@/components';
 import { CategoryCard } from '@/components/organisms/CategoryCard';
 import {
   aggregateCategoriesByMonth,
@@ -52,7 +52,12 @@ export default function HistoryScreen() {
   // scroll area to product-level results (cross-category, month-scoped).
   const [query, setQuery] = useState('');
   const isSearching = query.trim().length > 0;
-  const searchResults = useItemSearch(query, monthKey);
+  const {
+    results: searchResults,
+    isLoading: searchLoading,
+    error: searchError,
+    hasData: searchHasData,
+  } = useItemSearch(query, monthKey);
   // Visually excluded search results ("eliminar" del listado). Local-only:
   // never touches the DB, and it resets whenever the query changes so a new
   // search starts from the full result set.
@@ -198,7 +203,21 @@ export default function HistoryScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {isSearching ? (
-          searchResults.length === 0 ? (
+          // Loading and error must never flash the false "Sin resultados":
+          // a slow search renders skeletons, a failed one an error state —
+          // and only when there is no retained data to keep showing.
+          searchLoading ? (
+            <View style={styles.searchResults}>
+              {[0, 1, 2].map((i) => (
+                <SearchRowSkeleton key={i} />
+              ))}
+            </View>
+          ) : searchError && !searchHasData ? (
+            <EmptyState
+              icon="exclamationmark.triangle.fill"
+              title={searchError}
+            />
+          ) : searchResults.length === 0 ? (
             <Text style={styles.empty}>
               Sin resultados para “{query.trim()}”.
             </Text>

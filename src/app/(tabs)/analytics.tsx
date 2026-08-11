@@ -3,7 +3,13 @@ import { useMemo, useState } from 'react';
 import { Image, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Icon, Pressable, Text } from '@/components';
+import {
+  BreakdownRowSkeleton,
+  EmptyState,
+  Icon,
+  Pressable,
+  Text,
+} from '@/components';
 import {
   CategoryBreakdownList,
   MonthlyOverviewCard,
@@ -39,7 +45,13 @@ export default function AnalyticsScreen() {
   const [monthKey, setMonthKey] = useState(currentMonthKey);
 
   const monthKeys = useMemo(() => getAvailableMonthKeys(list), [list]);
-  const { totals, error } = useMonthlyTotals(monthKey);
+  const {
+    totals,
+    isLoading: totalsLoading,
+    error,
+    hasData: totalsHasData,
+    refetch,
+  } = useMonthlyTotals(monthKey);
   const alerts = usePriceAlerts(monthKey);
   const overview = useMonthlyOverview(monthKey);
   const { session } = useSessionStore();
@@ -137,8 +149,6 @@ export default function AnalyticsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
         <MonthlyOverviewCard
           overview={overview}
           currency={currency}
@@ -173,7 +183,31 @@ export default function AnalyticsScreen() {
           currency={currency}
           title="Top Artículos"
         />
-        <CategoryBreakdownList rows={totals} />
+        {totalsLoading ? (
+          <View style={styles.skeletonList}>
+            {[0, 1, 2, 3].map((i) => (
+              <BreakdownRowSkeleton key={i} />
+            ))}
+          </View>
+        ) : error && !totalsHasData ? (
+          // The failed RPC read must not render as a false "no data" —
+          // show the user-safe message with a retry instead of the
+          // breakdown (only when there is no retained data to keep).
+          <EmptyState
+            framed
+            icon="exclamationmark.triangle.fill"
+            title={error}
+            actionLabel="Reintentar"
+            onAction={() => refetch()}
+          />
+        ) : (
+          <>
+            <CategoryBreakdownList rows={totals} />
+            {/* Background refetch failed but the last good totals are on
+                screen — keep them and add a subtle inline note. */}
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -238,6 +272,9 @@ const styles = StyleSheet.create({
     ...typography.bodyMd,
     color: colors.textSecondary,
     marginTop: -spacing.md,
+  },
+  skeletonList: {
+    gap: spacing.lg,
   },
   error: {
     ...typography.labelSm,

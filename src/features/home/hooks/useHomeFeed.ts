@@ -5,7 +5,7 @@ import type { IconName } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import { formatYearMonth } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
-import { toQueryData } from '@/lib/supabase/query-adapters';
+import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import type { HomeFeedReceiptRow } from '@/types';
 import { readPurchaseList, searchPurchaseItems } from '../api';
@@ -40,6 +40,25 @@ export interface HomeFeed {
   categories: HomeCategory[];
   receipts: ReceiptSummary[];
   wantsSnacksTotal: number;
+}
+
+/**
+ * `useHomeFeed` result: the feed data plus the query flags the screens
+ * need to render skeletons (loading) and honest error states instead of
+ * a blank section or a false "no data" message.
+ */
+export interface HomeFeedResult extends HomeFeed {
+  /** True while the initial feed read is in flight (no data yet). */
+  isLoading: boolean;
+  /** User-safe message when the authenticated read fails. */
+  error: string | null;
+  /**
+   * True once a feed read succeeded, even if a background refetch later
+   * fails (TanStack keeps the data and sets `error`). Screens render
+   * error states only when `error && !hasData` — a stale error must not
+   * hide retained data.
+   */
+  hasData: boolean;
 }
 
 /** Neutral empty feed — no fabricated content renders inside a session. */
@@ -279,8 +298,30 @@ export interface ItemPurchaseSummary {
  * date; matched items come back as single-receipt rows and re-aggregate
  * through the same pure month aggregators. Empty queries never hit the
  * network (the History screen renders the category list in that case).
+ *
+ * The result exposes the query flags alongside the data so the History
+ * screen can distinguish loading (skeletons), error (error state) and a
+ * genuine empty result ("Sin resultados") — a failed search must never
+ * render as "no results".
  */
-export function useItemSearch(query: string, monthKey = currentMonthKey()) {
+export interface ItemSearchResult {
+  results: CategoryItemSummary[];
+  /** True while the search read is in flight (no data yet). */
+  isLoading: boolean;
+  /** User-safe message when the authenticated search fails. */
+  error: string | null;
+  /**
+   * True once a search read succeeded, even if a background refetch
+   * later fails (TanStack keeps the data and sets `error`). The History
+   * screen renders the error state only when `error && !hasData`.
+   */
+  hasData: boolean;
+}
+
+export function useItemSearch(
+  query: string,
+  monthKey = currentMonthKey(),
+): ItemSearchResult {
   const { userId } = useSessionUser();
   const normalizedQuery = normalizeItemName(query);
 
@@ -300,7 +341,12 @@ export function useItemSearch(query: string, monthKey = currentMonthKey()) {
     },
   });
 
-  return searchQuery.data ?? [];
+  return {
+    results: searchQuery.data ?? [],
+    isLoading: searchQuery.isLoading,
+    error: searchQuery.error ? toQueryErrorMessage(searchQuery.error) : null,
+    hasData: searchQuery.data !== undefined,
+  };
 }
 
 /**
@@ -397,7 +443,7 @@ export function mapPurchaseRowsToHomeFeed(rows: HomeFeedReceiptRow[]): HomeFeed 
  * screens and drill-downs render the same rows. The query is disabled
  * until a signed-in user exists, so no read ever runs without a session.
  */
-export function useHomeFeed(): HomeFeed {
+export function useHomeFeed(): HomeFeedResult {
   const { userId } = useSessionUser();
 
   const rowsQuery = useQuery<HomeFeedReceiptRow[]>({
@@ -408,7 +454,8 @@ export function useHomeFeed(): HomeFeed {
 
   // Hydrates the receipts store with the full purchase list so the
   // store-subscribing screens (History, Analytics, drill-downs, price
-  // alerts) render the same rows the feed does.
+  // alerts) render the same rows the feed does. Keys on the DATA only —
+  // the loading/error flags added below must never re-fire this effect.
   const rows = rowsQuery.data;
   useEffect(() => {
     if (rows) {
@@ -427,5 +474,10 @@ export function useHomeFeed(): HomeFeed {
     console.error('[HomeFeed] feed query failed:', rowsQuery.error);
   }
 
-  return feed;
+  return {
+    ...feed,
+    isLoading: rowsQuery.isLoading,
+    error: rowsQuery.error ? toQueryErrorMessage(rowsQuery.error) : null,
+    hasData: rowsQuery.data !== undefined,
+  };
 }

@@ -40,6 +40,15 @@ export interface BudgetSnapshot {
   percent: number;
   /** User-safe message when the authenticated read fails or the profile is missing. */
   error: string | null;
+  /** True while either read is in flight with no data yet (initial fetch). */
+  isLoading: boolean;
+  /**
+   * True once the budget read succeeded (a real limit exists), even if a
+   * background refetch later fails. Screens render the budget error state
+   * only when `error && !hasData` — a "Límite: $0" card must never stand
+   * in for a failed budget read.
+   */
+  hasData: boolean;
 }
 
 /** Neutral fallback while an authenticated read loads or fails — never fabricated. */
@@ -78,5 +87,7 @@ export function useBudget(): BudgetSnapshot {
       : spentQuery.error
         ? toQueryErrorMessage(spentQuery.error)
         : null,
+    isLoading: budgetQuery.isLoading || spentQuery.isLoading,
+    hasData: budgetQuery.data !== undefined,
   };
 }

@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import { Card, Text, View } from '@/components';
+import { Card, EmptyState, Text, View } from '@/components';
 import { formatCurrency } from '@/lib/format';
 import { colors, spacing } from '@/theme';
 import type { CategoryMonthlyTotal } from '@/types';
@@ -14,7 +14,8 @@ export interface CategoryBreakdownListProps {
 /**
  * Renders the per-category breakdown rows in the analytics tab.
  * Each row is a `Card` with the category kicker, total, percent of
- * the monthly total, and item count.
+ * the monthly total, and item count. An empty month renders an
+ * `EmptyState` instead of a blank section.
  */
 export function CategoryBreakdownList({
   rows,
@@ -23,22 +24,26 @@ export function CategoryBreakdownList({
   return (
     <View style={styles.wrap}>
       {title ? <Text style={styles.title}>{title}</Text> : null}
-      {rows.map((t) => (
-        <Card key={t.category_id}>
-          <View style={styles.row}>
-            <View style={{ backgroundColor: colors.surface }}>
-              <Text style={styles.kicker}>{t.category_slug.toUpperCase()}</Text>
-              <Text style={styles.total}>{formatCurrency(t.total)}</Text>
+      {rows.length === 0 ? (
+        <EmptyState title="Sin categorías este mes." />
+      ) : (
+        rows.map((t) => (
+          <Card key={t.category_id}>
+            <View style={styles.row}>
+              <View style={{ backgroundColor: colors.surface }}>
+                <Text style={styles.kicker}>{t.category_slug.toUpperCase()}</Text>
+                <Text style={styles.total}>{formatCurrency(t.total)}</Text>
+              </View>
+              <View style={styles.right}>
+                <Text style={styles.percent}>
+                  {Math.round(t.percent_of_total * 100)}%
+                </Text>
+                <Text style={styles.items}>{t.item_count} artículos</Text>
+              </View>
             </View>
-            <View style={styles.right}>
-              <Text style={styles.percent}>
-                {Math.round(t.percent_of_total * 100)}%
-              </Text>
-              <Text style={styles.items}>{t.item_count} artículos</Text>
-            </View>
-          </View>
-        </Card>
-      ))}
+          </Card>
+        ))
+      )}
     </View>
   );
 }

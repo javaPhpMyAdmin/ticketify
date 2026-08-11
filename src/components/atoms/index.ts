@@ -13,6 +13,9 @@ export type { PressableProps } from './Pressable';
 export { Spinner } from './Spinner';
 export type { SpinnerProps } from './Spinner';
 
+export { Skeleton } from './Skeleton';
+export type { SkeletonProps } from './Skeleton';
+
 export { Divider } from './Divider';
 export type { DividerProps } from './Divider';
 
