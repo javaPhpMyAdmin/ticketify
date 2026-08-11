@@ -14,6 +14,7 @@
 import type {
   HomeFeedItemRow,
   HomeFeedReceiptRow,
+  PaymentMethod,
   ReviewItem,
 } from '@/types';
 
@@ -26,6 +27,8 @@ export interface FeedRowMeta {
   total: number;
   image_url: string | null;
   status: HomeFeedReceiptRow['status'];
+  /** Payment method when the caller's source provides it (optional). */
+  payment_method?: PaymentMethod;
 }
 
 /**
@@ -72,6 +75,10 @@ export function buildFeedRow(
       (categoryTotals[item.category] ?? 0) + item.amount;
   }
 
+  // NOTE for whole-object deepEqual fixtures: `payment_method` is ALWAYS
+  // emitted here (undefined when the caller's meta omits it), so a fixture
+  // that omits the field entirely fails deep equality — include
+  // `payment_method: undefined`.
   return {
     id: meta.id,
     store_name: meta.store_name,
@@ -80,6 +87,7 @@ export function buildFeedRow(
     total: meta.total,
     image_url: meta.image_url,
     status: meta.status,
+    payment_method: meta.payment_method,
     wants_snacks_total: items
       .filter((item) => item.is_impulse)
       .reduce((sum, item) => sum + item.amount, 0),

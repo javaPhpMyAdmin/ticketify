@@ -22,7 +22,11 @@
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { READ_ERROR_MESSAGE } from '@/lib/supabase/feature-access';
 import type { FeatureReadResult } from '@/lib/supabase/feature-access';
-import type { HomeFeedItemRow, HomeFeedReceiptRow } from '@/types';
+import type {
+  HomeFeedItemRow,
+  HomeFeedReceiptRow,
+  PaymentMethod,
+} from '@/types';
 
 import { buildFeedRow } from './feed-row';
 
@@ -90,6 +94,7 @@ function mapPurchaseRow(row: RawPurchaseRow): HomeFeedReceiptRow {
       total: row.total,
       image_url: row.image_url,
       status: row.status as HomeFeedReceiptRow['status'],
+      payment_method: row.payment_method as PaymentMethod,
     },
     items,
   );
@@ -178,6 +183,10 @@ function mapSearchItemRow(row: RawSearchItemRow): HomeFeedReceiptRow {
       image_url: purchase?.image_url ?? null,
       status:
         (purchase?.status as HomeFeedReceiptRow['status']) ?? 'confirmed',
+      // The nested purchases select includes `payment_method`; the fallback
+      // covers a defensive null purchase (the query filters on it, so the
+      // method is normally always present).
+      payment_method: purchase?.payment_method as PaymentMethod | undefined,
     },
     items,
   );

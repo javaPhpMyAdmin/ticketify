@@ -31,6 +31,7 @@ export default function ProfileScreen() {
       label: 'Exportar datos',
       icon: 'square.and.arrow.up',
       trailing: { type: 'chevron' },
+      onPress: () => router.push('/settings/export'),
     },
     {
       id: 'currency',

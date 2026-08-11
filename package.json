@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test:adapter": "node scripts/test-storage-adapter.mjs",
     "test:auth": "node scripts/test-auth.mjs",
+    "test:export": "node scripts/test-export.mjs",
     "test:features": "node scripts/test-features.mjs",
     "test:format": "node scripts/test-format.mjs",
     "test:home": "node scripts/test-home.mjs",
@@ -22,7 +23,7 @@
     "test:profile-hook": "node scripts/test-profile-hook.mjs",
     "test:receipts-mapper": "node scripts/test-receipts-mapper.mjs",
     "test:receipts-store": "node scripts/test-receipts-store.mjs",
-    "test": "pnpm test:format && pnpm test:adapter && pnpm test:auth && pnpm test:features && pnpm test:receipts-store && pnpm test:receipts-mapper && pnpm test:profile-hook && pnpm test:home && pnpm test:home-api && pnpm test:monthly-overview && pnpm test:price-alerts"
+    "test": "pnpm test:format && pnpm test:adapter && pnpm test:auth && pnpm test:export && pnpm test:features && pnpm test:receipts-store && pnpm test:receipts-mapper && pnpm test:profile-hook && pnpm test:home && pnpm test:home-api && pnpm test:monthly-overview && pnpm test:price-alerts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
@@ -38,8 +39,10 @@
     "expo-image": "~3.0.11",
     "expo-image-picker": "~17.0.11",
     "expo-linking": "~8.0.0",
+    "expo-print": "~15.0.8",
     "expo-router": "6.0.24",
     "expo-secure-store": "^15.0.8",
+    "expo-sharing": "~14.0.8",
     "expo-splash-screen": "~31.0.13",
     "expo-status-bar": "~3.0.0",
     "expo-symbols": "~1.0.8",
