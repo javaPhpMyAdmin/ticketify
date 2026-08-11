@@ -24,6 +24,8 @@ import { READ_ERROR_MESSAGE } from '@/lib/supabase/feature-access';
 import type { FeatureReadResult } from '@/lib/supabase/feature-access';
 import type { HomeFeedItemRow, HomeFeedReceiptRow } from '@/types';
 
+import { buildFeedRow } from './feed-row';
+
 /** Raw PostgREST shape of one `purchases` row with its nested relations. */
 interface RawPurchaseRow {
   id: string;
@@ -62,9 +64,9 @@ function firstOrSelf<T>(value: T | T[] | null): T | null {
 
 /**
  * Maps a raw `purchases` row into the shared feed-row shape: items ordered
- * by `sort_order`, `category_totals` summed by slug, `wants_snacks_total`
- * summed over impulse items, and `scanned_at` from `created_at`. Unknown
- * store/category fall back to the neutral values.
+ * by `sort_order`, then the shared builder derives `category_totals` by slug
+ * and `wants_snacks_total` over impulse items. Unknown store/category fall
+ * back to the neutral values.
  */
 function mapPurchaseRow(row: RawPurchaseRow): HomeFeedReceiptRow {
   const items: HomeFeedItemRow[] = (row.purchase_items ?? [])
@@ -79,26 +81,18 @@ function mapPurchaseRow(row: RawPurchaseRow): HomeFeedReceiptRow {
       is_impulse: item.is_impulse,
     }));
 
-  const categoryTotals: Record<string, number> = {};
-  for (const item of items) {
-    categoryTotals[item.category] =
-      (categoryTotals[item.category] ?? 0) + item.amount;
-  }
-
-  return {
-    id: row.id,
-    store_name: firstOrSelf(row.stores)?.name ?? 'Desconocido',
-    purchase_date: row.purchase_date,
-    scanned_at: row.created_at,
-    total: row.total,
-    image_url: row.image_url,
-    status: row.status as HomeFeedReceiptRow['status'],
-    wants_snacks_total: items
-      .filter((item) => item.is_impulse)
-      .reduce((sum, item) => sum + item.amount, 0),
-    category_totals: categoryTotals,
+  return buildFeedRow(
+    {
+      id: row.id,
+      store_name: firstOrSelf(row.stores)?.name ?? 'Desconocido',
+      purchase_date: row.purchase_date,
+      scanned_at: row.created_at,
+      total: row.total,
+      image_url: row.image_url,
+      status: row.status as HomeFeedReceiptRow['status'],
+    },
     items,
-  };
+  );
 }
 
 /**
@@ -172,20 +166,21 @@ function mapSearchItemRow(row: RawSearchItemRow): HomeFeedReceiptRow {
       is_impulse: row.is_impulse,
     },
   ];
-  return {
-    id: row.id,
-    store_name: purchase
-      ? (firstOrSelf(purchase.stores)?.name ?? 'Desconocido')
-      : 'Desconocido',
-    purchase_date: purchase?.purchase_date ?? '',
-    scanned_at: purchase?.created_at ?? null,
-    total: purchase?.total ?? row.total_price,
-    image_url: purchase?.image_url ?? null,
-    status: (purchase?.status as HomeFeedReceiptRow['status']) ?? 'confirmed',
-    wants_snacks_total: row.is_impulse ? row.total_price : 0,
-    category_totals: { [category]: row.total_price },
+  return buildFeedRow(
+    {
+      id: row.id,
+      store_name: purchase
+        ? (firstOrSelf(purchase.stores)?.name ?? 'Desconocido')
+        : 'Desconocido',
+      purchase_date: purchase?.purchase_date ?? '',
+      scanned_at: purchase?.created_at ?? null,
+      total: purchase?.total ?? row.total_price,
+      image_url: purchase?.image_url ?? null,
+      status:
+        (purchase?.status as HomeFeedReceiptRow['status']) ?? 'confirmed',
+    },
     items,
-  };
+  );
 }
 
 /**
