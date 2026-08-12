@@ -57,8 +57,8 @@ Chain strategy: pending
 
 ## Phase 4: Client Gate Infrastructure (M4)
 
-- [ ] 4.1 **Pure infra** — `src/lib/revenuecat.ts` (configure wrapper returning `false` in Expo Go; customerInfo fetch; purchase/restore wrapped try/catch; listener fail-open); `src/stores/use-pro-store.ts` `{isPro,isLoading}` (initial `isLoading=true`); `src/features/pro/hooks/useProEntitlement.ts` (store + `refresh`); `src/features/pro/gate.ts` `resolveGateState(isPro,isLoading): 'locked'|'unlocked'` with `isLoading→locked` (REQ-GATE-5).
-- [ ] 4.2 **Bootstrap + routes** — `src/features/pro/pro-bootstrap.tsx` (module-level `configured` guard, session-watched `configure`, listener → store); `src/features/pro/ProRouteGuard.tsx` (free → `<ProLock/>`, pro → children); `src/features/pro/components/ProLock.tsx` (CTA → `/pro`); mount `pro-bootstrap` inside `QueryClientProvider` in `_layout.tsx:101`; register `Stack.Screen name="pro/index"` (session-gated only) and `Stack.Screen name="pro/charts"` wrapped in `<ProRouteGuard>`; `src/app/pro/index.tsx` (paywall: offerings, purchase, restore, error/success states).
+- [x] 4.1 **Pure infra** — `src/lib/revenuecat.ts` (configure wrapper returning `false` in Expo Go; customerInfo fetch; purchase/restore wrapped try/catch; listener fail-open); `src/stores/use-pro-store.ts` `{isPro,isLoading}` (initial `isLoading=true`); `src/features/pro/hooks/useProEntitlement.ts` (store + `refresh`); `src/features/pro/gate.ts` `resolveGateState(isPro,isLoading): 'locked'|'unlocked'` with `isLoading→locked` (REQ-GATE-5).
+- [x] 4.2 **Bootstrap + routes** — `src/features/pro/pro-bootstrap.tsx` (module-level `configured` guard, session-watched `configure`, listener → store); `src/features/pro/ProRouteGuard.tsx` (free → `<ProLock/>`, pro → children); `src/features/pro/components/ProLock.tsx` (CTA → `/pro`); mount `pro-bootstrap` inside `QueryClientProvider` in `_layout.tsx:101`; register `Stack.Screen name="pro/index"` (session-gated only) and `Stack.Screen name="pro/charts"` wrapped in `<ProRouteGuard>`; `src/app/pro/index.tsx` (paywall: offerings, purchase, restore, error/success states).
 
 ## Phase 5: Quota Meters Wiring (M5)
 

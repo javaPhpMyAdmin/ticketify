@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 
 import { Pressable, ProfileHeader, Spinner, Text, View } from '@/components';
 import { useSessionStore, useSessionUser } from '@/features/auth';
+import { useProEntitlement } from '@/features/pro';
 import {
   AccountSettingsList,
   UsageLimitsCard,
@@ -21,9 +22,16 @@ export default function ProfileScreen() {
   const setHousehold = useSettingsStore((s) => s.setHouseholdSharing);
   const signOut = useSessionStore((s) => s.signOut);
   const { email } = useSessionUser();
+  const { isPro, isLoading: proLoading } = useProEntitlement();
 
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+
+  // Export is a Pro feature (REQ-GATE-1): free users see the row, but
+  // tapping it routes to the paywall instead of the exporter. The row
+  // stays visible so users know what unlocks with Pro — hiding it would
+  // remove the upgrade signal entirely.
+  const exportTarget = !isPro && !proLoading ? '/pro' : '/settings/export';
 
   const settings: AccountSettingRow[] = [
     {
@@ -31,7 +39,7 @@ export default function ProfileScreen() {
       label: 'Exportar datos',
       icon: 'square.and.arrow.up',
       trailing: { type: 'chevron' },
-      onPress: () => router.push('/settings/export'),
+      onPress: () => router.push(exportTarget),
     },
     {
       id: 'currency',
