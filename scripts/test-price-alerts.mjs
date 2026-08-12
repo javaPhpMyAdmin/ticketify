@@ -238,6 +238,92 @@ async function run() {
     assert.equal(alerts[0].changePct, 10);
   });
 
+  console.log('\n[tests] S2 deterministic receiptId rule (REQ-GATE-2)\n');
+
+  await test('two receipts in the same month with different purchase_date → latest wins', () => {
+    // Current month has two candidate receipts. The LATER purchase_date
+    // must win, regardless of insertion order — S2 deterministic.
+    const records = [
+      receipt('r1', '2026-07-03', item('Leche entera 1L', 1000, 'lacteos')),
+      // Out-of-order insertion: the older 2026-08 receipt comes FIRST.
+      receipt('r2', '2026-08-05', item('Leche entera 1L', 1200, 'lacteos')),
+      receipt('r3', '2026-08-25', item('Leche entera 1L', 1200, 'lacteos')),
+    ];
+    const alerts = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(alerts.length, 1);
+    assert.equal(
+      alerts[0].receiptId,
+      'r3',
+      'latest purchase_date (2026-08-25) must win regardless of insertion order',
+    );
+  });
+
+  await test('two receipts in the same month with the SAME purchase_date → lowest id wins', () => {
+    // Tie-break by id ascending: insertion order is r3 then r2; both on
+    // 2026-08-15. The id-ascending rule picks 'r2' (lexicographically
+    // smaller than 'r3').
+    const records = [
+      receipt('r1', '2026-07-03', item('Leche entera 1L', 1000, 'lacteos')),
+      receipt('r3', '2026-08-15', item('Leche entera 1L', 1200, 'lacteos')),
+      receipt('r2', '2026-08-15', item('Leche entera 1L', 1200, 'lacteos')),
+    ];
+    const alerts = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(alerts.length, 1);
+    assert.equal(
+      alerts[0].receiptId,
+      'r2',
+      'same purchase_date → lowest id wins (tie-break ascending)',
+    );
+  });
+
+  await test('same identity in different months → each nowMonth gets its own receiptId', () => {
+    // The (identity, month) source map is per-month: asking for July vs
+    // June picks the July receipt, asking for August vs July picks the
+    // August receipt — independent captures.
+    const records = [
+      receipt('r0', '2026-06-03', item('Leche entera 1L', 900, 'lacteos')),
+      receipt('r1', '2026-07-12', item('Leche entera 1L', 1000, 'lacteos')),
+      receipt('r2', '2026-08-20', item('Leche entera 1L', 1200, 'lacteos')),
+    ];
+    const julyAlerts = alertsMod.computePriceAlerts(records, 0.05, '2026-07');
+    const augustAlerts = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(julyAlerts.length, 1);
+    assert.equal(augustAlerts.length, 1);
+    assert.equal(
+      julyAlerts[0].receiptId,
+      'r1',
+      'nowMonth=2026-07 must pick the July source receipt',
+    );
+    assert.equal(
+      augustAlerts[0].receiptId,
+      'r2',
+      'nowMonth=2026-08 must pick the August source receipt',
+    );
+  });
+
+  await test('receipts without an id field contribute an empty-string candidate (no crash)', () => {
+    // The implementation accepts id-less receipts (it falls back to ''),
+    // so the deterministic comparison still resolves. The analytics tap
+    // becomes a no-op navigation rather than crashing on a missing id.
+    // Here the ONLY current-month receipt has no id → alert.receiptId=''.
+    const records = [
+      receipt('r1', '2026-07-03', item('Leche entera 1L', 1000, 'lacteos')),
+      // Current-month receipt WITHOUT an `id` field.
+      {
+        store_name: 'Store',
+        purchase_date: '2026-08-10',
+        items: [item('Leche entera 1L', 1200, 'lacteos')],
+      },
+    ];
+    const alerts = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(alerts.length, 1);
+    assert.equal(
+      alerts[0].receiptId,
+      '',
+      'id-less receipt contributes an empty-string candidate; tap is a no-op navigation',
+    );
+  });
+
   console.log(`\n[tests] ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
   rmSync(workdir, { recursive: true, force: true });
