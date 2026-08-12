@@ -71,6 +71,15 @@ interface ErrorResponse {
   /** Quota metadata, only present on quota_exceeded responses. */
   limit?: number;
   used?: number;
+  /** Year-month key (YYYY-MM, UTC) the quota decision belongs to. */
+  month?: string;
+  /**
+   * True only on the post-parse race envelope (WARNING-4): the pre-check
+   * passed, the parse succeeded, but a concurrent request consumed the
+   * last free slot. The parsed receipt is DISCARDED. Free-only by
+   * construction — Pro users never hit this (the RPC is tier-aware).
+   */
+  raceLost?: boolean;
 }
 
 /**
@@ -471,11 +480,13 @@ function currentYearMonth(): string {
 }
 
 /**
- * Monthly scan allowance for free-tier users (mirrors scan_usage.scans_limit).
- * Raised to 100 for the testing phase (migration 0004); the DB row value is
- * authoritative and this constant only backs rows that report no limit.
+ * Monthly scan allowance for free-tier users. Mirrors the SQL
+ * `coalesce(su.scans_limit, 15)` defensive guard in `try_consume_scan`
+ * (migration 0011 §2). The DB row value is authoritative — this constant
+ * only backs rows that report no limit, a drift the RPC's coalesce also
+ * guards against (REQ-QUOTA-1, REQ-QUOTA-5).
  */
-const SCANS_LIMIT = 100;
+const SCANS_LIMIT = 15;
 
 /**
  * Atomically consumes one monthly scan slot.
@@ -571,44 +582,57 @@ Deno.serve(async (req: Request) => {
       ? body.mime_type
       : 'image/jpeg';
 
-  let quota: Awaited<ReturnType<typeof consumeScanQuota>>;
+  // Pre-check (numeric-only, non-atomic UX optimization, design D2 / CRITICAL-1):
+  // skip the Gemini call when the user is clearly out of free quota. NULL
+  // scans_limit is the Pro marker (set by set_profile_tier on grant, see
+  // migration 0011 §3) — the pre-check MUST skip the comparison entirely
+  // and let the tier-aware RPC accept the scan. JS coerces `null >= 0` to
+  // `true` in numeric comparison, so a fresh Pro row (scans_limit=null,
+  // scans_used=0) would otherwise evaluate as `0 >= 15 → true` (false 429).
+  // The RPC (try_consume_scan) is the tier-aware authority; this pre-check
+  // is only here to avoid burning a Gemini call when the answer is
+  // obvious (REQ-QUOTA-4).
+  const currentMonth = currentYearMonth();
+  const svc = serviceClient();
+  let preUsage: { scans_limit: number | null; scans_used: number } | null = null;
   try {
-    quota = await consumeScanQuota(userId);
-  } catch (err) {
-    // The RPC can fail when the function is not deployed yet (missing
-    // try_consume_scan), on permission denials, or on SQL errors. Those are
-    // server-side problems: answer with the internal envelope instead of
-    // letting Deno.serve surface a bare platform 500. The quota_exceeded
-    // path below is a normal response, not an error.
-    console.error(
-      '[parse-ticket]',
-      'quota RPC failed:',
-      err instanceof Error ? err.message : err,
-    );
-    return jsonError(500, 'internal', INTERNAL_ERROR_MESSAGE);
+    const { data } = await svc
+      .from('scan_usage')
+      .select('scans_limit, scans_used')
+      .eq('user_id', userId)
+      .eq('year_month', currentMonth)
+      .maybeSingle();
+    preUsage = data;
+  } catch {
+    // Pre-check read failure → proceed (availability over optimization;
+    // the RPC remains the contract).
   }
-  if (!quota.ok) {
+  if (
+    preUsage &&
+    preUsage.scans_limit != null &&
+    preUsage.scans_used >= preUsage.scans_limit
+  ) {
     return new Response(
       JSON.stringify({
-        error: 'Monthly scan quota exceeded',
+        error: 'quota_exceeded_pre',
         code: 'quota_exceeded',
-        limit: quota.limit,
-        used: quota.used,
+        limit: preUsage.scans_limit,
+        used: preUsage.scans_used,
+        month: currentMonth,
       } satisfies ErrorResponse),
       { status: 429, headers: { 'Content-Type': 'application/json' } },
     );
   }
 
+  let parsed: ParsedReceipt;
   try {
-    const parsed = await callGemini(body.image_base64, mimeType);
-    return new Response(JSON.stringify(parsed), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    parsed = await callGemini(body.image_base64, mimeType);
   } catch (err) {
     // Gemini/validation failures are a client-fixable 422; anything else is
-    // a server-side internal error. Auth/validation/quota paths above stay
-    // on their existing 401/400/429 statuses.
+    // a server-side internal error. Auth/validation/pre-check paths above
+    // stay on their existing 401/400/429 statuses. A parse failure MUST NOT
+    // burn a quota slot (REQ-QUOTA-4): there is no consume call before this
+    // point, so falling through here leaves scans_used untouched.
     if (err instanceof ParseError) {
       console.error('[parse-ticket]', 'parse failed:', err.message);
       return jsonError(422, 'parse_failed', err.message);
@@ -619,6 +643,52 @@ Deno.serve(async (req: Request) => {
     console.error('[parse-ticket]', 'internal error:', detail);
     return jsonError(500, 'internal', INTERNAL_ERROR_MESSAGE);
   }
+
+  // Consume AFTER successful parse (REQ-QUOTA-4). The RPC is tier-aware
+  // (CRITICAL-1/2): Pro always wins via the `v_tier = 'pro'` branch,
+  // free is gated by `scans_used < coalesce(scans_limit, 15)`. A race
+  // loser (ok=false here after the pre-check passed) gets a distinct
+  // envelope so the client can render the post-parse "consumed by
+  // concurrent use" message (WARNING-4). The parsed receipt is
+  // DISCARDED in this branch — the free slot was lost to a concurrent
+  // request, there is nothing to return (design.md:64).
+  let quota: Awaited<ReturnType<typeof consumeScanQuota>>;
+  try {
+    quota = await consumeScanQuota(userId);
+  } catch (err) {
+    // The RPC can fail when the function is not deployed yet (missing
+    // try_consume_scan), on permission denials, or on SQL errors. Those are
+    // server-side problems: answer with the internal envelope instead of
+    // letting Deno.serve surface a bare platform 500. The quota_exceeded
+    // path below is a normal response, not an error. The parsed receipt
+    // is discarded here as well — we cannot guarantee the slot was
+    // consumed, so handing the receipt back to a client whose quota
+    // state is unknown would be a lie.
+    console.error(
+      '[parse-ticket]',
+      'quota RPC failed:',
+      err instanceof Error ? err.message : err,
+    );
+    return jsonError(500, 'internal', INTERNAL_ERROR_MESSAGE);
+  }
+  if (!quota.ok) {
+    return new Response(
+      JSON.stringify({
+        error: 'quota_exceeded_race',
+        code: 'quota_exceeded',
+        limit: quota.limit,
+        used: quota.used,
+        raceLost: true,
+        month: currentMonth,
+      } satisfies ErrorResponse),
+      { status: 429, headers: { 'Content-Type': 'application/json' } },
+    );
+  }
+
+  return new Response(JSON.stringify(parsed), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
 });
 
 function jsonError(status: number, code: ErrorResponse['code'], error: string) {
