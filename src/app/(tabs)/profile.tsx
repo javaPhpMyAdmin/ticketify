@@ -99,7 +99,7 @@ export default function ProfileScreen() {
           />
         ) : null}
 
-        {usage ? <UsageLimitsCard usage={usage} /> : null}
+        {usage ? <UsageLimitsCard usage={usage} isPro={isPro} /> : null}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 

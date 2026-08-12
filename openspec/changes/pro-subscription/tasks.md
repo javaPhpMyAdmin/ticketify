@@ -62,8 +62,8 @@ Chain strategy: pending
 
 ## Phase 5: Quota Meters Wiring (M5)
 
-- [ ] 5.1 **Pure + types** — `src/features/home/quota.ts` `computeQuotaState(used, limit:number|null, isPro)` with `unlimited|remaining|exhausted|ratio|showUpgradeCta`; `isPro` short-circuits to unlimited (CRITICAL-2); `coalesce(limit,15)` mirror; `src/types/index.ts` widens `ScanUsage.scans_limit:number|null` (line 114).
-- [ ] 5.2 **Hooks + components** — `useScanQuota` returns `{usage, isPro}` (reads `useProEntitlement`); `ScanQuotaCard` accepts `isPro`, renders "Ilimitado" + no CTA when `unlimited`, "Sin escaneos disponibles" + paywall CTA only when `!isPro && exhausted`; `UsageMeter` accepts `limit:number|null` + `isPro`, hides upgrade pitch when `isPro`; `UsageLimitsCard` pass-through with `isPro` from profile screen (`profile.tsx:18` → `useProfile` returns `isPro` joining pro entitlement).
+- [x] 5.1 **Pure + types** — `src/features/home/quota.ts` `computeQuotaState(used, limit:number|null, isPro)` with `unlimited|remaining|exhausted|ratio|showUpgradeCta`; `isPro` short-circuits to unlimited (CRITICAL-2); `coalesce(limit,15)` mirror; `src/types/index.ts` widens `ScanUsage.scans_limit:number|null` (line 114).
+- [x] 5.2 **Hooks + components** — `useScanQuota` returns `{usage, isPro}` (reads `useProEntitlement`); `ScanQuotaCard` accepts `isPro`, renders "Ilimitado" + no CTA when `unlimited`, "Sin escaneos disponibles" + paywall CTA only when `!isPro && exhausted`; `UsageMeter` accepts `limit:number|null` + `isPro`, hides upgrade pitch when `isPro`; `UsageLimitsCard` pass-through with `isPro` from profile screen (`profile.tsx:18` → `useProfile` returns `isPro` joining pro entitlement).
 
 ## Phase 6: Charts Entry + Guard (M6)
 
