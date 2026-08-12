@@ -224,3 +224,27 @@ export interface CategoryMonthlyTotal {
   item_count: number;
   percent_of_total: number;
 }
+
+/**
+ * Price alert: a product whose unit price moved beyond the 5% threshold
+ * between the previous and current month (feature-gating spec — REQ-GATE-2).
+ * `receiptId` is the id of the receipt in the **current month** that hosts
+ * the changed item — picked deterministically by the S2 rule in
+ * `features/analytics/price-alerts.ts` (latest `purchase_date`; tie-break
+ * `id` ascending). The analytics banner carries this id so a Pro tap
+ * navigates straight to the receipt detail (`/receipts/:receiptId`); the
+ * free path shows a Pro lock instead and pushes the paywall.
+ */
+export interface PriceAlert {
+  /** Display name from the current-month receipt (original casing). */
+  name: string;
+  category: string;
+  /** Unit price this month. */
+  currentPrice: number;
+  /** Unit price last month. */
+  previousPrice: number;
+  /** Signed percentage change, e.g. 9.1 for +9.1%, -3.2 for -3.2%. */
+  changePct: number;
+  /** Source receipt id (current month) — see S2 deterministic rule. */
+  receiptId: string;
+}
