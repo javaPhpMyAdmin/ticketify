@@ -26,6 +26,7 @@
     "test": "pnpm test:format && pnpm test:adapter && pnpm test:auth && pnpm test:export && pnpm test:features && pnpm test:receipts-store && pnpm test:receipts-mapper && pnpm test:profile-hook && pnpm test:home && pnpm test:home-api && pnpm test:monthly-overview && pnpm test:price-alerts"
   },
   "dependencies": {
+    "@shopify/react-native-skia": "2.11.0",
     "@supabase/supabase-js": "^2.111.0",
     "@tanstack/react-query": "^5.101.4",
     "expo": "54.0.36",
@@ -60,7 +61,7 @@
     "react-native-svg": "15.12.1",
     "react-native-url-polyfill": "^4.0.0",
     "react-native-web": "~0.21.0",
-    "react-native-worklets": "~0.5.0",
+    "react-native-worklets": "~0.8.0",
     "zustand": "^5.0.14"
   },
   "devDependencies": {

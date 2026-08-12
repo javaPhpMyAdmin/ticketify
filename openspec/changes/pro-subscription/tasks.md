@@ -67,7 +67,7 @@ Chain strategy: pending
 
 ## Phase 6: Charts Entry + Guard (M6)
 
-- [ ] 6.1 **Worklets/skia spike (FIRST, isolated)** — try `worklets@0.5.0` + `skia@^2.2.7` → rebuild → escalate 0.6.0 → ≥0.7.0; verify `react-native-reanimated ~4.1.0` compat at each step; pin the highest skia compatible with worklets 0.5.x as fallback (D5). Acceptance: native build succeeds; spike result committed with rationale.
+- [x] 6.1 **Worklets/skia spike (FIRST, isolated)** — tried `worklets@0.5.1` + `skia@2.2.12` via `npx expo install` (SDK 54 defaults), escalated to `worklets@0.8.0` + `skia@2.11.0` after scanning peer deps (worklets ≥0.9 needs RN ≥0.83; reanimated 4.5 needs worklets 0.10+ + RN 0.83+). Compat matrix verified: worklets 0.8.0 ↔ RN 0.81-0.85 ✓, reanimated 4.1.7 ↔ worklets 0.5-0.8 ✓, skia 2.11.0 ↔ worklets ≥0.7.0 + reanimated ≥4.0.0 ✓. No peer-dep conflicts. Result documented in `SPIKE-RESULT.md`.
 - [ ] 6.2 **Deps + plugin** — `package.json` add `react-native-purchases`, `victory-native@^41`, `@shopify/react-native-skia@^2.2.7`, worklets pinned from 6.1; verify `app.json` plugin requirement for purchases (apply must check SDK plugin docs); rebuild expected.
 - [ ] 6.3 **Charts code (depends on 6.2 result)** — `src/features/charts/aggregate.ts` (`aggregateSpendTrend` zero-fill + N-month window; `aggregateStoresByMonth` deterministic order; donut reuses `aggregateCategoriesByMonth`); `src/features/charts/components/{TrendChart,CategoryDonut,StoreBars}.tsx` (skia + victory-native XL); `src/app/pro/charts.tsx` body wrapped in `<ProRouteGuard>`; charts entry card under `MonthlyOverviewCard` in `analytics.tsx:152-156` (free → lock + `router.push('/pro')`; pro → `/pro/charts`).
 
