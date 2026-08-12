@@ -19,6 +19,7 @@ import {
   useMonthlyTotals,
   usePriceAlerts,
 } from '@/features/analytics';
+import type { PriceAlert } from '@/features/analytics';
 import {
   aggregateItemsByMonth,
   currentMonthKey,
@@ -159,27 +160,7 @@ export default function AnalyticsScreen() {
         />
         <ChartsEntryCard isPro={isPro} />
         {alerts.map((alert) => (
-          <View key={alert.name} style={styles.alertBanner}>
-            <Icon
-              name="exclamationmark.triangle.fill"
-              size={26}
-              color={colors.danger}
-            />
-            <View style={styles.wrapTextIcon}>
-              <Text style={styles.priceAlert}>Alerta de precio</Text>
-              <View style={styles.alertTextWrap}>
-                <Text style={styles.alertText}>
-                  {alert.name} {alert.changePct >= 0 ? 'aumentó' : 'bajó'}{' '}
-                  <Text
-                    style={{ fontSize: 17.5, fontWeight: 900, color: 'black' }}
-                  >
-                    {Math.abs(alert.changePct)}%
-                  </Text>{' '}
-                  desde el mes pasado.
-                </Text>
-              </View>
-            </View>
-          </View>
+          <PriceAlertBanner key={alert.name} alert={alert} isPro={isPro} />
         ))}
         <TopItemsBreakdown
           rows={topItems}
@@ -378,6 +359,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.05 * 16,
     textTransform: 'uppercase',
   },
+  alertTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  alertBannerPressed: {
+    opacity: 0.85,
+  },
 });
 
 /**
@@ -471,6 +460,75 @@ function ChartsEntryCard({ isPro }: ChartsEntryCardProps) {
           />
         </View>
       </Card>
+    </Pressable>
+  );
+}
+
+/**
+ * Price-alert banner (pro-subscription spec — REQ-GATE-2). One alert per
+ * `(identity, current-month)` tuple that crossed the 5% threshold; the
+ * banner is always visible (REQ-GATE-1: Pro features shown with a lock,
+ * not hidden) so free users see that an alert exists and the Pro pill
+ * makes the upsell explicit.
+ *
+ * Tap routing:
+ *
+ * - `isPro === true`: `onPress` navigates to the source receipt detail
+ *   at `/receipts/${alert.receiptId}`. The id is captured deterministically
+ *   by `computePriceAlerts` (S2: latest `purchase_date`, tie-break `id`
+ *   ascending) so two runs on the same data land on the same receipt.
+ * - `isPro === false`: `onPress` pushes the paywall (`/pro`). The banner
+ *   content still renders so the user understands what they would unlock.
+ */
+interface PriceAlertBannerProps {
+  alert: PriceAlert;
+  isPro: boolean;
+}
+
+function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
+  const handlePress = () => {
+    if (isPro && alert.receiptId) {
+      router.push(`/receipts/${alert.receiptId}`);
+    } else {
+      router.push('/pro');
+    }
+  };
+  return (
+    <Pressable
+      onPress={handlePress}
+      accessibilityRole="button"
+      accessibilityLabel={
+        isPro ? 'Ver recibo de la alerta de precio' : 'Desbloquear Alerta de precio Pro'
+      }
+      style={({ pressed }) => [
+        styles.alertBanner,
+        pressed && styles.alertBannerPressed,
+      ]}
+    >
+      <Icon
+        name="exclamationmark.triangle.fill"
+        size={26}
+        color={colors.danger}
+      />
+      <View style={styles.wrapTextIcon}>
+        <View style={styles.alertTitleRow}>
+          <Text style={styles.priceAlert}>Alerta de precio</Text>
+          {!isPro ? (
+            <View style={styles.proPill}>
+              <Text style={styles.proPillText}>Pro</Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.alertTextWrap}>
+          <Text style={styles.alertText}>
+            {alert.name} {alert.changePct >= 0 ? 'aumentó' : 'bajó'}{' '}
+            <Text style={{ fontSize: 17.5, fontWeight: 900, color: 'black' }}>
+              {Math.abs(alert.changePct)}%
+            </Text>{' '}
+            desde el mes pasado.
+          </Text>
+        </View>
+      </View>
     </Pressable>
   );
 }

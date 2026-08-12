@@ -73,7 +73,7 @@ Chain strategy: pending
 
 ## Phase 7: Price-Alert receiptId (M7)
 
-- [ ] 7.1 **receiptId capture (S2 deterministic)** — `src/types/index.ts` add `PriceAlert.receiptId:string`; `src/features/analytics/price-alerts.ts` capture first receipt per `(identity, currentMonthKey())` tuple under `records` order with tie-break `id` ascending; `src/features/analytics/hooks/usePriceAlerts.ts` pass-through; `src/app/(tabs)/analytics.tsx:157-179` banner renders `<Pressable onPress={() => router.push(\`/receipts/\${alert.receiptId}\`)}>` for pro; free path uses `<ProLock/>` overlay (REQ-GATE-2). Acceptance: two runs on same data produce identical `receiptId` (S2 stable ordering).
+- [x] 7.1 **receiptId capture (S2 deterministic)** — `src/types/index.ts` add `PriceAlert.receiptId:string`; `src/features/analytics/price-alerts.ts` capture first receipt per `(identity, currentMonthKey())` tuple under `records` order with tie-break `id` ascending; `src/features/analytics/hooks/usePriceAlerts.ts` pass-through; `src/app/(tabs)/analytics.tsx:157-179` banner renders `<Pressable onPress={() => router.push(\`/receipts/\${alert.receiptId}\`)}>` for pro; free path uses `<ProLock/>` overlay (REQ-GATE-2). Acceptance: two runs on same data produce identical `receiptId` (S2 stable ordering).
 
 ## Phase 8: Tests + SQL Smoke (M8)
 
