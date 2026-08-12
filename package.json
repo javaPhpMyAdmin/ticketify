@@ -23,9 +23,15 @@
     "test:profile-hook": "node scripts/test-profile-hook.mjs",
     "test:receipts-mapper": "node scripts/test-receipts-mapper.mjs",
     "test:receipts-store": "node scripts/test-receipts-store.mjs",
-    "test": "pnpm test:format && pnpm test:adapter && pnpm test:auth && pnpm test:export && pnpm test:features && pnpm test:receipts-store && pnpm test:receipts-mapper && pnpm test:profile-hook && pnpm test:home && pnpm test:home-api && pnpm test:monthly-overview && pnpm test:price-alerts"
+    "test:pro-gating": "node scripts/test-pro-gating.mjs",
+    "test:quota-tier": "node scripts/test-quota-tier.mjs",
+    "test:charts": "node scripts/test-charts.mjs",
+    "test:verify-constant-time": "node scripts/test-verify-constant-time.mjs",
+    "test:webhook-idempotency": "node scripts/test-webhook-idempotency.mjs",
+    "test": "pnpm test:format && pnpm test:adapter && pnpm test:auth && pnpm test:export && pnpm test:features && pnpm test:receipts-store && pnpm test:receipts-mapper && pnpm test:profile-hook && pnpm test:home && pnpm test:home-api && pnpm test:monthly-overview && pnpm test:price-alerts && pnpm test:pro-gating && pnpm test:quota-tier && pnpm test:charts && pnpm test:verify-constant-time && pnpm test:webhook-idempotency"
   },
   "dependencies": {
+    "@shopify/react-native-skia": "2.11.0",
     "@supabase/supabase-js": "^2.111.0",
     "@tanstack/react-query": "^5.101.4",
     "expo": "54.0.36",
@@ -60,7 +66,8 @@
     "react-native-svg": "15.12.1",
     "react-native-url-polyfill": "^4.0.0",
     "react-native-web": "~0.21.0",
-    "react-native-worklets": "~0.5.0",
+    "react-native-worklets": "~0.8.0",
+    "victory-native": "^41.26.0",
     "zustand": "^5.0.14"
   },
   "devDependencies": {

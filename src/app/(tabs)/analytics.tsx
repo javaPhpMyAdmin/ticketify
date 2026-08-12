@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   BreakdownRowSkeleton,
+  Card,
   EmptyState,
   Icon,
   Pressable,
@@ -18,6 +19,7 @@ import {
   useMonthlyTotals,
   usePriceAlerts,
 } from '@/features/analytics';
+import type { PriceAlert } from '@/features/analytics';
 import {
   aggregateItemsByMonth,
   currentMonthKey,
@@ -25,6 +27,7 @@ import {
   monthKeyToLabel,
   previousMonthKey,
 } from '@/features/home/hooks/useHomeFeed';
+import { useProEntitlement } from '@/features/pro';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -42,6 +45,7 @@ import { useSessionStore } from '../../features/auth';
 export default function AnalyticsScreen() {
   const list = useReceiptsStore((s) => s.list);
   const currency = useSettingsStore((s) => s.currency);
+  const { isPro } = useProEntitlement();
   const [monthKey, setMonthKey] = useState(currentMonthKey);
 
   const monthKeys = useMemo(() => getAvailableMonthKeys(list), [list]);
@@ -154,28 +158,9 @@ export default function AnalyticsScreen() {
           currency={currency}
           previousMonthLabel={previousMonthLabel}
         />
+        <ChartsEntryCard isPro={isPro} />
         {alerts.map((alert) => (
-          <View key={alert.name} style={styles.alertBanner}>
-            <Icon
-              name="exclamationmark.triangle.fill"
-              size={26}
-              color={colors.danger}
-            />
-            <View style={styles.wrapTextIcon}>
-              <Text style={styles.priceAlert}>Alerta de precio</Text>
-              <View style={styles.alertTextWrap}>
-                <Text style={styles.alertText}>
-                  {alert.name} {alert.changePct >= 0 ? 'aumentó' : 'bajó'}{' '}
-                  <Text
-                    style={{ fontSize: 17.5, fontWeight: 900, color: 'black' }}
-                  >
-                    {Math.abs(alert.changePct)}%
-                  </Text>{' '}
-                  desde el mes pasado.
-                </Text>
-              </View>
-            </View>
-          </View>
+          <PriceAlertBanner key={alert.name} alert={alert} isPro={isPro} />
         ))}
         <TopItemsBreakdown
           rows={topItems}
@@ -319,4 +304,231 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     flexWrap: 'wrap',
   },
+  entryPressable: {
+    // Card already paints its own background/border; the pressable only
+    // needs to fade on press for tactile feedback.
+  },
+  entryPressed: {
+    opacity: 0.85,
+  },
+  entryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  entryIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  entryIconCircleLocked: {
+    backgroundColor: colors.chipBg,
+  },
+  entryTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  entryTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  entryTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: colors.textPrimary,
+  },
+  entryBody: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  proPill: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radii.full,
+    backgroundColor: colors.primary,
+  },
+  proPillText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: colors.onPrimary,
+    letterSpacing: 0.05 * 16,
+    textTransform: 'uppercase',
+  },
+  alertTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  alertBannerPressed: {
+    opacity: 0.85,
+  },
 });
+
+/**
+ * Charts entry card (pro-subscription spec — REQ-GATE-1, REQ-CHART-*).
+ *
+ * Single affordance linking the free analytics tab to the Pro charts
+ * screen. Two render paths, both share the card shell so the layout
+ * stays consistent with `MonthlyOverviewCard` above:
+ *
+ * - `isPro === true`: chevron + "Ver estadísticas" → `/pro/charts`.
+ * - `isPro === false`: lock icon + "Estadísticas Pro" + small "Pro"
+ *   pill → `/pro` (the paywall). A lock UX tells the user the feature
+ *   is gated without making them guess; the Pro pill makes the upsell
+ *   explicit so the path is unambiguous.
+ *
+ * The card is mounted after `MonthlyOverviewCard` (around line 152-156)
+ * so the entry sits in the natural reading flow under the headline
+ * stat. While the entitlement is still `isLoading` the store defaults
+ * `isPro` to `false` (M4 contract), which renders the lock UX — the
+ * safest default since a free user opening the screen MUST see the
+ * paywall CTA rather than a route that will bounce them back.
+ */
+interface ChartsEntryCardProps {
+  isPro: boolean;
+}
+
+function ChartsEntryCard({ isPro }: ChartsEntryCardProps) {
+  if (isPro) {
+    return (
+      <Pressable
+        onPress={() => router.push('/pro/charts')}
+        accessibilityRole="button"
+        accessibilityLabel="Ver estadísticas Pro"
+        style={({ pressed }) => [
+          styles.entryPressable,
+          pressed && styles.entryPressed,
+        ]}
+      >
+        <Card>
+          <View style={styles.entryRow}>
+            <View style={styles.entryIconCircle}>
+              <Icon name="chart.bar.fill" size={22} color={colors.primary} />
+            </View>
+            <View style={styles.entryTextWrap}>
+              <Text style={styles.entryTitle}>Ver estadísticas</Text>
+              <Text style={styles.entryBody}>
+                Tendencias de gasto, categorías y tiendas
+              </Text>
+            </View>
+            <Icon
+              name="chevron.right"
+              size={22}
+              color={colors.textSecondary}
+            />
+          </View>
+        </Card>
+      </Pressable>
+    );
+  }
+
+  return (
+    <Pressable
+      onPress={() => router.push('/pro')}
+      accessibilityRole="button"
+      accessibilityLabel="Desbloquear Estadísticas Pro"
+      style={({ pressed }) => [
+        styles.entryPressable,
+        pressed && styles.entryPressed,
+      ]}
+    >
+      <Card>
+        <View style={styles.entryRow}>
+          <View style={[styles.entryIconCircle, styles.entryIconCircleLocked]}>
+            <Icon name="lock.fill" size={22} color={colors.textSecondary} />
+          </View>
+          <View style={styles.entryTextWrap}>
+            <View style={styles.entryTitleRow}>
+              <Text style={styles.entryTitle}>Estadísticas Pro</Text>
+              <View style={styles.proPill}>
+                <Text style={styles.proPillText}>Pro</Text>
+              </View>
+            </View>
+            <Text style={styles.entryBody}>
+              Tendencias de gasto, categorías y tiendas
+            </Text>
+          </View>
+          <Icon
+            name="chevron.right"
+            size={22}
+            color={colors.textSecondary}
+          />
+        </View>
+      </Card>
+    </Pressable>
+  );
+}
+
+/**
+ * Price-alert banner (pro-subscription spec — REQ-GATE-2). One alert per
+ * `(identity, current-month)` tuple that crossed the 5% threshold; the
+ * banner is always visible (REQ-GATE-1: Pro features shown with a lock,
+ * not hidden) so free users see that an alert exists and the Pro pill
+ * makes the upsell explicit.
+ *
+ * Tap routing:
+ *
+ * - `isPro === true`: `onPress` navigates to the source receipt detail
+ *   at `/receipts/${alert.receiptId}`. The id is captured deterministically
+ *   by `computePriceAlerts` (S2: latest `purchase_date`, tie-break `id`
+ *   ascending) so two runs on the same data land on the same receipt.
+ * - `isPro === false`: `onPress` pushes the paywall (`/pro`). The banner
+ *   content still renders so the user understands what they would unlock.
+ */
+interface PriceAlertBannerProps {
+  alert: PriceAlert;
+  isPro: boolean;
+}
+
+function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
+  const handlePress = () => {
+    if (isPro && alert.receiptId) {
+      router.push(`/receipts/${alert.receiptId}`);
+    } else {
+      router.push('/pro');
+    }
+  };
+  return (
+    <Pressable
+      onPress={handlePress}
+      accessibilityRole="button"
+      accessibilityLabel={
+        isPro ? 'Ver recibo de la alerta de precio' : 'Desbloquear Alerta de precio Pro'
+      }
+      style={({ pressed }) => [
+        styles.alertBanner,
+        pressed && styles.alertBannerPressed,
+      ]}
+    >
+      <Icon
+        name="exclamationmark.triangle.fill"
+        size={26}
+        color={colors.danger}
+      />
+      <View style={styles.wrapTextIcon}>
+        <View style={styles.alertTitleRow}>
+          <Text style={styles.priceAlert}>Alerta de precio</Text>
+          {!isPro ? (
+            <View style={styles.proPill}>
+              <Text style={styles.proPillText}>Pro</Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.alertTextWrap}>
+          <Text style={styles.alertText}>
+            {alert.name} {alert.changePct >= 0 ? 'aumentó' : 'bajó'}{' '}
+            <Text style={{ fontSize: 17.5, fontWeight: 900, color: 'black' }}>
+              {Math.abs(alert.changePct)}%
+            </Text>{' '}
+            desde el mes pasado.
+          </Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+}

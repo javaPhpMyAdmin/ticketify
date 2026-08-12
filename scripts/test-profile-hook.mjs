@@ -215,7 +215,6 @@ function resetAll() {
   settingsStoreMod.useSettingsStore.setState({
     monthly_budget: 1200,
     currency: 'UYU',
-    tier: 'free',
     household_sharing: false,
   });
   sessionStoreMod.useSessionStore.setState({ session: null });

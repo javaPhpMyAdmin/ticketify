@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020", "dom"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "..",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "rootDir": ".."
+  },
+  "include": [
+    "../src/features/pro/gate.ts",
+    "../scripts/test-stubs/globals.d.ts"
+  ]
+}
