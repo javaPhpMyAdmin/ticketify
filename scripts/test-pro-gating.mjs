@@ -156,6 +156,41 @@ async function run() {
     }
   });
 
+  await test('isLoading=true ALWAYS produces "locked", no matter isPro (1000-iteration property)', () => {
+    // Property: for ANY isPro value, isLoading=true → 'locked'. Loop 1000
+    // times with deterministic isPro alternation to exercise the loader
+    // fast-path and pin the "loading wins" invariant in code.
+    for (let i = 0; i < 1000; i++) {
+      const isPro = i % 2 === 0;
+      assert.equal(resolveGateState(isPro, true), 'locked');
+    }
+  });
+
+  await test('isLoading=false produces "unlocked" iff isPro=true (1000-iteration property)', () => {
+    // Property: for ANY i, isLoading=false → 'unlocked' when isPro is true,
+    // 'locked' when isPro is false. Pins the dual direction.
+    for (let i = 0; i < 1000; i++) {
+      const isPro = i % 2 === 0;
+      const expected = isPro ? 'unlocked' : 'locked';
+      assert.equal(resolveGateState(isPro, false), expected);
+    }
+  });
+
+  await test('re-call with the same arguments returns the same result (pure / no global state)', () => {
+    // Pin purity: no caching, no global state, no nonce — the function is
+    // a pure projection, so two calls with identical inputs must agree.
+    for (const [isPro, isLoading] of [
+      [false, false],
+      [false, true],
+      [true, false],
+      [true, true],
+    ]) {
+      const a = resolveGateState(isPro, isLoading);
+      const b = resolveGateState(isPro, isLoading);
+      assert.equal(a, b, `divergent result for isPro=${isPro}, isLoading=${isLoading}`);
+    }
+  });
+
   console.log('');
   if (failed > 0) {
     console.error(`[tests] ${failed} failed, ${passed} passed`);
