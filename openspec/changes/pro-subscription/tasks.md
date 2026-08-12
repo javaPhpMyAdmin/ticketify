@@ -53,7 +53,7 @@ Chain strategy: pending
 
 ## Phase 3: parse-ticket (M3)
 
-- [ ] 3.1 **Quota sequencing rewrite** — `SCANS_LIMIT=15` (line 478); remove pre-check NULL branch (numeric `used >= limit` only); call Gemini BEFORE consume (D2); on RPC `ok=false` → 429 `quota_exceeded_race` with `{limit, used, raceLost:true}`; failed parse → 422, no consume (REQ-QUOTA-4). Acceptance: pre-check `quota_exceeded_pre` (no Gemini) vs post-parse `quota_exceeded_race` distinct envelopes.
+- [x] 3.1 **Quota sequencing rewrite** — `SCANS_LIMIT=15` (line 478); remove pre-check NULL branch (numeric `used >= limit` only); call Gemini BEFORE consume (D2); on RPC `ok=false` → 429 `quota_exceeded_race` with `{limit, used, raceLost:true}`; failed parse → 422, no consume (REQ-QUOTA-4). Acceptance: pre-check `quota_exceeded_pre` (no Gemini) vs post-parse `quota_exceeded_race` distinct envelopes.
 
 ## Phase 4: Client Gate Infrastructure (M4)
 
