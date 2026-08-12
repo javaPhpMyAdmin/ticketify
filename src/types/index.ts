@@ -106,12 +106,20 @@ export interface PurchaseItem {
   sort_order: number;
 }
 
-/** Mirrors `public.scan_usage`. Composite key (user_id, year_month). */
+/**
+ * Mirrors `public.scan_usage`. Composite key (user_id, year_month).
+ *
+ * `scans_limit` is `number | null` after migration 0011 (pro-subscription
+ * spec — REQ-QUOTA-2, REQ-QUOTA-3): NULL marks the row as Pro-unlimited
+ * (set_profile_tier writes NULL on GRANT, 15 on REVOKE). UI consumers
+ * MUST go through `computeQuotaState` so the NULL-vs-Pro distinction is
+ * resolved in one place rather than scattered across components.
+ */
 export interface ScanUsage {
   user_id: string;
   year_month: string; // '2026-08'
   scans_used: number;
-  scans_limit: number;
+  scans_limit: number | null;
 }
 
 // ---------------------------------------------------------------------------

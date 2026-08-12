@@ -6,6 +6,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef, useState } from 'react';
 
 import { useSessionStore } from '@/features/auth';
+import { ProBootstrap } from '@/features/pro';
 import { decideSessionNavigation } from '@/lib/auth/session-nav';
 import { queryClient } from '@/lib/query-client';
 import { colors } from '@/theme';
@@ -100,6 +101,10 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <StatusBar style="dark" backgroundColor={colors.background} />
+      {/* Configures RevenueCat once and pipes customerInfo into the pro
+          store (REQ-PRO-1). Renders null; safe to mount unconditionally
+          — the effect gates on a real session. */}
+      <ProBootstrap />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -127,6 +132,12 @@ export default function RootLayout() {
               row, so it must sit behind the same session gate (same
               rationale as the drill-downs below). */}
           <Stack.Screen name="settings/currency" />
+          {/* Pro paywall + Pro-gated charts placeholder. The paywall is
+              session-gated only (free users reach it to upgrade); the
+              charts screen enforces its Pro gate inside the screen body
+              (ProRouteGuard). */}
+          <Stack.Screen name="pro/index" options={{ title: 'Pro' }} />
+          <Stack.Screen name="pro/charts" options={{ title: 'Estadísticas Pro' }} />
         </Stack.Protected>
         <Stack.Screen name="(auth)" />
       </Stack>

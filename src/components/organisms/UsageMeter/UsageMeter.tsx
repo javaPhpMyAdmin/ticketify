@@ -1,40 +1,78 @@
+import { router } from 'expo-router';
 import { StyleSheet } from 'react-native';
 
-import { Card, Icon, ProgressBar, Text, View } from '@/components';
+import { Card, Icon, Pressable, ProgressBar, Text, View } from '@/components';
 import { colors, spacing, typography } from '@/theme';
+import { computeQuotaState } from '@/features/home/quota';
 
 export interface UsageMeterProps {
   used: number;
-  limit: number;
+  /**
+   * Monthly cap. `null` after migration 0011 marks the row as
+   * Pro-unlimited (set_profile_tier writes NULL on GRANT) — see
+   * pro-subscription spec REQ-QUOTA-2 / REQ-QUOTA-6.
+   */
+  limit: number | null;
+  /**
+   * Client Pro entitlement (RevenueCat). Wins over any stale numeric
+   * limit so a paying user never sees a partial meter or the upgrade
+   * pitch (CRITICAL-2).
+   */
+  isPro: boolean;
   kicker?: string;
   resetLabel?: string;
   upgradeLabel?: string;
+  /** Override for the paywall CTA copy. Only rendered when exhausted. */
+  ctaLabel?: string;
 }
 
 /**
- * Free-tier scan usage card. Renders "Scans Used X/Y", a "Reset in N
- * days" note, a `ProgressBar`, and the upgrade pitch. Clamps the
- * fill at 1 so users on the pro tier don't see a broken bar.
+ * Profile-screen scan-usage card (pro-subscription spec — REQ-QUOTA-6,
+ * REQ-GATE-4, REQ-GATE-5). Three branches driven by
+ * `computeQuotaState(used, limit, isPro)`:
+ *
+ *   - **Pro** (`unlimited`): renders the "Ilimitado" label, hides the
+ *     progress bar, hides the upgrade pitch entirely. The CRITICAL-2
+ *     invariant.
+ *   - **Free + exhausted**: renders the danger copy, a full progress
+ *     bar, and a pressable paywall CTA. Tapping it routes to `/pro`.
+ *   - **Free + remaining**: renders "Escaneos usados X de Y" + a
+ *     proportional progress bar.
  */
 export function UsageMeter({
   used,
   limit,
+  isPro,
   kicker = 'Escaneos gratuitos mensuales',
   resetLabel = 'Se restablece en 12 días',
   upgradeLabel = 'Actualiza para obtener escaneos ilimitados.',
+  ctaLabel = 'Mejorar a Pro',
 }: UsageMeterProps) {
-  const ratio = limit > 0 ? Math.min(1, used / limit) : 0;
+  const state = computeQuotaState(used, limit, isPro);
+
+  if (state.unlimited) {
+    return (
+      <Card>
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.kicker}>LÍMITE DE USO</Text>
+            <Text style={styles.kicker}>{kicker}</Text>
+          </View>
+          <Icon name="qrcode.viewfinder" size={33} color={colors.primary} />
+        </View>
+        <View style={styles.row}>
+          <Text style={styles.used}>Escaneos usados</Text>
+          <Text style={styles.usedValue}>{used}</Text>
+        </View>
+        <Text style={styles.unlimitedLabel}>Ilimitado</Text>
+      </Card>
+    );
+  }
+
   return (
     <Card>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          backgroundColor: colors.surface,
-        }}
-      >
-        <View style={{ backgroundColor: colors.surface }}>
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
           <Text style={styles.kicker}>LÍMITE DE USO</Text>
           <Text style={styles.kicker}>{kicker}</Text>
         </View>
@@ -42,22 +80,44 @@ export function UsageMeter({
       </View>
       <View style={styles.row}>
         <Text style={styles.used}>Escaneos usados</Text>
-        <Text style={{ color: colors.textPrimary, fontWeight: '900' }}>
-          {used}/{limit}
+        <Text style={styles.usedValue}>
+          {used}/{state.effectiveLimit}
         </Text>
       </View>
       <View style={styles.progressWrap}>
-        <ProgressBar value={ratio} />
+        <ProgressBar value={state.ratio} />
       </View>
       <Text style={styles.reset}>{resetLabel}</Text>
-      <Text style={styles.upgrade}>{upgradeLabel}</Text>
+      {state.exhausted ? (
+        <>
+          <Text style={styles.upgrade}>{upgradeLabel}</Text>
+          <Pressable
+            style={styles.cta}
+            onPress={() => router.push('/pro')}
+            accessibilityRole="button"
+            accessibilityLabel={ctaLabel}
+          >
+            <Text style={styles.ctaText}>{ctaLabel}</Text>
+          </Pressable>
+        </>
+      ) : (
+        <Text style={styles.upgrade}>{upgradeLabel}</Text>
+      )}
     </Card>
   );
 }
 
 const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+  },
+  headerLeft: {
+    backgroundColor: colors.surface,
+  },
   kicker: {
-    // ...typography.labelCaps,
     fontSize: 17,
     fontWeight: '900',
     color: colors.textSecondary,
@@ -73,21 +133,41 @@ const styles = StyleSheet.create({
     ...typography.headlineMd,
     color: colors.textPrimary,
   },
+  usedValue: {
+    color: colors.textPrimary,
+    fontWeight: '900',
+  },
+  progressWrap: {
+    marginTop: spacing.md,
+  },
   reset: {
-    // ...typography.labelSm,
     fontSize: 15,
     fontWeight: '600',
     color: colors.textSecondary,
     marginTop: spacing.md,
   },
-  progressWrap: {
-    marginTop: spacing.md,
-  },
   upgrade: {
-    // ...typography.bodyMd,
     fontSize: 15,
     color: 'green',
     fontWeight: '800',
     marginTop: spacing.xs,
+  },
+  unlimitedLabel: {
+    ...typography.headlineMd,
+    color: colors.primary,
+    marginTop: spacing.sm,
+  },
+  cta: {
+    marginTop: spacing.sm,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: 12,
+  },
+  ctaText: {
+    color: colors.onPrimary,
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

@@ -49,7 +49,8 @@ export type IconName =
   | 'cart.fill'
   | 'soap.fill'
   | 'bubbles.and.sparkles.fill'
-  | 'waterbottle.fill';
+  | 'waterbottle.fill'
+  | 'lock.fill';
 
 /**
  * Material icon names are a strict union from the MaterialIcons glyph map.
@@ -96,6 +97,7 @@ const materialMap: Record<IconName, string> = {
   'soap.fill': 'soap',
   'bubbles.and.sparkles.fill': 'cleaning-services',
   'waterbottle.fill': 'local-drink',
+  'lock.fill': 'lock',
 };
 
 export interface IconProps {
