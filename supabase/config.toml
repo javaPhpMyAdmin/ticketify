@@ -2,3 +2,11 @@ project_id = "tickettify"
 
 [functions.parse-ticket]
 verify_jwt = true
+
+# RevenueCat webhook authenticates with a shared secret in the
+# Authorization header (constant-time compared inside the handler),
+# NOT with a Supabase user JWT — see REQ-SYNC-4 and design D6.
+# `verify_jwt = false` disables the gateway's JWT check; the function
+# itself still enforces auth via `verifySecret(...)`.
+[functions.revenuecat-webhook]
+verify_jwt = false
