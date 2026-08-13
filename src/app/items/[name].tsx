@@ -1,9 +1,17 @@
 import { router, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Divider, Icon, Text, View } from '@/components';
-import { monthKeyToLabel, useItemDetail } from '@/features/home';
+import {
+  Divider,
+  Icon,
+  IconButton,
+  Text,
+  View,
+} from '@/components';
+import { monthKeyToLabel, useItemDetail, normalizeItemName } from '@/features/home';
+import { RenameItemModal, useRenameItem } from '@/features/items';
 import { formatCurrency, formatShortDate } from '@/lib/format';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -15,6 +23,13 @@ import { colors, radii, spacing, typography } from '@/theme';
  * stores — the identity lens that complements the category drill-down. The
  * optional `month` search param (`YYYY-MM`, from the History tab) scopes the
  * aggregation; without it the current month is used.
+ *
+ * A pencil button in the header opens the shared `RenameItemModal`: the
+ * write goes through `useRenameItem` (server-side UPDATE on
+ * `purchase_items`), which also invalidates the home feed and item-search
+ * caches so the renamed item shows up everywhere on the next render. On
+ * success the screen `router.replace`s itself to the new normalized URL
+ * so the address bar matches the bucket the item now belongs to.
  */
 export default function ItemDetailScreen() {
   const { name, month } = useLocalSearchParams<{
@@ -24,6 +39,33 @@ export default function ItemDetailScreen() {
   const currency = useSettingsStore((s) => s.currency);
   const itemName = name ?? '';
   const { total, purchases } = useItemDetail(itemName, month);
+
+  const { mutate: renameItem, isLoading: isRenaming, error: renameError } =
+    useRenameItem();
+  const [renameOpen, setRenameOpen] = useState(false);
+
+  const handleRename = async (newName: string) => {
+    // The detail screen is keyed on the normalized NAME in the URL, not
+    // the underlying `purchase_items.id`. Pull the id off the first
+    // matching purchase in the store so the UPDATE targets the exact
+    // row the user is looking at. If the row was hydrated without an id
+    // (e.g. an offline fixture), `purchaseItemId` is undefined and we
+    // bail — better than a write that touches the wrong row.
+    const targetId = purchases[0]?.purchaseItemId;
+    if (!targetId) return;
+    const result = await renameItem(targetId, newName);
+    if (result.status === 'ok') {
+      setRenameOpen(false);
+      // `router.replace` (not `router.back`) so the new URL matches the
+      // bucket the renamed item now belongs to; back would lose the
+      // success state and the user would never see the renamed screen.
+      const nextPath =
+        '/items/' + encodeURIComponent(normalizeItemName(result.newName));
+      router.replace(nextPath as never);
+    }
+    // On `error`, leave the modal open so the user sees the inline
+    // errorMessage; the parent's `error` state drives the field group.
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -44,6 +86,12 @@ export default function ItemDetailScreen() {
             <Text style={styles.subtitle}>{monthKeyToLabel(month)}</Text>
           ) : null}
         </View>
+        <IconButton
+          icon="pencil"
+          iconSize={20}
+          onPress={() => setRenameOpen(true)}
+          accessibilityLabel="Editar nombre del producto"
+        />
       </View>
 
       <ScrollView
@@ -91,6 +139,21 @@ export default function ItemDetailScreen() {
           )}
         </View>
       </ScrollView>
+
+      <RenameItemModal
+        visible={renameOpen}
+        currentName={itemName}
+        isLoading={isRenaming}
+        errorMessage={renameError}
+        onChange={() => {
+          // The modal owns its own buffer; this is a no-op hook so
+          // parents that want to react to keystrokes (e.g. for telemetry)
+          // have a slot. We intentionally don't track the value here —
+          // it's captured on save.
+        }}
+        onCancel={() => setRenameOpen(false)}
+        onSave={handleRename}
+      />
     </SafeAreaView>
   );
 }
