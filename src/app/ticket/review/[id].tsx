@@ -22,6 +22,7 @@ import {
   View,
 } from '@/components';
 import { useSessionUser } from '@/features/auth';
+import { RenameItemModal, sanitizeItemName } from '@/features/items';
 import {
   CategoryPickerModal,
   ReceiptItemsList,
@@ -279,6 +280,33 @@ export default function ReviewReceiptScreen() {
       cancelled = true;
     };
   }, [draft?.image_url, editingMode]);
+  // Which item the rename modal is editing (null = closed). The edit
+  // mutates the LOCAL draft only — `saveReceipt` already takes
+  // `item.name` (tickets/api.ts:482), so the new name flows through on
+  // CONFIRM. We intentionally do NOT call `useRenameItem` here:
+  // touching the DB on every edit would race with the eventual confirm
+  // write and could double-persist the rename for users who edit and
+  // then cancel.
+  const [renameTarget, setRenameTarget] = useState<ReviewItem | null>(null);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const renameOpen = renameTarget !== null;
+
+  const handleSelectRename = (newName: string) => {
+    if (!renameTarget) return;
+    // Same validation the post-scan hook runs — both flows share
+    // `sanitizeItemName` so the rules (trim, non-empty, ≤120) live in
+    // exactly one place.
+    const sanitised = sanitizeItemName(newName);
+    if (!sanitised.ok) {
+      // Keep the modal open so the inline errorMessage stays visible.
+      setRenameError(sanitised.message);
+      return;
+    }
+    upsertItem({ ...renameTarget, name: sanitised.value });
+    setRenameError(null);
+    setRenameTarget(null);
+  };
+
   // Which item's category the picker is editing (null = closed). The user's
   // tap writes the chosen key to `item.category_id`; the AI suggestion stays
   // in `ai_suggested_category_id` and the save path prefers the user's pick.
@@ -535,6 +563,10 @@ export default function ReviewReceiptScreen() {
                     onToggleImpulse={(item, v) =>
                       upsertItem({ ...item, is_impulse: v })
                     }
+                    onEditName={(item) => {
+                      setRenameError(null);
+                      setRenameTarget(item);
+                    }}
                   />
                 ) : null}
               </View>
@@ -591,6 +623,23 @@ export default function ReviewReceiptScreen() {
         }
         onSelect={handleSelectCategory}
         onClose={() => setCategoryTarget(null)}
+      />
+
+      <RenameItemModal
+        visible={renameOpen}
+        currentName={renameTarget?.name ?? ''}
+        isLoading={false}
+        errorMessage={renameError}
+        onChange={() => {
+          // No-op: the modal owns its own buffer. This slot exists so
+          // future telemetry / inline-validation hooks have a place to
+          // hook in without an API change.
+        }}
+        onCancel={() => {
+          setRenameError(null);
+          setRenameTarget(null);
+        }}
+        onSave={handleSelectRename}
       />
     </>
   );

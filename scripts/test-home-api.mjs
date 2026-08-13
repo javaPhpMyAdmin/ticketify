@@ -272,6 +272,7 @@ async function run() {
       ['Papas Fritas', 'Leche Entera'],
     );
     assert.deepEqual(first.items[0], {
+      id: 'i2',
       name: 'Papas Fritas',
       amount: 4,
       quantity: 1,
@@ -379,6 +380,7 @@ async function run() {
     // One item per row so the pure month aggregators re-use the shape.
     assert.deepEqual(row.items, [
       {
+        id: 'i1',
         name: 'Leche Entera',
         amount: 3.5,
         quantity: 1,

@@ -77,6 +77,10 @@ function mapPurchaseRow(row: RawPurchaseRow): HomeFeedReceiptRow {
     .slice()
     .sort((a, b) => a.sort_order - b.sort_order)
     .map((item) => ({
+      // Carry the `purchase_items.id` so the rename hook on the post-scan
+      // detail screen can target exactly this row server-side without a
+      // name-based lookup. RLS still scopes the UPDATE to the owning user.
+      id: item.id,
       name: item.name,
       amount: item.total_price,
       quantity: item.quantity,
@@ -163,6 +167,9 @@ function mapSearchItemRow(row: RawSearchItemRow): HomeFeedReceiptRow {
   const category = firstOrSelf(row.categories)?.slug ?? 'otros';
   const items: HomeFeedItemRow[] = [
     {
+      // The search query already selects `purchase_items.id`; carry it
+      // through so the rename hook can target this exact row.
+      id: row.id,
       name: row.name,
       amount: row.total_price,
       quantity: row.quantity,

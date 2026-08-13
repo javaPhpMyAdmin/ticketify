@@ -140,6 +140,14 @@ export interface PurchaseWithItems extends Purchase {
  * their line totals.
  */
 export interface HomeFeedItemRow {
+  /**
+   * The underlying `purchase_items.id`. Optional because some producers
+   * (the review flow's optimistic row, the offline test fixtures) don't
+   * carry it; consumers that need to target a single row server-side
+   * (e.g. `useRenameItem` on the post-scan detail screen) treat its
+   * absence as "can't write".
+   */
+  id?: string;
   name: string;
   /** Line total (amount = quantity × unit_price when both exist). */
   amount: number;
