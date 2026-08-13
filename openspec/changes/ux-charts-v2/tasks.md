@@ -56,6 +56,6 @@ Chain strategy: stacked-to-main
 
 ## Phase 5: Verification
 
-- [ ] 5.1 Run `pnpm typecheck`; fix TS regressions.
-- [ ] 5.2 Run `pnpm test`; fix failing tests.
-- [ ] 5.3 Verify `/pro/charts` donut still renders and colors fallback for unknown keys.
+- [x] 5.1 Run `pnpm typecheck`; fix TS regressions.
+- [x] 5.2 Run `pnpm test`; fix failing tests.
+- [x] 5.3 Verify `/pro/charts` donut still renders and colors fallback for unknown keys.
