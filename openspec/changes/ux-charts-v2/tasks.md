@@ -51,8 +51,8 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: Analytics Screen
 
-- [ ] 4.1 Replace `MonthlyOverviewCard`/`CategoryBreakdownList` in `src/app/(tabs)/analytics.tsx` with hero, banner, weekly chart, summary cards, and category rows.
-- [ ] 4.2 Clean up dead imports and styles left after the layout swap.
+- [x] 4.1 Replace `MonthlyOverviewCard`/`CategoryBreakdownList` in `src/app/(tabs)/analytics.tsx` with hero, banner, weekly chart, summary cards, and category rows.
+- [x] 4.2 Clean up dead imports and styles left after the layout swap.
 
 ## Phase 5: Verification
 
