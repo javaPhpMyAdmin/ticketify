@@ -46,6 +46,12 @@ export interface Colors {
   chipBg: string;
   inverseSurface: string;
   inverseOnSurface: string;
+  /** Dark hero card background (Analytics insights hero). */
+  heroBackground: string;
+  /** Hero card primary text color. */
+  heroText: string;
+  /** Hero line chart stroke color. */
+  heroLine: string;
   outline: string;
   outlineVariant: string;
 }
@@ -70,6 +76,9 @@ export const light: Colors = {
   chipBg: palette.chipBg,
   inverseSurface: '#2E3132',
   inverseOnSurface: '#F0F1F2',
+  heroBackground: '#2E3132',
+  heroText: '#F0F1F2',
+  heroLine: palette.white,
   outline: '#6C7A71',
   outlineVariant: '#BBCABF',
 };
@@ -97,6 +106,9 @@ export const dark: Colors = {
   chipBg: '#1E2229',
   inverseSurface: '#F0F1F2',
   inverseOnSurface: '#2E3132',
+  heroBackground: '#F0F1F2',
+  heroText: '#2E3132',
+  heroLine: '#2E3132',
   outline: '#9AA1AB',
   outlineVariant: '#3A4049',
 };
