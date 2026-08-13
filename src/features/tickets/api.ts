@@ -463,8 +463,16 @@ export async function saveReceipt(
   userId: string,
   draft: ReceiptDraft,
 ): Promise<{ id: string }> {
-  const storeId = await resolveStoreId(userId, draft.store_name);
-  if (!storeId) throw new Error(SAVE_ERROR_MESSAGE);
+  // List-mode scans produce drafts with an empty store name. The
+  // `purchases.store_id` column is nullable, so a blank name saves with
+  // `store_id: null`; only a NON-empty name that fails to resolve (no
+  // existing row and the insert failed) is a save error.
+  const trimmedStoreName = draft.store_name.trim();
+  const storeId =
+    trimmedStoreName === ''
+      ? null
+      : await resolveStoreId(userId, draft.store_name);
+  if (trimmedStoreName !== '' && !storeId) throw new Error(SAVE_ERROR_MESSAGE);
 
   // The draft carries the LOCAL photo uri during capture/review. Upload it
   // on confirm so `image_url` persists a storage path (private bucket →
@@ -836,8 +844,15 @@ export async function updateReceipt(
   // row is missing or belongs to another user — a 0-row fetch is a miss).
   const original = await fetchPurchaseDetail(userId, purchaseId);
 
-  const storeId = await resolveStoreId(userId, draft.store_name);
-  if (!storeId) throw new Error(SAVE_ERROR_MESSAGE);
+  // `purchases.store_id` column is nullable, so a blank name edits with
+  // `store_id: null`; only a NON-empty name that fails to resolve (no
+  // matching store and no insert) is a real error.
+  const trimmedStoreName = draft.store_name.trim();
+  const storeId =
+    trimmedStoreName === ''
+      ? null
+      : await resolveStoreId(userId, trimmedStoreName);
+  if (trimmedStoreName !== '' && !storeId) throw new Error(SAVE_ERROR_MESSAGE);
 
   // The seeded draft carries the already-persisted storage path (or a
   // remote url) and passes through unchanged; only a device-local uri
