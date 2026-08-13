@@ -14,6 +14,12 @@ export interface ReceiptItemsListProps {
   onPressCategory: (item: ReviewItem) => void;
   /** Called when the user toggles the "impulse" switch on a row. */
   onToggleImpulse: (item: ReviewItem, isImpulse: boolean) => void;
+  /**
+   * Optional edit-name affordance. When set, every row renders the
+   * pressable name + chevron and fires `onEditName(item)` on tap. When
+   * undefined, the rows render their legacy non-pressable name.
+   */
+  onEditName?: (item: ReviewItem) => void;
 }
 
 /**
@@ -26,6 +32,7 @@ export function ReceiptItemsList({
   bare,
   onPressCategory,
   onToggleImpulse,
+  onEditName,
 }: ReceiptItemsListProps) {
   const content = (
     <View>
@@ -36,6 +43,7 @@ export function ReceiptItemsList({
             currency={currency}
             onPressCategory={() => onPressCategory(item)}
             onToggleImpulse={(v) => onToggleImpulse(item, v)}
+            {...(onEditName ? { onEditName: () => onEditName(item) } : {})}
           />
           {idx < items.length - 1 ? <Divider /> : null}
         </View>

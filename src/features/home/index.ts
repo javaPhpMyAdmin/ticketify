@@ -16,6 +16,7 @@ export {
   currentMonthKey,
   monthKeyToLabel,
   getAvailableMonthKeys,
+  normalizeItemName,
   aggregateCategoriesByMonth,
   aggregateItemsByCategory,
   aggregateItemsByMonth,

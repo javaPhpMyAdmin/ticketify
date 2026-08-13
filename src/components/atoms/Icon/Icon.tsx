@@ -51,7 +51,8 @@ export type IconName =
   | 'bubbles.and.sparkles.fill'
   | 'waterbottle.fill'
   | 'lock.fill'
-  | 'chart.pie.fill';
+  | 'chart.pie.fill'
+  | 'pencil';
 
 /**
  * Material icon names are a strict union from the MaterialIcons glyph map.
@@ -100,6 +101,7 @@ const materialMap: Record<IconName, string> = {
   'waterbottle.fill': 'local-drink',
   'lock.fill': 'lock',
   'chart.pie.fill': 'pie-chart',
+  pencil: 'edit',
 };
 
 export interface IconProps {

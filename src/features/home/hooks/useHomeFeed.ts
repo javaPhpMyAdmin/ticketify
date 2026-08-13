@@ -92,6 +92,14 @@ export interface ReceiptSpendRecord {
   total?: number;
   category_totals?: Record<string, number>;
   items?: {
+    /**
+     * The underlying `purchase_items.id`. Optional — only present on
+     * rows hydrated from the real Supabase read (the receipts store
+     * passes it through); minimal fixtures and test doubles omit it.
+     * Consumers that need to target a single row server-side (e.g. the
+     * item rename hook) treat its absence as "can't write".
+     */
+    id?: string;
     name: string;
     amount: number;
     /**
@@ -312,12 +320,18 @@ export function useCategoryDetail(categoryKey: string, monthKey = currentMonthKe
 /**
  * One individual purchase of a searched item (identity lens): the receipt
  * it came from, the store, the ticket date, and what that item alone cost.
+ *
+ * `purchaseItemId` carries the underlying `purchase_items.id` so the
+ * post-scan rename hook can target exactly this row server-side without
+ * a name-based lookup (the name is what the URL is keyed on, so a
+ * server-side lookup would be ambiguous when two items share a name).
  */
 export interface ItemPurchaseSummary {
   receiptId: string;
   storeName: string;
   date: string; // ISO
   amount: number;
+  purchaseItemId?: string;
 }
 
 /**
@@ -403,6 +417,7 @@ export function useItemDetail(itemName: string, monthKey = currentMonthKey()) {
         storeName: receipt.store_name ?? '',
         date: receipt.purchase_date,
         amount: item.amount,
+        purchaseItemId: item.id,
       });
     }
   }
