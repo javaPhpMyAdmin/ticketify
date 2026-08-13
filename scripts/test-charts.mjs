@@ -2,8 +2,8 @@
 /**
  * Node harness for the Pro charts' pure aggregations
  * (`src/features/charts/aggregate.ts` → `aggregateSpendTrend`,
- * `aggregateStoresByMonth`, and the `aggregateCategoriesByMonth`
- * re-export parity check).
+ * `aggregateStoresByMonth`, `aggregateMonthlyDelta`, and the
+ * `aggregateCategoriesByMonth` re-export parity check).
  *
  * Compiles `aggregate.ts` plus its dependency graph (home feed hook,
  * categories registry, auth/session plumbing, receipts store, react-query)
@@ -24,6 +24,14 @@
  *     - multiple stores → sorted by total descending,
  *     - tie-break: same total → sorted by storeName ascending (locale-aware),
  *     - receipts in other months → ignored.
+ *
+ *   `aggregateMonthlyDelta`:
+ *     - receipts in both months → `current` and `previous` sums correct,
+ *     - percentage is rounded and matches `(current - previous) / previous * 100`,
+ *     - `isImprovement` is true when delta < 0 (less spent = good),
+ *     - previous month has zero records → `previous` is null (not 0),
+ *     - previous month has records totalling zero → `previous === 0`,
+ *     - deltaPct is null when `previous` is null (no division by zero).
  *
  *   `aggregateCategoriesByMonth` re-export parity:
  *     - reference equality: `charts/aggregate` re-export is the SAME
@@ -121,7 +129,7 @@ async function run() {
   const homeFeedMod = await import(
     pathToFileURL(join(outDir, 'src/features/home/hooks/useHomeFeed.js')).href
   );
-  const { aggregateSpendTrend, aggregateStoresByMonth, aggregateCategoriesByMonth } =
+  const { aggregateSpendTrend, aggregateStoresByMonth, aggregateMonthlyDelta, aggregateCategoriesByMonth } =
     chartsMod;
   const { aggregateCategoriesByMonth: directAggregate } = homeFeedMod;
 
@@ -261,6 +269,104 @@ async function run() {
     );
     assert.equal(out.length, 1);
     assert.equal(out[0].storeName, 'Sin tienda');
+  });
+
+  console.log('\n[tests] aggregateMonthlyDelta\n');
+
+  await test('receipts in both current and previous month → both sums correct', () => {
+    const out = aggregateMonthlyDelta(
+      [
+        receipt({ id: 'r1', total: 50, purchase_date: '2026-07-05' }), // previous
+        receipt({ id: 'r2', total: 30, purchase_date: '2026-07-12' }), // previous
+        receipt({ id: 'r3', total: 100, purchase_date: '2026-08-03' }), // current
+      ],
+      '2026-08',
+    );
+    assert.equal(out.current, 100);
+    assert.equal(out.previous, 80);
+    // (100 - 80) / 80 * 100 = 25
+    assert.equal(Math.round(out.deltaPct), 25);
+    assert.equal(out.isImprovement, false, '+25% is more spend, not an improvement');
+  });
+
+  await test('less current than previous → negative deltaPct, isImprovement true', () => {
+    const out = aggregateMonthlyDelta(
+      [
+        receipt({ id: 'r1', total: 200, purchase_date: '2026-07-05' }), // previous
+        receipt({ id: 'r2', total: 100, purchase_date: '2026-08-03' }), // current
+      ],
+      '2026-08',
+    );
+    assert.equal(out.current, 100);
+    assert.equal(out.previous, 200);
+    assert.equal(Math.round(out.deltaPct), -50);
+    assert.equal(out.isImprovement, true, 'less spend = improvement');
+  });
+
+  await test('no records in the previous month → previous is null (NOT zero)', () => {
+    const out = aggregateMonthlyDelta(
+      [receipt({ id: 'r1', total: 42, purchase_date: '2026-08-05' })],
+      '2026-08',
+    );
+    assert.equal(out.current, 42);
+    assert.equal(
+      out.previous,
+      null,
+      'no records must be null, not 0 — "no data" is different from "you spent $0"',
+    );
+    assert.equal(out.deltaPct, null, 'cannot compute a percentage against null');
+    // isImprovement is false when there's no comparison to make — the UI
+    // hides the delta pill in this case, so the value is informational.
+    assert.equal(out.isImprovement, false);
+  });
+
+  await test('previous month has a receipt but the receipt\'s total is 0 → previous IS 0 (not null)', () => {
+    const out = aggregateMonthlyDelta(
+      [
+        receipt({ id: 'r1', total: 0, purchase_date: '2026-07-05' }), // previous exists, but $0
+        receipt({ id: 'r2', total: 100, purchase_date: '2026-08-03' }),
+      ],
+      '2026-08',
+    );
+    assert.equal(out.current, 100);
+    assert.equal(out.previous, 0);
+    // 100 / 0 → Infinity → the aggregator returns null for the pct
+    // (same "cannot compute against null" defensive path).
+    assert.equal(out.deltaPct, null);
+  });
+
+  await test('equal current and previous → deltaPct === 0, isImprovement false (neutral)', () => {
+    const out = aggregateMonthlyDelta(
+      [
+        receipt({ id: 'r1', total: 100, purchase_date: '2026-07-05' }),
+        receipt({ id: 'r2', total: 100, purchase_date: '2026-08-03' }),
+      ],
+      '2026-08',
+    );
+    assert.equal(out.current, 100);
+    assert.equal(out.previous, 100);
+    assert.equal(Math.round(out.deltaPct), 0);
+    assert.equal(out.isImprovement, false, 'equal is neutral, not an improvement');
+  });
+
+  await test('receipts with undefined `total` are treated as 0 (defensive)', () => {
+    const out = aggregateMonthlyDelta(
+      [
+        receipt({ id: 'r1', total: undefined, purchase_date: '2026-07-05' }),
+        receipt({ id: 'r2', total: 50, purchase_date: '2026-08-03' }),
+      ],
+      '2026-08',
+    );
+    assert.equal(out.current, 50);
+    assert.equal(out.previous, 0);
+  });
+
+  await test('no records at all → current=0, previous=null', () => {
+    const out = aggregateMonthlyDelta([], '2026-08');
+    assert.equal(out.current, 0);
+    assert.equal(out.previous, null);
+    assert.equal(out.deltaPct, null);
+    assert.equal(out.isImprovement, false);
   });
 
   console.log('\n[tests] aggregateCategoriesByMonth re-export parity\n');

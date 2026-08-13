@@ -136,6 +136,11 @@ export default function RootLayout() {
                 guard and render stale data via deep links when signed out. */}
             <Stack.Screen name="receipts/[id]" />
             <Stack.Screen name="items/[name]" />
+            {/* Store drill-down: reached from the Pro charts screen
+                (`/pro/charts` StoreBars tap). Reads the same user-scoped
+                receipts store, so it must live behind the session gate
+                alongside the item / receipt drill-downs. */}
+            <Stack.Screen name="stores/[name]" />
     {/* Renders the user's current currency and writes their profile
                  row, so it must sit behind the same session gate (same
                  rationale as the drill-downs below). */}
