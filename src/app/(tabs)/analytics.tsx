@@ -15,26 +15,50 @@ import {
   Text,
 } from '@/components';
 import {
-  CategoryBreakdownList,
-  MonthlyOverviewCard,
-  TopItemsBreakdown,
+  CategoryBudgetRow,
+  InsightBanner,
+  MetricSummaryCard,
   useMonthlyOverview,
   useMonthlyTotals,
   usePriceAlerts,
 } from '@/features/analytics';
 import type { PriceAlert } from '@/features/analytics';
 import {
-  aggregateItemsByMonth,
+  InsightHeroCard,
+  WeeklyBarChart,
+  aggregateDailyAverage,
+  aggregateSpendTrend,
+  aggregateWeeklySpend,
+  getTopCategory,
+} from '@/features/charts';
+import { getExpenseCategory } from '@/features/home/categories';
+import {
   currentMonthKey,
   getAvailableMonthKeys,
   monthKeyToLabel,
   previousMonthKey,
 } from '@/features/home/hooks/useHomeFeed';
+import { formatCurrency } from '@/lib/format';
 import { useProEntitlement } from '@/features/pro';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 import { useSessionStore } from '../../features/auth';
+
+/**
+ * Build a chronological window of `count` months ending at `monthKey`.
+ * Used to feed the hero line chart a stable x-axis regardless of which
+ * months actually have receipts.
+ */
+function lastNMonths(monthKey: string, count: number): string[] {
+  const months: string[] = [monthKey];
+  let current = monthKey;
+  for (let i = 1; i < count; i++) {
+    current = previousMonthKey(current);
+    months.unshift(current);
+  }
+  return months;
+}
 
 /**
  * Same FAB-clearance pattern as the home screen: native tabs do not push
@@ -49,13 +73,14 @@ const ANALYTICS_TAB_BAR_HEIGHT = Platform.select({
 });
 
 /**
- * Analytics (RPC): a month-scoped dashboard. The month selector moves
+ * Analytics (Insights v2): a month-scoped dashboard. The month selector moves
  * within the months that actually have receipts (`getAvailableMonthKeys`),
  * same pattern as the History tab, and every block follows the chosen month —
- * overview card, price alerts, top items, and category totals. The current
- * month stays reachable even when it has no data yet ("Sin artículos este
- * mes."). The subtitle keeps the live UTC month because `useMonthlyTotals`
- * defaults to it.
+ * hero card, insight banner, weekly chart, summary cards, and category rows.
+ * The current month stays reachable even when it has no data yet
+ * ("Sin categorías este mes."). The category breakdown keeps the existing
+ * RPC-backed loading/error/empty states; the hero/weekly/summary cards are
+ * store-derived and render immediately.
  */
 export default function AnalyticsScreen() {
   const insets = useSafeAreaInsets();
@@ -83,16 +108,23 @@ export default function AnalyticsScreen() {
   const displayName = firstName || 'Usuario';
   const avatarUrl = session?.user?.user_metadata?.avatar_url;
 
-  // Full month item list feeds the bar denominator (percent of the whole
-  // month, not of the top-N slice); only the top 5 rows render. Utility
-  // bills (servicios) are excluded: they would own the ranking as receipt
-  // line items, but they are not consumption.
-  const allItems = useMemo(
-    () => aggregateItemsByMonth(list, monthKey, ['servicios']),
+  // Store-derived lenses for the Insights layout. These are independent of
+  // the RPC-backed category breakdown so the hero/weekly/summary cards can
+  // render immediately while the breakdown section keeps its existing
+  // loading/error/empty states.
+  const trendData = useMemo(
+    () => aggregateSpendTrend(list, lastNMonths(monthKey, 6)),
     [list, monthKey],
   );
-  const topItems = allItems.slice(0, 5);
-  const monthTotal = allItems.reduce((sum, item) => sum + item.amount, 0);
+  const weeklyData = useMemo(() => aggregateWeeklySpend(list), [list]);
+  const dailyAverage = useMemo(
+    () => aggregateDailyAverage(list, monthKey),
+    [list, monthKey],
+  );
+  const topCategory = useMemo(
+    () => getTopCategory(list, monthKey),
+    [list, monthKey],
+  );
 
   // `monthKeys` is newest-first. The selected month may not be in it (e.g.
   // the current month with no receipts yet): it is then newer than
@@ -181,46 +213,93 @@ export default function AnalyticsScreen() {
           },
         ]}
       >
-        <MonthlyOverviewCard
-          overview={overview}
+        <InsightHeroCard
+          monthLabel={monthKeyToLabel(monthKey)}
+          total={overview.currentTotal}
+          deltaPct={overview.changePct}
+          previousMonthLabel={previousMonthLabel}
+          trendData={trendData}
           currency={currency}
+        />
+        <InsightBanner
+          deltaPct={overview.changePct}
           previousMonthLabel={previousMonthLabel}
         />
         <ChartsEntryCard isPro={isPro} />
         {alerts.map((alert) => (
           <PriceAlertBanner key={alert.name} alert={alert} isPro={isPro} />
         ))}
-        <TopItemsBreakdown
-          rows={topItems}
-          total={monthTotal}
-          currency={currency}
-          title="Top Artículos"
-        />
-        {totalsLoading ? (
-          <View style={styles.skeletonList}>
-            {[0, 1, 2, 3].map((i) => (
-              <BreakdownRowSkeleton key={i} />
-            ))}
-          </View>
-        ) : error && !totalsHasData ? (
-          // The failed RPC read must not render as a false "no data" —
-          // show the user-safe message with a retry instead of the
-          // breakdown (only when there is no retained data to keep).
-          <EmptyState
-            framed
-            icon="exclamationmark.triangle.fill"
-            title={error}
-            actionLabel="Reintentar"
-            onAction={() => refetch()}
+        <Card>
+          <Text style={styles.chartTitle}>Esta semana</Text>
+          <WeeklyBarChart data={weeklyData} currency={currency} />
+        </Card>
+        <View style={styles.summaryRow}>
+          <MetricSummaryCard
+            label="Top categoría"
+            value={topCategory?.name ?? '—'}
+            subtext={
+              topCategory
+                ? formatCurrency(topCategory.amount, currency)
+                : 'Sin gastos'
+            }
+            icon="chart.pie.fill"
           />
-        ) : (
-          <>
-            <CategoryBreakdownList rows={totals} />
-            {/* Background refetch failed but the last good totals are on
-                screen — keep them and add a subtle inline note. */}
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-          </>
-        )}
+          <MetricSummaryCard
+            label="Promedio diario"
+            value={formatCurrency(dailyAverage, currency)}
+            subtext="Por día en el mes"
+            icon="calendar"
+          />
+        </View>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Por categoría</Text>
+          {totalsLoading ? (
+            <View style={styles.skeletonList}>
+              {[0, 1, 2, 3].map((i) => (
+                <BreakdownRowSkeleton key={i} />
+              ))}
+            </View>
+          ) : error && !totalsHasData ? (
+            // The failed RPC read must not render as a false "no data" —
+            // show the user-safe message with a retry instead of the
+            // breakdown (only when there is no retained data to keep).
+            <EmptyState
+              framed
+              icon="exclamationmark.triangle.fill"
+              title={error}
+              actionLabel="Reintentar"
+              onAction={() => refetch()}
+            />
+          ) : (
+            <>
+              {totals.length === 0 ? (
+                <EmptyState title="Sin categorías este mes." />
+              ) : (
+                <Card padding={spacing.lg}>
+                  <View style={styles.categoryList}>
+                    {totals.map((t) => {
+                      const category = getExpenseCategory(t.category_slug);
+                      return (
+                        <CategoryBudgetRow
+                          key={t.category_id}
+                          categoryKey={t.category_slug}
+                          name={t.category_name}
+                          amount={t.total}
+                          percent={t.percent_of_total * 100}
+                          icon={category.icon}
+                          currency={currency}
+                        />
+                      );
+                    })}
+                  </View>
+                </Card>
+              )}
+              {/* Background refetch failed but the last good totals are on
+                  screen — keep them and add a subtle inline note. */}
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+            </>
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -281,10 +360,26 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: colors.primary,
   },
-  subtitle: {
-    ...typography.bodyMd,
-    color: colors.textSecondary,
-    marginTop: -spacing.md,
+  section: {
+    gap: spacing.md,
+  },
+  sectionTitle: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  chartTitle: {
+    ...typography.bodyLg,
+    color: colors.textPrimary,
+    fontWeight: '700',
+    marginBottom: spacing.md,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  categoryList: {
+    gap: spacing.sm,
   },
   skeletonList: {
     gap: spacing.lg,
@@ -410,9 +505,8 @@ const styles = StyleSheet.create({
  *   is gated without making them guess; the Pro pill makes the upsell
  *   explicit so the path is unambiguous.
  *
- * The card is mounted after `MonthlyOverviewCard` (around line 152-156)
- * so the entry sits in the natural reading flow under the headline
- * stat. While the entitlement is still `isLoading` the store defaults
+ * The card is mounted after `InsightHeroCard` and `InsightBanner` so the
+ * entry sits in the natural reading flow under the headline stat. While the entitlement is still `isLoading` the store defaults
  * `isPro` to `false` (M4 contract), which renders the lock UX — the
  * safest default since a free user opening the screen MUST see the
  * paywall CTA rather than a route that will bounce them back.
