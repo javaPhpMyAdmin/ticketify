@@ -51,11 +51,11 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: Analytics Screen
 
-- [ ] 4.1 Replace `MonthlyOverviewCard`/`CategoryBreakdownList` in `src/app/(tabs)/analytics.tsx` with hero, banner, weekly chart, summary cards, and category rows.
-- [ ] 4.2 Clean up dead imports and styles left after the layout swap.
+- [x] 4.1 Replace `MonthlyOverviewCard`/`CategoryBreakdownList` in `src/app/(tabs)/analytics.tsx` with hero, banner, weekly chart, summary cards, and category rows.
+- [x] 4.2 Clean up dead imports and styles left after the layout swap.
 
 ## Phase 5: Verification
 
-- [ ] 5.1 Run `pnpm typecheck`; fix TS regressions.
-- [ ] 5.2 Run `pnpm test`; fix failing tests.
-- [ ] 5.3 Verify `/pro/charts` donut still renders and colors fallback for unknown keys.
+- [x] 5.1 Run `pnpm typecheck`; fix TS regressions.
+- [x] 5.2 Run `pnpm test`; fix failing tests.
+- [x] 5.3 Verify `/pro/charts` donut still renders and colors fallback for unknown keys.
