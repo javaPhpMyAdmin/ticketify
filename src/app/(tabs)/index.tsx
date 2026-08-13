@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Image, Platform, ScrollView, StyleSheet } from 'react-native';
 import {
   SafeAreaView,
@@ -8,8 +8,6 @@ import {
 
 import {
   MonthlyBudgetCardSkeleton,
-  CategoryCard,
-  CategoryCardSkeleton,
   EmptyState,
   Fab,
   Icon,
@@ -24,7 +22,12 @@ import {
   SnacksBreakdownModal,
   useBudget,
 } from '@/features/budget';
-import { useHomeFeed } from '@/features/home';
+import {
+  CategoryBudgetCard,
+  CategoryBudgetCardSkeleton,
+  SegmentedBudgetBar,
+  useHomeFeed,
+} from '@/features/home';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
 import { useSessionStore } from '../../features/auth';
@@ -59,6 +62,10 @@ export default function HomeScreen() {
     hasData: feedHasData,
   } = useHomeFeed();
   const insets = useSafeAreaInsets();
+  const categoryTotalSpend = useMemo(
+    () => categories.reduce((sum, cat) => sum + cat.amount, 0),
+    [categories],
+  );
   const { session } = useSessionStore();
   // Canonical name key is `full_name` (see profile-sync); `name` is kept as a
   // legacy fallback. Both can be absent (email signup sets no metadata).
@@ -147,9 +154,9 @@ export default function HomeScreen() {
                 </Pressable>
               </View>
               {feedLoading ? (
-                <View style={styles.categoryStripRow}>
+                <View style={styles.categoryStack}>
                   {[0, 1, 2].map((i) => (
-                    <CategoryCardSkeleton key={i} />
+                    <CategoryBudgetCardSkeleton key={i} />
                   ))}
                 </View>
               ) : categories.length === 0 ? (
@@ -159,22 +166,28 @@ export default function HomeScreen() {
                   body="Tus gastos por categoría aparecerán cuando escanees tus primeros tickets."
                 />
               ) : (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.categoryStrip}
-                >
-                  {categories.map((c) => (
-                    <CategoryCard
-                      key={c.key}
-                      name={c.name}
-                      amount={c.amount}
-                      currency={currency}
-                      icon={c.icon}
-                      onPress={() => router.push(`/categories/${c.key}`)}
-                    />
-                  ))}
-                </ScrollView>
+                <View style={styles.categoryStack}>
+                  <SegmentedBudgetBar categories={categories} />
+                  {categories.map((c) => {
+                    const percent =
+                      categoryTotalSpend === 0
+                        ? 0
+                        : (c.amount / categoryTotalSpend) * 100;
+
+                    return (
+                      <CategoryBudgetCard
+                        key={c.key}
+                        categoryKey={c.key}
+                        name={c.name}
+                        amount={c.amount}
+                        percent={percent}
+                        currency={currency}
+                        icon={c.icon}
+                        onPress={() => router.push(`/categories/${c.key}`)}
+                      />
+                    );
+                  })}
+                </View>
               )}
             </View>
 
@@ -286,12 +299,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 17,
   },
-  categoryStrip: {
-    gap: spacing.md,
-    paddingRight: spacing.xl,
-  },
-  categoryStripRow: {
-    flexDirection: 'row',
+  categoryStack: {
     gap: spacing.md,
   },
   receiptList: {
