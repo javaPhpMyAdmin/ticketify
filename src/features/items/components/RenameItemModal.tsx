@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -111,17 +110,16 @@ export function RenameItemModal({
             </Pressable>
           </View>
           <Divider />
-          {/* `KeyboardAvoidingView` lifts the input above the keyboard on
-              iOS (the system modal is its own window). Android manages
-              soft input via `windowSoftInputMode`, so `behavior` is
-              `undefined` there to avoid double-shifting the layout. The
-              `ScrollView` lets the Cancel button stay reachable on small
-              screens once the keyboard is up; `keyboardShouldPersistTaps`
-              keeps the tap responsive without dismissing the keyboard on
-              every touch. */}
+          {/* `KeyboardAvoidingView` lifts the input above the keyboard. On
+              iOS the system modal is its own window, so `padding` adds bottom
+              space. On Android we also use `padding`: the activity's
+              `windowSoftInputMode` does not reliably resize a transparent
+              `Modal`, so leaving `behavior` undefined leaves the keyboard
+              covering the input. The sheet's `maxHeight` + `flexShrink: 1`
+              here lets the content compress instead of overflowing. */}
           <KeyboardAvoidingView
             style={styles.keyboardAvoidingWrapper}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            behavior="padding"
           >
             <ScrollView
               contentContainerStyle={styles.body}
