@@ -32,6 +32,8 @@ import {
 } from '@/lib/revenuecat';
 import { useProStore } from '@/stores/use-pro-store';
 
+import { isProOverrideEnabled } from './gate';
+
 const REVENUECAT_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? '';
 
 /**
@@ -52,6 +54,25 @@ export function ProBootstrap(): null {
 
   useEffect(() => {
     if (bootstrapped) return;
+    if (isProOverrideEnabled()) {
+      // DEV-ONLY: see the safety note in `gate.ts`. This branch is the
+      // single point where the override flips the store to Pro BEFORE
+      // any RevenueCat call (configure / getCustomerInfo / listener
+      // registration) so the gate opens without the native module. The
+      // run order matters: do not move this branch below the real
+      // SDK bootstrap, or the SDK will overwrite our override on its
+      // first customerInfo snapshot.
+      if (userId) {
+        useProStore.setState({ isPro: true, isLoading: false });
+      } else {
+        // No session yet: leave the store in its default `{ isLoading: true,
+        // isPro: false }` so the gate stays locked until the session
+        // resolves and this effect re-runs.
+        return;
+      }
+      bootstrapped = true;
+      return;
+    }
     if (!userId) {
       // No session yet: do not configure — there is nothing to look up.
       // The store stays at `{ isLoading: true }` so the gate remains

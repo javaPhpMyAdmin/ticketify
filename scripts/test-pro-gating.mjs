@@ -81,9 +81,61 @@ async function run() {
   await compile();
   console.log('[tests] loading compiled module…');
   installRequireHook();
-  const { resolveGateState } = await import(
+  const { resolveGateState, isProOverrideEnabled } = await import(
     pathToFileURL(join(outDir, 'src/features/pro/gate.js')).href
   );
+
+  console.log('\n[tests] EXPO_PUBLIC_PRO_OVERRIDE override\n');
+
+  // `isProOverrideEnabled` reads `process.env` at call time. We capture and
+  // restore the original value so other harnesses (or re-runs with
+  // different env) are unaffected.
+  const originalOverride = process.env.EXPO_PUBLIC_PRO_OVERRIDE;
+  function setOverride(value) {
+    if (value === undefined) {
+      delete process.env.EXPO_PUBLIC_PRO_OVERRIDE;
+    } else {
+      process.env.EXPO_PUBLIC_PRO_OVERRIDE = value;
+    }
+  }
+
+  await test('unset → false (safe default for production builds)', () => {
+    setOverride(undefined);
+    assert.equal(isProOverrideEnabled(), false);
+  });
+
+  await test('"true" → true (developer flips the gate on for a local build)', () => {
+    setOverride('true');
+    assert.equal(isProOverrideEnabled(), true);
+  });
+
+  await test('"false" → false (explicit off, e.g. after a test that toggled it on)', () => {
+    setOverride('false');
+    assert.equal(isProOverrideEnabled(), false);
+  });
+
+  await test('any non-"true" string → false (defensive: "TRUE" / "1" / "yes" do not flip the gate)', () => {
+    // The contract is strict — only the literal string "true" turns the
+    // gate on. A developer who types "TRUE" or "1" by accident gets the
+    // safe default, and the gate stays locked.
+    for (const value of ['TRUE', 'True', '1', 'yes', 'on', ' true', 'true ']) {
+      setOverride(value);
+      assert.equal(
+        isProOverrideEnabled(),
+        false,
+        `value=${JSON.stringify(value)} must NOT enable the override`,
+      );
+    }
+    setOverride(originalOverride);
+  });
+
+  await test('re-call with the same env returns the same result (pure projection of process.env)', () => {
+    setOverride('true');
+    const a = isProOverrideEnabled();
+    const b = isProOverrideEnabled();
+    assert.equal(a, b, 'divergent result for the same env value');
+    setOverride(originalOverride);
+  });
 
   console.log('\n[tests] REQ-GATE-5 truth table\n');
 
