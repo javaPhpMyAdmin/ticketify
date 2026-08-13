@@ -37,9 +37,9 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Home UI
 
-- [ ] 2.1 Create `src/features/home/components/CategoryBudgetCard.tsx`: colored card with icon, name, amount, percent; uses `getCategoryColor`.
-- [ ] 2.2 Create `src/features/home/components/SegmentedBudgetBar.tsx`: proportional colored segments, descending order, full-width single-category fallback.
-- [ ] 2.3 Redesign the categories section in `src/app/(tabs)/index.tsx` as a vertical stack of `CategoryBudgetCard` plus `SegmentedBudgetBar`; remove horizontal strip styles.
+- [x] 2.1 Create `src/features/home/components/CategoryBudgetCard.tsx`: colored card with icon, name, amount, percent; uses `getCategoryColor`.
+- [x] 2.2 Create `src/features/home/components/SegmentedBudgetBar.tsx`: proportional colored segments, descending order, full-width single-category fallback.
+- [x] 2.3 Redesign the categories section in `src/app/(tabs)/index.tsx` as a vertical stack of `CategoryBudgetCard` plus `SegmentedBudgetBar`; remove horizontal strip styles.
 
 ## Phase 3: Analytics Components
 
