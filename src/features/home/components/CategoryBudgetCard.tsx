@@ -95,6 +95,11 @@ const styles = StyleSheet.create({
   body: {
     flex: 1,
     gap: spacing.xs,
+    // The themed `View` from `@/components` paints `backgroundColor:
+    // theme['background']` by default. This container sits ON TOP of the
+    // colored card, so it must stay transparent or it would cover the card
+    // and hide the foreground-colored text below it.
+    backgroundColor: 'transparent',
   },
   name: {
     ...typography.headlineMd,
