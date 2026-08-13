@@ -12,6 +12,7 @@ export {
   fetchProfile,
   fetchScanUsage,
   setHouseholdSharing,
+  setProfileBudget,
   setProfileCurrency,
   WRITE_ERROR_MESSAGE,
 } from './api';

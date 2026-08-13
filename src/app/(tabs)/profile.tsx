@@ -50,6 +50,13 @@ export default function ProfileScreen() {
       onPress: () => router.push('/settings/currency'),
     },
     {
+      id: 'budget',
+      label: 'Presupuesto mensual',
+      icon: 'chart.pie.fill',
+      trailing: { type: 'chevron' },
+      onPress: () => router.push('/settings/budget'),
+    },
+    {
       id: 'household',
       label: 'Uso compartido del hogar',
       icon: 'person.fill',

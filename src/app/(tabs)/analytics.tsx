@@ -1,7 +1,10 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Image, ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 
 import {
   BreakdownRowSkeleton,
@@ -34,6 +37,18 @@ import { colors, radii, spacing, typography } from '@/theme';
 import { useSessionStore } from '../../features/auth';
 
 /**
+ * Same FAB-clearance pattern as the home screen: native tabs do not push
+ * content past the tab bar, so we add `insets.bottom + TAB_BAR_HEIGHT` to
+ * the scroll's bottom inset. Without this the last row of the category
+ * breakdown sits behind the tab bar on both platforms.
+ */
+const ANALYTICS_TAB_BAR_HEIGHT = Platform.select({
+  ios: 49,
+  android: 80,
+  default: 49,
+});
+
+/**
  * Analytics (RPC): a month-scoped dashboard. The month selector moves
  * within the months that actually have receipts (`getAvailableMonthKeys`),
  * same pattern as the History tab, and every block follows the chosen month —
@@ -43,6 +58,7 @@ import { useSessionStore } from '../../features/auth';
  * defaults to it.
  */
 export default function AnalyticsScreen() {
+  const insets = useSafeAreaInsets();
   const list = useReceiptsStore((s) => s.list);
   const currency = useSettingsStore((s) => s.currency);
   const { isPro } = useProEntitlement();
@@ -152,7 +168,19 @@ export default function AnalyticsScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          {
+            // Clear the native tab bar so the last row of the breakdown
+            // stays visible: insets.bottom + tab bar height + a breath of
+            // spacing. Without this the last category sits behind the
+            // tab bar on Android (Material 3 NavigationBar is ~80dp).
+            paddingBottom:
+              insets.bottom + ANALYTICS_TAB_BAR_HEIGHT + spacing.lg,
+          },
+        ]}
+      >
         <MonthlyOverviewCard
           overview={overview}
           currency={currency}

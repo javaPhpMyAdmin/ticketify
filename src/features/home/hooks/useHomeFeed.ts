@@ -102,6 +102,14 @@ export interface ReceiptSpendRecord {
     quantity?: number;
     unit_price?: number;
     category: string;
+    /**
+     * Impulse flag: present only on rows persisted after the parse-flow
+     * started emitting it (older receipts from before the flag existed have
+     * `undefined`, which the impulse aggregator treats as "not impulse").
+     * The Home "Antojos / Snacks" callout and breakdown modal rely on it
+     * to distinguish want from need at the line-item level.
+     */
+    is_impulse?: boolean;
   }[];
 }
 
@@ -250,6 +258,32 @@ export function aggregateItemsByMonth(
     if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
     for (const item of receipt.items ?? []) {
       if (excluded.has(item.category)) continue;
+      const key = normalizeItemName(item.name);
+      totalsByItem.set(key, (totalsByItem.get(key) ?? 0) + item.amount);
+    }
+  }
+  return [...totalsByItem.entries()]
+    .map(([name, amount]) => ({ name, amount }))
+    .sort((a, b) => b.amount - a.amount);
+}
+
+/**
+ * Pure aggregation: impulse (`is_impulse === true`) line items within one
+ * month, grouped by normalized name and sorted by amount desc. Drives the
+ * Home "Antojos / Snacks" breakdown modal — "en qué se me fue la plata en
+ * impulsos este mes". Items without `is_impulse` (older receipts that did
+ * not persist the flag) are excluded: the modal's contract is "things the
+ * user marked as impulse", not "things the user might have marked".
+ */
+export function aggregateImpulseItemsByMonth(
+  list: ReceiptSpendRecord[],
+  monthKey: string,
+): CategoryItemSummary[] {
+  const totalsByItem = new Map<string, number>();
+  for (const receipt of list) {
+    if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
+    for (const item of receipt.items ?? []) {
+      if (!item.is_impulse) continue;
       const key = normalizeItemName(item.name);
       totalsByItem.set(key, (totalsByItem.get(key) ?? 0) + item.amount);
     }

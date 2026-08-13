@@ -5,6 +5,7 @@ import {
   fetchProfile,
   fetchScanUsage,
   setHouseholdSharing,
+  setProfileBudget,
   setProfileCurrency,
   WRITE_ERROR_MESSAGE,
   type ProfileWriteResult,
@@ -33,6 +34,12 @@ export interface UseProfileResult {
    * queries so the budget card and the profile row re-read the new currency.
    */
   setCurrency: (currency: string) => Promise<ProfileWriteResult>;
+  /**
+   * Persists the user's `profiles.monthly_budget`. Same posture as
+   * `setCurrency`: a successful write invalidates the profile and budget
+   * queries so the home budget card re-reads the new limit on next render.
+   */
+  setBudget: (amount: number) => Promise<ProfileWriteResult>;
 }
 
 /**
@@ -99,6 +106,20 @@ export function useProfile(): UseProfileResult {
         // The budget card and the profile row both carry the currency:
         // invalidate both so the next refetch re-reads the new value
         // (server-state-caching spec — same pattern as saveReceipt).
+        void queryClient.invalidateQueries({ queryKey: queryKeys.profile(userId) });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.budget(userId) });
+      }
+      return result;
+    },
+    setBudget: async (amount: number) => {
+      if (!userId) {
+        return { status: 'error', message: WRITE_ERROR_MESSAGE };
+      }
+      const result = await setProfileBudget(userId, amount);
+      if (result.status === 'ok') {
+        // The budget bar reads from the budget query and the profile row
+        // also carries the limit; invalidate both so the home card reflects
+        // the new value without a manual pull-to-refresh.
         void queryClient.invalidateQueries({ queryKey: queryKeys.profile(userId) });
         void queryClient.invalidateQueries({ queryKey: queryKeys.budget(userId) });
       }
