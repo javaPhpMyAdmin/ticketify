@@ -1,4 +1,5 @@
 import { router } from 'expo-router';
+import { useState } from 'react';
 import { Image, Platform, ScrollView, StyleSheet } from 'react-native';
 import {
   SafeAreaView,
@@ -18,7 +19,11 @@ import {
   Text,
   View,
 } from '@/components';
-import { MonthlyBudgetCard, useBudget } from '@/features/budget';
+import {
+  MonthlyBudgetCard,
+  SnacksBreakdownModal,
+  useBudget,
+} from '@/features/budget';
 import { useHomeFeed } from '@/features/home';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
@@ -36,6 +41,7 @@ import { useSessionStore } from '../../features/auth';
 const TAB_BAR_HEIGHT = Platform.select({ ios: 49, android: 80, default: 49 });
 
 export default function HomeScreen() {
+  const [snacksOpen, setSnacksOpen] = useState(false);
   const currency = useSettingsStore((s) => s.currency);
   const {
     budget,
@@ -104,6 +110,7 @@ export default function HomeScreen() {
               currency={currency}
               showCallout
               wantsSnacksTotal={wantsSnacksTotal}
+              onPressSnacks={() => setSnacksOpen(true)}
             />
             {/* Background refetch failed but the last good budget is on
                 screen — keep it and add a subtle inline note. */}
@@ -221,6 +228,11 @@ export default function HomeScreen() {
           onPress={() => router.push('/ticket/camera')}
         />
       </View>
+
+      <SnacksBreakdownModal
+        visible={snacksOpen}
+        onClose={() => setSnacksOpen(false)}
+      />
     </SafeAreaView>
   );
 }
