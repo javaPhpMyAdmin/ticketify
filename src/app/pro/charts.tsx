@@ -3,66 +3,76 @@
  *
  * Wraps the body in `<ProRouteGuard>` so a free user opening `/pro/charts`
  * sees the lock screen instead of the charts; once entitled, the body
- * renders the full Pro experience: a month selector (horizontal chips),
- * the spend trend line, a donut of category shares, and a horizontal
- * bar chart of store totals. All three charts read from the SAME
- * `records` array the free analytics consume, so a switch between tabs
- * never shows different numbers for the same month.
+ * renders the full Pro experience — the Insights v2 redesign that used to
+ * live in the free analytics tab: hero spend card, insight banner, weekly
+ * bar chart, summary cards, and the category budget rows.
  *
- * The month selector defaults to the most recent month that has data;
- * if the current month has no receipts yet it falls back to the newest
- * month in `availableMonths`. "Volver" closes the route — the screen
- * is always pushed from the analytics charts entry card, so back is
- * the right action.
+ * The month selector moves within the months that actually have receipts
+ * (`getAvailableMonthKeys`), same pattern as the History tab, and every
+ * month-scoped block follows the chosen month — hero, banner, summary
+ * cards, and category rows. The weekly chart is store-derived and covers
+ * the current week regardless of the selected month. The category rows
+ * keep the RPC-backed loading/error/empty states; the hero/weekly/summary
+ * cards are store-derived and render immediately.
  *
- * Card subtitles show a MONTH-OVER-MONTH DELTA next to the month label
- * (`"+12% vs. febrero"`, `"−8% vs. enero"`). The delta is colored
- * green/red/grey: less spend than previous is good (primary), more is
- * bad (danger), equal is neutral. When the previous month has no
- * receipts at all, the delta is suppressed (we don't know whether the
- * change is an improvement — "no data" is meaningfully different from
- * "you spent $0").
+ * "Volver" closes the route — the screen is always pushed from the
+ * analytics charts entry card, so back is the right action.
  */
 import { Stack, router } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  TextStyle,
-  View,
-} from 'react-native';
+import { useMemo, useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
-  CategoryDonut,
-  StoreBars,
-  TrendChart,
-  aggregateMonthlyDelta,
-  aggregateSpendTrend,
-  aggregateStoresByMonth,
-  type CategorySlice,
-  type MonthlyDelta,
-  type StoreBar,
-  type TrendPoint,
-} from '@/features/charts';
-import {
+  BreakdownRowSkeleton,
   Card,
-  Chip,
+  EmptyState,
   Icon,
   Pressable,
   Text,
 } from '@/components';
 import {
-  aggregateCategoriesByMonth,
+  CategoryBudgetRow,
+  InsightBanner,
+  MetricSummaryCard,
+  useMonthlyOverview,
+  useMonthlyTotals,
+} from '@/features/analytics';
+import {
+  InsightHeroCard,
+  WeeklyBarChart,
+  aggregateDailyAverage,
+  aggregateSpendTrend,
+  aggregateWeeklySpend,
+  getTopCategory,
+} from '@/features/charts';
+import { getExpenseCategory } from '@/features/home/categories';
+import {
   currentMonthKey,
   getAvailableMonthKeys,
   monthKeyToLabel,
   previousMonthKey,
 } from '@/features/home/hooks/useHomeFeed';
+import { formatCurrency } from '@/lib/format';
 import { ProRouteGuard } from '@/features/pro';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
-import { colors, radii, spacing, typography } from '@/theme';
 import { useSettingsStore } from '@/stores/use-settings-store';
+import { colors, radii, spacing, typography } from '@/theme';
+
+/**
+ * Build a chronological window of `count` months ending at `monthKey`.
+ * Used to feed the hero line chart a stable x-axis regardless of which
+ * months actually have receipts.
+ */
+function lastNMonths(monthKey: string, count: number): string[] {
+  const months: string[] = [monthKey];
+  let current = monthKey;
+  for (let i = 1; i < count; i++) {
+    current = previousMonthKey(current);
+    months.unshift(current);
+  }
+  return months;
+}
 
 export default function ChartsScreen() {
   return (
@@ -80,64 +90,6 @@ export default function ChartsScreen() {
 }
 
 /**
- * Build the colored delta fragment: `"+12% vs. febrero"` (or `null`
- * when the previous month has no data — "no data" is meaningfully
- * different from "you spent $0"). The percentage is integer-rounded
- * with an explicit sign so the user never wonders "is +12 a gain or a
- * loss?". Negative deltas use the proper minus glyph (`−`, U+2212).
- *
- * The returned object is rendered via a tiny `<DeltaSubtitle>` fragment
- * — the month label stays in default `colors.textSecondary` and the
- * delta fragment is colored by outcome.
- */
-interface CaptionParts {
-  monthLabel: string;
-  /** Pre-formatted delta string. Null when there's no previous-month data. */
-  deltaText: string | null;
-  /** Color to apply to the delta text. */
-  deltaColor: string;
-}
-
-function buildCaption(month: string, delta: MonthlyDelta): CaptionParts {
-  const monthLabel = monthKeyToLabel(month);
-  if (delta.previous === null || delta.deltaPct === null) {
-    return { monthLabel, deltaText: null, deltaColor: colors.textSecondary };
-  }
-  const pct = Math.round(delta.deltaPct);
-  const sign = pct > 0 ? '+' : pct < 0 ? '−' : '';
-  const previousLabel = monthKeyToLabel(previousMonthKey(month))
-    .split(' ')[0]
-    .toLowerCase();
-  const deltaText = `${sign}${Math.abs(pct)}% vs. ${previousLabel}`;
-  const deltaColor =
-    pct === 0
-      ? colors.textSecondary
-      : pct < 0
-        ? colors.primary
-        : colors.danger;
-  return { monthLabel, deltaText, deltaColor };
-}
-
-function DeltaSubtitle({ parts }: { parts: CaptionParts }) {
-  if (!parts.deltaText) {
-    return <Text style={styles.cardSubtitle}>{parts.monthLabel}</Text>;
-  }
-  // Color only the delta fragment. The leading separator " · " and the
-  // trailing comparison label stay in the default subtitle color so
-  // the eye reads the percentage as the salient piece of information.
-  const deltaStyle: TextStyle[] = [
-    styles.cardSubtitle,
-    { color: parts.deltaColor, fontWeight: '700' },
-  ];
-  return (
-    <Text style={styles.cardSubtitle}>
-      {parts.monthLabel}
-      <Text style={deltaStyle}>{`  ·  ${parts.deltaText}`}</Text>
-    </Text>
-  );
-}
-
-/**
  * Charts body. Pulled out so the `<ProRouteGuard>` doesn't re-mount the
  * scroll view + month selector every time the gate flips — the lock is
  * the only thing that swaps.
@@ -145,144 +97,182 @@ function DeltaSubtitle({ parts }: { parts: CaptionParts }) {
 function ChartsBody() {
   // The home feed hook owns the `records` query and hydrates the
   // receipts store; reading the store directly is the same data path
-  // the History tab takes, so all three screens stay in sync.
+  // the History tab takes, so all screens stay in sync.
   const list = useReceiptsStore((s) => s.list);
   const currency = useSettingsStore((s) => s.currency);
+  const [monthKey, setMonthKey] = useState(currentMonthKey);
 
-  const availableMonths = useMemo(() => getAvailableMonthKeys(list), [list]);
-  const initialMonth = useMemo(() => {
-    if (availableMonths.length === 0) return currentMonthKey();
-    return availableMonths[0];
-  }, [availableMonths]);
+  const monthKeys = useMemo(() => getAvailableMonthKeys(list), [list]);
+  const {
+    totals,
+    isLoading: totalsLoading,
+    error,
+    hasData: totalsHasData,
+    refetch,
+  } = useMonthlyTotals(monthKey);
+  const overview = useMonthlyOverview(monthKey);
 
-  const [selectedMonth, setSelectedMonth] = useState(initialMonth);
-
-  useEffect(() => {
-    if (availableMonths.length === 0) return;
-    if (!availableMonths.includes(selectedMonth)) {
-      setSelectedMonth(availableMonths[0]);
-    }
-  }, [availableMonths, selectedMonth]);
-
-  const trendData = useMemo<TrendPoint[]>(
-    () => aggregateSpendTrend(list, [...availableMonths].reverse()),
-    [list, availableMonths],
+  // Store-derived lenses for the Insights layout. These are independent of
+  // the RPC-backed category breakdown so the hero/weekly/summary cards can
+  // render immediately while the breakdown section keeps its existing
+  // loading/error/empty states.
+  const trendData = useMemo(
+    () => aggregateSpendTrend(list, lastNMonths(monthKey, 6)),
+    [list, monthKey],
+  );
+  const weeklyData = useMemo(() => aggregateWeeklySpend(list), [list]);
+  const dailyAverage = useMemo(
+    () => aggregateDailyAverage(list, monthKey),
+    [list, monthKey],
+  );
+  const topCategory = useMemo(
+    () => getTopCategory(list, monthKey),
+    [list, monthKey],
   );
 
-  // `referencePoints` is the same trend, masked with `null` at the
-  // selected month, so the TrendChart can draw a faded "comparison"
-  // line that highlights the gap between the current month and the
-  // rest of the trend. Empty when there's no reference signal (single-
-  // month history, or first month with data).
-  const trendReference = useMemo<(TrendPoint | null)[]>(() => {
-    return trendData.map((point) =>
-      point.month === selectedMonth ? null : point,
+  // `monthKeys` is newest-first. The selected month may not be in it (e.g.
+  // the current month with no receipts yet): it is then newer than
+  // everything, so only "older" is enabled and it jumps to the newest
+  // month that has data.
+  const currentIndex = monthKeys.indexOf(monthKey);
+  const canGoNewer = currentIndex > 0;
+  const canGoOlder =
+    currentIndex === -1
+      ? monthKeys.length > 0
+      : currentIndex < monthKeys.length - 1;
+
+  const goOlder = () =>
+    setMonthKey(
+      currentIndex === -1 ? monthKeys[0] : monthKeys[currentIndex + 1],
     );
-  }, [trendData, selectedMonth]);
+  const goNewer = () => setMonthKey(monthKeys[currentIndex - 1]);
 
-  const donutData: CategorySlice[] = useMemo(
-    () =>
-      aggregateCategoriesByMonth(list, selectedMonth).map((category) => ({
-        id: category.key,
-        name: category.name,
-        amount: category.amount,
-      })),
-    [list, selectedMonth],
-  );
-
-  const storeData: StoreBar[] = useMemo(
-    () => aggregateStoresByMonth(list, selectedMonth),
-    [list, selectedMonth],
-  );
-
-  // The same monthly delta surfaces in all three card subtitles — the
-  // cards all describe the same month, so the comparison is consistent.
-  const monthlyDelta = useMemo(
-    () => aggregateMonthlyDelta(list, selectedMonth),
-    [list, selectedMonth],
-  );
-  const caption = useMemo(
-    () => buildCaption(selectedMonth, monthlyDelta),
-    [selectedMonth, monthlyDelta],
-  );
-
-  // Whether the user has ANY receipts ever — drives the empty-state
-  // CTA: only when the answer is "no, you've never scanned anything"
-  // do we offer to scan now. A month that's just empty inside a busy
-  // account gets the bare empty copy (the user already knows how to
-  // scan).
-  const hasAnyReceipts = list.length > 0;
+  const previousMonthLabel = monthKeyToLabel(previousMonthKey(monthKey));
 
   return (
     <ScrollView contentContainerStyle={styles.scrollContent}>
       <View style={styles.header}>
         <Text style={styles.title}>Tus tendencias</Text>
         <Text style={styles.subtitle}>
-          Visualizá tu gasto a lo largo del tiempo, por categoría y por tienda.
+          Visualizá tu gasto a lo largo del tiempo, por categoría y por semana.
         </Text>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Seleccionar mes</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipRow}
+      <View style={styles.monthSelector}>
+        <Pressable
+          onPress={goOlder}
+          disabled={!canGoOlder}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Mes anterior"
+          accessibilityState={{ disabled: !canGoOlder }}
         >
-          {availableMonths.map((month) => (
-            <Chip
-              key={month}
-              label={monthKeyToLabel(month).split(' ')[0]}
-              selected={month === selectedMonth}
-              onPress={() => setSelectedMonth(month)}
-            />
-          ))}
-        </ScrollView>
+          <Icon
+            name="chevron.left"
+            size={22}
+            color={canGoOlder ? colors.textPrimary : colors.textSecondary}
+          />
+        </Pressable>
+        <Text style={styles.monthLabel}>{monthKeyToLabel(monthKey)}</Text>
+        <Pressable
+          onPress={goNewer}
+          disabled={!canGoNewer}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Mes siguiente"
+          accessibilityState={{ disabled: !canGoNewer }}
+        >
+          <Icon
+            name="chevron.right"
+            size={22}
+            color={canGoNewer ? colors.textPrimary : colors.textSecondary}
+          />
+        </Pressable>
       </View>
 
+      <InsightHeroCard
+        monthLabel={monthKeyToLabel(monthKey)}
+        total={overview.currentTotal}
+        deltaPct={overview.changePct}
+        previousMonthLabel={previousMonthLabel}
+        trendData={trendData}
+        currency={currency}
+      />
+      <InsightBanner
+        deltaPct={overview.changePct}
+        previousMonthLabel={previousMonthLabel}
+      />
       <Card>
-        <Text style={styles.cardTitle}>Tendencia</Text>
-        <DeltaSubtitle parts={caption} />
-        <View style={styles.chartHolder}>
-          <TrendChart
-            data={trendData}
-            referencePoints={trendReference}
+        <Text style={styles.chartTitle}>Esta semana</Text>
+        <WeeklyBarChart data={weeklyData} currency={currency} />
+      </Card>
+      <View style={styles.summaryRow}>
+        <MetricSummaryCard
+          label="Top categoría"
+          value={topCategory?.name ?? '—'}
+          subtext={
+            topCategory
+              ? formatCurrency(topCategory.amount, currency)
+              : 'Sin gastos'
+          }
+          icon="chart.pie.fill"
+        />
+        <MetricSummaryCard
+          label="Promedio diario"
+          value={formatCurrency(dailyAverage, currency)}
+          subtext="Por día en el mes"
+          icon="calendar"
+        />
+      </View>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Por categoría</Text>
+        {totalsLoading ? (
+          <View style={styles.skeletonList}>
+            {[0, 1, 2, 3].map((i) => (
+              <BreakdownRowSkeleton key={i} />
+            ))}
+          </View>
+        ) : error && !totalsHasData ? (
+          // The failed RPC read must not render as a false "no data" —
+          // show the user-safe message with a retry instead of the
+          // breakdown (only when there is no retained data to keep).
+          <EmptyState
+            framed
+            icon="exclamationmark.triangle.fill"
+            title={error}
+            actionLabel="Reintentar"
+            onAction={() => refetch()}
           />
-        </View>
-        {!hasAnyReceipts ? (
-          <Text style={styles.emptyHint}>
-            Escaneá tu primer ticket para empezar.
-          </Text>
-        ) : null}
-      </Card>
-
-      <Card>
-        <Text style={styles.cardTitle}>Por categoría</Text>
-        <DeltaSubtitle parts={caption} />
-        <View style={styles.donutHolder}>
-          <CategoryDonut data={donutData} size={160} currency={currency} />
-        </View>
-      </Card>
-
-      <Card>
-        <Text style={styles.cardTitle}>Por tienda</Text>
-        <DeltaSubtitle parts={caption} />
-        <View style={styles.chartHolder}>
-          <StoreBars
-            data={storeData}
-            onRowPress={(store) =>
-              router.push(
-                `/stores/${encodeURIComponent(store.storeName)}?month=${encodeURIComponent(selectedMonth)}`,
-              )
-            }
-          />
-        </View>
-        {storeData.length === 0 && !hasAnyReceipts ? (
-          <Text style={styles.emptyHint}>
-            Escaneá tu primer ticket para ver tus tiendas acá.
-          </Text>
-        ) : null}
-      </Card>
+        ) : (
+          <>
+            {totals.length === 0 ? (
+              <EmptyState title="Sin categorías este mes." />
+            ) : (
+              <Card padding={spacing.lg}>
+                <View style={styles.categoryList}>
+                  {totals.map((t) => {
+                    const category = getExpenseCategory(t.category_slug);
+                    return (
+                      <CategoryBudgetRow
+                        key={t.category_id}
+                        categoryKey={t.category_slug}
+                        name={t.category_name}
+                        amount={t.total}
+                        percent={t.percent_of_total * 100}
+                        icon={category.icon}
+                        currency={currency}
+                      />
+                    );
+                  })}
+                </View>
+              </Card>
+            )}
+            {/* Background refetch failed but the last good totals are on
+                screen — keep them and add a subtle inline note. */}
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+          </>
+        )}
+      </View>
 
       <Pressable
         onPress={() => router.back()}
@@ -322,41 +312,49 @@ const styles = StyleSheet.create({
     ...typography.bodyMd,
     color: colors.textSecondary,
   },
+  monthSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  monthLabel: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: colors.textSecondary,
+  },
+  chartTitle: {
+    ...typography.bodyLg,
+    color: colors.textPrimary,
+    fontWeight: '700',
+    marginBottom: spacing.md,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
   section: {
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   sectionTitle: {
-    ...typography.labelSm,
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.05 * 16,
-    fontWeight: '700',
-  },
-  chipRow: {
-    gap: spacing.sm,
-    paddingRight: spacing.sm,
-  },
-  cardTitle: {
-    ...typography.headlineMd,
     color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '600',
   },
-  cardSubtitle: {
-    ...typography.bodyMd,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
+  categoryList: {
+    gap: spacing.sm,
   },
-  chartHolder: {
-    marginTop: spacing.md,
+  skeletonList: {
+    gap: spacing.lg,
   },
-  donutHolder: {
-    marginTop: spacing.md,
-    alignItems: 'stretch',
-  },
-  emptyHint: {
-    ...typography.bodyMd,
-    color: colors.textSecondary,
-    marginTop: spacing.md,
-    fontStyle: 'italic',
+  error: {
+    ...typography.labelSm,
+    color: colors.danger,
   },
   backButton: {
     flexDirection: 'row',
@@ -378,8 +376,3 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
-
-// `buildCaption` and `DeltaSubtitle` are intentionally not exported —
-// they're internal helpers. `export { deltaSubtitle }` was scoped out
-// of the spec; keeping the file pure presentation prevents accidental
-// use from outside the screen.
