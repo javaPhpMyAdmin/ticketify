@@ -62,6 +62,33 @@ export async function setProfileCurrency(
   return { status: 'ok' };
 }
 
+/**
+ * Persists the signed-in user's `profiles.monthly_budget`. Same posture as
+ * `setProfileCurrency`: scoped to `auth.uid() = id` via RLS, unconfigured
+ * clients return the generic `WRITE_ERROR_MESSAGE`, raw PostgREST errors
+ * never reach the UI. The value is rounded to a non-negative integer before
+ * sending — the home budget bar treats `monthly_budget` as a whole-number
+ * cap and the input on `/settings/budget` already constrains it.
+ */
+export async function setProfileBudget(
+  userId: string,
+  amount: number,
+): Promise<ProfileWriteResult> {
+  if (!isSupabaseConfigured) {
+    return { status: 'error', message: WRITE_ERROR_MESSAGE };
+  }
+  const sanitized = Math.max(0, Math.round(amount));
+  const { error } = await supabase
+    .from('profiles')
+    .update({ monthly_budget: sanitized })
+    .eq('id', userId);
+  if (error) {
+    console.warn('[write] profile budget failed:', error.code, error.message);
+    return { status: 'error', message: WRITE_ERROR_MESSAGE };
+  }
+  return { status: 'ok' };
+}
+
 /** The authenticated user's `profiles` row. */
 export async function fetchProfile(userId: string): Promise<ProfileReadResult> {
   return readProfileRow(userId);

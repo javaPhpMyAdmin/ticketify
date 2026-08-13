@@ -128,10 +128,14 @@ export default function RootLayout() {
               guard and render stale data via deep links when signed out. */}
           <Stack.Screen name="receipts/[id]" />
           <Stack.Screen name="items/[name]" />
-          {/* Renders the user's current currency and writes their profile
-              row, so it must sit behind the same session gate (same
-              rationale as the drill-downs below). */}
+{/* Renders the user's current currency and writes their profile
+               row, so it must sit behind the same session gate (same
+               rationale as the drill-downs below). */}
           <Stack.Screen name="settings/currency" />
+          {/* Same rationale as the currency screen: the budget editor
+               writes the user's profile row and renders their current
+               monthly cap, so it lives behind the session gate. */}
+          <Stack.Screen name="settings/budget" />
           {/* Pro paywall + Pro-gated charts placeholder. The paywall is
               session-gated only (free users reach it to upgrade); the
               charts screen enforces its Pro gate inside the screen body
