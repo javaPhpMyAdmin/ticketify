@@ -18,7 +18,7 @@
  */
 import { FunctionsHttpError, FunctionsFetchError } from '@supabase/supabase-js';
 
-import { tempId } from '@/lib/format';
+import { tempId, todayLocalISO } from '@/lib/format';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys, utcYearMonth } from '@/lib/query-keys';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -281,13 +281,16 @@ function normalizeCardType(value: unknown): CardType | null {
   return normalized === 'debit' || normalized === 'credit' ? normalized : null;
 }
 
-/** Maps the validated edge payload into the client `ParsedReceipt` shape. */
+/**
+ * Maps the edge payload into the client `ParsedReceipt` shape, tolerating
+ * missing or empty receipt metadata so list-mode drafts (empty store, today's
+ * date) still render on the review screen for editing.
+ */
 function toClientReceipt(data: unknown): ParsedReceipt {
   const edge = data as EdgeParsedReceipt | null;
   if (
     typeof edge !== 'object' ||
     edge === null ||
-    typeof edge.store_name !== 'string' ||
     !Array.isArray(edge.items) ||
     // Defense in depth after the edge's 422 on empty items: a receipt with
     // zero line items must never reach the review screen as a confirmation.
@@ -297,8 +300,8 @@ function toClientReceipt(data: unknown): ParsedReceipt {
     throw new Error(GENERIC_PARSE_MESSAGE);
   }
   return {
-    store: edge.store_name,
-    date: edge.purchase_date,
+    store: typeof edge.store_name === 'string' ? edge.store_name.trim() : '',
+    date: validDateOrToday(edge.purchase_date),
     total: edge.total,
     // Guard the wire: the edge function already normalizes unknown values to
     // 'other', this keeps the same semantics if the payload ever drifts.
@@ -323,6 +326,27 @@ function toClientReceipt(data: unknown): ParsedReceipt {
       ai_suggested_category_id: item.suggested_category_slug ?? null,
     })),
   };
+}
+
+/**
+ * Accepts a YYYY-MM-DD string only when it is a real calendar date. Any other
+ * value (missing, malformed, or invalid like 2026-02-30) defaults to today's
+ * local date so the review screen always has a renderable date.
+ */
+function validDateOrToday(value: unknown): string {
+  if (typeof value !== 'string') return todayLocalISO();
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return todayLocalISO();
+  const [y, m, d] = trimmed.split('-').map(Number);
+  const parsed = new Date(Date.UTC(y, m - 1, d));
+  if (
+    parsed.getUTCFullYear() !== y ||
+    parsed.getUTCMonth() !== m - 1 ||
+    parsed.getUTCDate() !== d
+  ) {
+    return todayLocalISO();
+  }
+  return trimmed;
 }
 
 /**
