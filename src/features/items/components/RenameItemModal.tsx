@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View,
@@ -108,61 +111,77 @@ export function RenameItemModal({
             </Pressable>
           </View>
           <Divider />
-          <View style={styles.body}>
-            <FieldGroup label="Nombre del producto" error={errorMessage ?? undefined}>
-              <TextInput
-                value={draft}
-                onChangeText={(next) => {
-                  setDraft(next);
-                  onChange(next);
-                }}
-                style={styles.input}
-                placeholder="Ej. Café con leche"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="default"
-                autoFocus
-                maxLength={120}
-                editable={!isLoading}
-                accessibilityLabel="Nombre del producto"
-              />
-            </FieldGroup>
-            <Text style={styles.helper}>
-              El buscador ignora acentos.
-            </Text>
-            <View style={styles.actions}>
-              <Pressable
-                onPress={onCancel}
-                disabled={isLoading}
-                style={({ pressed }) => [
-                  styles.actionButton,
-                  styles.cancelButton,
-                  pressed && styles.actionPressed,
-                  isLoading && styles.actionDisabled,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Cancelar"
-              >
-                <Text style={styles.cancelLabel}>Cancelar</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => onSave(trimmed)}
-                disabled={!canSave}
-                style={({ pressed }) => [
-                  styles.actionButton,
-                  styles.saveButton,
-                  pressed && styles.actionPressed,
-                  !canSave && styles.actionDisabled,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Guardar"
-                accessibilityState={{ disabled: !canSave }}
-              >
-                <Text style={styles.saveLabel}>
-                  {isLoading ? 'Guardando…' : 'Guardar'}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
+          {/* `KeyboardAvoidingView` lifts the input above the keyboard on
+              iOS (the system modal is its own window). Android manages
+              soft input via `windowSoftInputMode`, so `behavior` is
+              `undefined` there to avoid double-shifting the layout. The
+              `ScrollView` lets the Cancel button stay reachable on small
+              screens once the keyboard is up; `keyboardShouldPersistTaps`
+              keeps the tap responsive without dismissing the keyboard on
+              every touch. */}
+          <KeyboardAvoidingView
+            style={styles.flex}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <ScrollView
+              contentContainerStyle={styles.body}
+              keyboardShouldPersistTaps="handled"
+            >
+              <FieldGroup label="Nombre del producto" error={errorMessage ?? undefined}>
+                <TextInput
+                  value={draft}
+                  onChangeText={(next) => {
+                    setDraft(next);
+                    onChange(next);
+                  }}
+                  style={styles.input}
+                  placeholder="Ej. Café con leche"
+                  placeholderTextColor={colors.textSecondary}
+                  keyboardType="default"
+                  autoFocus
+                  maxLength={120}
+                  editable={!isLoading}
+                  accessibilityLabel="Nombre del producto"
+                />
+              </FieldGroup>
+              <Text style={styles.helper}>
+                El buscador ignora acentos.
+              </Text>
+              <View style={styles.actions}>
+                <Pressable
+                  onPress={onCancel}
+                  disabled={isLoading}
+                  style={({ pressed }) => [
+                    styles.actionButton,
+                    styles.cancelButton,
+                    pressed && styles.actionPressed,
+                    isLoading && styles.actionDisabled,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancelar"
+                >
+                  <Text style={styles.cancelLabel}>Cancelar</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => onSave(trimmed)}
+                  disabled={!canSave}
+                  style={({ pressed }) => [
+                    styles.actionButton,
+                    styles.saveButton,
+                    pressed && styles.actionPressed,
+                    !canSave && styles.actionDisabled,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Guardar"
+                  accessibilityState={{ disabled: !canSave }}
+                >
+                  <Text style={styles.saveLabel}>
+                    {isLoading ? 'Guardando…' : 'Guardar'}
+                  </Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </SafeAreaView>
       </View>
     </Modal>
@@ -175,6 +194,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
+  // Filler so `KeyboardAvoidingView` can stretch inside the sheet without
+  // pulling layout away from the parent's flex column.
+  flex: { flex: 1 },
   sheet: {
     backgroundColor: colors.background,
     borderTopLeftRadius: radii.lg,

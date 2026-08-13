@@ -1,6 +1,13 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Image, Modal, ScrollView, StyleSheet } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Card, Divider, Icon, Pressable, Text, View } from '@/components';
@@ -63,6 +70,105 @@ export default function ReceiptDetailScreen() {
     };
   }, []);
   const receipt = list.find((r) => r.id === id);
+
+  // Fullscreen photo zoom: pinch (scale) + double-tap (reset) + pan
+  // (translate, clamped so the image edges stay inside the viewport).
+  // The backdrop's onPress reads `photoScale` to decide between close
+  // (at 1×) and reset (while zoomed). The container dimensions feed the
+  // pan clamp — at scale `s`, the image is `s`× the container, so the
+  // translate budget is `(s − 1) / 2` in each axis.
+  const photoScale = useSharedValue(1);
+  const photoSavedScale = useSharedValue(1);
+  const photoTx = useSharedValue(0);
+  const photoTy = useSharedValue(0);
+  const photoSavedTx = useSharedValue(0);
+  const photoSavedTy = useSharedValue(0);
+  const photoContainerW = useSharedValue(0);
+  const photoContainerH = useSharedValue(0);
+  // JS-readable mirror of the shared scale value, used by the backdrop
+  // Pressable handler (which runs on the JS thread, not the worklet).
+  const photoScaleJs = useRef(1);
+
+  const resetPhotoZoom = () => {
+    photoScale.value = withTiming(1);
+    photoSavedScale.value = 1;
+    photoTx.value = withTiming(0);
+    photoTy.value = withTiming(0);
+    photoSavedTx.value = 0;
+    photoSavedTy.value = 0;
+    photoScaleJs.current = 1;
+  };
+
+  const photoPinch = Gesture.Pinch()
+    .onUpdate((e) => {
+      const next = photoSavedScale.value * e.scale;
+      const clamped = Math.max(1, Math.min(4, next));
+      photoScale.value = clamped;
+      photoScaleJs.current = clamped;
+    })
+    .onEnd(() => {
+      photoSavedScale.value = photoScale.value;
+      // Reset pan at 1× so the next pinch starts centered.
+      if (photoScale.value === 1) {
+        photoTx.value = withTiming(0);
+        photoTy.value = withTiming(0);
+        photoSavedTx.value = 0;
+        photoSavedTy.value = 0;
+      }
+    });
+
+  const photoPan = Gesture.Pan()
+    .onUpdate((e) => {
+      if (photoScale.value <= 1) return;
+      const w = photoContainerW.value;
+      const h = photoContainerH.value;
+      if (w === 0 || h === 0) return;
+      const maxX = (w * (photoScale.value - 1)) / 2;
+      const maxY = (h * (photoScale.value - 1)) / 2;
+      photoTx.value = Math.max(
+        -maxX,
+        Math.min(maxX, e.translationX + photoSavedTx.value),
+      );
+      photoTy.value = Math.max(
+        -maxY,
+        Math.min(maxY, e.translationY + photoSavedTy.value),
+      );
+    })
+    .onEnd(() => {
+      photoSavedTx.value = photoTx.value;
+      photoSavedTy.value = photoTy.value;
+    });
+
+  const photoDoubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd(() => {
+      // Worklet → JS: the reset mutates shared values + a regular ref,
+      // so jump back to JS to keep `photoScaleJs.current` in sync.
+      runOnJS(resetPhotoZoom)();
+    });
+
+  // Pinch + pan run together (two-finger zoom and drag); the double-tap
+  // competes with them but fires only when fingers are still.
+  const photoGesture = Gesture.Simultaneous(
+    photoPinch,
+    Gesture.Simultaneous(photoPan, photoDoubleTap),
+  );
+
+  const photoAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: photoTx.value },
+      { translateY: photoTy.value },
+      { scale: photoScale.value },
+    ],
+  }));
+
+  const handlePhotoBackdropPress = () => {
+    if (photoScaleJs.current > 1) {
+      resetPhotoZoom();
+    } else {
+      setPhotoOpen(false);
+    }
+  };
 
   // The stored photo reference may be a ready http(s) URL (seed/demo rows)
   // or an object path in the private `receipts` bucket — resolve the path
@@ -342,27 +448,42 @@ export default function ReceiptDetailScreen() {
         animationType="fade"
         onRequestClose={() => setPhotoOpen(false)}
       >
-        <Pressable
-          style={styles.photoModalBackdrop}
-          onPress={() => setPhotoOpen(false)}
-          accessibilityRole="button"
-          accessibilityLabel="Cerrar foto"
-        >
+        <View style={styles.photoModalBackdrop}>
+          {/* Backdrop press: closes the modal at 1×, resets the zoom when
+              the user is already zoomed in (so the close gesture doesn't
+              require the user to first reset). gesture-handler consumes
+              double-tap / pinch touches before this fires. */}
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={handlePhotoBackdropPress}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar foto"
+          />
           <View style={styles.photoModalClose} pointerEvents="none">
             <Icon name="xmark" size={24} color={colors.surface} />
           </View>
-          <Image
-            source={photoSource ? { uri: photoSource } : undefined}
-            style={styles.photoModalImage}
-            resizeMode="contain"
-            // If the photo fails to load fullscreen (offline dev), close the
-            // modal and let the detail view fall back to the placeholder.
-            onError={() => {
-              setPhotoOpen(false);
-              setPhotoFailed(true);
+          <Animated.View
+            style={[styles.photoModalImageWrap, photoAnimatedStyle]}
+            onLayout={(e) => {
+              photoContainerW.value = e.nativeEvent.layout.width;
+              photoContainerH.value = e.nativeEvent.layout.height;
             }}
-          />
-        </Pressable>
+          >
+            <GestureDetector gesture={photoGesture}>
+              <Image
+                source={photoSource ? { uri: photoSource } : undefined}
+                style={styles.photoModalImage}
+                resizeMode="contain"
+                // If the photo fails to load fullscreen (offline dev), close the
+                // modal and let the detail view fall back to the placeholder.
+                onError={() => {
+                  setPhotoOpen(false);
+                  setPhotoFailed(true);
+                }}
+              />
+            </GestureDetector>
+          </Animated.View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -423,6 +544,14 @@ const styles = StyleSheet.create({
   photoModalImage: {
     width: '100%',
     height: '100%',
+  },
+  // Animated.View that hosts the zoom transform. `flex: 1` makes it
+  // fill the backdrop so `onLayout` measures the full viewport; the
+  // Image inside fills this View at 1× and is what the pinch scales.
+  // `overflow: hidden` on the backdrop (default for RN <View>) clips
+  // the scaled image to the screen.
+  photoModalImageWrap: {
+    flex: 1,
   },
   catRow: {
     flexDirection: 'row',
