@@ -13,12 +13,16 @@ export {
   aggregateStoresByMonth,
   aggregateCategoriesByMonth,
   aggregateMonthlyDelta,
+  aggregateWeeklySpend,
+  aggregateDailyAverage,
+  getTopCategory,
 } from './aggregate';
 export type {
   SpendTrendPoint,
   StoreSpend,
   HomeCategory,
   MonthlyDelta,
+  WeeklySpendPoint,
 } from './aggregate';
 
 export { TrendChart } from './components/TrendChart';
