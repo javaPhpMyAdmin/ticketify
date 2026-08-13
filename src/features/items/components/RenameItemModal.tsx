@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Pressable,
   ScrollView,
@@ -67,10 +67,32 @@ export function RenameItemModal({
   // parent can pass the same `currentName` on every render without
   // fighting the user's in-progress edits.
   const [draft, setDraft] = useState(currentName);
+  // Height of the software keyboard while the sheet is open. A transparent
+  // RN `Modal` on Android never receives `windowSoftInputMode="adjustResize"`,
+  // so `KeyboardAvoidingView` cannot reliably lift the input there. Instead
+  // the sheet offsets its content by the ACTUAL keyboard height, driven by
+  // `Keyboard` events — this works on both platforms without `Platform` hacks.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (visible) {
       setDraft(currentName);
+      // Drop any stale height from a previous session before the keyboard
+      // re-fires `keyboardDidShow` (autoFocus opens it right after mount).
+      setKeyboardHeight(0);
     }
   }, [visible, currentName]);
 
@@ -110,76 +132,74 @@ export function RenameItemModal({
             </Pressable>
           </View>
           <Divider />
-          {/* `KeyboardAvoidingView` lifts the input above the keyboard. On
-              iOS the system modal is its own window, so `padding` adds bottom
-              space. On Android we also use `padding`: the activity's
-              `windowSoftInputMode` does not reliably resize a transparent
-              `Modal`, so leaving `behavior` undefined leaves the keyboard
-              covering the input. The sheet's `maxHeight` + `flexShrink: 1`
-              here lets the content compress instead of overflowing. */}
-          <KeyboardAvoidingView
-            style={styles.keyboardAvoidingWrapper}
-            behavior="padding"
+          {/* The transparent `Modal` on Android never gets
+              `windowSoftInputMode="adjustResize"`, so the sheet pads its
+              content by the real keyboard height instead of relying on
+              `KeyboardAvoidingView` (which only pads reliably on iOS). The
+              sheet's `maxHeight` + `flexShrink: 1` here lets the content
+              compress instead of overflowing. */}
+          <ScrollView
+            style={styles.scrollBody}
+            contentContainerStyle={[
+              styles.body,
+              { paddingBottom: keyboardHeight + spacing.lg },
+            ]}
+            keyboardShouldPersistTaps="handled"
           >
-            <ScrollView
-              contentContainerStyle={styles.body}
-              keyboardShouldPersistTaps="handled"
-            >
-              <FieldGroup label="Nombre del producto" error={errorMessage ?? undefined}>
-                <TextInput
-                  value={draft}
-                  onChangeText={(next) => {
-                    setDraft(next);
-                    onChange(next);
-                  }}
-                  style={styles.input}
-                  placeholder="Ej. Café con leche"
-                  placeholderTextColor={colors.textSecondary}
-                  keyboardType="default"
-                  autoFocus
-                  maxLength={120}
-                  editable={!isLoading}
-                  accessibilityLabel="Nombre del producto"
-                />
-              </FieldGroup>
-              <Text style={styles.helper}>
-                El buscador ignora acentos.
-              </Text>
-              <View style={styles.actions}>
-                <Pressable
-                  onPress={onCancel}
-                  disabled={isLoading}
-                  style={({ pressed }) => [
-                    styles.actionButton,
-                    styles.cancelButton,
-                    pressed && styles.actionPressed,
-                    isLoading && styles.actionDisabled,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Cancelar"
-                >
-                  <Text style={styles.cancelLabel}>Cancelar</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => onSave(trimmed)}
-                  disabled={!canSave}
-                  style={({ pressed }) => [
-                    styles.actionButton,
-                    styles.saveButton,
-                    pressed && styles.actionPressed,
-                    !canSave && styles.actionDisabled,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Guardar"
-                  accessibilityState={{ disabled: !canSave }}
-                >
-                  <Text style={styles.saveLabel}>
-                    {isLoading ? 'Guardando…' : 'Guardar'}
-                  </Text>
-                </Pressable>
-              </View>
-            </ScrollView>
-          </KeyboardAvoidingView>
+            <FieldGroup label="Nombre del producto" error={errorMessage ?? undefined}>
+              <TextInput
+                value={draft}
+                onChangeText={(next) => {
+                  setDraft(next);
+                  onChange(next);
+                }}
+                style={styles.input}
+                placeholder="Ej. Café con leche"
+                placeholderTextColor={colors.textSecondary}
+                keyboardType="default"
+                autoFocus
+                maxLength={120}
+                editable={!isLoading}
+                accessibilityLabel="Nombre del producto"
+              />
+            </FieldGroup>
+            <Text style={styles.helper}>
+              El buscador ignora acentos.
+            </Text>
+            <View style={styles.actions}>
+              <Pressable
+                onPress={onCancel}
+                disabled={isLoading}
+                style={({ pressed }) => [
+                  styles.actionButton,
+                  styles.cancelButton,
+                  pressed && styles.actionPressed,
+                  isLoading && styles.actionDisabled,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Cancelar"
+              >
+                <Text style={styles.cancelLabel}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => onSave(trimmed)}
+                disabled={!canSave}
+                style={({ pressed }) => [
+                  styles.actionButton,
+                  styles.saveButton,
+                  pressed && styles.actionPressed,
+                  !canSave && styles.actionDisabled,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Guardar"
+                accessibilityState={{ disabled: !canSave }}
+              >
+                <Text style={styles.saveLabel}>
+                  {isLoading ? 'Guardando…' : 'Guardar'}
+                </Text>
+              </Pressable>
+            </View>
+          </ScrollView>
         </SafeAreaView>
       </View>
     </Modal>
@@ -192,12 +212,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
-  // The wrapper must NOT stretch (`flex: 1` / `flexBasis: 0`): the sheet
-  // sizes itself by content (only `maxHeight` is set), so a zero-basis
+  // The scroll container must NOT stretch (`flex: 1` / `flexBasis: 0`): the
+  // sheet sizes itself by content (only `maxHeight` is set), so a zero-basis
   // flex child collapses to 0 height and hides the body. `flexShrink: 1`
   // keeps content height but lets the sheet compress on small screens or
-  // when the iOS keyboard padding makes the body exceed `maxHeight`.
-  keyboardAvoidingWrapper: {
+  // when the keyboard padding makes the body exceed `maxHeight`.
+  scrollBody: {
     flexShrink: 1,
   },
   sheet: {
