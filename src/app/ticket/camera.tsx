@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Linking, StyleSheet } from 'react-native';
+import { Linking, Platform, StyleSheet } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { router, Stack } from 'expo-router';
@@ -95,8 +95,8 @@ export default function CameraScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         quality: 0.85,
-        allowsEditing: true,
-        aspect: [3, 4],
+        allowsEditing: Platform.OS === 'ios',
+        aspect: Platform.OS === 'ios' ? [3, 4] : undefined,
       });
       if (result.canceled || !result.assets?.[0]) {
         router.back();
