@@ -12,11 +12,13 @@ export {
   aggregateSpendTrend,
   aggregateStoresByMonth,
   aggregateCategoriesByMonth,
+  aggregateMonthlyDelta,
 } from './aggregate';
 export type {
   SpendTrendPoint,
   StoreSpend,
   HomeCategory,
+  MonthlyDelta,
 } from './aggregate';
 
 export { TrendChart } from './components/TrendChart';
@@ -30,3 +32,10 @@ export type {
 
 export { StoreBars } from './components/StoreBars';
 export type { StoreBarsProps, StoreBar } from './components/StoreBars';
+
+export { ChartLegend } from './components/ChartLegend';
+export type { ChartLegendItem } from './components/ChartLegend';
+
+export { ChartTooltip } from './components/ChartTooltip';
+export { useChartTooltip } from './hooks/useChartTooltip';
+export type { TooltipState, UseChartTooltipResult } from './hooks/useChartTooltip';

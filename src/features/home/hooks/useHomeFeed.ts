@@ -425,6 +425,92 @@ export function useItemDetail(itemName: string, monthKey = currentMonthKey()) {
 }
 
 /**
+ * Per-store drill-down: the receipts the user scanned at the named
+ * store in the requested month, plus the store's monthly total.
+ * Sibling to `useItemDetail` — same shape, different axis.
+ *
+ * `purchases` are aggregated at the RECEIPT level (one row per
+ * ticket) rather than the item level. The store detail screen's tap
+ * target is "open the ticket photo for that receipt" (`/receipts/[id]`),
+ * so the natural grain is one row per ticket, with that ticket's
+ * subtotal-for-this-store as the row amount. A user who bought three
+ * items at Coto across one ticket sees one row, not three. Without
+ * item-name data on the `ItemPurchaseSummary` shape, the per-item grain
+ * would render as `(date, amount)` blobs with no semantic meaning; the
+ * per-receipt grain reads as "tickets I scanned at this store".
+ *
+ * The store name is compared in normalized form (trim + lowercase) so
+ * "Coto", "COTO" and " coto " all collapse onto one row, matching
+ * `aggregateStoresByMonth`'s normalization. The receipt's `store_name`
+ * is used directly (no separate `store_id` field today) — once a
+ * parser-backed `store_id` exists, this filter should switch from name
+ * to id.
+ *
+ * `total` is the per-store monthly total (the same number the bar
+ * chart shows for this store in this month). Receipts that landed in
+ * OTHER stores in the same month are not counted here even if some of
+ * their items share a category with this store.
+ */
+export function useStoreDetail(storeName: string, monthKey?: string) {
+  const list = useReceiptsStore((s) => s.list);
+  const month = monthKey ?? currentMonthKey();
+  const normalizedTarget = storeName.trim().toLowerCase();
+  type ReceiptPurchase = {
+    receiptId: string;
+    storeName: string;
+    date: string;
+    amount: number;
+    purchaseItemId?: string;
+  };
+  const purchasesByReceipt = new Map<string, ReceiptPurchase>();
+  let total = 0;
+  for (const receipt of list) {
+    if (getMonthKey(receipt.purchase_date) !== month) continue;
+    if ((receipt.store_name ?? '').trim().toLowerCase() !== normalizedTarget) {
+      continue;
+    }
+    const receiptId = receipt.id ?? '';
+    let receiptSubtotal = 0;
+    for (const item of receipt.items ?? []) {
+      receiptSubtotal += item.amount;
+    }
+    // Always derive the row amount from the items, not `receipt.total`
+    // — `receipt.total` covers the entire ticket (which can include
+    // items at OTHER stores if a single ticket bagged purchases from
+    // multiple merchants, an edge case the parser doesn't yet surface
+    // but the aggregator should be defensive against). The subtotal
+    // computed from `receipt.items` is the source of truth for this
+    // store's contribution.
+    total += receiptSubtotal;
+    if (receiptId) {
+      const existing = purchasesByReceipt.get(receiptId);
+      if (existing) {
+        existing.amount += receiptSubtotal;
+      } else {
+        purchasesByReceipt.set(receiptId, {
+          receiptId,
+          storeName: receipt.store_name ?? '',
+          date: receipt.purchase_date,
+          amount: receiptSubtotal,
+        });
+      }
+    }
+  }
+  // Newest first — most recent trip to the store surfaces at the top.
+  const purchases = [...purchasesByReceipt.values()].sort((a, b) =>
+    a.date < b.date ? 1 : a.date > b.date ? -1 : 0,
+  );
+  // Cast to the public shape — the screen consumes `ItemPurchaseSummary`
+  // for the common fields (receiptId, storeName, date, amount). The
+  // optional `purchaseItemId` is absent by design (item-level grain
+  // doesn't apply here).
+  return {
+    total,
+    purchases: purchases as unknown as ItemPurchaseSummary[],
+  };
+}
+
+/**
  * Orders "Recibos recientes" by `scanned_at` (when the ticket was
  * captured), newest first, falling back to `purchase_date` when the scan
  * stamp is missing; ties break by purchase date (newer first). A proper
