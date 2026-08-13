@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -111,17 +110,16 @@ export function RenameItemModal({
             </Pressable>
           </View>
           <Divider />
-          {/* `KeyboardAvoidingView` lifts the input above the keyboard on
-              iOS (the system modal is its own window). Android manages
-              soft input via `windowSoftInputMode`, so `behavior` is
-              `undefined` there to avoid double-shifting the layout. The
-              `ScrollView` lets the Cancel button stay reachable on small
-              screens once the keyboard is up; `keyboardShouldPersistTaps`
-              keeps the tap responsive without dismissing the keyboard on
-              every touch. */}
+          {/* `KeyboardAvoidingView` lifts the input above the keyboard. On
+              iOS the system modal is its own window, so `padding` adds bottom
+              space. On Android we also use `padding`: the activity's
+              `windowSoftInputMode` does not reliably resize a transparent
+              `Modal`, so leaving `behavior` undefined leaves the keyboard
+              covering the input. The sheet's `maxHeight` + `flexShrink: 1`
+              here lets the content compress instead of overflowing. */}
           <KeyboardAvoidingView
-            style={styles.flex}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.keyboardAvoidingWrapper}
+            behavior="padding"
           >
             <ScrollView
               contentContainerStyle={styles.body}
@@ -194,9 +192,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
-  // Filler so `KeyboardAvoidingView` can stretch inside the sheet without
-  // pulling layout away from the parent's flex column.
-  flex: { flex: 1 },
+  // The wrapper must NOT stretch (`flex: 1` / `flexBasis: 0`): the sheet
+  // sizes itself by content (only `maxHeight` is set), so a zero-basis
+  // flex child collapses to 0 height and hides the body. `flexShrink: 1`
+  // keeps content height but lets the sheet compress on small screens or
+  // when the iOS keyboard padding makes the body exceed `maxHeight`.
+  keyboardAvoidingWrapper: {
+    flexShrink: 1,
+  },
   sheet: {
     backgroundColor: colors.background,
     borderTopLeftRadius: radii.lg,
