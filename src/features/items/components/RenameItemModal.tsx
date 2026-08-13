@@ -120,7 +120,7 @@ export function RenameItemModal({
               keeps the tap responsive without dismissing the keyboard on
               every touch. */}
           <KeyboardAvoidingView
-            style={styles.flex}
+            style={styles.keyboardAvoidingWrapper}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
             <ScrollView
@@ -194,9 +194,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
-  // Filler so `KeyboardAvoidingView` can stretch inside the sheet without
-  // pulling layout away from the parent's flex column.
-  flex: { flex: 1 },
+  // The wrapper must NOT stretch (`flex: 1` / `flexBasis: 0`): the sheet
+  // sizes itself by content (only `maxHeight` is set), so a zero-basis
+  // flex child collapses to 0 height and hides the body. `flexShrink: 1`
+  // keeps content height but lets the sheet compress on small screens or
+  // when the iOS keyboard padding makes the body exceed `maxHeight`.
+  keyboardAvoidingWrapper: {
+    flexShrink: 1,
+  },
   sheet: {
     backgroundColor: colors.background,
     borderTopLeftRadius: radii.lg,
