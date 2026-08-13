@@ -169,6 +169,17 @@ function ChartsBody() {
     [list, availableMonths],
   );
 
+  // `referencePoints` is the same trend, masked with `null` at the
+  // selected month, so the TrendChart can draw a faded "comparison"
+  // line that highlights the gap between the current month and the
+  // rest of the trend. Empty when there's no reference signal (single-
+  // month history, or first month with data).
+  const trendReference = useMemo<(TrendPoint | null)[]>(() => {
+    return trendData.map((point) =>
+      point.month === selectedMonth ? null : point,
+    );
+  }, [trendData, selectedMonth]);
+
   const donutData: CategorySlice[] = useMemo(
     () =>
       aggregateCategoriesByMonth(list, selectedMonth).map((category) => ({
@@ -233,7 +244,10 @@ function ChartsBody() {
         <Text style={styles.cardTitle}>Tendencia</Text>
         <DeltaSubtitle parts={caption} />
         <View style={styles.chartHolder}>
-          <TrendChart data={trendData} />
+          <TrendChart
+            data={trendData}
+            referencePoints={trendReference}
+          />
         </View>
         {!hasAnyReceipts ? (
           <Text style={styles.emptyHint}>
