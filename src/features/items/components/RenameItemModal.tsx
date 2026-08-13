@@ -21,7 +21,6 @@ export interface RenameItemModalProps {
   /** Optional parent-provided error to surface inside the field group. */
   errorMessage?: string | null;
   /**
-  /**
    * Fires on every keystroke. The modal keeps an INTERNAL buffer so the
    * input stays interactive during the parent's async write; the parent
    * reads the latest value through `onSave` only.
