@@ -16,6 +16,7 @@
 import {
   aggregateCategoriesByMonth,
   getMonthKey,
+  previousMonthKey,
   type HomeCategory,
   type ReceiptSpendRecord,
 } from '@/features/home/hooks/useHomeFeed';
@@ -106,3 +107,61 @@ export function aggregateStoresByMonth(
  */
 export { aggregateCategoriesByMonth };
 export type { HomeCategory };
+
+/**
+ * Month-over-month spend delta — the "vs. last month" pill on the Pro
+ * charts screen. Pure derivation, no React.
+ *
+ * `previous` is `null` when the previous month has NO receipts at all
+ * (not zero — "we have no data for last month" is meaningfully different
+ * from "you spent $0 last month", and the UI surfaces that distinction
+ * by skipping the delta pill). `current` is always a number (0 is a real
+ * "nothing this month" answer). `deltaPct` is `null` when `previous` is
+ * null; otherwise `((current - previous) / previous) * 100`.
+ *
+ * `isImprovement` reflects the user's mental model of "good vs. bad"
+ * spend: less spend than last month is good, more is bad. The UI uses
+ * it to pick green/red coloring, not to make a value judgement. Receipts
+ * with no `total` are treated as 0 (defensive — `ReceiptSpendRecord.total`
+ * is optional in the minimal record shape).
+ */
+export interface MonthlyDelta {
+  current: number;
+  /** Null when the previous month has no receipts; zero is a valid amount. */
+  previous: number | null;
+  /** Percentage change vs. the previous month; null when `previous` is null. */
+  deltaPct: number | null;
+  /** True when `deltaPct < 0` (less spent than the previous month). */
+  isImprovement: boolean;
+}
+
+export function aggregateMonthlyDelta(
+  records: ReceiptSpendRecord[],
+  monthKey: string,
+): MonthlyDelta {
+  let current = 0;
+  let previous: number | null = null;
+  let previousSeen = false;
+  const prevKey = previousMonthKey(monthKey);
+  for (const receipt of records) {
+    const total = receipt.total ?? 0;
+    const key = getMonthKey(receipt.purchase_date);
+    if (key === monthKey) {
+      current += total;
+    } else if (key === prevKey) {
+      previous = (previous ?? 0) + total;
+      previousSeen = true;
+    }
+  }
+  if (!previousSeen) previous = null;
+  const deltaPct =
+    previous === null || previous === 0
+      ? null
+      : ((current - previous) / previous) * 100;
+  return {
+    current,
+    previous,
+    deltaPct,
+    isImprovement: deltaPct !== null && deltaPct < 0,
+  };
+}
