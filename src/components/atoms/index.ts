@@ -24,3 +24,5 @@ export type { BadgeProps } from './Badge';
 
 export { IconButton } from './IconButton';
 export type { IconButtonProps } from './IconButton';
+
+export { ToastHost } from './Toast';

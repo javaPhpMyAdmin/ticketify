@@ -4,7 +4,10 @@ import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef, useState } from 'react';
+import { StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { ToastHost } from '@/components';
 import { useSessionStore } from '@/features/auth';
 import { ProBootstrap } from '@/features/pro';
 import { decideSessionNavigation } from '@/lib/auth/session-nav';
@@ -99,52 +102,67 @@ export default function RootLayout() {
   }, [booted]);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <StatusBar style="dark" backgroundColor={colors.background} />
-      {/* Configures RevenueCat once and pipes customerInfo into the pro
-          store (REQ-PRO-1). Renders null; safe to mount unconditionally
-          — the effect gates on a real session. */}
-      <ProBootstrap />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.background },
-        }}
-      >
-        <Stack.Protected guard={session != null}>
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen
-            name="ticket/camera"
-            options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
-          />
-          <Stack.Screen
-            name="ticket/review/[id]"
-            options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-          />
-          <Stack.Screen name="categories/[key]" />
-          {/* The drill-downs render store data and are reached from the
-              Home/History drill-downs, so they must sit behind the same
-              session gate — without this they auto-register outside the
-              guard and render stale data via deep links when signed out. */}
-          <Stack.Screen name="receipts/[id]" />
-          <Stack.Screen name="items/[name]" />
-{/* Renders the user's current currency and writes their profile
-               row, so it must sit behind the same session gate (same
-               rationale as the drill-downs below). */}
-          <Stack.Screen name="settings/currency" />
-          {/* Same rationale as the currency screen: the budget editor
-               writes the user's profile row and renders their current
-               monthly cap, so it lives behind the session gate. */}
-          <Stack.Screen name="settings/budget" />
-          {/* Pro paywall + Pro-gated charts placeholder. The paywall is
-              session-gated only (free users reach it to upgrade); the
-              charts screen enforces its Pro gate inside the screen body
-              (ProRouteGuard). */}
-          <Stack.Screen name="pro/index" options={{ title: 'Pro' }} />
-          <Stack.Screen name="pro/charts" options={{ title: 'Estadísticas Pro' }} />
-        </Stack.Protected>
-        <Stack.Screen name="(auth)" />
-      </Stack>
-    </QueryClientProvider>
+    // GestureHandlerRootView must wrap the entire app: gesture-handler
+    // routes native touches through its root view, so any screen using
+    // `GestureDetector` (e.g. the receipt photo fullscreen pinch-zoom)
+    // needs the root wrap. Without it, gestures silently no-op.
+    <GestureHandlerRootView style={styles.root}>
+      <QueryClientProvider client={queryClient}>
+        <StatusBar style="dark" backgroundColor={colors.background} />
+        {/* Configures RevenueCat once and pipes customerInfo into the pro
+            store (REQ-PRO-1). Renders null; safe to mount unconditionally
+            — the effect gates on a real session. */}
+        <ProBootstrap />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.background },
+          }}
+        >
+          <Stack.Protected guard={session != null}>
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen
+              name="ticket/camera"
+              options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
+            />
+            <Stack.Screen
+              name="ticket/review/[id]"
+              options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+            />
+            <Stack.Screen name="categories/[key]" />
+            {/* The drill-downs render store data and are reached from the
+                Home/History drill-downs, so they must sit behind the same
+                session gate — without this they auto-register outside the
+                guard and render stale data via deep links when signed out. */}
+            <Stack.Screen name="receipts/[id]" />
+            <Stack.Screen name="items/[name]" />
+    {/* Renders the user's current currency and writes their profile
+                 row, so it must sit behind the same session gate (same
+                 rationale as the drill-downs below). */}
+            <Stack.Screen name="settings/currency" />
+            {/* Same rationale as the currency screen: the budget editor
+                 writes the user's profile row and renders their current
+                 monthly cap, so it lives behind the session gate. */}
+            <Stack.Screen name="settings/budget" />
+            {/* Pro paywall + Pro-gated charts placeholder. The paywall is
+                session-gated only (free users reach it to upgrade); the
+                charts screen enforces its Pro gate inside the screen body
+                (ProRouteGuard). */}
+            <Stack.Screen name="pro/index" options={{ title: 'Pro' }} />
+            <Stack.Screen name="pro/charts" options={{ title: 'Estadísticas Pro' }} />
+          </Stack.Protected>
+          <Stack.Screen name="(auth)" />
+        </Stack>
+        {/* Mounted at the root so it survives route navigation: a
+            `show()` call from a screen about to `router.back()` keeps the
+            toast visible on the destination screen instead of dying with
+            the source route. */}
+        <ToastHost />
+      </QueryClientProvider>
+    </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+});

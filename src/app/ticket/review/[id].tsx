@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Alert, Animated, Image, ScrollView, StyleSheet, TextInput } from 'react-native';
+import { Animated, Image, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -41,9 +41,18 @@ import {
 } from '@/lib/supabase/receipt-photo';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
+import { useToastStore } from '@/stores/use-toast-store';
 import { colors, radii, spacing, typography } from '@/theme';
 import { PAYMENT_METHOD_LABELS } from '@/types';
 import type { CardType, PaymentMethod, ReviewItem } from '@/types';
+
+/**
+ * User-safe copy for save failures. Same posture as the profile/budget
+ * `WRITE_ERROR_MESSAGE`: never leak raw PostgREST text to the user.
+ * Lives inline here (review is its own feature concern) — mirrors the
+ * `RENAME_ITEM_ERROR_MESSAGE` constant pattern in `useRenameItem`.
+ */
+const SAVE_ERROR_MESSAGE = 'No se pudo guardar. Inténtalo de nuevo.';
 
 // Picker order: card first (the most common scan result), then the rest.
 // Labels come from the shared `PAYMENT_METHOD_LABELS` map (types/index.ts),
@@ -368,16 +377,24 @@ export default function ReviewReceiptScreen() {
         }
       }
       clear();
+      // Toast BEFORE `router.dismiss()` so the user lands on the previous
+      // screen with a confirmation already on-screen. The `ToastHost` is
+      // mounted at the root in `_layout.tsx`, so it survives the unmount
+      // and renders on the destination route instead of dying with the
+      // review screen.
+      useToastStore.getState().show(
+        editingMode ? 'Cambios guardados.' : 'Recibo guardado.',
+      );
       router.dismiss();
-    } catch (err) {
+    } catch {
       // Writes can reject (network, RLS); the review screen stays up with
-      // the draft intact so the user can retry.
+      // the draft intact so the user can retry. The toast surfaces the
+      // error inline (root-mounted host) — no blocking Alert — and uses
+      // the same user-safe posture as the profile/budget writes
+      // (never raw PostgREST text).
       savingRef.current = false;
       setSaving(false);
-      Alert.alert(
-        'No se pudo guardar el recibo',
-        err instanceof Error ? err.message : undefined,
-      );
+      useToastStore.getState().show(SAVE_ERROR_MESSAGE);
     }
   };
 
@@ -582,26 +599,41 @@ export default function ReviewReceiptScreen() {
                 {formatCurrency(draft?.total ?? itemsTotal, currency)}
               </Text>
             </View>
-            <View style={styles.matchesRow}>
-              <Text
-                style={[
-                  styles.matchesText,
-                  { color: matches ? colors.primary : colors.danger },
-                ]}
-              >
-                {matches ? 'Coincide' : 'No coincide'}
+            {/* EDIT mode (soft hint, inline next to the total): the user is
+                in the middle of editing the total — the items will catch up
+                when they touch them — so a red footer banner would be
+                noisy. Show a one-line hint next to the total instead. */}
+            {editingMode && !matches ? (
+              <Text style={styles.matchesInlineHint}>
+                No coincide con la suma de los artículos
               </Text>
-              {!matches ? (
-                <Text style={styles.matchesDetail}>
-                  Declarado {formatCurrency(draft?.total ?? 0, currency)}
+            ) : null}
+            {/* SCAN mode (error banner in footer): the user is confirming a
+                parse result, and a mismatch there is a real error path.
+                Keep the existing footer banner with the green "Coincide"
+                badge and the helpful "Incluye descuento de $X" detail. */}
+            {!editingMode ? (
+              <View style={styles.matchesRow}>
+                <Text
+                  style={[
+                    styles.matchesText,
+                    { color: matches ? colors.primary : colors.danger },
+                  ]}
+                >
+                  {matches ? 'Coincide' : 'No coincide'}
                 </Text>
-              ) : itemsTotal > (draft?.total ?? 0) + 0.01 ? (
-                <Text style={styles.matchesDetail}>
-                  Incluye descuento de{' '}
-                  {formatCurrency(itemsTotal - (draft?.total ?? 0), currency)}
-                </Text>
-              ) : null}
-            </View>
+                {!matches ? (
+                  <Text style={styles.matchesDetail}>
+                    Declarado {formatCurrency(draft?.total ?? 0, currency)}
+                  </Text>
+                ) : itemsTotal > (draft?.total ?? 0) + 0.01 ? (
+                  <Text style={styles.matchesDetail}>
+                    Incluye descuento de{' '}
+                    {formatCurrency(itemsTotal - (draft?.total ?? 0), currency)}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
             <Fab
               label="Confirmar y guardar"
               icon="bolt.fill"
@@ -813,6 +845,14 @@ const styles = StyleSheet.create({
   matchesDetail: {
     ...typography.labelSm,
     color: colors.textSecondary,
+  },
+  // Inline hint shown in EDIT mode when the user just bumped `total`
+  // and the items haven't caught up yet. Lives next to the total value
+  // (in the footer) so it's right where the user's eyes are, not as a
+  // red banner at the bottom of the screen.
+  matchesInlineHint: {
+    ...typography.labelSm,
+    color: colors.danger,
   },
   confirmFab: {
     marginTop: spacing.sm,
