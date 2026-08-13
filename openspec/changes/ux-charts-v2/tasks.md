@@ -43,11 +43,11 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Analytics Components
 
-- [ ] 3.1 Create `src/features/charts/components/WeeklyBarChart.tsx`: 7 capsule bars, gray default, red max day, day-initial + amount labels, disabled all-zero state.
-- [ ] 3.2 Create `src/features/charts/components/InsightHeroCard.tsx`: dark hero, "Gastado este mes", month total, white victory-native line, hidden delta chip.
-- [ ] 3.3 Create `src/features/analytics/components/InsightBanner.tsx`: red banner with icon and Spanish copy, hidden when no previous-month base.
-- [ ] 3.4 Create `src/features/analytics/components/MetricSummaryCard.tsx`: reusable "Top category" and "Daily avg" cards.
-- [ ] 3.5 Create `src/features/analytics/components/CategoryBudgetRow.tsx`: colored row with percent, amount, and optional limit.
+- [x] 3.1 Create `src/features/charts/components/WeeklyBarChart.tsx`: 7 capsule bars, gray default, red max day, day-initial + amount labels, disabled all-zero state.
+- [x] 3.2 Create `src/features/charts/components/InsightHeroCard.tsx`: dark hero, "Gastado este mes", month total, white victory-native line, hidden delta chip.
+- [x] 3.3 Create `src/features/analytics/components/InsightBanner.tsx`: red banner with icon and Spanish copy, hidden when no previous-month base.
+- [x] 3.4 Create `src/features/analytics/components/MetricSummaryCard.tsx`: reusable "Top category" and "Daily avg" cards.
+- [x] 3.5 Create `src/features/analytics/components/CategoryBudgetRow.tsx`: colored row with percent, amount, and optional limit.
 
 ## Phase 4: Analytics Screen
 

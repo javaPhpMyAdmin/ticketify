@@ -25,6 +25,15 @@ export type {
   WeeklySpendPoint,
 } from './aggregate';
 
+export { WeeklyBarChart } from './components/WeeklyBarChart';
+export type { WeeklyBarChartProps } from './components/WeeklyBarChart';
+
+export { InsightHeroCard } from './components/InsightHeroCard';
+export type {
+  InsightHeroCardProps,
+  InsightTrendPoint,
+} from './components/InsightHeroCard';
+
 export { TrendChart } from './components/TrendChart';
 export type { TrendChartProps, TrendPoint } from './components/TrendChart';
 
