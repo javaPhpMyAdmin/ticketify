@@ -24,3 +24,11 @@ export {
 export { useScanQuota } from './hooks/useScanQuota';
 export type { ScanQuotaResult } from './hooks/useScanQuota';
 export { ScanQuotaCard } from './components/ScanQuotaCard';
+export { CategoryBudgetCard } from './components/CategoryBudgetCard';
+export type { CategoryBudgetCardProps } from './components/CategoryBudgetCard';
+export { SegmentedBudgetBar } from './components/SegmentedBudgetBar';
+export type {
+  SegmentedBudgetBarProps,
+  SegmentedBudgetBarSegment,
+} from './components/SegmentedBudgetBar';
+export { CategoryBudgetCardSkeleton } from './components/CategoryBudgetCardSkeleton';
