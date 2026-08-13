@@ -21,7 +21,14 @@
 // 30s client/function timeouts; flash-lite parses the same image in ~4s.
 
 import { createClient } from '@supabase/supabase-js';
-import { normalizeCardBrand, normalizeCardType } from './lib/card.ts';
+import {
+  isRecord,
+  ParseError,
+  parseListJson,
+  parseReceiptJson,
+  type ParsedItem,
+  type ParsedReceipt,
+} from './lib/parse.ts';
 
 // ---------------------------------------------------------------------------
 // Types — kept local to the function so it can deploy without TS project
@@ -32,32 +39,6 @@ interface ParseRequest {
   image_base64?: string;
   /** MIME type of the image (image/jpeg, image/png, …). Defaults to image/jpeg. */
   mime_type?: string;
-}
-
-interface ParsedItem {
-  name: string;
-  quantity: number;
-  unit_price: number;
-  total_price: number;
-  suggested_category_slug: string | null;
-}
-
-interface ParsedReceipt {
-  store_name: string;
-  purchase_date: string; // YYYY-MM-DD
-  total: number;
-  payment_method:
-    | 'cash'
-    | 'card'
-    | 'apple_pay'
-    | 'google_pay'
-    | 'transfer'
-    | 'other';
-  /** Card network printed on the receipt (Visa, OCA, …), null when unknown. */
-  card_brand: string | null;
-  /** Card kind printed on the receipt, null when unknown. */
-  card_type: 'debit' | 'credit' | null;
-  items: ParsedItem[];
 }
 
 interface ErrorResponse {
@@ -81,13 +62,6 @@ interface ErrorResponse {
    */
   raceLost?: boolean;
 }
-
-/**
- * Thrown when Gemini's output cannot be trusted as a `ParsedReceipt`
- * (missing/invalid JSON or a structurally invalid payload). The handler maps
- * it to `parse_failed` with status 422.
- */
-class ParseError extends Error {}
 
 // ---------------------------------------------------------------------------
 // Supabase clients
@@ -139,38 +113,6 @@ function serviceClient() {
  */
 const MAX_BASE64_CHARS = 9 * 1024 * 1024;
 
-const PAYMENT_METHODS = new Set([
-  'cash',
-  'card',
-  'apple_pay',
-  'google_pay',
-  'transfer',
-  'other',
-]);
-
-/**
- * Category slugs the Gemini prompt may emit. Canonical vocabulary shared
- * with the DB (`public.categories.slug`) and the client taxonomy
- * (`src/features/home/categories.ts`), so a slug emitted by the parser
- * always has a matching DB row and never misbuckets into "Otros" on the
- * client. Keep this set in sync with the DB seed and the client registry.
- */
-const CATEGORY_SLUGS = new Set([
-  'bebidas',
-  'frutas-verduras',
-  'refrescos',
-  'panaderia',
-  'carnes',
-  'lacteos',
-  'limpieza',
-  'snacks',
-  'alimentos',
-  'higiene',
-  'farmacia',
-  'servicios',
-  'otros',
-]);
-
 /**
  * Cheap structural validation for a base64 string: non-empty, only base64
  * alphabet characters (plus padding) and no length mod 4 == 1 (an impossible
@@ -216,6 +158,35 @@ Rules:
 - card_type: "debit" or "credit" when the receipt states the card kind. A payment-method discount (e.g. "descuento por débito", "debit discount", "ley 19.210", "Ley de Inclusión Financiera") is direct evidence of a debit payment — set card_type to "debit" even when the card kind is not spelled out. null when there is no evidence. Never guess or infer the card kind from unrelated text.
 - items: one entry per line item, skipping taxes, subtotals, discounts and total-only lines. quantity is how many units, unit_price is the price of one unit, total_price is the line total.
 - Multi-unit lines: receipts show the same product multiple times in different ways — a leading count column ("CANT 2"), a "2 x 47.00" notation, or two identical consecutive lines. When that happens, emit ONE item with quantity = the unit count, unit_price = the price of one unit, and total_price = the line total (quantity × unit_price). NEVER collapse a multi-unit line into quantity=1 with unit_price=total_price: a line "2 x 47.00" must become {"name": "...", "quantity": 2, "unit_price": 47, "total_price": 94}, never quantity=1 / unit_price=94.
+- suggested_category_slug: exactly one of bebidas, frutas-verduras, refrescos, panaderia, carnes, lacteos, limpieza, snacks, alimentos, higiene, farmacia, servicios, otros, or null when you are not confident.
+- All money values must be plain numbers without currency symbols or thousands separators.`;
+
+/**
+ * Relaxed fallback prompt for images that are not strict receipts: shopping
+ * lists, handwritten notes, screenshots of phone memos, etc. Only items with
+ * prices are required — store, date and payment metadata are filled in by the
+ * review screen with safe defaults.
+ */
+const LIST_PROMPT = `You are a shopping-list parser. The image may be a handwritten list, a phone-note screenshot, or any informal list of products with prices. Extract the items and respond with ONLY strict JSON (no markdown fences, no commentary) matching exactly this schema:
+
+{
+  "items": [
+    {
+      "name": string,
+      "quantity": number,
+      "unit_price": number,
+      "total_price": number,
+      "suggested_category_slug": string | null
+    }
+  ]
+}
+
+Rules:
+- Emit one entry per line item. Skip headings, totals, taxes, and lines without a price.
+- quantity is how many units. Default to 1 when the image shows no explicit count.
+- unit_price is the price of one unit; total_price is the line total (quantity × unit_price).
+- If a line only shows a total (e.g. "Leche 45"), set quantity to 1, unit_price to 45, and total_price to 45.
+- Multi-unit lines like "2 x 47.00" become {"quantity": 2, "unit_price": 47, "total_price": 94}.
 - suggested_category_slug: exactly one of bebidas, frutas-verduras, refrescos, panaderia, carnes, lacteos, limpieza, snacks, alimentos, higiene, farmacia, servicios, otros, or null when you are not confident.
 - All money values must be plain numbers without currency symbols or thousands separators.`;
 
@@ -302,6 +273,92 @@ async function callGemini(
   return parseReceiptJson(raw);
 }
 
+/**
+ * Second-pass Gemini call for informal lists. Reuses the same model, timeout,
+ * and response-extraction logic as receipt mode but sends LIST_PROMPT and
+ * validates only the items array.
+ */
+async function callGeminiListMode(
+  imageBase64: string,
+  mimeType: string,
+): Promise<{ items: ParsedItem[]; total: number }> {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not configured');
+  }
+
+  const url =
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent` +
+    `?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+  const body = {
+    contents: [
+      {
+        parts: [
+          { text: LIST_PROMPT },
+          { inline_data: { mime_type: mimeType, data: imageBase64 } },
+        ],
+      },
+    ],
+    generationConfig: { response_mime_type: 'application/json' },
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
+    });
+  } catch (err) {
+    const isTimeout = err instanceof Error && err.name === 'AbortError';
+    console.error(
+      '[parse-ticket]',
+      isTimeout ? 'Gemini list-mode request timed out' : 'Gemini list-mode request failed',
+      err instanceof Error ? err.message : err,
+    );
+    throw new Error(
+      isTimeout
+        ? 'Gemini list-mode request timed out'
+        : `Gemini list-mode request failed: ${
+            err instanceof Error ? err.message : 'network error'
+          }`,
+    );
+  }
+
+  if (!res.ok) {
+    const detail = await geminiErrorDetail(res);
+    console.error(
+      '[parse-ticket]',
+      `Gemini list-mode request failed (HTTP ${res.status})`,
+      detail,
+    );
+    throw new Error(
+      `Gemini list-mode request failed (HTTP ${res.status}): ${detail}`,
+    );
+  }
+
+  let payload: unknown;
+  try {
+    payload = await res.json();
+  } catch {
+    throw new ParseError('Gemini list-mode response was not valid JSON');
+  }
+
+  const text = extractResponseText(payload);
+  if (text === null) {
+    throw new ParseError('Gemini list-mode response contained no text candidate');
+  }
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw new ParseError('Gemini list-mode returned malformed JSON');
+  }
+
+  return parseListJson(raw);
+}
+
 /** Best-effort human-readable detail from a Gemini error response. */
 async function geminiErrorDetail(res: Response): Promise<string> {
   try {
@@ -337,137 +394,6 @@ function extractResponseText(payload: unknown): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Response validation — never trust the model
-// ---------------------------------------------------------------------------
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function requireNonEmptyString(value: unknown, field: string): string {
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new ParseError(`${field} must be a non-empty string`);
-  }
-  return value.trim();
-}
-
-function requireFiniteNumber(value: unknown, field: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new ParseError(`${field} must be a finite number`);
-  }
-  return value;
-}
-
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-/** Unknown payment methods degrade to 'other' instead of failing the scan. */
-function normalizePaymentMethod(
-  value: unknown,
-): ParsedReceipt['payment_method'] {
-  return typeof value === 'string' && PAYMENT_METHODS.has(value)
-    ? (value as ParsedReceipt['payment_method'])
-    : 'other';
-}
-
-/** Unknown category slugs degrade to null (the review chip shows SIN CATEGORÍA). */
-function normalizeCategorySlug(value: unknown): string | null {
-  if (typeof value !== 'string' || !CATEGORY_SLUGS.has(value)) return null;
-  // Slugs are already canonical (shared with the DB and the client
-  // taxonomy), so they pass through unchanged.
-  return value;
-}
-
-function parseReceiptJson(raw: unknown): ParsedReceipt {
-  if (!isRecord(raw)) {
-    throw new ParseError('Parsed receipt is not an object');
-  }
-
-  const store_name = requireNonEmptyString(raw.store_name, 'store_name');
-  const purchase_date = requireNonEmptyString(
-    raw.purchase_date,
-    'purchase_date',
-  );
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(purchase_date)) {
-    throw new ParseError('purchase_date must be YYYY-MM-DD');
-  }
-  // The regex alone accepts calendar-invalid dates like 2026-13-45 or
-  // 2026-02-30 — verify the components round-trip through a UTC date.
-  const [y, m, d] = purchase_date.split('-').map(Number);
-  const parsedDate = new Date(Date.UTC(y, m - 1, d));
-  if (
-    parsedDate.getUTCFullYear() !== y ||
-    parsedDate.getUTCMonth() !== m - 1 ||
-    parsedDate.getUTCDate() !== d
-  ) {
-    throw new ParseError('purchase_date is not a valid calendar date');
-  }
-  const total = round2(requireFiniteNumber(raw.total, 'total'));
-  const payment_method = normalizePaymentMethod(raw.payment_method);
-  const card_brand = normalizeCardBrand(raw.card_brand);
-  const card_type = normalizeCardType(raw.card_type);
-
-  if (!Array.isArray(raw.items)) {
-    throw new ParseError('items must be an array');
-  }
-  const items = raw.items.map((entry, index) => parseItem(entry, index));
-
-  // A receipt with zero line items is unparseable — the review screen would
-  // otherwise confirm an empty purchase.
-  if (items.length === 0) {
-    throw new ParseError('items must not be empty');
-  }
-
-  return {
-    store_name,
-    purchase_date,
-    total,
-    payment_method,
-    card_brand,
-    card_type,
-    items,
-  };
-}
-
-function parseItem(entry: unknown, index: number): ParsedItem {
-  if (!isRecord(entry)) {
-    throw new ParseError(`items[${index}] is not an object`);
-  }
-  const name = requireNonEmptyString(entry.name, `items[${index}].name`);
-  // Clamp quantity to a positive integer (floor, min 1).
-  const quantity = Math.max(
-    1,
-    Math.floor(requireFiniteNumber(entry.quantity, `items[${index}].quantity`)),
-  );
-  let unit_price = round2(
-    requireFiniteNumber(entry.unit_price, `items[${index}].unit_price`),
-  );
-  const total_price = round2(
-    requireFiniteNumber(entry.total_price, `items[${index}].total_price`),
-  );
-  // Consistency guard (scan-quantity bug): when the model emits a multi-unit
-  // line whose unit_price × quantity does not close against the line total
-  // (e.g. {quantity: 2, unit_price: 94, total_price: 94} instead of
-  // unit_price: 47), re-derive the unit price from the total — the printed
-  // line total is the most reliable figure on the receipt. The guard only
-  // fires on an actual mismatch (> 2 cents) and always keeps the total as
-  // the anchor, so legitimate multi-buy offers that happen to close are
-  // untouched. It never produces a fractional quantity.
-  if (Math.abs(quantity * unit_price - total_price) > 0.02) {
-    const rederived = round2(total_price / quantity);
-    if (Number.isFinite(rederived) && rederived > 0) {
-      unit_price = rederived;
-    }
-  }
-  const suggested_category_slug = normalizeCategorySlug(
-    entry.suggested_category_slug,
-  );
-
-  return { name, quantity, unit_price, total_price, suggested_category_slug };
-}
-
-// ---------------------------------------------------------------------------
 // Quota
 // ---------------------------------------------------------------------------
 
@@ -477,6 +403,32 @@ function currentYearMonth(): string {
     2,
     '0',
   )}`;
+}
+
+/** Today's date in UTC as YYYY-MM-DD, used as the default purchase_date. */
+function currentDateYmd(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(
+    2,
+    '0',
+  )}-${String(now.getUTCDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Builds a full ParsedReceipt from a successful list-mode parse by applying
+ * safe defaults for the receipt metadata the list prompt intentionally does
+ * not ask for.
+ */
+function listToReceipt(list: { items: ParsedItem[]; total: number }): ParsedReceipt {
+  return {
+    store_name: '',
+    purchase_date: currentDateYmd(),
+    total: list.total,
+    payment_method: 'other',
+    card_brand: null,
+    card_type: null,
+    items: list.items,
+  };
 }
 
 /**
@@ -634,14 +586,27 @@ Deno.serve(async (req: Request) => {
     // burn a quota slot (REQ-QUOTA-4): there is no consume call before this
     // point, so falling through here leaves scans_used untouched.
     if (err instanceof ParseError) {
-      console.error('[parse-ticket]', 'parse failed:', err.message);
-      return jsonError(422, 'parse_failed', err.message);
+      // Receipt mode failed to parse — try a relaxed list-mode pass before
+      // giving up (REQ-LIST-1). A second ParseError means the image is not
+      // readable as a list either; return the original receipt-mode message
+      // so the user gets a consistent failure explanation.
+      try {
+        const list = await callGeminiListMode(body.image_base64, mimeType);
+        parsed = listToReceipt(list);
+      } catch (listErr) {
+        const listDetail =
+          listErr instanceof Error ? listErr.message : 'unknown list error';
+        console.error('[parse-ticket]', 'list mode failed:', listDetail);
+        console.error('[parse-ticket]', 'parse failed:', err.message);
+        return jsonError(422, 'parse_failed', err.message);
+      }
+    } else {
+      // Never leak server-side detail (Gemini HTTP text, RPC errors) to the
+      // client — log it for operators and answer with a generic message.
+      const detail = err instanceof Error ? err.message : 'unknown error';
+      console.error('[parse-ticket]', 'internal error:', detail);
+      return jsonError(500, 'internal', INTERNAL_ERROR_MESSAGE);
     }
-    // Never leak server-side detail (Gemini HTTP text, RPC errors) to the
-    // client — log it for operators and answer with a generic message.
-    const detail = err instanceof Error ? err.message : 'unknown error';
-    console.error('[parse-ticket]', 'internal error:', detail);
-    return jsonError(500, 'internal', INTERNAL_ERROR_MESSAGE);
   }
 
   // Consume AFTER successful parse (REQ-QUOTA-4). The RPC is tier-aware
