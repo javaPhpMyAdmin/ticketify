@@ -165,3 +165,102 @@ export function aggregateMonthlyDelta(
     isImprovement: deltaPct !== null && deltaPct < 0,
   };
 }
+
+/**
+ * Spanish weekday labels used by the weekly bar chart. The initial is a
+ * single disambiguating letter (`X` for Miércoles so it does not clash
+ * with Martes).
+ */
+const WEEKDAY_LABELS: readonly { day: string; initial: string }[] = [
+  { day: 'Lun', initial: 'L' },
+  { day: 'Mar', initial: 'M' },
+  { day: 'Mié', initial: 'X' },
+  { day: 'Jue', initial: 'J' },
+  { day: 'Vie', initial: 'V' },
+  { day: 'Sáb', initial: 'S' },
+  { day: 'Dom', initial: 'D' },
+];
+
+/** ISO date (`YYYY-MM-DD`) for the Monday of the week that contains `isoDate`. */
+function getMondayOfWeek(isoDate: string): string {
+  const date = new Date(`${isoDate}T00:00:00`);
+  const day = date.getDay(); // 0 = Sunday, 1 = Monday, ...
+  const diff = (day === 0 ? -6 : 1) - day; // shift to Monday
+  date.setDate(date.getDate() + diff);
+  return date.toISOString().slice(0, 10);
+}
+
+export interface WeeklySpendPoint {
+  /** Full weekday label, e.g. "Lun". */
+  day: string;
+  /** Single-letter weekday initial, e.g. "L". */
+  initial: string;
+  /** Sum of receipt totals for that day. */
+  amount: number;
+}
+
+/**
+ * Seven-day spend totals starting on `weekStart` (ISO date, defaults to
+ * the Monday of the current week). Zero-fills days with no receipts so the
+ * weekly bar chart always renders seven bars.
+ *
+ * The sum uses `receipt.total` (the receipt-level total), matching the
+ * granularity shown on the chart. Days are ordered Monday → Sunday to
+ * align with the "This week" label in the analytics reference.
+ */
+export function aggregateWeeklySpend(
+  records: ReceiptSpendRecord[],
+  weekStart?: string,
+): WeeklySpendPoint[] {
+  const start = weekStart ?? getMondayOfWeek(new Date().toISOString().slice(0, 10));
+  const totalsByDay = new Map<string, number>();
+  for (const receipt of records) {
+    const date = receipt.purchase_date.slice(0, 10);
+    totalsByDay.set(date, (totalsByDay.get(date) ?? 0) + (receipt.total ?? 0));
+  }
+
+  return WEEKDAY_LABELS.map((label, index) => {
+    const date = new Date(`${start}T00:00:00`);
+    date.setDate(date.getDate() + index);
+    const iso = date.toISOString().slice(0, 10);
+    return {
+      day: label.day,
+      initial: label.initial,
+      amount: totalsByDay.get(iso) ?? 0,
+    };
+  });
+}
+
+/**
+ * Average spend per calendar day for a given month. Computed as the month
+ * total divided by the number of days in that month — "daily average" in
+ * the summary cards means "if I spent the same amount every day of the
+ * month, this would be the value".
+ */
+export function aggregateDailyAverage(
+  records: ReceiptSpendRecord[],
+  monthKey: string,
+): number {
+  let total = 0;
+  for (const receipt of records) {
+    if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
+    total += receipt.total ?? 0;
+  }
+  const [year, month] = monthKey.split('-').map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  return daysInMonth > 0 ? total / daysInMonth : 0;
+}
+
+/**
+ * Top spending category for a month, or `null` when the month has no
+ * categorized spending. Returns the same `HomeCategory` shape produced by
+ * `aggregateCategoriesByMonth` so callers can reuse label/icon/color
+ * helpers.
+ */
+export function getTopCategory(
+  records: ReceiptSpendRecord[],
+  monthKey: string,
+): HomeCategory | null {
+  const categories = aggregateCategoriesByMonth(records, monthKey);
+  return categories[0] ?? null;
+}

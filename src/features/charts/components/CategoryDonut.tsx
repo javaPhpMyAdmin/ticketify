@@ -31,6 +31,7 @@ import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { Pie, PolarChart } from 'victory-native';
 
 import { Text } from '@/components';
+import { getCategoryColor } from '@/features/home/categories';
 import { colors, spacing } from '@/theme';
 
 import { ChartLegend, type ChartLegendItem } from './ChartLegend';
@@ -139,11 +140,15 @@ export function CategoryDonut({
   );
   const donutData = useMemo<DonutDatum[]>(
     () =>
-      data.map((slice, index) => ({
-        color: CHART_PALETTE[index % CHART_PALETTE.length],
-        label: slice.name,
-        value: slice.amount,
-      })),
+      data.map((slice, index) => {
+        const categoryColor = getCategoryColor(slice.id).background;
+        const isKnown = slice.id && categoryColor !== getCategoryColor('otros').background;
+        return {
+          color: isKnown ? categoryColor : CHART_PALETTE[index % CHART_PALETTE.length],
+          label: slice.name,
+          value: slice.amount,
+        };
+      }),
     [data],
   );
   const legendItems: ChartLegendItem[] = useMemo(
