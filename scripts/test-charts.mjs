@@ -129,8 +129,15 @@ async function run() {
   const homeFeedMod = await import(
     pathToFileURL(join(outDir, 'src/features/home/hooks/useHomeFeed.js')).href
   );
-  const { aggregateSpendTrend, aggregateStoresByMonth, aggregateMonthlyDelta, aggregateCategoriesByMonth } =
-    chartsMod;
+  const {
+    aggregateSpendTrend,
+    aggregateStoresByMonth,
+    aggregateMonthlyDelta,
+    aggregateCategoriesByMonth,
+    aggregateWeeklySpend,
+    aggregateDailyAverage,
+    getTopCategory,
+  } = chartsMod;
   const { aggregateCategoriesByMonth: directAggregate } = homeFeedMod;
 
   console.log('\n[tests] aggregateSpendTrend\n');
@@ -367,6 +374,163 @@ async function run() {
     assert.equal(out.previous, null);
     assert.equal(out.deltaPct, null);
     assert.equal(out.isImprovement, false);
+  });
+
+  console.log('\n[tests] aggregateWeeklySpend\n');
+
+  await test('empty records → seven zero-filled days starting on Monday', () => {
+    const out = aggregateWeeklySpend([], '2026-08-10');
+    assert.equal(out.length, 7);
+    assert.deepEqual(
+      out.map((p) => ({ day: p.day, initial: p.initial, amount: p.amount })),
+      [
+        { day: 'Lun', initial: 'L', amount: 0 },
+        { day: 'Mar', initial: 'M', amount: 0 },
+        { day: 'Mié', initial: 'X', amount: 0 },
+        { day: 'Jue', initial: 'J', amount: 0 },
+        { day: 'Vie', initial: 'V', amount: 0 },
+        { day: 'Sáb', initial: 'S', amount: 0 },
+        { day: 'Dom', initial: 'D', amount: 0 },
+      ],
+    );
+  });
+
+  await test('receipts in the week → summed by day, zero-fill outside days', () => {
+    const out = aggregateWeeklySpend(
+      [
+        receipt({ id: 'r1', total: 50, purchase_date: '2026-08-10' }), // Mon
+        receipt({ id: 'r2', total: 30, purchase_date: '2026-08-10' }), // Mon
+        receipt({ id: 'r3', total: 20, purchase_date: '2026-08-12' }), // Wed
+      ],
+      '2026-08-10',
+    );
+    assert.equal(out[0].amount, 80, 'Monday total');
+    assert.equal(out[1].amount, 0, 'Tuesday empty');
+    assert.equal(out[2].amount, 20, 'Wednesday total');
+    assert.equal(out[3].amount, 0, 'Thursday empty');
+    assert.equal(out[4].amount, 0, 'Friday empty');
+    assert.equal(out[5].amount, 0, 'Saturday empty');
+    assert.equal(out[6].amount, 0, 'Sunday empty');
+  });
+
+  await test('receipts outside the requested week are ignored', () => {
+    const out = aggregateWeeklySpend(
+      [
+        receipt({ id: 'r1', total: 99, purchase_date: '2026-08-03' }), // previous week
+        receipt({ id: 'r2', total: 10, purchase_date: '2026-08-11' }), // current week Tue
+      ],
+      '2026-08-10',
+    );
+    assert.equal(out[0].amount, 0);
+    assert.equal(out[1].amount, 10);
+    assert.equal(out.reduce((sum, p) => sum + p.amount, 0), 10);
+  });
+
+  await test('max-day highlight can be derived from the returned amounts', () => {
+    const out = aggregateWeeklySpend(
+      [
+        receipt({ id: 'r1', total: 10, purchase_date: '2026-08-10' }), // Mon
+        receipt({ id: 'r2', total: 45, purchase_date: '2026-08-14' }), // Fri
+        receipt({ id: 'r3', total: 30, purchase_date: '2026-08-12' }), // Wed
+      ],
+      '2026-08-10',
+    );
+    const max = out.reduce((best, p) => (p.amount > best.amount ? p : best), out[0]);
+    assert.equal(max.day, 'Vie');
+    assert.equal(max.amount, 45);
+  });
+
+  await test('undefined receipt totals are treated as 0', () => {
+    const out = aggregateWeeklySpend(
+      [receipt({ id: 'r1', total: undefined, purchase_date: '2026-08-10' })],
+      '2026-08-10',
+    );
+    assert.equal(out[0].amount, 0);
+  });
+
+  console.log('\n[tests] aggregateDailyAverage\n');
+
+  await test('daily average = month total / days in month', () => {
+    const out = aggregateDailyAverage(
+      [
+        receipt({ id: 'r1', total: 310, purchase_date: '2026-08-05' }),
+        receipt({ id: 'r2', total: 90, purchase_date: '2026-08-12' }),
+      ],
+      '2026-08',
+    );
+    // August 2026 has 31 days; total = 400 → 400 / 31
+    assert.equal(out, 400 / 31);
+  });
+
+  await test('receipts outside the requested month are ignored', () => {
+    const out = aggregateDailyAverage(
+      [
+        receipt({ id: 'r1', total: 300, purchase_date: '2026-07-05' }),
+        receipt({ id: 'r2', total: 100, purchase_date: '2026-08-12' }),
+      ],
+      '2026-08',
+    );
+    assert.equal(out, 100 / 31);
+  });
+
+  await test('empty month → daily average is 0', () => {
+    const out = aggregateDailyAverage([], '2026-08');
+    assert.equal(out, 0);
+  });
+
+  await test('February non-leap year has 28 days', () => {
+    const out = aggregateDailyAverage(
+      [receipt({ id: 'r1', total: 280, purchase_date: '2026-02-10' })],
+      '2026-02',
+    );
+    assert.equal(out, 280 / 28);
+  });
+
+  console.log('\n[tests] getTopCategory\n');
+
+  await test('top category is the highest-spend category in the month', () => {
+    const out = getTopCategory(
+      [
+        receipt({
+          id: 'r1',
+          purchase_date: '2026-08-05',
+          category_totals: cats({ lacteos: 50, panaderia: 30 }),
+        }),
+        receipt({
+          id: 'r2',
+          purchase_date: '2026-08-12',
+          category_totals: cats({ lacteos: 20, limpieza: 15 }),
+        }),
+      ],
+      '2026-08',
+    );
+    assert.equal(out?.key, 'lacteos');
+    assert.equal(out?.amount, 70);
+  });
+
+  await test('other months are excluded when computing the top category', () => {
+    const out = getTopCategory(
+      [
+        receipt({
+          id: 'r1',
+          purchase_date: '2026-07-05',
+          category_totals: cats({ lacteos: 999 }),
+        }),
+        receipt({
+          id: 'r2',
+          purchase_date: '2026-08-05',
+          category_totals: cats({ panaderia: 10 }),
+        }),
+      ],
+      '2026-08',
+    );
+    assert.equal(out?.key, 'panaderia');
+    assert.equal(out?.amount, 10);
+  });
+
+  await test('empty month → top category is null', () => {
+    const out = getTopCategory([], '2026-08');
+    assert.equal(out, null);
   });
 
   console.log('\n[tests] aggregateCategoriesByMonth re-export parity\n');
