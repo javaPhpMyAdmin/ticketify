@@ -204,18 +204,28 @@ async function run() {
     );
   });
 
-  await test('parseReceiptJson rejects an invalid purchase_date', () => {
-    assert.throws(
-      () =>
-        parseReceiptJson({
-          store_name: 'Coto',
-          purchase_date: '2026-02-30',
-          total: 100,
-          payment_method: 'other',
-          items: [item()],
-        }),
-      ParseError,
-    );
+  await test('parseReceiptJson defaults an invalid purchase_date to today', () => {
+    // A calendar-invalid date (2026-02-30) is best-effort: the parse must
+    // NOT throw — it defaults to today so the scan survives Gemini
+    // garbling the date (bug-fix contract: missing/invalid date → today).
+    const result = parseReceiptJson({
+      store_name: 'Coto',
+      purchase_date: '2026-02-30',
+      total: 100,
+      payment_method: 'other',
+      items: [item()],
+    });
+    assert.equal(result.purchase_date, new Date().toISOString().slice(0, 10));
+  });
+
+  await test('parseReceiptJson defaults a missing purchase_date to today', () => {
+    const result = parseReceiptJson({
+      store_name: 'Coto',
+      total: 100,
+      payment_method: 'other',
+      items: [item()],
+    });
+    assert.equal(result.purchase_date, new Date().toISOString().slice(0, 10));
   });
 
   await test('parseReceiptJson normalizes unknown payment methods to other', () => {
