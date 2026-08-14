@@ -36,7 +36,7 @@ export function CategoryBreakdownList({
               </View>
               <View style={styles.right}>
                 <Text style={styles.percent}>
-                  {Math.round(t.percent_of_total * 100)}%
+                  {Math.round(t.percent_of_total)}%
                 </Text>
                 <Text style={styles.items}>{t.item_count} artículos</Text>
               </View>
