@@ -15,6 +15,10 @@ export {
   aggregateMonthlyDelta,
   aggregateWeeklySpend,
   aggregateDailyAverage,
+  aggregateDayItems,
+  aggregateDayTotal,
+  aggregateYearlySpend,
+  getMondayOfWeek,
   getTopCategory,
 } from './aggregate';
 export type {
@@ -23,10 +27,18 @@ export type {
   HomeCategory,
   MonthlyDelta,
   WeeklySpendPoint,
+  DayItemGroup,
+  YearlySpendPoint,
 } from './aggregate';
 
-export { WeeklyBarChart } from './components/WeeklyBarChart';
-export type { WeeklyBarChartProps } from './components/WeeklyBarChart';
+export { CapsuleBarChart } from './components/CapsuleBarChart';
+export type {
+  CapsuleBarChartItem,
+  CapsuleBarChartProps,
+} from './components/CapsuleBarChart';
+
+export { DayDetailModal } from './components/DayDetailModal';
+export type { DayDetailModalProps } from './components/DayDetailModal';
 
 export { InsightHeroCard } from './components/InsightHeroCard';
 export type {
