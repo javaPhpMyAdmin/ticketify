@@ -18,6 +18,7 @@ export {
   getAvailableMonthKeys,
   normalizeItemName,
   aggregateCategoriesByMonth,
+  aggregateCategoryItemCounts,
   aggregateItemsByCategory,
   aggregateItemsByMonth,
 } from './hooks/useHomeFeed';

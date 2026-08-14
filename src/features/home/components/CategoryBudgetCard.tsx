@@ -13,14 +13,19 @@ export interface CategoryBudgetCardProps {
   percent: number;
   icon: IconName;
   currency?: string;
+  /**
+   * Number of items bought in the category during the shown month. When
+   * present, renders a small "{n} artículos" line under the percent.
+   */
+  itemCount?: number;
   onPress?: () => void;
 }
 
 /**
  * Full-width colored category card for the Home "Categorías de gastos"
- * section. Background and foreground are driven by the stable category
- * color registry so the card identity is consistent across the home,
- * analytics, and chart segments.
+ * section and the History month view. Background and foreground are driven
+ * by the stable category color registry so the card identity is consistent
+ * across the home, analytics, and chart segments.
  *
  * Per-category budget limits do not exist yet, so the card only shows the
  * percent of total monthly spend; the limit line is omitted per the spec.
@@ -32,6 +37,7 @@ export function CategoryBudgetCard({
   percent,
   icon,
   currency = 'UYU',
+  itemCount,
   onPress,
 }: CategoryBudgetCardProps) {
   const color = getCategoryColor(categoryKey);
@@ -63,9 +69,16 @@ export function CategoryBudgetCard({
         >
           {name}
         </Text>
-        <Text style={[styles.percent, { color: color.foreground }]}>
-          {percent.toFixed(0)}% del gasto
-        </Text>
+        <View style={styles.metaRow}>
+          <Text style={[styles.percent, { color: color.foreground }]}>
+            {percent.toFixed(0)}% del gasto
+          </Text>
+          {itemCount !== undefined && itemCount > 0 ? (
+            <Text style={[styles.itemCount, { color: color.foreground }]}>
+              {itemCount === 1 ? '1 artículo' : `${itemCount} artículos`}
+            </Text>
+          ) : null}
+        </View>
       </View>
       <Text style={[styles.amount, { color: color.foreground }]}>
         {formatCurrency(amount, currency)}
@@ -101,6 +114,13 @@ const styles = StyleSheet.create({
     // and hide the foreground-colored text below it.
     backgroundColor: 'transparent',
   },
+  metaRow: {
+    // Keep the percent + item count on one baseline; the card stays one
+    // line taller than the old Home-only variant when the count renders.
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   name: {
     ...typography.headlineMd,
     fontSize: 18,
@@ -108,6 +128,10 @@ const styles = StyleSheet.create({
   percent: {
     ...typography.labelSm,
     opacity: 0.9,
+  },
+  itemCount: {
+    ...typography.labelSm,
+    opacity: 0.75,
   },
   amount: {
     ...typography.headlineMd,
