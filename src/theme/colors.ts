@@ -15,6 +15,7 @@ export const palette = {
   charcoal: '#111827',
   coral: '#EF4444',
   coralDark: '#BA1A1A',
+  rose500: '#F43F5E',
   offWhite: '#F8F9FA',
   white: '#FFFFFF',
   surfaceDim: '#D9DADB',
@@ -39,6 +40,8 @@ export interface Colors {
   primaryDark: string;
   primaryContainer: string;
   onPrimary: string;
+  /** Rose accent (#F43F5E) — highlighted capsule bars and secondary accents. */
+  secondary: string;
   danger: string;
   onDanger: string;
   border: string;
@@ -69,6 +72,7 @@ export const light: Colors = {
   primaryDark: palette.emeraldDark,
   primaryContainer: palette.emerald200,
   onPrimary: palette.textOnPrimary,
+  secondary: palette.rose500,
   danger: palette.coral,
   onDanger: palette.white,
   border: palette.border,
@@ -99,6 +103,7 @@ export const dark: Colors = {
   primaryDark: palette.emerald200,
   primaryContainer: palette.emeraldDark,
   onPrimary: '#0F1115',
+  secondary: palette.rose500,
   danger: palette.coral,
   onDanger: palette.white,
   border: '#2A2F38',

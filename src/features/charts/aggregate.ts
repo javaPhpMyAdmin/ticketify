@@ -181,13 +181,42 @@ const WEEKDAY_LABELS: readonly { day: string; initial: string }[] = [
   { day: 'Dom', initial: 'D' },
 ];
 
-/** ISO date (`YYYY-MM-DD`) for the Monday of the week that contains `isoDate`. */
-function getMondayOfWeek(isoDate: string): string {
+/**
+ * ISO date (`YYYY-MM-DD`) for the Monday of the week that contains
+ * `isoDate`. Also exported so the day-detail sheet can compute the exact
+ * week window the weekly aggregator uses by default.
+ */
+export function getMondayOfWeek(isoDate: string): string {
   const date = new Date(`${isoDate}T00:00:00`);
   const day = date.getDay(); // 0 = Sunday, 1 = Monday, ...
   const diff = (day === 0 ? -6 : 1) - day; // shift to Monday
   date.setDate(date.getDate() + diff);
   return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Receipt total minus the amounts of any excluded categories (e.g. utility
+ * bills, "servicios"), clamped at 0. With an empty exclusion set this is the
+ * receipt total itself, so charts that do not exclude keep their exact
+ * current output. `category_totals` may omit a slug or a whole receipt —
+ * missing entries contribute 0.
+ *
+ * The clamp matters because `receipt.total` is the FINAL discounted amount
+ * while `category_totals` are PRE-discount line sums: a receipt-level
+ * discount or a multi-merchant ticket can push the excluded items' share
+ * above the total, and a negative "effective total" would render a negative
+ * bar (a lie about how much was spent). `Math.max(0, …)` makes those edges
+ * render as zero instead.
+ */
+function effectiveReceiptTotal(
+  receipt: ReceiptSpendRecord,
+  excluded: ReadonlySet<string>,
+): number {
+  let excludedAmount = 0;
+  for (const slug of excluded) {
+    excludedAmount += receipt.category_totals?.[slug] ?? 0;
+  }
+  return Math.max(0, (receipt.total ?? 0) - excludedAmount);
 }
 
 export interface WeeklySpendPoint {
@@ -207,16 +236,25 @@ export interface WeeklySpendPoint {
  * The sum uses `receipt.total` (the receipt-level total), matching the
  * granularity shown on the chart. Days are ordered Monday → Sunday to
  * align with the "This week" label in the analytics reference.
+ *
+ * `excludeCategories` removes those categories' amounts from each receipt
+ * before summing (see `effectiveReceiptTotal`) — used to keep utility
+ * bills ("servicios") out of the daily bars.
  */
 export function aggregateWeeklySpend(
   records: ReceiptSpendRecord[],
   weekStart?: string,
+  excludeCategories: string[] = [],
 ): WeeklySpendPoint[] {
   const start = weekStart ?? getMondayOfWeek(new Date().toISOString().slice(0, 10));
+  const excluded = new Set(excludeCategories);
   const totalsByDay = new Map<string, number>();
   for (const receipt of records) {
     const date = receipt.purchase_date.slice(0, 10);
-    totalsByDay.set(date, (totalsByDay.get(date) ?? 0) + (receipt.total ?? 0));
+    totalsByDay.set(
+      date,
+      (totalsByDay.get(date) ?? 0) + effectiveReceiptTotal(receipt, excluded),
+    );
   }
 
   return WEEKDAY_LABELS.map((label, index) => {
@@ -231,24 +269,140 @@ export function aggregateWeeklySpend(
   });
 }
 
+export interface YearlySpendPoint {
+  /** Calendar year, e.g. "2026". */
+  year: string;
+  /** Sum of `receipt.total` for receipts landing in this year (0 when none). */
+  total: number;
+}
+
+/**
+ * Per-calendar-year spend, zero-filled across the last three years (the
+ * current year and the two previous ones), ordered oldest → newest.
+ * Years with no receipts render as `{ year, total: 0 }` (NOT omitted) so
+ * the "Por año" chart keeps a continuous x-axis — a gap would lie about
+ * "we had no spending" when the truth is "no data was recorded".
+ *
+ * The year is derived by slicing the ISO date (`purchase_date.slice(0, 4)`)
+ * — no Date parsing, so no timezone shifting at year boundaries. Receipts
+ * with no `total` are treated as 0 (defensive, matching the other
+ * aggregators).
+ */
+export function aggregateYearlySpend(
+  records: ReceiptSpendRecord[],
+): YearlySpendPoint[] {
+  const totalsByYear = new Map<string, number>();
+  for (const receipt of records) {
+    const year = receipt.purchase_date.slice(0, 4);
+    totalsByYear.set(year, (totalsByYear.get(year) ?? 0) + (receipt.total ?? 0));
+  }
+  const currentYear = new Date().getFullYear();
+  const years = [currentYear - 2, currentYear - 1, currentYear].map(String);
+  return years.map((year) => ({ year, total: totalsByYear.get(year) ?? 0 }));
+}
+
 /**
  * Average spend per calendar day for a given month. Computed as the month
  * total divided by the number of days in that month — "daily average" in
  * the summary cards means "if I spent the same amount every day of the
  * month, this would be the value".
+ *
+ * `excludeCategories` removes those categories' amounts from each receipt
+ * before summing (see `effectiveReceiptTotal`) — used to keep utility
+ * bills ("servicios") out of the daily average.
  */
 export function aggregateDailyAverage(
   records: ReceiptSpendRecord[],
   monthKey: string,
+  excludeCategories: string[] = [],
 ): number {
+  const excluded = new Set(excludeCategories);
   let total = 0;
   for (const receipt of records) {
     if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
-    total += receipt.total ?? 0;
+    total += effectiveReceiptTotal(receipt, excluded);
   }
   const [year, month] = monthKey.split('-').map(Number);
   const daysInMonth = new Date(year, month, 0).getDate();
   return daysInMonth > 0 ? total / daysInMonth : 0;
+}
+
+export interface DayItemGroup {
+  /** Display name of the product (first-seen casing wins). */
+  name: string;
+  /** Total quantity bought that day across merged rows. */
+  quantity: number;
+  /** Total amount spent on the product that day. */
+  amount: number;
+}
+
+/**
+ * Line items bought on a single day, merged by trimmed-lowercased name and
+ * sorted by amount descending. Powers the day-detail sheet behind the
+ * weekly bar chart ("qué compré el lunes"). Only receipts whose
+ * `purchase_date` matches `isoDate` contribute; categories listed in
+ * `excludeCategories` (e.g. "servicios") never appear.
+ *
+ * Merging is deliberately lighter than `normalizeItemName` (no accent
+ * folding, no unit stripping): the sheet shows raw product names, and the
+ * grouping only needs to collapse exact-name duplicates bought the same
+ * day. First-seen casing wins for the displayed name.
+ */
+export function aggregateDayItems(
+  records: ReceiptSpendRecord[],
+  isoDate: string,
+  excludeCategories: string[] = [],
+): DayItemGroup[] {
+  const excluded = new Set(excludeCategories);
+  const byKey = new Map<string, DayItemGroup>();
+  for (const receipt of records) {
+    if (receipt.purchase_date.slice(0, 10) !== isoDate) continue;
+    for (const item of receipt.items ?? []) {
+      if (excluded.has(item.category)) continue;
+      const key = item.name.trim().toLowerCase();
+      if (!key) continue;
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.quantity += item.quantity ?? 0;
+        existing.amount += item.amount;
+      } else {
+        // First-seen casing wins.
+        byKey.set(key, {
+          name: item.name,
+          quantity: item.quantity ?? 0,
+          amount: item.amount,
+        });
+      }
+    }
+  }
+  return [...byKey.values()].sort(
+    (a, b) => b.amount - a.amount || a.name.localeCompare(b.name),
+  );
+}
+
+/**
+ * Effective spend for a single day (ISO date): the sum of
+ * `effectiveReceiptTotal` across that day's receipts. This is EXACTLY the
+ * number the weekly bar chart shows for the same day, so the day-detail
+ * sheet can pin the same headline total the bar displayed — even when
+ * post-items discounts make `receipt.total` disagree with the item list
+ * (the bar and the items live at different grains on purpose). Only
+ * receipts whose `purchase_date` matches `isoDate` contribute;
+ * categories listed in `excludeCategories` (e.g. "servicios") are removed
+ * per receipt, with each receipt clamped at 0.
+ */
+export function aggregateDayTotal(
+  records: ReceiptSpendRecord[],
+  isoDate: string,
+  excludeCategories: string[] = [],
+): number {
+  const excluded = new Set(excludeCategories);
+  let total = 0;
+  for (const receipt of records) {
+    if (receipt.purchase_date.slice(0, 10) !== isoDate) continue;
+    total += effectiveReceiptTotal(receipt, excluded);
+  }
+  return total;
 }
 
 /**

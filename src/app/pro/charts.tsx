@@ -11,9 +11,11 @@
  * (`getAvailableMonthKeys`), same pattern as the History tab, and every
  * month-scoped block follows the chosen month — hero, banner, summary
  * cards, and category rows. The weekly chart is store-derived and covers
- * the current week regardless of the selected month. The category rows
- * keep the RPC-backed loading/error/empty states; the hero/weekly/summary
- * cards are store-derived and render immediately.
+ * the current week regardless of the selected month; utility bills
+ * ("servicios") are excluded from the daily bars, the daily average, and
+ * the day-detail sheet. Tapping a daily bar opens the day's item detail.
+ * The category rows keep the RPC-backed loading/error/empty states; the
+ * hero/weekly/summary cards are store-derived and render immediately.
  *
  * "Volver" closes the route — the screen is always pushed from the
  * analytics charts entry card, so back is the right action.
@@ -40,10 +42,15 @@ import {
 } from '@/features/analytics';
 import {
   InsightHeroCard,
-  WeeklyBarChart,
+  CapsuleBarChart,
+  DayDetailModal,
   aggregateDailyAverage,
+  aggregateDayItems,
+  aggregateDayTotal,
   aggregateSpendTrend,
   aggregateWeeklySpend,
+  aggregateYearlySpend,
+  getMondayOfWeek,
   getTopCategory,
 } from '@/features/charts';
 import { getExpenseCategory } from '@/features/home/categories';
@@ -53,7 +60,7 @@ import {
   monthKeyToLabel,
   previousMonthKey,
 } from '@/features/home/hooks/useHomeFeed';
-import { formatCurrency } from '@/lib/format';
+import { formatCurrency, MONTHS_SHORT_ES, todayLocalISO } from '@/lib/format';
 import { ProRouteGuard } from '@/features/pro';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
@@ -72,6 +79,56 @@ function lastNMonths(monthKey: string, count: number): string[] {
     months.unshift(current);
   }
   return months;
+}
+
+/** Granularity of the capsule bar chart card. */
+type ChartPeriod = 'week' | 'month' | 'year';
+
+const PERIOD_OPTIONS: { key: ChartPeriod; label: string }[] = [
+  { key: 'week', label: 'Por día' },
+  { key: 'month', label: 'Por mes' },
+  { key: 'year', label: 'Por año' },
+];
+
+/**
+ * Capitalized Spanish short month name for a `YYYY-MM` key (e.g.
+ * `2026-08` → `Ago`), matching the chart label style of the reference.
+ */
+function shortMonthLabel(monthKey: string): string {
+  const month = Number(monthKey.slice(5, 7));
+  const label = MONTHS_SHORT_ES[month - 1] ?? '';
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+/** Full Spanish weekday names indexed Sunday-first (matches `Date.getDay`). */
+const WEEKDAY_NAMES = [
+  'Domingo',
+  'Lunes',
+  'Martes',
+  'Miércoles',
+  'Jueves',
+  'Viernes',
+  'Sábado',
+];
+
+/**
+ * ISO date of the `index`-th day of the week whose Monday is
+ * `weekStartISO` (0 = Monday), using the exact same Monday-start math as
+ * `aggregateWeeklySpend` so the tapped bar and the bar's amount always
+ * agree. The week start comes from the caller (one local-derived value
+ * shared by the bars, the highlight, and this tap mapping — they can
+ * never diverge).
+ */
+function weekDayISO(weekStartISO: string, index: number): string {
+  const date = new Date(`${weekStartISO}T00:00:00`);
+  date.setDate(date.getDate() + index);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Full weekday + day-of-month label for a day ISO, e.g. "Lunes 11". */
+function dayLabel(isoDate: string): string {
+  const date = new Date(`${isoDate}T00:00:00`);
+  return `${WEEKDAY_NAMES[date.getDay()]} ${date.getDate()}`;
 }
 
 export default function ChartsScreen() {
@@ -101,8 +158,21 @@ function ChartsBody() {
   const list = useReceiptsStore((s) => s.list);
   const currency = useSettingsStore((s) => s.currency);
   const [monthKey, setMonthKey] = useState(currentMonthKey);
+  const [period, setPeriod] = useState<ChartPeriod>('week');
+  // ISO date of the day whose detail sheet is open (`null` = closed). Only
+  // the week view opens it — bars in the month/year views stay inert.
+  const [tappedDay, setTappedDay] = useState<string | null>(null);
 
   const monthKeys = useMemo(() => getAvailableMonthKeys(list), [list]);
+
+  // Monday of the current week, derived from the LOCAL today. Single source
+  // of truth for the weekly bars, the today highlight, and the tap → day
+  // ISO: a UTC slice (`toISOString`) drifts a day for late-evening stamps
+  // in UTC-x zones (Sunday evening would mis-highlight and mis-week), so
+  // the app convention is `todayLocalISO()` everywhere else — this keeps
+  // the week chart on the same calendar.
+  const weekStartISO = useMemo(() => getMondayOfWeek(todayLocalISO()), []);
+
   const {
     totals,
     isLoading: totalsLoading,
@@ -120,15 +190,81 @@ function ChartsBody() {
     () => aggregateSpendTrend(list, lastNMonths(monthKey, 6)),
     [list, monthKey],
   );
-  const weeklyData = useMemo(() => aggregateWeeklySpend(list), [list]);
   const dailyAverage = useMemo(
-    () => aggregateDailyAverage(list, monthKey),
+    () => aggregateDailyAverage(list, monthKey, ['servicios']),
     [list, monthKey],
   );
   const topCategory = useMemo(
     () => getTopCategory(list, monthKey),
     [list, monthKey],
   );
+  // Line items for the open day-detail sheet. `tappedDay` guards the
+  // aggregator so it never runs on an empty ISO date.
+  const tappedDayItems = useMemo(
+    () => (tappedDay ? aggregateDayItems(list, tappedDay, ['servicios']) : []),
+    [list, tappedDay],
+  );
+  // Headline total for the open day-detail sheet — the EXACT number the
+  // weekly bar showed for that day (`aggregateDayTotal`: receipt totals
+  // minus servicios, clamped at 0). The item list alone can't reproduce
+  // it (items are pre-discount lines), so the modal displays this instead
+  // of re-summing the rows.
+  const tappedDayTotal = useMemo(
+    () => (tappedDay ? aggregateDayTotal(list, tappedDay, ['servicios']) : 0),
+    [list, tappedDay],
+  );
+
+  /**
+   * Items for the capsule bar chart card, derived from the selected
+   * granularity. The highlight marks the "active" bucket: today for the
+   * week view, the last (selected) month for the 6-month trend, and the
+   * current calendar year for the year view.
+   */
+  const chartData = useMemo(() => {
+    if (period === 'week') {
+      // Today's column within the Monday-start week. Both sides come from
+      // the same local today (`todayLocalISO()` feeds `weekStartISO`), so
+      // the offset lands on today's bar in THIS week — a UTC-derived week
+      // start would highlight a bar in the wrong week on late evenings.
+      const todayOffset = Math.round(
+        (Date.parse(`${todayLocalISO()}T00:00:00`) -
+          Date.parse(`${weekStartISO}T00:00:00`)) /
+          86_400_000,
+      );
+      return {
+        title: 'Esta semana',
+        // Utility bills (servicios) stay out of the daily bars — the same
+        // exclusion the day-detail sheet applies.
+        items: aggregateWeeklySpend(list, weekStartISO, ['servicios']).map(
+          (point, index) => ({
+            label: point.initial,
+            value: point.amount,
+            highlight: index === todayOffset,
+          }),
+        ),
+      };
+    }
+    if (period === 'month') {
+      const lastIndex = trendData.length - 1;
+      return {
+        title: 'Últimos 6 meses',
+        items: trendData.map((point, index) => ({
+          label: shortMonthLabel(point.month),
+          value: point.total,
+          highlight: index === lastIndex,
+        })),
+      };
+    }
+    const currentYear = String(new Date().getFullYear());
+    return {
+      title: 'Por año',
+      items: aggregateYearlySpend(list).map((point) => ({
+        label: point.year,
+        value: point.total,
+        highlight: point.year === currentYear,
+      })),
+    };
+  }, [list, period, trendData, weekStartISO]);
 
   // `monthKeys` is newest-first. The selected month may not be in it (e.g.
   // the current month with no receipts yet): it is then newer than
@@ -150,7 +286,8 @@ function ChartsBody() {
   const previousMonthLabel = monthKeyToLabel(previousMonthKey(monthKey));
 
   return (
-    <ScrollView contentContainerStyle={styles.scrollContent}>
+    <>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
       <View style={styles.header}>
         <Text style={styles.title}>Tus tendencias</Text>
         <Text style={styles.subtitle}>
@@ -203,8 +340,43 @@ function ChartsBody() {
         previousMonthLabel={previousMonthLabel}
       />
       <Card>
-        <Text style={styles.chartTitle}>Esta semana</Text>
-        <WeeklyBarChart data={weeklyData} currency={currency} />
+        <View style={styles.chartHeader}>
+          <Text style={styles.chartTitle} numberOfLines={1}>
+            {chartData.title}
+          </Text>
+          <View style={styles.segmentedControl}>
+            {PERIOD_OPTIONS.map((option) => {
+              const active = period === option.key;
+              return (
+                <Pressable
+                  key={option.key}
+                  onPress={() => setPeriod(option.key)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  style={[styles.segment, active && styles.segmentActive]}
+                >
+                  <Text
+                    style={[
+                      styles.segmentLabel,
+                      active && styles.segmentLabelActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+        <CapsuleBarChart
+          items={chartData.items}
+          currency={currency}
+          onPressItem={
+            period === 'week'
+              ? (_item, index) => setTappedDay(weekDayISO(weekStartISO, index))
+              : undefined
+          }
+        />
       </Card>
       <View style={styles.summaryRow}>
         <MetricSummaryCard
@@ -258,7 +430,7 @@ function ChartsBody() {
                         categoryKey={t.category_slug}
                         name={t.category_name}
                         amount={t.total}
-                        percent={t.percent_of_total * 100}
+                        percent={t.percent_of_total}
                         icon={category.icon}
                         currency={currency}
                       />
@@ -286,7 +458,17 @@ function ChartsBody() {
         <Icon name="arrow.left" size={18} color={colors.primary} />
         <Text style={styles.backText}>Volver</Text>
       </Pressable>
-    </ScrollView>
+      </ScrollView>
+      <DayDetailModal
+        visible={tappedDay !== null}
+        isoDate={tappedDay ?? ''}
+        dayLabel={tappedDay ? dayLabel(tappedDay) : ''}
+        items={tappedDayItems}
+        total={tappedDayTotal}
+        currency={currency}
+        onClose={() => setTappedDay(null)}
+      />
+    </>
   );
 }
 
@@ -328,11 +510,49 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: colors.textSecondary,
   },
+  chartHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
   chartTitle: {
     ...typography.bodyLg,
     color: colors.textPrimary,
     fontWeight: '700',
-    marginBottom: spacing.md,
+    flexShrink: 1,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: colors.border,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.full,
+    padding: 3,
+    gap: 2,
+  },
+  segment: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+  },
+  segmentActive: {
+    backgroundColor: colors.surface,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  segmentLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  segmentLabelActive: {
+    color: colors.textPrimary,
+    fontWeight: '700',
   },
   summaryRow: {
     flexDirection: 'row',

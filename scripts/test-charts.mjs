@@ -2,8 +2,10 @@
 /**
  * Node harness for the Pro charts' pure aggregations
  * (`src/features/charts/aggregate.ts` → `aggregateSpendTrend`,
- * `aggregateStoresByMonth`, `aggregateMonthlyDelta`, and the
- * `aggregateCategoriesByMonth` re-export parity check).
+ * `aggregateStoresByMonth`, `aggregateMonthlyDelta`, `aggregateWeeklySpend`,
+ * `aggregateDailyAverage`, `aggregateYearlySpend`, `aggregateDayItems`,
+ * `aggregateDayTotal`, and the `aggregateCategoriesByMonth` re-export
+ * parity check).
  *
  * Compiles `aggregate.ts` plus its dependency graph (home feed hook,
  * categories registry, auth/session plumbing, receipts store, react-query)
@@ -136,6 +138,9 @@ async function run() {
     aggregateCategoriesByMonth,
     aggregateWeeklySpend,
     aggregateDailyAverage,
+    aggregateDayItems,
+    aggregateDayTotal,
+    aggregateYearlySpend,
     getTopCategory,
   } = chartsMod;
   const { aggregateCategoriesByMonth: directAggregate } = homeFeedMod;
@@ -448,6 +453,127 @@ async function run() {
     assert.equal(out[0].amount, 0);
   });
 
+  await test('excluded categories are removed from the day totals (servicios)', () => {
+    const out = aggregateWeeklySpend(
+      [
+        receipt({
+          id: 'r1',
+          total: 100,
+          purchase_date: '2026-08-10', // Mon
+          category_totals: cats({ servicios: 30, lacteos: 70 }),
+        }),
+        receipt({
+          id: 'r2',
+          total: 50,
+          purchase_date: '2026-08-12', // Wed
+          category_totals: cats({ lacteos: 50 }), // no servicios
+        }),
+      ],
+      '2026-08-10',
+      ['servicios'],
+    );
+    assert.equal(out[0].amount, 70, 'Monday: 100 - 30 servicios');
+    assert.equal(out[2].amount, 50, 'Wednesday: nothing to exclude');
+    assert.equal(out.reduce((sum, p) => sum + p.amount, 0), 120);
+  });
+
+  await test('empty exclusion list keeps the exact previous output (total as-is)', () => {
+    const out = aggregateWeeklySpend(
+      [
+        receipt({
+          id: 'r1',
+          total: 100,
+          purchase_date: '2026-08-10',
+          category_totals: cats({ servicios: 30 }),
+        }),
+      ],
+      '2026-08-10',
+    );
+    assert.equal(out[0].amount, 100, 'receipt.total used as-is without exclusions');
+  });
+
+  await test('excluded slug absent from category_totals contributes 0', () => {
+    const out = aggregateWeeklySpend(
+      [
+        receipt({
+          id: 'r1',
+          total: 80,
+          purchase_date: '2026-08-10',
+          category_totals: cats({ lacteos: 80 }), // no `servicios` key
+        }),
+      ],
+      '2026-08-10',
+      ['servicios'],
+    );
+    assert.equal(out[0].amount, 80, 'missing slug → nothing removed');
+  });
+
+  await test('excluded amount exceeding the total clamps the day to 0 (never negative)', () => {
+    // `receipt.total` is the FINAL discounted amount while category_totals
+    // are pre-discount lines — a receipt-level discount (or multi-merchant
+    // edge) makes servicios > total NORMAL. A negative bar would lie, so
+    // the effective total must clamp at 0.
+    const out = aggregateWeeklySpend(
+      [
+        receipt({
+          id: 'r1',
+          total: 50,
+          purchase_date: '2026-08-10',
+          category_totals: cats({ servicios: 80 }), // more than the total
+        }),
+      ],
+      '2026-08-10',
+      ['servicios'],
+    );
+    assert.equal(out[0].amount, 0, '50 - 80 would be -30; clamped to 0');
+  });
+
+  console.log('\n[tests] aggregateYearlySpend\n');
+
+  await test('empty records → last three years zero-filled, oldest → newest', () => {
+    const current = new Date().getFullYear();
+    const out = aggregateYearlySpend([]);
+    assert.deepEqual(
+      out.map((p) => p.year),
+      [String(current - 2), String(current - 1), String(current)],
+    );
+    assert.deepEqual(
+      out.map((p) => p.total),
+      [0, 0, 0],
+    );
+  });
+
+  await test('receipts are summed per calendar year', () => {
+    const current = new Date().getFullYear();
+    const out = aggregateYearlySpend([
+      receipt({ id: 'r1', total: 50, purchase_date: `${current}-03-10` }),
+      receipt({ id: 'r2', total: 30, purchase_date: `${current}-08-15` }),
+      receipt({ id: 'r3', total: 100, purchase_date: `${current - 1}-11-20` }),
+    ]);
+    const byYear = Object.fromEntries(out.map((p) => [p.year, p.total]));
+    assert.equal(byYear[String(current)], 80, 'current year sums both receipts');
+    assert.equal(byYear[String(current - 1)], 100);
+    assert.equal(byYear[String(current - 2)], 0);
+  });
+
+  await test('years outside the last-three window are ignored (zero-filled output)', () => {
+    const current = new Date().getFullYear();
+    const out = aggregateYearlySpend([
+      receipt({ id: 'r1', total: 999, purchase_date: `${current - 5}-05-01` }),
+      receipt({ id: 'r2', total: 10, purchase_date: `${current}-01-01` }),
+    ]);
+    assert.equal(out.length, 3);
+    assert.equal(out.reduce((sum, p) => sum + p.total, 0), 10);
+  });
+
+  await test('undefined receipt totals are treated as 0', () => {
+    const current = new Date().getFullYear();
+    const out = aggregateYearlySpend([
+      receipt({ id: 'r1', total: undefined, purchase_date: `${current}-01-01` }),
+    ]);
+    assert.equal(out.find((p) => p.year === String(current))?.total, 0);
+  });
+
   console.log('\n[tests] aggregateDailyAverage\n');
 
   await test('daily average = month total / days in month', () => {
@@ -484,6 +610,226 @@ async function run() {
       '2026-02',
     );
     assert.equal(out, 280 / 28);
+  });
+
+  await test('excluded categories are removed before averaging (servicios)', () => {
+    const out = aggregateDailyAverage(
+      [
+        receipt({
+          id: 'r1',
+          total: 310,
+          purchase_date: '2026-08-05',
+          category_totals: cats({ servicios: 100, lacteos: 210 }),
+        }),
+        receipt({ id: 'r2', total: 90, purchase_date: '2026-08-12' }),
+      ],
+      '2026-08',
+      ['servicios'],
+    );
+    // (310 - 100) + 90 = 300 over August's 31 days.
+    assert.equal(out, 300 / 31);
+  });
+
+  await test('empty exclusion list keeps the exact previous output', () => {
+    const out = aggregateDailyAverage(
+      [
+        receipt({
+          id: 'r1',
+          total: 310,
+          purchase_date: '2026-08-05',
+          category_totals: cats({ servicios: 100 }),
+        }),
+      ],
+      '2026-08',
+    );
+    assert.equal(out, 310 / 31);
+  });
+
+  console.log('\n[tests] aggregateDayItems\n');
+
+  await test('items on the day merge by name and sort by amount desc', () => {
+    const out = aggregateDayItems(
+      [
+        receipt({
+          id: 'r1',
+          purchase_date: '2026-08-10',
+          items: [
+            { name: 'leche', amount: 50, category: 'lacteos', quantity: 1 },
+            { name: 'pan', amount: 20, category: 'panaderia', quantity: 2 },
+          ],
+        }),
+        receipt({
+          id: 'r2',
+          purchase_date: '2026-08-10',
+          items: [
+            { name: 'leche', amount: 60, category: 'lacteos', quantity: 2 },
+          ],
+        }),
+      ],
+      '2026-08-10',
+    );
+    assert.deepEqual(out, [
+      { name: 'leche', quantity: 3, amount: 110 },
+      { name: 'pan', quantity: 2, amount: 20 },
+    ]);
+  });
+
+  await test('items from other days are ignored', () => {
+    const out = aggregateDayItems(
+      [
+        receipt({
+          id: 'r1',
+          purchase_date: '2026-08-10',
+          items: [{ name: 'leche', amount: 50, category: 'lacteos' }],
+        }),
+        receipt({
+          id: 'r2',
+          purchase_date: '2026-08-11',
+          items: [{ name: 'arroz', amount: 999, category: 'alimentos' }],
+        }),
+      ],
+      '2026-08-10',
+    );
+    assert.deepEqual(out, [{ name: 'leche', quantity: 0, amount: 50 }]);
+  });
+
+  await test('excluded categories never appear (servicios)', () => {
+    const out = aggregateDayItems(
+      [
+        receipt({
+          id: 'r1',
+          purchase_date: '2026-08-10',
+          items: [
+            { name: 'Luz', amount: 300, category: 'servicios' },
+            { name: 'leche', amount: 50, category: 'lacteos' },
+          ],
+        }),
+      ],
+      '2026-08-10',
+      ['servicios'],
+    );
+    assert.deepEqual(out, [{ name: 'leche', quantity: 0, amount: 50 }]);
+  });
+
+  await test('first-seen casing wins for the display name', () => {
+    const out = aggregateDayItems(
+      [
+        receipt({
+          id: 'r1',
+          purchase_date: '2026-08-10',
+          items: [{ name: 'Leche', amount: 50, category: 'lacteos' }],
+        }),
+        receipt({
+          id: 'r2',
+          purchase_date: '2026-08-10',
+          items: [{ name: 'leche', amount: 60, category: 'lacteos' }],
+        }),
+      ],
+      '2026-08-10',
+    );
+    assert.equal(out.length, 1);
+    assert.equal(out[0].name, 'Leche', 'first-seen casing preserved');
+    assert.equal(out[0].amount, 110);
+  });
+
+  await test('whitespace-only item names are skipped', () => {
+    const out = aggregateDayItems(
+      [
+        receipt({
+          id: 'r1',
+          purchase_date: '2026-08-10',
+          items: [
+            { name: '   ', amount: 5, category: 'otros' },
+            { name: 'pan', amount: 20, category: 'panaderia' },
+          ],
+        }),
+      ],
+      '2026-08-10',
+    );
+    assert.deepEqual(out, [{ name: 'pan', quantity: 0, amount: 20 }]);
+  });
+
+  await test('empty day → empty list', () => {
+    const out = aggregateDayItems([], '2026-08-10');
+    assert.deepEqual(out, []);
+  });
+
+  console.log('\n[tests] aggregateDayTotal\n');
+
+  await test('day total = sum of effective receipt totals (servicios removed)', () => {
+    const out = aggregateDayTotal(
+      [
+        receipt({
+          id: 'r1',
+          total: 100,
+          purchase_date: '2026-08-10',
+          category_totals: cats({ servicios: 30, lacteos: 70 }),
+        }),
+        receipt({
+          id: 'r2',
+          total: 50,
+          purchase_date: '2026-08-10',
+          category_totals: cats({ lacteos: 50 }), // no servicios
+        }),
+      ],
+      '2026-08-10',
+      ['servicios'],
+    );
+    assert.equal(out, 120, '(100 - 30) + 50');
+  });
+
+  await test('day total matches the weekly bar amount for the same day', () => {
+    const records = [
+      receipt({
+        id: 'r1',
+        total: 100,
+        purchase_date: '2026-08-10',
+        category_totals: cats({ servicios: 30 }),
+      }),
+      receipt({ id: 'r2', total: 20, purchase_date: '2026-08-12' }),
+    ];
+    const week = aggregateWeeklySpend(records, '2026-08-10', ['servicios']);
+    assert.equal(aggregateDayTotal(records, '2026-08-10', ['servicios']), week[0].amount);
+  });
+
+  await test('receipts from other days are ignored', () => {
+    const out = aggregateDayTotal(
+      [
+        receipt({ id: 'r1', total: 999, purchase_date: '2026-08-11' }),
+        receipt({ id: 'r2', total: 10, purchase_date: '2026-08-10' }),
+      ],
+      '2026-08-10',
+    );
+    assert.equal(out, 10);
+  });
+
+  await test('clamps at 0 when excluded amounts exceed the receipt total', () => {
+    const out = aggregateDayTotal(
+      [
+        receipt({
+          id: 'r1',
+          total: 50,
+          purchase_date: '2026-08-10',
+          category_totals: cats({ servicios: 80 }),
+        }),
+      ],
+      '2026-08-10',
+      ['servicios'],
+    );
+    assert.equal(out, 0, '50 - 80 clamps to 0, not -30');
+  });
+
+  await test('undefined receipt totals are treated as 0', () => {
+    const out = aggregateDayTotal(
+      [receipt({ id: 'r1', total: undefined, purchase_date: '2026-08-10' })],
+      '2026-08-10',
+    );
+    assert.equal(out, 0);
+  });
+
+  await test('no receipts on the day → 0', () => {
+    const out = aggregateDayTotal([], '2026-08-10');
+    assert.equal(out, 0);
   });
 
   console.log('\n[tests] getTopCategory\n');

@@ -25,7 +25,7 @@ export function formatCurrency(value: number, currency: string = 'UYU'): string 
 }
 
 /** Spanish short month names (lowercase, the standard for `es`). */
-const MONTHS_SHORT_ES = [
+export const MONTHS_SHORT_ES = [
   'ene', 'feb', 'mar', 'abr', 'may', 'jun',
   'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
 ];
