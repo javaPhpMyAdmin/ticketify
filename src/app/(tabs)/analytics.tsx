@@ -7,19 +7,15 @@ import {
 } from 'react-native-safe-area-context';
 
 import {
-  BreakdownRowSkeleton,
   Card,
-  EmptyState,
   Icon,
   Pressable,
   Text,
 } from '@/components';
 import {
-  CategoryBreakdownList,
   MonthlyOverviewCard,
   TopItemsBreakdown,
   useMonthlyOverview,
-  useMonthlyTotals,
   usePriceAlerts,
 } from '@/features/analytics';
 import type { PriceAlert } from '@/features/analytics';
@@ -39,8 +35,8 @@ import { useSessionStore } from '../../features/auth';
 /**
  * Same FAB-clearance pattern as the home screen: native tabs do not push
  * content past the tab bar, so we add `insets.bottom + TAB_BAR_HEIGHT` to
- * the scroll's bottom inset. Without this the last row of the category
- * breakdown sits behind the tab bar on both platforms.
+ * the scroll's bottom inset. Without this the last card (top items) sits
+ * behind the tab bar on both platforms.
  */
 const ANALYTICS_TAB_BAR_HEIGHT = Platform.select({
   ios: 49,
@@ -52,10 +48,8 @@ const ANALYTICS_TAB_BAR_HEIGHT = Platform.select({
  * Analytics (RPC): a month-scoped dashboard. The month selector moves
  * within the months that actually have receipts (`getAvailableMonthKeys`),
  * same pattern as the History tab, and every block follows the chosen month —
- * overview card, price alerts, top items, and category totals. The current
- * month stays reachable even when it has no data yet ("Sin artículos este
- * mes."). The subtitle keeps the live UTC month because `useMonthlyTotals`
- * defaults to it.
+ * overview card, price alerts, and top items. The current month stays
+ * reachable even when it has no data yet ("Sin artículos este mes.").
  */
 export default function AnalyticsScreen() {
   const insets = useSafeAreaInsets();
@@ -65,13 +59,6 @@ export default function AnalyticsScreen() {
   const [monthKey, setMonthKey] = useState(currentMonthKey);
 
   const monthKeys = useMemo(() => getAvailableMonthKeys(list), [list]);
-  const {
-    totals,
-    isLoading: totalsLoading,
-    error,
-    hasData: totalsHasData,
-    refetch,
-  } = useMonthlyTotals(monthKey);
   const alerts = usePriceAlerts(monthKey);
   const overview = useMonthlyOverview(monthKey);
   const { session } = useSessionStore();
@@ -172,10 +159,10 @@ export default function AnalyticsScreen() {
         contentContainerStyle={[
           styles.content,
           {
-            // Clear the native tab bar so the last row of the breakdown
-            // stays visible: insets.bottom + tab bar height + a breath of
-            // spacing. Without this the last category sits behind the
-            // tab bar on Android (Material 3 NavigationBar is ~80dp).
+            // Clear the native tab bar so the last card stays visible:
+            // insets.bottom + tab bar height + a breath of spacing.
+            // Without this the last row sits behind the tab bar on
+            // Android (Material 3 NavigationBar is ~80dp).
             paddingBottom:
               insets.bottom + ANALYTICS_TAB_BAR_HEIGHT + spacing.lg,
           },
@@ -196,31 +183,6 @@ export default function AnalyticsScreen() {
           currency={currency}
           title="Top Artículos"
         />
-        {totalsLoading ? (
-          <View style={styles.skeletonList}>
-            {[0, 1, 2, 3].map((i) => (
-              <BreakdownRowSkeleton key={i} />
-            ))}
-          </View>
-        ) : error && !totalsHasData ? (
-          // The failed RPC read must not render as a false "no data" —
-          // show the user-safe message with a retry instead of the
-          // breakdown (only when there is no retained data to keep).
-          <EmptyState
-            framed
-            icon="exclamationmark.triangle.fill"
-            title={error}
-            actionLabel="Reintentar"
-            onAction={() => refetch()}
-          />
-        ) : (
-          <>
-            <CategoryBreakdownList rows={totals} />
-            {/* Background refetch failed but the last good totals are on
-                screen — keep them and add a subtle inline note. */}
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-          </>
-        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -285,13 +247,6 @@ const styles = StyleSheet.create({
     ...typography.bodyMd,
     color: colors.textSecondary,
     marginTop: -spacing.md,
-  },
-  skeletonList: {
-    gap: spacing.lg,
-  },
-  error: {
-    ...typography.labelSm,
-    color: colors.danger,
   },
   monthSelector: {
     flexDirection: 'row',
