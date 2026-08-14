@@ -16,6 +16,8 @@
  *     'yerba' row worth 2400,
  *   - compareReceiptsByScan is a total order: equal keys → 0 and
  *     cmp(a, b) === -cmp(b, a) for unequal pairs (anti-symmetric).
+ *   - aggregateCategoryItemCounts counts one per item ROW per month
+ *     (NOT per quantity), scoped to the month, empty-safe, deterministic.
  *
  * Deterministic: no clock, no Intl, fixed fixture inputs.
  *
@@ -210,6 +212,94 @@ async function run() {
     const b = { purchase_date: '2026-08-10' };
     assert.equal(homeMod.compareReceiptsByScan(a, b), 1);
     assert.equal(homeMod.compareReceiptsByScan(b, a), -1);
+  });
+
+  console.log('\n[tests] aggregateCategoryItemCounts\n');
+
+  await test('counts one per item ROW, not per quantity (matches RPC count(*))', () => {
+    const out = homeMod.aggregateCategoryItemCounts(
+      [
+        {
+          id: 'r1',
+          purchase_date: '2026-08-05',
+          items: [
+            { name: 'leche', amount: 50, category: 'lacteos', quantity: 3 },
+            { name: 'pan', amount: 20, category: 'panaderia', quantity: 2 },
+          ],
+        },
+        {
+          id: 'r2',
+          purchase_date: '2026-08-06',
+          items: [{ name: 'yogur', amount: 30, category: 'lacteos', quantity: 6 }],
+        },
+      ],
+      '2026-08',
+    );
+    // 3 units of leche still count once; lacteos = 2 rows total.
+    assert.deepEqual(out, { lacteos: 2, panaderia: 1 });
+  });
+
+  await test('receipts from other months are excluded', () => {
+    const out = homeMod.aggregateCategoryItemCounts(
+      [
+        {
+          id: 'r1',
+          purchase_date: '2026-07-05',
+          items: [{ name: 'Luz', amount: 300, category: 'servicios' }],
+        },
+        {
+          id: 'r2',
+          purchase_date: '2026-08-05',
+          items: [{ name: 'leche', amount: 50, category: 'lacteos' }],
+        },
+      ],
+      '2026-08',
+    );
+    assert.deepEqual(out, { lacteos: 1 });
+  });
+
+  await test('receipts with no items contribute 0 (category absent from result)', () => {
+    const out = homeMod.aggregateCategoryItemCounts(
+      [
+        { id: 'r1', purchase_date: '2026-08-05', items: [] },
+        {
+          id: 'r2',
+          purchase_date: '2026-08-06',
+          items: [{ name: 'pan', amount: 20, category: 'panaderia' }],
+        },
+      ],
+      '2026-08',
+    );
+    assert.deepEqual(out, { panaderia: 1 });
+  });
+
+  await test('empty list → empty map', () => {
+    assert.deepEqual(homeMod.aggregateCategoryItemCounts([], '2026-08'), {});
+  });
+
+  await test('deterministic: same input always yields the same output', () => {
+    const list = [
+      {
+        id: 'r1',
+        purchase_date: '2026-08-05',
+        items: [
+          { name: 'leche', amount: 50, category: 'lacteos' },
+          { name: 'pan', amount: 20, category: 'panaderia' },
+        ],
+      },
+      {
+        id: 'r2',
+        purchase_date: '2026-08-06',
+        items: [
+          { name: 'yogur', amount: 30, category: 'lacteos' },
+          { name: 'Luz', amount: 300, category: 'servicios' },
+        ],
+      },
+    ];
+    const first = homeMod.aggregateCategoryItemCounts(list, '2026-08');
+    const second = homeMod.aggregateCategoryItemCounts(list, '2026-08');
+    assert.deepEqual(first, second);
+    assert.deepEqual(first, { lacteos: 2, panaderia: 1, servicios: 1 });
   });
 
   console.log('');

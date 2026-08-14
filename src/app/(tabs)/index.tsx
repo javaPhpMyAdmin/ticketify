@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Image, Platform, ScrollView, StyleSheet } from 'react-native';
 import {
   SafeAreaView,
@@ -10,7 +10,6 @@ import {
   MonthlyBudgetCardSkeleton,
   EmptyState,
   Fab,
-  Icon,
   Pressable,
   ReceiptRow,
   ReceiptRowSkeleton,
@@ -22,12 +21,7 @@ import {
   SnacksBreakdownModal,
   useBudget,
 } from '@/features/budget';
-import {
-  CategoryBudgetCard,
-  CategoryBudgetCardSkeleton,
-  SegmentedBudgetBar,
-  useHomeFeed,
-} from '@/features/home';
+import { useHomeFeed } from '@/features/home';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
 import { useSessionStore } from '../../features/auth';
@@ -54,7 +48,6 @@ export default function HomeScreen() {
     hasData: budgetHasData,
   } = useBudget();
   const {
-    categories,
     receipts,
     wantsSnacksTotal,
     isLoading: feedLoading,
@@ -62,10 +55,6 @@ export default function HomeScreen() {
     hasData: feedHasData,
   } = useHomeFeed();
   const insets = useSafeAreaInsets();
-  const categoryTotalSpend = useMemo(
-    () => categories.reduce((sum, cat) => sum + cat.amount, 0),
-    [categories],
-  );
   const { session } = useSessionStore();
   // Canonical name key is `full_name` (see profile-sync); `name` is kept as a
   // legacy fallback. Both can be absent (email signup sets no metadata).
@@ -138,59 +127,6 @@ export default function HomeScreen() {
             {feedError ? (
               <Text style={styles.error}>{feedError}</Text>
             ) : null}
-            {/* Categories */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Categorías de gastos</Text>
-                <Pressable
-                  onPress={() => router.push('/history')}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel="Ver historial"
-                  style={styles.historyLink}
-                >
-                  <Icon name="calendar" size={16} color={colors.primary} />
-                  <Text style={styles.historyLinkText}>Historial</Text>
-                </Pressable>
-              </View>
-              {feedLoading ? (
-                <View style={styles.categoryStack}>
-                  {[0, 1, 2].map((i) => (
-                    <CategoryBudgetCardSkeleton key={i} />
-                  ))}
-                </View>
-              ) : categories.length === 0 ? (
-                <EmptyState
-                  icon="chart.bar.fill"
-                  title="Aún no hay categorías de gastos."
-                  body="Tus gastos por categoría aparecerán cuando escanees tus primeros tickets."
-                />
-              ) : (
-                <View style={styles.categoryStack}>
-                  <SegmentedBudgetBar categories={categories} />
-                  {categories.map((c) => {
-                    const percent =
-                      categoryTotalSpend === 0
-                        ? 0
-                        : (c.amount / categoryTotalSpend) * 100;
-
-                    return (
-                      <CategoryBudgetCard
-                        key={c.key}
-                        categoryKey={c.key}
-                        name={c.name}
-                        amount={c.amount}
-                        percent={percent}
-                        currency={currency}
-                        icon={c.icon}
-                        onPress={() => router.push(`/categories/${c.key}`)}
-                      />
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-
             {/* Recent receipts */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Tickets recientes</Text>
@@ -283,24 +219,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 20,
     fontWeight: '600',
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  historyLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  historyLinkText: {
-    color: colors.primary,
-    fontWeight: '600',
-    fontSize: 17,
-  },
-  categoryStack: {
-    gap: spacing.md,
   },
   receiptList: {
     gap: spacing.md,

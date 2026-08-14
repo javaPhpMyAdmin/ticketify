@@ -219,6 +219,27 @@ export function aggregateCategoriesByMonth(
 }
 
 /**
+ * Pure aggregation: how many items were bought per category in one month —
+ * "cuántos artículos compré en cada categoría". Counts one per item ROW,
+ * NOT per quantity, mirroring the `monthly_category_totals` RPC's
+ * `count(*)` over `purchase_items` so the History cards agree with the
+ * analytics block. Categories with no items are absent from the result.
+ */
+export function aggregateCategoryItemCounts(
+  list: ReceiptSpendRecord[],
+  monthKey: string,
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const receipt of list) {
+    if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
+    for (const item of receipt.items ?? []) {
+      counts[item.category] = (counts[item.category] ?? 0) + 1;
+    }
+  }
+  return counts;
+}
+
+/**
  * Pure aggregation: line items tagged `categoryKey` within one month,
  * grouped by normalized name and sorted by amount desc — "cuánto gasté en
  * cada cosa". `total` for the category is the sum of the returned rows.

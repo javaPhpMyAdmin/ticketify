@@ -13,12 +13,14 @@ import {
 } from 'react-native-safe-area-context';
 
 import { EmptyState, Icon, Pressable, SearchRowSkeleton, Text, View } from '@/components';
-import { CategoryCard } from '@/components/organisms/CategoryCard';
 import {
   aggregateCategoriesByMonth,
+  aggregateCategoryItemCounts,
+  CategoryBudgetCard,
   currentMonthKey,
   getAvailableMonthKeys,
   monthKeyToLabel,
+  SegmentedBudgetBar,
   useItemSearch,
 } from '@/features/home';
 import { formatCurrency } from '@/lib/format';
@@ -90,6 +92,17 @@ export default function HistoryScreen() {
   const categories = useMemo(
     () => aggregateCategoriesByMonth(list, monthKey),
     [list, monthKey],
+  );
+  const categoryItemCounts = useMemo(
+    () => aggregateCategoryItemCounts(list, monthKey),
+    [list, monthKey],
+  );
+  // Percent base for the category cards: what the month actually spent on
+  // categorized items (the bar + cards only cover the categories that
+  // appear, so the total must be their sum, not the whole month's spend).
+  const monthTotal = useMemo(
+    () => categories.reduce((sum, category) => sum + category.amount, 0),
+    [categories],
   );
 
   // `monthKeys` is newest-first. The selected month may not be in it (e.g.
@@ -333,24 +346,30 @@ export default function HistoryScreen() {
           <Text style={styles.empty}>Sin gastos este mes.</Text>
         ) : (
           <View style={styles.categoryList}>
-            {categories.map((category) => (
-              <CategoryCard
-                key={category.key}
-                icon={category.icon}
-                name={category.name}
-                amount={category.amount}
-                currency={currency}
-                layout="list"
-                style={styles.categoryCard}
-                onPress={() =>
-                  router.push(
-                    monthKey === currentMonthKey()
-                      ? `/categories/${category.key}`
-                      : `/categories/${category.key}?month=${monthKey}`,
-                  )
-                }
-              />
-            ))}
+            <SegmentedBudgetBar categories={categories} />
+            {categories.map((category) => {
+              const percent =
+                monthTotal === 0 ? 0 : (category.amount / monthTotal) * 100;
+              return (
+                <CategoryBudgetCard
+                  key={category.key}
+                  categoryKey={category.key}
+                  name={category.name}
+                  amount={category.amount}
+                  percent={percent}
+                  currency={currency}
+                  icon={category.icon}
+                  itemCount={categoryItemCounts[category.key]}
+                  onPress={() =>
+                    router.push(
+                      monthKey === currentMonthKey()
+                        ? `/categories/${category.key}`
+                        : `/categories/${category.key}?month=${monthKey}`,
+                    )
+                  }
+                />
+              );
+            })}
           </View>
         )}
       </ScrollView>
@@ -555,9 +574,6 @@ const styles = StyleSheet.create({
   },
   categoryList: {
     gap: spacing.md,
-  },
-  categoryCard: {
-    width: '100%',
   },
   empty: {
     ...typography.bodyMd,
