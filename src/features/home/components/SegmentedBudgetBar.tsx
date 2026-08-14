@@ -15,12 +15,17 @@ export interface SegmentedBudgetBarProps {
 }
 
 /**
- * Horizontal budget bar split into colored segments proportional to each
- * category's share of total spend. The segment colors are taken from the
- * stable category color registry so the bar matches the category cards.
+ * Horizontal budget bar split into rounded capsule segments, one per
+ * category, following the reference in `capturas/barras_de_colores_home`.
  *
- * A single category renders as one full-width rounded bar; an empty or
- * zero-total input renders a muted track so the layout does not collapse.
+ * Unlike the old contiguous block (one bar with only the outer corners
+ * rounded), each segment keeps its own full radius plus a 4px gap between
+ * neighbors, so every category color reads as an independent capsule. The
+ * segment widths are proportional to each category's share of total spend
+ * (computed as flex weights so the gap does not overflow the track) and the
+ * vivid colors come from the stable category registry so the bar matches
+ * the category cards. An empty or zero-total input renders a muted track
+ * so the layout does not collapse.
  */
 export function SegmentedBudgetBar({
   categories,
@@ -34,29 +39,18 @@ export function SegmentedBudgetBar({
 
   return (
     <View style={[styles.track, { height }]}>
-      {categories.map((category, index) => {
-        const color = getCategoryColor(category.key);
-        const isFirst = index === 0;
-        const isLast = index === categories.length - 1;
-        const width = `${(category.amount / total) * 100}%` as `${number}%`;
-
-        return (
-          <View
-            key={category.key}
-            style={[
-              styles.segment,
-              {
-                width,
-                backgroundColor: color.background,
-                borderTopLeftRadius: isFirst ? radii.full : 0,
-                borderBottomLeftRadius: isFirst ? radii.full : 0,
-                borderTopRightRadius: isLast ? radii.full : 0,
-                borderBottomRightRadius: isLast ? radii.full : 0,
-              },
-            ]}
-          />
-        );
-      })}
+      {categories.map((category) => (
+        <View
+          key={category.key}
+          style={[
+            styles.segment,
+            {
+              flex: category.amount,
+              backgroundColor: getCategoryColor(category.key).background,
+            },
+          ]}
+        />
+      ))}
     </View>
   );
 }
@@ -64,12 +58,15 @@ export function SegmentedBudgetBar({
 const styles = StyleSheet.create({
   track: {
     flexDirection: 'row',
+    alignItems: 'stretch',
     width: '100%',
-    backgroundColor: colors.border,
+    gap: 4,
+    backgroundColor: colors.chipBg,
     borderRadius: radii.full,
     overflow: 'hidden',
   },
   segment: {
     height: '100%',
+    borderRadius: radii.full,
   },
 });
