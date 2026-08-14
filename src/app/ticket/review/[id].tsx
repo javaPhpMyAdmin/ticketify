@@ -384,6 +384,7 @@ export default function ReviewReceiptScreen() {
       // review screen.
       useToastStore.getState().show(
         editingMode ? 'Cambios guardados.' : 'Recibo guardado.',
+        'success',
       );
       router.dismiss();
     } catch {
