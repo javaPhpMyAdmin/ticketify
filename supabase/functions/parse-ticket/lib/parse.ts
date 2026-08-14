@@ -100,6 +100,15 @@ export function normalizePaymentMethod(
     : 'other';
 }
 
+/** Today's date in UTC as YYYY-MM-DD, the default when a date is missing. */
+export function currentDateYmd(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(
+    2,
+    '0',
+  )}-${String(now.getUTCDate()).padStart(2, '0')}`;
+}
+
 /** Unknown category slugs degrade to null (the review chip shows SIN CATEGORÍA). */
 export function normalizeCategorySlug(value: unknown): string | null {
   if (typeof value !== 'string' || !CATEGORY_SLUGS.has(value)) return null;
@@ -114,23 +123,27 @@ export function parseReceiptJson(raw: unknown): ParsedReceipt {
   }
 
   const store_name = requireNonEmptyString(raw.store_name, 'store_name');
-  const purchase_date = requireNonEmptyString(
-    raw.purchase_date,
-    'purchase_date',
-  );
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(purchase_date)) {
-    throw new ParseError('purchase_date must be YYYY-MM-DD');
-  }
-  // The regex alone accepts calendar-invalid dates like 2026-13-45 or
-  // 2026-02-30 — verify the components round-trip through a UTC date.
-  const [y, m, d] = purchase_date.split('-').map(Number);
-  const parsedDate = new Date(Date.UTC(y, m - 1, d));
-  if (
-    parsedDate.getUTCFullYear() !== y ||
-    parsedDate.getUTCMonth() !== m - 1 ||
-    parsedDate.getUTCDate() !== d
-  ) {
-    throw new ParseError('purchase_date is not a valid calendar date');
+  // `purchase_date` is best-effort: when it is missing, empty, or fails
+  // validation (bad format or calendar-invalid, e.g. 2026-02-30), the
+  // receipt is still usable — default to today so the scan is not lost.
+  // Receipts usually print the date, but Gemini occasionally omits or
+  // garbles it, and a missing date is a review-screen fix, not a parse
+  // failure. Other fields (total, items) stay strict.
+  const rawDate =
+    typeof raw.purchase_date === 'string' ? raw.purchase_date.trim() : '';
+  let purchase_date = currentDateYmd();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+    // The regex alone accepts calendar-invalid dates like 2026-13-45 or
+    // 2026-02-30 — verify the components round-trip through a UTC date.
+    const [y, m, d] = rawDate.split('-').map(Number);
+    const parsedDate = new Date(Date.UTC(y, m - 1, d));
+    if (
+      parsedDate.getUTCFullYear() === y &&
+      parsedDate.getUTCMonth() === m - 1 &&
+      parsedDate.getUTCDate() === d
+    ) {
+      purchase_date = rawDate;
+    }
   }
   const total = round2(requireFiniteNumber(raw.total, 'total'));
   const payment_method = normalizePaymentMethod(raw.payment_method);

@@ -22,6 +22,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import {
+  currentDateYmd,
   isRecord,
   ParseError,
   parseListJson,
@@ -403,15 +404,6 @@ function currentYearMonth(): string {
     2,
     '0',
   )}`;
-}
-
-/** Today's date in UTC as YYYY-MM-DD, used as the default purchase_date. */
-function currentDateYmd(): string {
-  const now = new Date();
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(
-    2,
-    '0',
-  )}-${String(now.getUTCDate()).padStart(2, '0')}`;
 }
 
 /**
