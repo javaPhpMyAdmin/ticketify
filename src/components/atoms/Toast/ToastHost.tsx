@@ -31,16 +31,22 @@ const FADE_OUT_MS = 180;
 
 export function ToastHost() {
   const current = useToastStore((s) => s.current);
+  const variant = useToastStore((s) => s.variant);
   const insets = useSafeAreaInsets();
   const opacity = useSharedValue(0);
-  // The last non-null message: during the fade-out (`current === null`)
-  // the label still renders the previous text so the animation doesn't
-  // collapse onto an empty string mid-fade.
+  // The last non-null message + variant: during the fade-out
+  // (`current === null`) the label still renders the previous text (and the
+  // pill keeps its previous color) so the animation doesn't collapse onto
+  // an empty string or snap to the dark pill mid-fade.
   const [lastMessage, setLastMessage] = useState<string | null>(null);
+  const [lastVariant, setLastVariant] = useState<'default' | 'success'>(
+    'default',
+  );
 
   useEffect(() => {
     if (current) {
       setLastMessage(current);
+      setLastVariant(variant);
       opacity.value = withTiming(1, {
         duration: FADE_IN_MS,
         easing: Easing.out(Easing.ease),
@@ -51,9 +57,14 @@ export function ToastHost() {
         easing: Easing.in(Easing.ease),
       });
     }
-  }, [current, opacity]);
+  }, [current, opacity, variant]);
 
   const animatedStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
+  // Fade-out renders with the last shown variant; an in-flight toast uses
+  // the store's current variant.
+  const activeVariant = current !== null ? variant : lastVariant;
+  const isSuccess = activeVariant === 'success';
 
   return (
     <Animated.View
@@ -63,10 +74,14 @@ export function ToastHost() {
       style={[
         styles.host,
         { top: insets.top + spacing.md },
+        isSuccess && styles.hostSuccess,
         animatedStyle,
       ]}
     >
-      <Text style={styles.label} numberOfLines={2}>
+      <Text
+        style={[styles.label, isSuccess && styles.labelSuccess]}
+        numberOfLines={2}
+      >
         {current ?? lastMessage ?? ''}
       </Text>
     </Animated.View>
@@ -89,10 +104,18 @@ const styles = StyleSheet.create({
     zIndex: 1000,
     elevation: 8,
   },
+  // Success variant: emerald pill so a confirmed save reads as positive
+  // feedback at a glance (same primary pairing as the FAB and CTA buttons).
+  hostSuccess: {
+    backgroundColor: colors.primary,
+  },
   label: {
     ...typography.labelSm,
     color: colors.inverseOnSurface,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  labelSuccess: {
+    color: colors.onPrimary,
   },
 });

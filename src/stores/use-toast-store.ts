@@ -15,11 +15,16 @@ import { create } from 'zustand';
 /** Total visible time before the host clears the toast. */
 export const TOAST_DURATION_MS = 2000;
 
+/** Visual treatment of a toast pill. `success` paints the emerald primary. */
+export type ToastVariant = 'default' | 'success';
+
 interface ToastState {
   /** The currently-rendered message, or `null` when no toast is shown. */
   current: string | null;
+  /** Visual treatment of the current toast. Defaults to the dark pill. */
+  variant: ToastVariant;
   /** Show a toast for `TOAST_DURATION_MS`. Replaces any in-flight toast. */
-  show: (message: string) => void;
+  show: (message: string, variant?: ToastVariant) => void;
   /** Hide the toast immediately and cancel the pending timer. */
   hide: () => void;
 }
@@ -39,16 +44,17 @@ function clearActiveTimer(): void {
 
 export const useToastStore = create<ToastState>((set) => ({
   current: null,
-  show: (message) => {
+  variant: 'default',
+  show: (message, variant = 'default') => {
     clearActiveTimer();
-    set({ current: message });
+    set({ current: message, variant });
     activeTimer = setTimeout(() => {
       activeTimer = null;
-      set({ current: null });
+      set({ current: null, variant: 'default' });
     }, TOAST_DURATION_MS);
   },
   hide: () => {
     clearActiveTimer();
-    set({ current: null });
+    set({ current: null, variant: 'default' });
   },
 }));
