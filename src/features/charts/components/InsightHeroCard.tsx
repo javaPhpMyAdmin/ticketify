@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { CartesianChart, Line } from 'victory-native';
 
@@ -6,12 +6,7 @@ import { Icon, Text } from '@/components';
 import { formatCurrency } from '@/lib/format';
 import { colors, radii, spacing, typography } from '@/theme';
 
-export interface InsightTrendPoint {
-  /** Month bucket (`YYYY-MM`) or any monotonic x label. */
-  month: string;
-  /** Spend total for that bucket. */
-  total: number;
-}
+import type { DailySpendPoint } from '../aggregate';
 
 export interface InsightHeroCardProps {
   /** Display label for the selected month, e.g. "Agosto 2026". */
@@ -22,8 +17,11 @@ export interface InsightHeroCardProps {
   deltaPct: number | null;
   /** Label of the comparison month, e.g. "Julio 2026" — shown in the chip. */
   previousMonthLabel?: string | null;
-  /** Trend points for the white line chart. */
-  trendData: InsightTrendPoint[];
+  /**
+   * One point per day of the selected month (1..days-in-month, zero-filled
+   * by `aggregateDailySpend`) — the white line chart's x-axis.
+   */
+  dailyData: DailySpendPoint[];
   /** Currency code used for the total and chip. */
   currency?: string;
   /** Pixel height of the line chart canvas. */
@@ -31,23 +29,24 @@ export interface InsightHeroCardProps {
 }
 
 /**
- * Dark hero card for the free Analytics tab.
+ * Dark hero card for the Pro trends screen.
  *
  * Shows "Gastado este mes", the selected-month total, a white victory-native
- * line chart of recent spend, and a previous-month delta chip. The chip is
- * hidden when there is no previous-month base (`deltaPct === null`), matching
- * the spec edge case for a missing comparison.
+ * line chart of the daily spend curve (30/31 daily points for the selected
+ * month, day-of-month on the x-axis), and a previous-month delta chip. The
+ * chip is hidden when there is no previous-month base (`deltaPct === null`),
+ * matching the spec edge case for a missing comparison.
  *
- * The line chart is intentionally minimal: no axes, no grid, no tooltip. It
- * exists to give a quick visual trend; detail is available on the Pro charts
- * screen.
+ * The line chart is intentionally minimal: no grid, no tooltip — the only
+ * axis is the numeric day-of-month x-axis. It exists to give a quick visual
+ * trend; detail is available on the Pro charts screen.
  */
 export function InsightHeroCard({
   monthLabel,
   total,
   deltaPct,
   previousMonthLabel,
-  trendData,
+  dailyData,
   currency = 'UYU',
   chartHeight = 80,
 }: InsightHeroCardProps) {
@@ -62,17 +61,11 @@ export function InsightHeroCard({
     return () => clearTimeout(handle);
   }, []);
 
-  const rows = useMemo(
-    () =>
-      trendData.map((point) => ({
-        month: point.month,
-        total: point.total,
-      })),
-    [trendData],
+  const hasData = dailyData.some((point) => point.total > 0);
+  const maxTotal = dailyData.reduce(
+    (max, point) => Math.max(max, point.total),
+    0,
   );
-
-  const hasData = trendData.some((point) => point.total > 0);
-  const maxTotal = rows.reduce((max, row) => Math.max(max, row.total), 0);
   const yDomain: [number, number] = [0, maxTotal * 1.2 || 1];
 
   return (
@@ -112,11 +105,17 @@ export function InsightHeroCard({
       <View style={[styles.chart, { height: chartHeight }]}>
         {hasData ? (
           <CartesianChart
-            data={rows}
-            xKey="month"
+            data={dailyData}
+            xKey="day"
             yKeys={['total']}
             domain={{ y: yDomain }}
             domainPadding={{ left: spacing.sm, right: spacing.sm, top: spacing.sm }}
+            xAxis={{
+              lineColor: colors.outlineVariant,
+              labelColor: colors.heroText,
+              tickCount: 7,
+              formatXLabel: (value) => String(value),
+            }}
           >
             {({ points }) => (
               <Line
@@ -132,7 +131,7 @@ export function InsightHeroCard({
           </CartesianChart>
         ) : (
           <View style={styles.emptyChart}>
-            <Text style={styles.emptyText}>Sin datos recientes</Text>
+            <Text style={styles.emptyText}>Sin gastos este mes</Text>
           </View>
         )}
       </View>
