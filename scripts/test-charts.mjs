@@ -152,6 +152,7 @@ async function run() {
     getTopCategory,
     pickMaxSpendIndex,
     buildClampedDailySeries,
+    weekdayInitialsForMonth,
   } = chartsMod;
   const { aggregateCategoriesByMonth: directAggregate } = homeFeedMod;
 
@@ -1130,6 +1131,35 @@ async function run() {
     assert.equal(yCap, 120);
     assert.deepEqual(overflowDays, []);
     assert.equal(points[0].total, 120);
+  });
+
+  console.log('\n[tests] weekdayInitialsForMonth\n');
+
+  await test('august 2026 starts on Saturday: S D L M M J V …', () => {
+    const initials = weekdayInitialsForMonth('2026-08');
+    assert.equal(initials.length, 31);
+    assert.deepEqual(initials.slice(0, 8), ['S', 'D', 'L', 'M', 'M', 'J', 'V', 'S']);
+    assert.equal(initials[9], 'L', 'day 10 is Monday');
+    assert.equal(initials[12], 'J', 'day 13 is Thursday');
+    assert.equal(initials[14], 'S', 'day 15 is Saturday');
+    assert.equal(initials[15], 'D', 'day 16 is Sunday');
+  });
+
+  await test('february 2024 (leap) starts on Thursday and has 29 entries', () => {
+    const initials = weekdayInitialsForMonth('2024-02');
+    assert.equal(initials.length, 29);
+    assert.deepEqual(initials.slice(0, 5), ['J', 'V', 'S', 'D', 'L']);
+  });
+
+  await test('january 2026 starts on Thursday', () => {
+    const initials = weekdayInitialsForMonth('2026-01');
+    assert.equal(initials.length, 31);
+    assert.equal(initials[0], 'J');
+  });
+
+  await test('malformed month key returns empty array', () => {
+    assert.deepEqual(weekdayInitialsForMonth('garbage'), []);
+    assert.deepEqual(weekdayInitialsForMonth('2026-13'), []);
   });
 
   console.log('');

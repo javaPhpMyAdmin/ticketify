@@ -343,6 +343,7 @@ function ChartsBody() {
 
       <InsightHeroCard
         monthLabel={monthKeyToLabel(monthKey)}
+        monthKey={monthKey}
         total={overview.currentTotal}
         deltaPct={overview.changePct}
         previousMonthLabel={previousMonthLabel}

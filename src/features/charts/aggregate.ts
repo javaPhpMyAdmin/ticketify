@@ -372,6 +372,41 @@ export interface ClampedDailySeries {
   overflowDays: DailySpendPoint[];
 }
 
+// Single-letter Spanish initial for each JavaScript weekday index
+// (0 = Sunday .. 6 = Saturday). Matches the product decision that
+// Miércoles shares `M` with Martes (see WEEKDAY_LABELS).
+const WEEKDAY_INITIAL_BY_JS_DAY: readonly string[] = [
+  'D', // 0 Sunday
+  'L', // 1 Monday
+  'M', // 2 Tuesday
+  'M', // 3 Wednesday
+  'J', // 4 Thursday
+  'V', // 5 Friday
+  'S', // 6 Saturday
+];
+
+/**
+ * One weekday initial per day of `monthKey` (1..days-in-month), indexed by
+ * calendar position: `result[day - 1]` is the initial under the day number
+ * in the hero chart's manual x-axis (e.g. August 2026 starts on Saturday
+ * → `['S', 'D', 'L', ...]`). Lets the user correlate the curve's bumps
+ * with real calendar days at a glance.
+ *
+ * Deterministic: built from the explicit `YYYY-MM` month; a malformed key
+ * returns an empty array.
+ */
+export function weekdayInitialsForMonth(monthKey: string): string[] {
+  const [year, month] = monthKey.split('-').map(Number);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return [];
+  }
+  const daysInMonth = new Date(year, month, 0).getDate();
+  return Array.from({ length: daysInMonth }, (_, index) => {
+    const jsDay = new Date(year, month - 1, index + 1).getDay();
+    return WEEKDAY_INITIAL_BY_JS_DAY[jsDay];
+  });
+}
+
 /**
  * Y-axis cap for the hero daily curve. The y-domain is derived from the
  * SECOND-highest spend day (× 1.2) instead of the max, so a single outlier
