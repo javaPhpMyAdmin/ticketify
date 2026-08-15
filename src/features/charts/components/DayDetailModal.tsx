@@ -2,7 +2,7 @@ import { FlatList, Modal, Pressable, StyleSheet, View, type ListRenderItem } fro
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Divider, EmptyState, Icon, Text } from '@/components';
-import { formatCurrency } from '@/lib/format';
+import { formatCurrency, formatCurrencyWhole } from '@/lib/format';
 import { colors, radii, spacing, typography } from '@/theme';
 
 import type { DayItemGroup } from '../aggregate';
@@ -102,7 +102,9 @@ export function DayDetailModal({
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total del día</Text>
             <Text style={styles.totalAmount}>
-              {formatCurrency(displayedTotal, currency)}
+              {/* Whole currency to match the bar the user tapped — the
+                  chart shows "$812", so the modal must not add cents. */}
+              {formatCurrencyWhole(displayedTotal, currency)}
             </Text>
           </View>
           <Divider />
