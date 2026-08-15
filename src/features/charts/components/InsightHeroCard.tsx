@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { CartesianChart, Line } from 'victory-native';
+import { CartesianChart, Bar } from 'victory-native';
 
 import { Icon, Text } from '@/components';
 import { formatCurrency } from '@/lib/format';
@@ -22,12 +22,12 @@ export interface InsightHeroCardProps {
   previousMonthLabel?: string | null;
   /**
    * One point per day of the selected month (1..days-in-month, zero-filled
-   * by `aggregateDailySpend`) — the white line chart's x-axis.
+   * by `aggregateDailySpend`) — the hero bars' x-axis.
    */
   dailyData: DailySpendPoint[];
   /** Currency code used for the total and chip. */
   currency?: string;
-  /** Pixel height of the line chart canvas. */
+  /** Pixel height of the chart canvas. */
   chartHeight?: number;
 }
 
@@ -35,14 +35,17 @@ export interface InsightHeroCardProps {
  * Dark hero card for the Pro trends screen.
  *
  * Shows "Gastado este mes", the selected-month total, a white victory-native
- * line chart of the daily spend curve (30/31 daily points for the selected
- * month, day-of-month on the x-axis), and a previous-month delta chip. The
- * chip is hidden when there is no previous-month base (`deltaPct === null`),
- * matching the spec edge case for a missing comparison.
+ * bar chart of the daily spend (30/31 daily bars for the selected month,
+ * day-of-month on the x-axis), and a previous-month delta chip. The chip is
+ * hidden when there is no previous-month base (`deltaPct === null`), matching
+ * the spec edge case for a missing comparison.
  *
- * The line chart is intentionally minimal: no grid, no tooltip — the only
- * axis is the numeric day-of-month x-axis. It exists to give a quick visual
- * trend; detail is available on the Pro charts screen.
+ * The chart is intentionally minimal: no grid, no tooltip — the only axis is
+ * the numeric day-of-month x-axis. Each day is its own bar so the height
+ * under a day label is exactly that day's spend (sqrt-scaled); a connecting
+ * line proved misleading because a spike's descending slope made its
+ * neighbor read as taller than it was. Detail is available on the Pro charts
+ * screen.
  */
 export function InsightHeroCard({
   monthLabel,
@@ -130,19 +133,18 @@ export function InsightHeroCard({
             domain={{ x: xDomain, y: yDomain }}
             domainPadding={{ left: spacing.sm, right: spacing.sm, top: spacing.sm }}
           >
-            {({ points }) => (
-              <Line
+            {({ points, chartBounds }) => (
+              <Bar
                 points={points.total}
+                chartBounds={chartBounds}
                 color={colors.heroLine}
-                strokeWidth={2.5}
-                // Smooth wavy curve like the product mockups. The sqrt
-                // scale (see `buildVisibleDailySeries`) keeps small days
-                // visible AND flattens the spikes, so the monotone spline
-                // no longer inflates a neighbor of a spike (day 14 used
-                // to look tall because day 13 peaked at 83% of a linear
-                // axis; in sqrt space day 13 is ~49% so its fall is
-                // gentle and day 14 sits near its own real value).
-                curveType="monotoneX"
+                // Each day is its own bar so the height under a day label
+                // is EXACTLY that day's scaled spend. A connecting line
+                // made day 14 read as tall (it sat on the descending slope
+                // from the day-13 spike) and day 10 as a valley, even
+                // though $560 and $812 are near-equal in sqrt space.
+                roundedCorners={{ topLeft: 3, topRight: 3 }}
+                innerPadding={0.2}
                 animate={
                   hasMounted ? undefined : { type: 'timing', duration: 600 }
                 }
@@ -213,7 +215,7 @@ const styles = StyleSheet.create({
   chart: {
     width: '100%',
   },
-  // Day-number row under the curve. Horizontal padding matches the
+  // Day-number row under the bars. Horizontal padding matches the
   // chart's domainPadding (spacing.sm) so the first/last tick line up
   // with the plot edges; the remaining ticks spread evenly between them.
   dayAxis: {
