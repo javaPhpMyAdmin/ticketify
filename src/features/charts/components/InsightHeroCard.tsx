@@ -48,7 +48,7 @@ export function InsightHeroCard({
   previousMonthLabel,
   dailyData,
   currency = 'UYU',
-  chartHeight = 80,
+  chartHeight = 120,
 }: InsightHeroCardProps) {
   const hasChange = deltaPct !== null;
   const isUp = hasChange && deltaPct >= 0;
@@ -67,6 +67,17 @@ export function InsightHeroCard({
     0,
   );
   const yDomain: [number, number] = [0, maxTotal * 1.2 || 1];
+  // Explicit day-of-month domain: without it victory-native infers a
+  // continuous range, shifting where each day lands. With [1, daysInMonth]
+  // the curve maps day N to the same spot regardless of the month length.
+  const daysInMonth = dailyData.length || 1;
+  const xDomain: [number, number] = [1, daysInMonth];
+  // Day labels rendered manually below the chart — victory-native's own
+  // axis labels proved unreliable here (they didn't render on device), so
+  // we draw the numbers ourselves. EVERY day of the month is labeled
+  // (1..31), spreading evenly across the row; the first and last tick
+  // match the chart's domainPadding (spacing.sm).
+  const dayTicks = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
   return (
     <View style={styles.card}>
@@ -108,21 +119,18 @@ export function InsightHeroCard({
             data={dailyData}
             xKey="day"
             yKeys={['total']}
-            domain={{ y: yDomain }}
+            domain={{ x: xDomain, y: yDomain }}
             domainPadding={{ left: spacing.sm, right: spacing.sm, top: spacing.sm }}
-            xAxis={{
-              lineColor: colors.outlineVariant,
-              labelColor: colors.heroText,
-              tickCount: 7,
-              formatXLabel: (value) => String(value),
-            }}
           >
             {({ points }) => (
               <Line
                 points={points.total}
                 color={colors.heroLine}
                 strokeWidth={2.5}
-                curveType="linear"
+                // Monotone interpolation: a smooth S-curve between days
+                // without the overshoot spikes that "natural" splines
+                // invent around zeros.
+                curveType="monotoneX"
                 animate={
                   hasMounted ? undefined : { type: 'timing', duration: 600 }
                 }
@@ -135,6 +143,15 @@ export function InsightHeroCard({
           </View>
         )}
       </View>
+      {hasData ? (
+        <View style={styles.dayAxis}>
+          {dayTicks.map((day) => (
+            <Text key={day} style={styles.dayTick}>
+              {day}
+            </Text>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -180,6 +197,22 @@ const styles = StyleSheet.create({
   },
   chart: {
     width: '100%',
+  },
+  // Day-number row under the curve. Horizontal padding matches the
+  // chart's domainPadding (spacing.sm) so the first/last tick line up
+  // with the plot edges; the remaining ticks spread evenly between them.
+  dayAxis: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.sm,
+    marginTop: -spacing.xs,
+  },
+  dayTick: {
+    fontSize: 9,
+    color: colors.heroText,
+    opacity: 0.6,
+    // Keep the baseline of two-digit and one-digit labels aligned.
+    lineHeight: 12,
   },
   emptyChart: {
     flex: 1,
