@@ -21,6 +21,12 @@
  *     are compared (deterministic with fixed fixtures; the upcoming month
  *     selector can compare any two consecutive months).
  *
+ * Identity normalization (package size is PRESERVED — only the same
+ * presentation is comparable):
+ *   - "Leche 1L" vs "Leche 2L" are different identities → no false alert,
+ *   - "Leche 1L" vs "Leche 1 L" are the same identity → alert fires on a
+ *     real price change.
+ *
  * Deterministic: no clock, no Intl, fixed fixture inputs — the only call
  * into "now" is the defaulted parameter, and every test passes `nowMonth`.
  *
@@ -151,6 +157,53 @@ async function run() {
       receipt('r2', '2026-08-06', item('Aceite de girasol 1L', 1000)),
     ]);
     assert.equal(alerts.length, 0);
+  });
+
+  console.log('\n[tests] identity normalization (package size preserved)\n');
+
+  await test('different package sizes are different identities → no false alert', () => {
+    // "Leche 1L" vs "Leche 2L" are different products — comparing their
+    // average unit price would be a FALSE alert. No alert may be emitted.
+    const alerts = compute([
+      receipt('r1', '2026-07-03', item('Leche 1L', 1000, 'lacteos')),
+      receipt('r2', '2026-08-06', item('Leche 2L', 1800, 'lacteos')),
+    ]);
+    assert.equal(alerts.length, 0);
+  });
+
+  await test('same size, different formatting → same identity → alert fires', () => {
+    // "Leche 1L" and "Leche 1 L" are the same presentation, so a real
+    // price change between months must still produce an alert.
+    const alerts = compute([
+      receipt('r1', '2026-07-03', item('Leche 1L', 1000, 'lacteos')),
+      receipt('r2', '2026-08-06', item('Leche 1 L', 1200, 'lacteos')),
+    ]);
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].currentPrice, 1200);
+    assert.equal(alerts[0].previousPrice, 1000);
+    assert.equal(alerts[0].changePct, 20);
+  });
+
+  await test('comma decimals (es-UY norm) collapse with spaced unit → same identity', () => {
+    // "1,5 L" vs "1,5L" are the same size — the es-UY decimal comma must
+    // not split the identity.
+    const alerts = compute([
+      receipt('r1', '2026-07-03', item('Detergente 1,5L', 900, 'limpieza')),
+      receipt('r2', '2026-08-06', item('Detergente 1,5 L', 990, 'limpieza')),
+    ]);
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].changePct, 10);
+  });
+
+  await test('trailing quantity is still stripped from the identity', () => {
+    // "Yerba x2" → "yerba": buying two packs is not a new product, so the
+    // quantity suffix must not split the identity.
+    const alerts = compute([
+      receipt('r1', '2026-07-03', item('Yerba x2', 2500, 'alimentos')),
+      receipt('r2', '2026-08-06', item('Yerba', 2750, 'alimentos')),
+    ]);
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].changePct, 10);
   });
 
   console.log('\n[tests] participation rules\n');

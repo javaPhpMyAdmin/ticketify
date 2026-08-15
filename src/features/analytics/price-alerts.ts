@@ -1,10 +1,34 @@
 import {
   currentMonthKey,
   getMonthKey,
-  normalizeItemName,
   previousMonthKey,
   type ReceiptSpendRecord,
 } from '@/features/home/hooks/useHomeFeed';
+
+/**
+ * Identity normalization for price alerts. Same pipeline as
+ * `normalizeItemName` (accents folded, lowercase, whitespace collapsed,
+ * trailing "×N" quantity stripped — "Yerba x2" → "yerba") EXCEPT the
+ * package-size suffix is PRESERVED: "Leche 1L" and "Leche 2L" are
+ * different products, and comparing their average unit price would
+ * produce a FALSE alert. Formatting differences on the SAME size
+ * ("Leche 1L" vs "Leche 1 L") still collapse into one identity, so a
+ * real price change on the same presentation still fires.
+ */
+function normalizePriceIdentity(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .normalize('NFC')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\sx\d+$/g, '')
+    // Collapse the space between a number and its unit ("1 L" → "1L",
+    // "500 g" → "500g", "1,5 L" → "1,5L" — comma decimals are the es-UY
+    // norm) so equivalent size spellings share one identity.
+    .replace(/(\d(?:[.,]\d+)?)\s+([a-z]+)/g, '$1$2');
+}
 
 /**
  * Best source receipt for an (identity, month) tuple under the S2
@@ -54,7 +78,9 @@ export interface PriceAlert {
 const THRESHOLD = 0.05; // 5% — the demo shows one alert, one miss.
 /**
  * Pure price-alert computation (data-access spec). Groups receipts' line
- * items by normalized identity, averages the unit price per month, and
+ * items by normalized identity (package size preserved — "Leche 1L" and
+ * "Leche 2L" are different products, so only the same presentation is
+ * compared), averages the unit price per month, and
  * compares the "current" month against the one before it. Only items with
  * an explicit `unit_price` participate — without it there is no comparable
  * price. A change counts as an alert only when it is strictly ABOVE the
@@ -93,7 +119,9 @@ export function computePriceAlerts(
     const receiptId = receipt.id ?? '';
     for (const item of receipt.items ?? []) {
       if (item.unit_price === undefined) continue;
-      const id = normalizeItemName(item.name);
+      // Identity keeps the package size so different presentations of the
+      // same product never cross-compare; display metadata stays raw.
+      const id = normalizePriceIdentity(item.name);
       const perMonth = byIdentity.get(id) ?? new Map();
       const acc = perMonth.get(month) ?? { total: 0, count: 0 };
       acc.total += item.unit_price;
