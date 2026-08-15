@@ -1047,27 +1047,27 @@ async function run() {
 
   console.log('\n[tests] buildVisibleDailySeries\n');
 
-  await test('sqrt scale: small days keep visible height next to outliers', () => {
+  await test('cbrt scale: small days keep visible wave next to outliers', () => {
     const { points, yMax } = buildVisibleDailySeries([
       { day: 1, total: 20289.51 },
       { day: 2, total: 5862 },
       { day: 3, total: 812.24 },
       { day: 4, total: 560 },
     ]);
-    const sqrt = (n) => Math.sqrt(n);
-    const maxSqrt = sqrt(20289.51);
-    assert.equal(yMax, maxSqrt * 1.1);
-    // Heights (scaled) — the point of the transform: $560 reaches ~17% of
-    // the plot (560/20289 = 2.8% raw would be invisible).
-    assert.equal(points[0].total, maxSqrt);
-    assert.equal(points[3].total, sqrt(560));
-    assert.ok(points[3].total / yMax > 0.15, 'small day occupies >15% height');
+    const cbrt = (n) => Math.cbrt(n);
+    const maxCbrt = cbrt(20289.51);
+    assert.equal(yMax, maxCbrt * 1.1);
+    // Heights (scaled) — the point of the transform: $560 reaches ~30% of
+    // the plot (560/20289 = 2.8% raw and ~15% sqrt would be invisible).
+    assert.equal(points[0].total, maxCbrt);
+    assert.equal(points[3].total, cbrt(560));
+    assert.ok(points[3].total / yMax > 0.25, 'small day occupies >25% height');
     assert.ok(
       points[2].total / yMax < points[1].total / yMax,
       'monotonic: 812 < 5862 in scaled space',
     );
-    // Outlier is compressed: 20289 vs 5862 is 3.46x raw but ~1.86x scaled.
-    assert.ok(points[0].total / points[1].total < 2);
+    // Outlier is compressed: 20289 vs 5862 is 3.46x raw but ~1.5x scaled.
+    assert.ok(points[0].total / points[1].total < 1.7);
   });
 
   await test('zero days stay zero, negative never goes below zero', () => {
@@ -1078,7 +1078,7 @@ async function run() {
     ]);
     assert.equal(points[0].total, 0);
     assert.equal(points[1].total, 0);
-    assert.equal(points[2].total, 10);
+    assert.equal(points[2].total, Math.cbrt(100));
   });
 
   await test('all-zero series: yMax falls back to 1', () => {
@@ -1093,13 +1093,13 @@ async function run() {
     ]);
   });
 
-  await test('real august shape: every spend day gets visible height', () => {
+  await test('real august shape: every spend day gets visible wave', () => {
     const points = [572.27, 762.77, 20289.51, 4820.72, 3367.32, 1973.37, 1276.71, 0, 0, 560.45, 526.42, 381.58, 5862, 812.24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     const data = points.map((total, index) => ({ day: index + 1, total }));
     const { points: out, yMax } = buildVisibleDailySeries(data);
-    assert.equal(out[2].total, Math.sqrt(20289.51), 'day 3 highest');
-    assert.ok(out[9].total / yMax > 0.15, 'day 10 ($560) visible');
-    assert.ok(out[10].total / yMax > 0.14, 'day 11 ($526) visible');
+    assert.equal(out[2].total, Math.cbrt(20289.51), 'day 3 highest');
+    assert.ok(out[9].total / yMax > 0.25, 'day 10 ($560) clear wave');
+    assert.ok(out[10].total / yMax > 0.25, 'day 11 ($526) clear wave');
     assert.ok(out[12].total / yMax > out[13].total / yMax, 'day 13 taller than day 14');
     assert.equal(out[14].total, 0, 'day 15 stays zero');
     assert.equal(out[15].total, 0, 'day 16 stays zero');
