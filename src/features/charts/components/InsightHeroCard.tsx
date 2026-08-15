@@ -135,12 +135,14 @@ export function InsightHeroCard({
                 points={points.total}
                 color={colors.heroLine}
                 strokeWidth={2.5}
-                // Straight lines between days: the height under each day
-                // label is exactly that day's scaled total. Smooth
-                // splines (monotoneX/natural) invent heights between
-                // points — they inflated day 14 by interpolating the
-                // day-13 spike and made zero days look elevated.
-                curveType="linear"
+                // Smooth wavy curve like the product mockups. The sqrt
+                // scale (see `buildVisibleDailySeries`) keeps small days
+                // visible AND flattens the spikes, so the monotone spline
+                // no longer inflates a neighbor of a spike (day 14 used
+                // to look tall because day 13 peaked at 83% of a linear
+                // axis; in sqrt space day 13 is ~49% so its fall is
+                // gentle and day 14 sits near its own real value).
+                curveType="monotoneX"
                 animate={
                   hasMounted ? undefined : { type: 'timing', duration: 600 }
                 }
