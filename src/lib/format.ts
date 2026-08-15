@@ -24,6 +24,18 @@ export function formatCurrency(value: number, currency: string = 'UYU'): string 
   return `${value < 0 ? '-' : ''}${symbol}${withSeparators}.${decPart}`;
 }
 
+/**
+ * Currency without the decimal fraction — "$812.24" renders as "$812".
+ * Used by the capsule chart amounts and the day-detail total, where the
+ * cents add noise to an already long label (UYU has no cents in practice).
+ */
+export function formatCurrencyWhole(value: number, currency: string = 'UYU'): string {
+  const symbol = CURRENCY_SYMBOLS[currency.toUpperCase()] ?? `${currency} `;
+  const rounded = Math.abs(value).toFixed(0);
+  const withSeparators = rounded.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${value < 0 ? '-' : ''}${symbol}${withSeparators}`;
+}
+
 /** Spanish short month names (lowercase, the standard for `es`). */
 export const MONTHS_SHORT_ES = [
   'ene', 'feb', 'mar', 'abr', 'may', 'jun',

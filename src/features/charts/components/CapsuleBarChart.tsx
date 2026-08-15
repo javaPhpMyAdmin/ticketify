@@ -1,7 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { Pressable, Text } from '@/components';
-import { formatCurrency } from '@/lib/format';
+import { formatCurrencyWhole } from '@/lib/format';
 import { colors, radii, spacing, typography } from '@/theme';
 
 export interface CapsuleBarChartItem {
@@ -36,15 +36,25 @@ export interface CapsuleBarChartProps {
 const BAR_MUTED = '#D1D5DB';
 
 /**
+ * Vertical space above the tallest bar reserved for the amount label: two
+ * lines of `labelSm` (36px) plus the column gap, so a wrapped "$12,345"
+ * never clips or shifts the bars. Amounts pack at the bottom of this space
+ * (just above their bar), exactly like the reference mockup.
+ */
+const AMOUNT_SPACE = 42;
+
+/**
  * Generic capsule bar chart ("This week / last 6 months / by year" lens on
  * the Pro charts screen).
  *
- * Each item renders as a rounded vertical bar in muted gray; the item
- * marked `highlight` (today, the current month, or the current year) is
- * drawn in the rose `colors.secondary` accent so the active bucket is
- * scannable at a glance. Amounts and labels are rendered above/below the
- * bars. When every value is $0 the bars keep a minimal gray height so the
- * layout does not collapse, but nothing is highlighted.
+ * Layout mirrors the reference mockup: a FIXED day axis at the bottom —
+ * the labels row is a separate row that never moves — and above it a fixed
+ * bars area where only the capsule height varies with the amount. Amounts
+ * float above their bar; the highlighted bucket (today, the current month,
+ * or the current year) is drawn in the rose `colors.secondary` accent so
+ * the active bucket is scannable at a glance. When every value is $0 the
+ * bars keep a minimal gray height so the layout does not collapse, but
+ * nothing is highlighted.
  *
  * Built with React Native Views instead of `victory-native` Bar because the
  * design calls for rounded capsule bars with per-bar labels — styling that
@@ -61,25 +71,56 @@ export function CapsuleBarChart({
 
   return (
     <View style={styles.container}>
-      {items.map((item, index) => {
-        const fillColor = item.highlight ? colors.secondary : BAR_MUTED;
-        const fillHeight = hasSpend
-          ? Math.max((item.value / maxValue) * barHeight, 4)
-          : 4;
+      <View style={[styles.barsRow, { height: barHeight + AMOUNT_SPACE }]}>
+        {items.map((item, index) => {
+          const fillColor = item.highlight ? colors.secondary : BAR_MUTED;
+          const fillHeight = hasSpend
+            ? Math.max((item.value / maxValue) * barHeight, 4)
+            : 4;
+          const amountLabel = formatCurrencyWhole(item.value, currency);
+          const content = (
+            <>
+              <Text
+                style={[styles.amount, item.highlight && styles.amountHighlight]}
+              >
+                {amountLabel}
+              </Text>
+              <View
+                style={[
+                  styles.bar,
+                  { height: fillHeight, backgroundColor: fillColor },
+                ]}
+              />
+            </>
+          );
 
-        const column = (
-          <View style={styles.column}>
-            <Text
-              style={[styles.amount, item.highlight && styles.amountHighlight]}
+          if (!onPressItem) {
+            return (
+              <View key={`${item.label}-${index}`} style={styles.columnWrap}>
+                {content}
+              </View>
+            );
+          }
+          return (
+            <Pressable
+              key={`${item.label}-${index}`}
+              onPress={() => onPressItem(item, index)}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.label}: ${amountLabel}`}
+              style={styles.columnWrap}
             >
-              {formatCurrency(item.value, currency)}
-            </Text>
-            <View
-              style={[
-                styles.bar,
-                { height: fillHeight, backgroundColor: fillColor },
-              ]}
-            />
+              {content}
+            </Pressable>
+          );
+        })}
+      </View>
+      {/* Fixed day axis: a separate row so the labels sit on one baseline
+          and never shift with the bar heights. `labelWrap` is a content-
+          sized cell — it must NOT reuse `columnWrap`, whose `height: '100%'`
+          collapses to zero inside this height-less row. */}
+      <View style={styles.labelsRow}>
+        {items.map((item, index) => (
+          <View key={`${item.label}-${index}`} style={styles.labelWrap}>
             <Text
               style={[
                 styles.label,
@@ -90,45 +131,38 @@ export function CapsuleBarChart({
               {item.label}
             </Text>
           </View>
-        );
-
-        if (!onPressItem) {
-          return (
-            <View key={`${item.label}-${index}`} style={styles.columnWrap}>
-              {column}
-            </View>
-          );
-        }
-        return (
-          <Pressable
-            key={`${item.label}-${index}`}
-            onPress={() => onPressItem(item, index)}
-            accessibilityRole="button"
-            accessibilityLabel={`${item.label}: ${formatCurrency(item.value, currency)}`}
-            style={styles.columnWrap}
-          >
-            {column}
-          </Pressable>
-        );
-      })}
+        ))}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
     width: '100%',
+  },
+  barsRow: {
+    flexDirection: 'row',
+  },
+  labelsRow: {
+    flexDirection: 'row',
+    marginTop: spacing.xs,
   },
   columnWrap: {
     flex: 1,
-  },
-  column: {
-    flex: 1,
+    height: '100%',
+    // Content packs at the BOTTOM of the fixed-height column: the bar
+    // grows upward from the day axis (never hangs from the top), and the
+    // amount floats just above its bar like the reference mockup.
+    justifyContent: 'flex-end',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  // Day-axis cell: centered under its bar, content-sized (no `height:
+  // '100%'` — that would collapse inside the height-less labels row).
+  labelWrap: {
+    flex: 1,
+    alignItems: 'center',
   },
   amount: {
     ...typography.labelSm,
