@@ -7,6 +7,7 @@ import { formatCurrency } from '@/lib/format';
 import { colors, radii, spacing, typography } from '@/theme';
 
 import type { DailySpendPoint } from '../aggregate';
+import { buildClampedDailySeries } from '../aggregate';
 
 export interface InsightHeroCardProps {
   /** Display label for the selected month, e.g. "Agosto 2026". */
@@ -62,11 +63,13 @@ export function InsightHeroCard({
   }, []);
 
   const hasData = dailyData.some((point) => point.total > 0);
-  const maxTotal = dailyData.reduce(
-    (max, point) => Math.max(max, point.total),
-    0,
+  // Y-axis cap from the second-highest spend day (see
+  // `buildClampedDailySeries`): a single outlier can't flatten the rest
+  // of the month; oversized days are clamped to the top and listed below.
+  const { points: clampedData, yCap, overflowDays } = buildClampedDailySeries(
+    dailyData,
   );
-  const yDomain: [number, number] = [0, maxTotal * 1.2 || 1];
+  const yDomain: [number, number] = [0, yCap];
   // Explicit day-of-month domain: without it victory-native infers a
   // continuous range, shifting where each day lands. With [1, daysInMonth]
   // the curve maps day N to the same spot regardless of the month length.
@@ -116,7 +119,7 @@ export function InsightHeroCard({
       <View style={[styles.chart, { height: chartHeight }]}>
         {hasData ? (
           <CartesianChart
-            data={dailyData}
+            data={clampedData}
             xKey="day"
             yKeys={['total']}
             domain={{ x: xDomain, y: yDomain }}
@@ -151,6 +154,16 @@ export function InsightHeroCard({
             </Text>
           ))}
         </View>
+      ) : null}
+      {overflowDays.length > 0 ? (
+        <Text style={styles.overflowNote}>
+          {overflowDays
+            .map(
+              ({ day, total }) =>
+                `El día ${day} (${formatCurrency(total, currency)}) excede la escala`,
+            )
+            .join(' · ')}
+        </Text>
       ) : null}
     </View>
   );
@@ -213,6 +226,14 @@ const styles = StyleSheet.create({
     opacity: 0.6,
     // Keep the baseline of two-digit and one-digit labels aligned.
     lineHeight: 12,
+  },
+  overflowNote: {
+    ...typography.labelSm,
+    color: colors.heroText,
+    opacity: 0.7,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: -spacing.xs,
   },
   emptyChart: {
     flex: 1,

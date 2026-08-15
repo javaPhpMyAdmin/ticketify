@@ -151,6 +151,7 @@ async function run() {
     aggregateYearlySpend,
     getTopCategory,
     pickMaxSpendIndex,
+    buildClampedDailySeries,
   } = chartsMod;
   const { aggregateCategoriesByMonth: directAggregate } = homeFeedMod;
 
@@ -1041,6 +1042,94 @@ async function run() {
     // Shape mirrors `aggregateWeeklySpend` output amounts (Sunday → Monday
     // ordering is irrelevant to the helper: it only compares amounts).
     assert.equal(pickMaxSpendIndex([5, 100, 3, 2, 1, 0, 50]), 1);
+  });
+
+  console.log('\n[tests] buildClampedDailySeries\n');
+
+  await test('single outlier is capped at the runner-up × 1.2 and listed', () => {
+    const { points, yCap, overflowDays } = buildClampedDailySeries([
+      { day: 1, total: 20289.51 },
+      { day: 2, total: 5862 },
+      { day: 3, total: 812.24 },
+    ]);
+    assert.equal(yCap, 5862 * 1.2);
+    assert.equal(points[0].total, yCap, 'outlier pinned to the plot top');
+    assert.equal(points[1].total, 5862, 'runner-up untouched');
+    assert.equal(points[2].total, 812.24, 'smaller day untouched');
+    assert.deepEqual(overflowDays, [{ day: 1, total: 20289.51 }], 'real total kept for the note');
+  });
+
+  await test('real august shape: only day 3 overflows, 15-31 stay zero', () => {
+    const points = [572.27, 762.77, 20289.51, 4820.72, 3367.32, 1973.37, 1276.71, 0, 0, 560.45, 526.42, 381.58, 5862, 812.24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    const data = points.map((total, index) => ({ day: index + 1, total }));
+    const { points: out, yCap, overflowDays } = buildClampedDailySeries(data);
+    assert.equal(yCap, 5862 * 1.2);
+    assert.equal(out[2].total, yCap, 'day 3 clamped');
+    assert.deepEqual(overflowDays.map((p) => p.day), [3]);
+    assert.equal(out[14].total, 0, 'day 15 stays zero');
+    assert.equal(out[15].total, 0, 'day 16 stays zero');
+    assert.equal(out[12].total, 5862, 'day 13 untouched');
+    assert.equal(out[13].total, 812.24, 'day 14 untouched');
+  });
+
+  await test('near-tie high days: cap matches the runner-up, no overflow note (documented limit)', () => {
+    const { points, yCap, overflowDays } = buildClampedDailySeries([
+      { day: 1, total: 1000 },
+      { day: 2, total: 999 },
+      { day: 3, total: 50 },
+      { day: 4, total: 40 },
+    ]);
+    assert.equal(yCap, 999 * 1.2);
+    assert.deepEqual(overflowDays, [], 'no single outlier to call out');
+    assert.equal(points[0].total, 1000, 'max day within cap stays real');
+  });
+
+  await test('single spend day caps at itself × 1.2 (nothing to flatten)', () => {
+    const { points, yCap, overflowDays } = buildClampedDailySeries([
+      { day: 1, total: 500 },
+      { day: 2, total: 0 },
+    ]);
+    assert.equal(yCap, 500 * 1.2);
+    assert.deepEqual(overflowDays, []);
+    assert.equal(points[0].total, 500);
+  });
+
+  await test('all days equal: flat series, no overflow', () => {
+    const { points, yCap, overflowDays } = buildClampedDailySeries([
+      { day: 1, total: 300 },
+      { day: 2, total: 300 },
+      { day: 3, total: 300 },
+    ]);
+    assert.equal(yCap, 300 * 1.2);
+    assert.deepEqual(overflowDays, []);
+    assert.deepEqual(points, [
+      { day: 1, total: 300 },
+      { day: 2, total: 300 },
+      { day: 3, total: 300 },
+    ]);
+  });
+
+  await test('all-zero series: yCap falls back to 1, no overflow', () => {
+    const { points, yCap, overflowDays } = buildClampedDailySeries([
+      { day: 1, total: 0 },
+      { day: 2, total: 0 },
+    ]);
+    assert.equal(yCap, 1);
+    assert.deepEqual(overflowDays, []);
+    assert.deepEqual(points, [
+      { day: 1, total: 0 },
+      { day: 2, total: 0 },
+    ]);
+  });
+
+  await test('boundary: day exactly at yCap is neither clamped nor listed', () => {
+    const { points, yCap, overflowDays } = buildClampedDailySeries([
+      { day: 1, total: 120 },
+      { day: 2, total: 100 },
+    ]);
+    assert.equal(yCap, 120);
+    assert.deepEqual(overflowDays, []);
+    assert.equal(points[0].total, 120);
   });
 
   console.log('');

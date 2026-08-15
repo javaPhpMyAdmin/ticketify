@@ -363,6 +363,51 @@ export function aggregateDailySpend(
   }));
 }
 
+export interface ClampedDailySeries {
+  /** Days with totals clamped to `yCap` (oversized days pinned to the plot top). */
+  points: DailySpendPoint[];
+  /** Upper bound for the hero chart's y-domain; always > 0. */
+  yCap: number;
+  /** Days whose REAL total exceeds `yCap` (they were clamped; shown in a note). */
+  overflowDays: DailySpendPoint[];
+}
+
+/**
+ * Y-axis cap for the hero daily curve. The y-domain is derived from the
+ * SECOND-highest spend day (× 1.2) instead of the max, so a single outlier
+ * ticket cannot flatten the rest of the month into an unreadable line at
+ * the bottom. Days above the cap are clamped to the top of the plot and
+ * returned in `overflowDays` so the caller can call them out — the cap
+ * never hides a real spend.
+ *
+ * Deliberate limit: with two close high days and a long tail (e.g. 1000,
+ * 999, then ~50s) the cap matches the runner-up and the tail stays
+ * flattened — there is no overflow note because there is no outlier, just
+ * a skewed distribution. Proving that case would need a percentile-based
+ * cap, which this helper intentionally does not do.
+ *
+ * Deterministic: pure function of `dailyData`; same input → same output.
+ */
+export function buildClampedDailySeries(
+  dailyData: readonly DailySpendPoint[],
+): ClampedDailySeries {
+  const totals = dailyData
+    .map((point) => point.total)
+    .filter((total) => total > 0);
+  const maxTotal = totals.length > 0 ? Math.max(...totals) : 0;
+  const secondMax =
+    totals.length > 1 ? [...totals].sort((a, b) => b - a)[1] : maxTotal;
+  const yCap = secondMax * 1.2 || 1;
+  return {
+    points: dailyData.map((point) => ({
+      ...point,
+      total: Math.min(point.total, yCap),
+    })),
+    yCap,
+    overflowDays: dailyData.filter((point) => point.total > yCap),
+  };
+}
+
 export interface DayItemGroup {
   /** Display name of the product (first-seen casing wins). */
   name: string;

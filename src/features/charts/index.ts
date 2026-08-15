@@ -22,6 +22,7 @@ export {
   getMondayOfWeek,
   getTopCategory,
   pickMaxSpendIndex,
+  buildClampedDailySeries,
 } from './aggregate';
 export type {
   SpendTrendPoint,
@@ -32,6 +33,7 @@ export type {
   DayItemGroup,
   DailySpendPoint,
   YearlySpendPoint,
+  ClampedDailySeries,
 } from './aggregate';
 
 export { CapsuleBarChart } from './components/CapsuleBarChart';
