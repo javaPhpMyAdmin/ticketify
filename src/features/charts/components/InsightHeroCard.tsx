@@ -7,7 +7,7 @@ import { formatCurrency } from '@/lib/format';
 import { colors, radii, spacing, typography } from '@/theme';
 
 import type { DailySpendPoint } from '../aggregate';
-import { buildClampedDailySeries, weekdayInitialsForMonth } from '../aggregate';
+import { buildVisibleDailySeries, weekdayInitialsForMonth } from '../aggregate';
 
 export interface InsightHeroCardProps {
   /** Display label for the selected month, e.g. "Agosto 2026". */
@@ -66,11 +66,12 @@ export function InsightHeroCard({
   }, []);
 
   const hasData = dailyData.some((point) => point.total > 0);
-  // Y-axis cap from the second-highest spend day (see
-  // `buildClampedDailySeries`): a single outlier can't flatten the rest
-  // of the month; oversized days are clamped to the top of the plot.
-  const { points: clampedData, yCap } = buildClampedDailySeries(dailyData);
-  const yDomain: [number, number] = [0, yCap];
+  // Sqrt-scale the daily totals (see `buildVisibleDailySeries`) so small
+  // days stay visible next to outliers; the plot draws straight lines
+  // between days so the height under each label is exactly that day's
+  // value — no smooth interpolation that invents heights on zero days.
+  const { points: scaledData, yMax } = buildVisibleDailySeries(dailyData);
+  const yDomain: [number, number] = [0, yMax];
   // Explicit day-of-month domain: without it victory-native infers a
   // continuous range, shifting where each day lands. With [1, daysInMonth]
   // the curve maps day N to the same spot regardless of the month length.
@@ -123,7 +124,7 @@ export function InsightHeroCard({
       <View style={[styles.chart, { height: chartHeight }]}>
         {hasData ? (
           <CartesianChart
-            data={clampedData}
+            data={scaledData}
             xKey="day"
             yKeys={['total']}
             domain={{ x: xDomain, y: yDomain }}
@@ -134,10 +135,12 @@ export function InsightHeroCard({
                 points={points.total}
                 color={colors.heroLine}
                 strokeWidth={2.5}
-                // Monotone interpolation: a smooth S-curve between days
-                // without the overshoot spikes that "natural" splines
-                // invent around zeros.
-                curveType="monotoneX"
+                // Straight lines between days: the height under each day
+                // label is exactly that day's scaled total. Smooth
+                // splines (monotoneX/natural) invent heights between
+                // points — they inflated day 14 by interpolating the
+                // day-13 spike and made zero days look elevated.
+                curveType="linear"
                 animate={
                   hasMounted ? undefined : { type: 'timing', duration: 600 }
                 }
