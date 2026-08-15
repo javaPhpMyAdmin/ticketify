@@ -364,7 +364,7 @@ export function aggregateDailySpend(
 }
 
 export interface VisibleDailySeries {
-  /** Days with totals sqrt-scaled for the hero plot (monotonic, 0 stays 0). */
+  /** Days with totals cube-root-scaled for the hero plot (monotonic, 0 stays 0). */
   points: DailySpendPoint[];
   /** Upper bound for the hero chart's y-domain; always > 0. */
   yMax: number;
@@ -372,16 +372,16 @@ export interface VisibleDailySeries {
 
 /**
  * Data transform for the hero daily curve. Maps each day's real total
- * through `sqrt` so a single huge day cannot flatten the rest of the
- * month into an unreadable line at the bottom: the scale stays monotonic
- * (more spend → higher point) while compressing outliers (sqrt(20289) ≈
- * 142 vs sqrt(5862) ≈ 77 — ratio 1.9 instead of the raw 3.5), which lets
- * small daily spends ($380–$800) still occupy visible heights.
+ * through the cube root so a single huge day cannot flatten the rest of
+ * the month into an unreadable line at the bottom: the scale stays
+ * monotonic (more spend → higher point) while compressing outliers much
+ * harder than sqrt (cbrt(20289) ≈ 27.3 vs cbrt(5862) ≈ 18 — ratio 1.5
+ * instead of the raw 3.5), which lifts small daily spends ($380–$812)
+ * to ~30% of the plot height — a clearly visible wave instead of a
+ * ~15% bump that read as "no wave at all".
  *
- * The plot is drawn with `curveType="linear"` so the height under each
- * day label is EXACTLY that day's scaled value — no smooth interpolation
- * that invents heights on days without spend (or inflates a neighbor of
- * a spike, e.g. day 14 looking tall because day 13 peaked).
+ * The curve is drawn with per-day scatter dots so each day is anchored
+ * to its real scaled value even where the smooth line slopes.
  *
  * Deterministic: pure function of `dailyData`; same input → same output.
  */
@@ -392,11 +392,11 @@ export function buildVisibleDailySeries(
     .map((point) => point.total)
     .filter((total) => total > 0);
   const maxTotal = totals.length > 0 ? Math.max(...totals) : 0;
-  const yMax = Math.sqrt(maxTotal) * 1.1 || 1;
+  const yMax = Math.cbrt(maxTotal) * 1.1 || 1;
   return {
     points: dailyData.map((point) => ({
       ...point,
-      total: Math.sqrt(Math.max(point.total, 0)),
+      total: Math.cbrt(Math.max(point.total, 0)),
     })),
     yMax,
   };
