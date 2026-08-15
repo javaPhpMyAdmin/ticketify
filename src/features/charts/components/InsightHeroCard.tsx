@@ -7,11 +7,13 @@ import { formatCurrency } from '@/lib/format';
 import { colors, radii, spacing, typography } from '@/theme';
 
 import type { DailySpendPoint } from '../aggregate';
-import { buildClampedDailySeries } from '../aggregate';
+import { buildClampedDailySeries, weekdayInitialsForMonth } from '../aggregate';
 
 export interface InsightHeroCardProps {
   /** Display label for the selected month, e.g. "Agosto 2026". */
   monthLabel: string;
+  /** `YYYY-MM` of the selected month; drives the weekday initials row. */
+  monthKey: string;
   /** Total spent in the selected month. */
   total: number;
   /** Month-over-month percentage change; null hides the delta chip. */
@@ -44,6 +46,7 @@ export interface InsightHeroCardProps {
  */
 export function InsightHeroCard({
   monthLabel,
+  monthKey,
   total,
   deltaPct,
   previousMonthLabel,
@@ -65,10 +68,8 @@ export function InsightHeroCard({
   const hasData = dailyData.some((point) => point.total > 0);
   // Y-axis cap from the second-highest spend day (see
   // `buildClampedDailySeries`): a single outlier can't flatten the rest
-  // of the month; oversized days are clamped to the top and listed below.
-  const { points: clampedData, yCap, overflowDays } = buildClampedDailySeries(
-    dailyData,
-  );
+  // of the month; oversized days are clamped to the top of the plot.
+  const { points: clampedData, yCap } = buildClampedDailySeries(dailyData);
   const yDomain: [number, number] = [0, yCap];
   // Explicit day-of-month domain: without it victory-native infers a
   // continuous range, shifting where each day lands. With [1, daysInMonth]
@@ -79,8 +80,11 @@ export function InsightHeroCard({
   // axis labels proved unreliable here (they didn't render on device), so
   // we draw the numbers ourselves. EVERY day of the month is labeled
   // (1..31), spreading evenly across the row; the first and last tick
-  // match the chart's domainPadding (spacing.sm).
+  // match the chart's domainPadding (spacing.sm). The weekday initial
+  // under each number (L M M J V S D) lets the user correlate curve
+  // bumps with real calendar days.
   const dayTicks = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const weekdayInitials = weekdayInitialsForMonth(monthKey);
 
   return (
     <View style={styles.card}>
@@ -149,21 +153,14 @@ export function InsightHeroCard({
       {hasData ? (
         <View style={styles.dayAxis}>
           {dayTicks.map((day) => (
-            <Text key={day} style={styles.dayTick}>
-              {day}
-            </Text>
+            <View key={day} style={styles.dayTickCol}>
+              <Text style={styles.dayTick}>{day}</Text>
+              <Text style={styles.weekdayTick}>
+                {weekdayInitials[day - 1] ?? ''}
+              </Text>
+            </View>
           ))}
         </View>
-      ) : null}
-      {overflowDays.length > 0 ? (
-        <Text style={styles.overflowNote}>
-          {overflowDays
-            .map(
-              ({ day, total }) =>
-                `El día ${day} (${formatCurrency(total, currency)}) excede la escala`,
-            )
-            .join(' · ')}
-        </Text>
       ) : null}
     </View>
   );
@@ -220,6 +217,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     marginTop: -spacing.xs,
   },
+  dayTickCol: {
+    alignItems: 'center',
+  },
   dayTick: {
     fontSize: 9,
     color: colors.heroText,
@@ -227,13 +227,11 @@ const styles = StyleSheet.create({
     // Keep the baseline of two-digit and one-digit labels aligned.
     lineHeight: 12,
   },
-  overflowNote: {
-    ...typography.labelSm,
+  weekdayTick: {
+    fontSize: 8,
     color: colors.heroText,
-    opacity: 0.7,
-    fontStyle: 'italic',
-    textAlign: 'center',
-    marginTop: -spacing.xs,
+    opacity: 0.4,
+    lineHeight: 10,
   },
   emptyChart: {
     flex: 1,

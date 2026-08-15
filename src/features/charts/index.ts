@@ -23,6 +23,7 @@ export {
   getTopCategory,
   pickMaxSpendIndex,
   buildClampedDailySeries,
+  weekdayInitialsForMonth,
 } from './aggregate';
 export type {
   SpendTrendPoint,
