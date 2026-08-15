@@ -363,13 +363,43 @@ export function aggregateDailySpend(
   }));
 }
 
-export interface ClampedDailySeries {
-  /** Days with totals clamped to `yCap` (oversized days pinned to the plot top). */
+export interface VisibleDailySeries {
+  /** Days with totals sqrt-scaled for the hero plot (monotonic, 0 stays 0). */
   points: DailySpendPoint[];
   /** Upper bound for the hero chart's y-domain; always > 0. */
-  yCap: number;
-  /** Days whose REAL total exceeds `yCap` (they were clamped; shown in a note). */
-  overflowDays: DailySpendPoint[];
+  yMax: number;
+}
+
+/**
+ * Data transform for the hero daily curve. Maps each day's real total
+ * through `sqrt` so a single huge day cannot flatten the rest of the
+ * month into an unreadable line at the bottom: the scale stays monotonic
+ * (more spend → higher point) while compressing outliers (sqrt(20289) ≈
+ * 142 vs sqrt(5862) ≈ 77 — ratio 1.9 instead of the raw 3.5), which lets
+ * small daily spends ($380–$800) still occupy visible heights.
+ *
+ * The plot is drawn with `curveType="linear"` so the height under each
+ * day label is EXACTLY that day's scaled value — no smooth interpolation
+ * that invents heights on days without spend (or inflates a neighbor of
+ * a spike, e.g. day 14 looking tall because day 13 peaked).
+ *
+ * Deterministic: pure function of `dailyData`; same input → same output.
+ */
+export function buildVisibleDailySeries(
+  dailyData: readonly DailySpendPoint[],
+): VisibleDailySeries {
+  const totals = dailyData
+    .map((point) => point.total)
+    .filter((total) => total > 0);
+  const maxTotal = totals.length > 0 ? Math.max(...totals) : 0;
+  const yMax = Math.sqrt(maxTotal) * 1.1 || 1;
+  return {
+    points: dailyData.map((point) => ({
+      ...point,
+      total: Math.sqrt(Math.max(point.total, 0)),
+    })),
+    yMax,
+  };
 }
 
 // Single-letter Spanish initial for each JavaScript weekday index
@@ -405,42 +435,6 @@ export function weekdayInitialsForMonth(monthKey: string): string[] {
     const jsDay = new Date(year, month - 1, index + 1).getDay();
     return WEEKDAY_INITIAL_BY_JS_DAY[jsDay];
   });
-}
-
-/**
- * Y-axis cap for the hero daily curve. The y-domain is derived from the
- * SECOND-highest spend day (× 1.2) instead of the max, so a single outlier
- * ticket cannot flatten the rest of the month into an unreadable line at
- * the bottom. Days above the cap are clamped to the top of the plot and
- * returned in `overflowDays` so the caller can call them out — the cap
- * never hides a real spend.
- *
- * Deliberate limit: with two close high days and a long tail (e.g. 1000,
- * 999, then ~50s) the cap matches the runner-up and the tail stays
- * flattened — there is no overflow note because there is no outlier, just
- * a skewed distribution. Proving that case would need a percentile-based
- * cap, which this helper intentionally does not do.
- *
- * Deterministic: pure function of `dailyData`; same input → same output.
- */
-export function buildClampedDailySeries(
-  dailyData: readonly DailySpendPoint[],
-): ClampedDailySeries {
-  const totals = dailyData
-    .map((point) => point.total)
-    .filter((total) => total > 0);
-  const maxTotal = totals.length > 0 ? Math.max(...totals) : 0;
-  const secondMax =
-    totals.length > 1 ? [...totals].sort((a, b) => b - a)[1] : maxTotal;
-  const yCap = secondMax * 1.2 || 1;
-  return {
-    points: dailyData.map((point) => ({
-      ...point,
-      total: Math.min(point.total, yCap),
-    })),
-    yCap,
-    overflowDays: dailyData.filter((point) => point.total > yCap),
-  };
 }
 
 export interface DayItemGroup {
