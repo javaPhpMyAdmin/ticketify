@@ -115,6 +115,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   metaRow: {
+    // Same transparent requirement as `body`: the themed `View` atom paints
+    // `backgroundColor: theme['background']` by default, which would draw a
+    // white box over the colored card and hide the foreground-colored text.
+    backgroundColor: 'transparent',
     // Keep the percent + item count on one baseline; the card stays one
     // line taller than the old Home-only variant when the count renders.
     flexDirection: 'row',
