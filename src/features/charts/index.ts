@@ -1,7 +1,7 @@
 /**
  * Pro charts feature barrel (pro-subscription spec — REQ-CHART-1..6).
  *
- *   import { TrendChart, CategoryDonut, StoreBars, aggregateSpendTrend } from '@/features/charts';
+ *   import { InsightHeroCard, StoreBars, aggregateDailySpend } from '@/features/charts';
  *
  * The aggregations are pure and re-exported alongside the visual
  * components so a single import covers both the math and the chart.
@@ -15,11 +15,13 @@ export {
   aggregateMonthlyDelta,
   aggregateWeeklySpend,
   aggregateDailyAverage,
+  aggregateDailySpend,
   aggregateDayItems,
   aggregateDayTotal,
   aggregateYearlySpend,
   getMondayOfWeek,
   getTopCategory,
+  pickMaxSpendIndex,
 } from './aggregate';
 export type {
   SpendTrendPoint,
@@ -28,6 +30,7 @@ export type {
   MonthlyDelta,
   WeeklySpendPoint,
   DayItemGroup,
+  DailySpendPoint,
   YearlySpendPoint,
 } from './aggregate';
 
@@ -41,13 +44,7 @@ export { DayDetailModal } from './components/DayDetailModal';
 export type { DayDetailModalProps } from './components/DayDetailModal';
 
 export { InsightHeroCard } from './components/InsightHeroCard';
-export type {
-  InsightHeroCardProps,
-  InsightTrendPoint,
-} from './components/InsightHeroCard';
-
-export { TrendChart } from './components/TrendChart';
-export type { TrendChartProps, TrendPoint } from './components/TrendChart';
+export type { InsightHeroCardProps } from './components/InsightHeroCard';
 
 export { CategoryDonut, CHART_PALETTE } from './components/CategoryDonut';
 export type {

@@ -168,13 +168,14 @@ export function aggregateMonthlyDelta(
 
 /**
  * Spanish weekday labels used by the weekly bar chart. The initial is a
- * single disambiguating letter (`X` for Miércoles so it does not clash
- * with Martes).
+ * single letter per day. Deliberate choice: Miércoles uses `M` (matching
+ * Martes) per explicit product request — the duplicate is accepted for
+ * readability over the traditional disambiguating `X`.
  */
 const WEEKDAY_LABELS: readonly { day: string; initial: string }[] = [
   { day: 'Lun', initial: 'L' },
   { day: 'Mar', initial: 'M' },
-  { day: 'Mié', initial: 'X' },
+  { day: 'Mié', initial: 'M' },
   { day: 'Jue', initial: 'J' },
   { day: 'Vie', initial: 'V' },
   { day: 'Sáb', initial: 'S' },
@@ -327,6 +328,41 @@ export function aggregateDailyAverage(
   return daysInMonth > 0 ? total / daysInMonth : 0;
 }
 
+export type DailySpendPoint = {
+  /** Day of the month (1..days-in-month). */
+  day: number;
+  /** Sum of `receipt.total` for receipts landing on that day (0 when none). */
+  total: number;
+};
+
+/**
+ * Per-day spend curve for a single month: one entry for EVERY day of the
+ * month (1..days-in-month), zero-filled — days without receipts render as
+ * `{ day, total: 0 }` (NOT omitted) so the hero line chart keeps a
+ * continuous x-axis. Sums `receipt.total` per `purchase_date` day and
+ * INCLUDES servicios: this is the full daily spend picture, and the hero
+ * header total (which also includes them) is the sum of these days.
+ * Deterministic: the month is an explicit `YYYY-MM` and the loop never
+ * depends on record insertion order.
+ */
+export function aggregateDailySpend(
+  records: ReceiptSpendRecord[],
+  monthKey: string,
+): DailySpendPoint[] {
+  const [year, month] = monthKey.split('-').map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const totalsByDay = new Map<number, number>();
+  for (const receipt of records) {
+    if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
+    const day = Number(receipt.purchase_date.slice(8, 10));
+    totalsByDay.set(day, (totalsByDay.get(day) ?? 0) + (receipt.total ?? 0));
+  }
+  return Array.from({ length: daysInMonth }, (_, index) => ({
+    day: index + 1,
+    total: totalsByDay.get(index + 1) ?? 0,
+  }));
+}
+
 export interface DayItemGroup {
   /** Display name of the product (first-seen casing wins). */
   name: string;
@@ -417,4 +453,24 @@ export function getTopCategory(
 ): HomeCategory | null {
   const categories = aggregateCategoriesByMonth(records, monthKey);
   return categories[0] ?? null;
+}
+
+/**
+ * Index of the highest-spend bucket in a chart series, or `-1` when every
+ * value is $0. First maximum wins on ties. Pure and testable — the weekly
+ * bar chart uses it to decide which bar gets the rose highlight (the day
+ * with the most spend, not today), so the highlight rule can be proven
+ * instead of living inline in the component.
+ */
+export function pickMaxSpendIndex(amounts: readonly number[]): number {
+  if (amounts.length === 0) return -1;
+  let max = -1;
+  let maxIndex = -1;
+  for (let i = 0; i < amounts.length; i += 1) {
+    if (amounts[i] > max) {
+      max = amounts[i];
+      maxIndex = i;
+    }
+  }
+  return max > 0 ? maxIndex : -1;
 }

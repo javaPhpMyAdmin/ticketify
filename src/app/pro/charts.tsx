@@ -9,13 +9,16 @@
  *
  * The month selector moves within the months that actually have receipts
  * (`getAvailableMonthKeys`), same pattern as the History tab, and every
- * month-scoped block follows the chosen month — hero, banner, summary
- * cards, and category rows. The weekly chart is store-derived and covers
- * the current week regardless of the selected month; utility bills
+ * month-scoped block follows the chosen month — hero (daily spend curve,
+ * servicios included), banner, summary cards, category rows, and the
+ * per-store bars. The weekly chart is store-derived and covers the
+ * current week regardless of the selected month; utility bills
  * ("servicios") are excluded from the daily bars, the daily average, and
- * the day-detail sheet. Tapping a daily bar opens the day's item detail.
- * The category rows keep the RPC-backed loading/error/empty states; the
- * hero/weekly/summary cards are store-derived and render immediately.
+ * the day-detail sheet. Tapping a daily bar opens the day's item detail;
+ * tapping a store bar drills into `/stores/[name]?month=...`. The
+ * category rows keep the RPC-backed loading/error/empty states; the
+ * hero/weekly/summary/store cards are store-derived and render
+ * immediately.
  *
  * "Volver" closes the route — the screen is always pushed from the
  * analytics charts entry card, so back is the right action.
@@ -44,14 +47,18 @@ import {
   InsightHeroCard,
   CapsuleBarChart,
   DayDetailModal,
+  StoreBars,
   aggregateDailyAverage,
+  aggregateDailySpend,
   aggregateDayItems,
   aggregateDayTotal,
   aggregateSpendTrend,
+  aggregateStoresByMonth,
   aggregateWeeklySpend,
   aggregateYearlySpend,
   getMondayOfWeek,
   getTopCategory,
+  pickMaxSpendIndex,
 } from '@/features/charts';
 import { getExpenseCategory } from '@/features/home/categories';
 import {
@@ -190,6 +197,18 @@ function ChartsBody() {
     () => aggregateSpendTrend(list, lastNMonths(monthKey, 6)),
     [list, monthKey],
   );
+  // Daily spend curve for the hero line chart: one point per day of the
+  // selected month, zero-filled, `receipt.total` (servicios included —
+  // the hero header total includes them too).
+  const dailySpend = useMemo(
+    () => aggregateDailySpend(list, monthKey),
+    [list, monthKey],
+  );
+  // Per-store totals for the "Por tienda" horizontal bars (month-scoped).
+  const stores = useMemo(
+    () => aggregateStoresByMonth(list, monthKey),
+    [list, monthKey],
+  );
   const dailyAverage = useMemo(
     () => aggregateDailyAverage(list, monthKey, ['servicios']),
     [list, monthKey],
@@ -216,32 +235,27 @@ function ChartsBody() {
 
   /**
    * Items for the capsule bar chart card, derived from the selected
-   * granularity. The highlight marks the "active" bucket: today for the
-   * week view, the last (selected) month for the 6-month trend, and the
-   * current calendar year for the year view.
+   * granularity. The highlight marks the "active" bucket: the max-spend
+   * day for the week view, the last (selected) month for the 6-month
+   * trend, and the current calendar year for the year view.
    */
   const chartData = useMemo(() => {
     if (period === 'week') {
-      // Today's column within the Monday-start week. Both sides come from
-      // the same local today (`todayLocalISO()` feeds `weekStartISO`), so
-      // the offset lands on today's bar in THIS week — a UTC-derived week
-      // start would highlight a bar in the wrong week on late evenings.
-      const todayOffset = Math.round(
-        (Date.parse(`${todayLocalISO()}T00:00:00`) -
-          Date.parse(`${weekStartISO}T00:00:00`)) /
-          86_400_000,
-      );
+      // The highlighted bar is the day with the HIGHEST amount (first max
+      // wins when tied); when every day is $0 no bar is highlighted. The
+      // week start comes from `weekStartISO` (local-derived, shared with
+      // the tap→day mapping), so bars and the detail sheet stay aligned.
+      const weekPoints = aggregateWeeklySpend(list, weekStartISO, ['servicios']);
+      const maxIndex = pickMaxSpendIndex(weekPoints.map((p) => p.amount));
       return {
         title: 'Esta semana',
         // Utility bills (servicios) stay out of the daily bars — the same
         // exclusion the day-detail sheet applies.
-        items: aggregateWeeklySpend(list, weekStartISO, ['servicios']).map(
-          (point, index) => ({
-            label: point.initial,
-            value: point.amount,
-            highlight: index === todayOffset,
-          }),
-        ),
+        items: weekPoints.map((point, index) => ({
+          label: point.initial,
+          value: point.amount,
+          highlight: maxIndex === index,
+        })),
       };
     }
     if (period === 'month') {
@@ -332,7 +346,7 @@ function ChartsBody() {
         total={overview.currentTotal}
         deltaPct={overview.changePct}
         previousMonthLabel={previousMonthLabel}
-        trendData={trendData}
+        dailyData={dailySpend}
         currency={currency}
       />
       <InsightBanner
@@ -444,6 +458,26 @@ function ChartsBody() {
             {error ? <Text style={styles.error}>{error}</Text> : null}
           </>
         )}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Por tienda</Text>
+        <Card padding={spacing.lg}>
+          <StoreBars
+            data={stores}
+            // Receipts with no store name aggregate to the `sin tienda`
+            // fallback, whose drill-down screen can't reproduce the bar's
+            // total (empty store_name normalizes to '' on that screen).
+            // Tapping it would open a $0 page — so the row is inert.
+            onRowPress={(store) =>
+              store.storeId === 'sin tienda'
+                ? undefined
+                : router.push(
+                    `/stores/${encodeURIComponent(store.storeId)}?month=${monthKey}`,
+                  )
+            }
+          />
+        </Card>
       </View>
 
       <Pressable

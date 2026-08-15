@@ -3,9 +3,9 @@
  * Node harness for the Pro charts' pure aggregations
  * (`src/features/charts/aggregate.ts` → `aggregateSpendTrend`,
  * `aggregateStoresByMonth`, `aggregateMonthlyDelta`, `aggregateWeeklySpend`,
- * `aggregateDailyAverage`, `aggregateYearlySpend`, `aggregateDayItems`,
- * `aggregateDayTotal`, and the `aggregateCategoriesByMonth` re-export
- * parity check).
+ * `aggregateDailyAverage`, `aggregateDailySpend`, `aggregateYearlySpend`,
+ * `aggregateDayItems`, `aggregateDayTotal`, and the
+ * `aggregateCategoriesByMonth` re-export parity check).
  *
  * Compiles `aggregate.ts` plus its dependency graph (home feed hook,
  * categories registry, auth/session plumbing, receipts store, react-query)
@@ -34,6 +34,13 @@
  *     - previous month has zero records → `previous` is null (not 0),
  *     - previous month has records totalling zero → `previous === 0`,
  *     - deltaPct is null when `previous` is null (no division by zero).
+ *
+ *   `aggregateDailySpend`:
+ *     - every day of the month is present, zero-filled (31 in August 2026),
+ *     - receipts sum `receipt.total` per day (servicios included),
+ *     - days outside the month are ignored,
+ *     - a 28-day February (2026) yields exactly 28 entries,
+ *     - receipts without a `total` are treated as 0.
  *
  *   `aggregateCategoriesByMonth` re-export parity:
  *     - reference equality: `charts/aggregate` re-export is the SAME
@@ -138,10 +145,12 @@ async function run() {
     aggregateCategoriesByMonth,
     aggregateWeeklySpend,
     aggregateDailyAverage,
+    aggregateDailySpend,
     aggregateDayItems,
     aggregateDayTotal,
     aggregateYearlySpend,
     getTopCategory,
+    pickMaxSpendIndex,
   } = chartsMod;
   const { aggregateCategoriesByMonth: directAggregate } = homeFeedMod;
 
@@ -391,7 +400,7 @@ async function run() {
       [
         { day: 'Lun', initial: 'L', amount: 0 },
         { day: 'Mar', initial: 'M', amount: 0 },
-        { day: 'Mié', initial: 'X', amount: 0 },
+        { day: 'Mié', initial: 'M', amount: 0 },
         { day: 'Jue', initial: 'J', amount: 0 },
         { day: 'Vie', initial: 'V', amount: 0 },
         { day: 'Sáb', initial: 'S', amount: 0 },
@@ -643,6 +652,91 @@ async function run() {
       '2026-08',
     );
     assert.equal(out, 310 / 31);
+  });
+
+  console.log('\n[tests] aggregateDailySpend\n');
+
+  await test('every day of the month present, zero-filled (August 2026 → 31 entries)', () => {
+    const out = aggregateDailySpend([], '2026-08');
+    assert.equal(out.length, 31);
+    assert.equal(out[0].day, 1);
+    assert.equal(out[30].day, 31);
+    assert.ok(
+      out.every((p) => p.total === 0),
+      'days without receipts must be 0, not omitted',
+    );
+  });
+
+  await test('receipts sum per day (receipt.total, servicios included)', () => {
+    const out = aggregateDailySpend(
+      [
+        receipt({
+          id: 'r1',
+          total: 100,
+          purchase_date: '2026-08-05',
+          category_totals: cats({ servicios: 30, lacteos: 70 }),
+        }),
+        receipt({ id: 'r2', total: 50, purchase_date: '2026-08-05' }),
+        receipt({ id: 'r3', total: 30, purchase_date: '2026-08-20' }),
+      ],
+      '2026-08',
+    );
+    assert.equal(out[4].total, 150, 'day 5 sums both receipts (servicios INCLUDED)');
+    assert.equal(out[19].total, 30, 'day 20');
+    assert.equal(out[0].total, 0, 'day 1 zero-filled');
+    assert.equal(out[30].total, 0, 'day 31 zero-filled');
+  });
+
+  await test('days outside the month are ignored', () => {
+    const out = aggregateDailySpend(
+      [
+        receipt({ id: 'r1', total: 999, purchase_date: '2026-07-31' }),
+        receipt({ id: 'r2', total: 10, purchase_date: '2026-08-01' }),
+      ],
+      '2026-08',
+    );
+    assert.equal(out.length, 31);
+    assert.equal(out.reduce((sum, p) => sum + p.total, 0), 10);
+  });
+
+  await test('February non-leap year (2026) has exactly 28 entries', () => {
+    const out = aggregateDailySpend(
+      [receipt({ id: 'r1', total: 280, purchase_date: '2026-02-28' })],
+      '2026-02',
+    );
+    assert.equal(out.length, 28);
+    assert.equal(out[0].day, 1);
+    assert.equal(out[27].day, 28);
+    assert.equal(out[27].total, 280, 'Feb 28 lands on the last entry');
+  });
+
+  await test('30-day month (April 2026) has exactly 30 entries', () => {
+    const out = aggregateDailySpend(
+      [receipt({ id: 'r1', total: 30, purchase_date: '2026-04-30' })],
+      '2026-04',
+    );
+    assert.equal(out.length, 30);
+    assert.equal(out[0].day, 1);
+    assert.equal(out[29].day, 30);
+    assert.equal(out[29].total, 30, 'Apr 30 lands on the last entry');
+  });
+
+  await test('leap-year February (2024) has exactly 29 entries', () => {
+    const out = aggregateDailySpend(
+      [receipt({ id: 'r1', total: 290, purchase_date: '2024-02-29' })],
+      '2024-02',
+    );
+    assert.equal(out.length, 29);
+    assert.equal(out[28].day, 29);
+    assert.equal(out[28].total, 290, 'Feb 29 exists on leap years');
+  });
+
+  await test('receipts without a `total` are treated as 0 (defensive)', () => {
+    const out = aggregateDailySpend(
+      [receipt({ id: 'r1', total: undefined, purchase_date: '2026-08-10' })],
+      '2026-08',
+    );
+    assert.equal(out[9].total, 0);
   });
 
   console.log('\n[tests] aggregateDayItems\n');
@@ -927,6 +1021,26 @@ async function run() {
     const viaHome = directAggregate(records, '2026-08');
     assert.deepEqual(viaCharts, viaHome);
     assert.equal(viaCharts.find((c) => c.key === 'lacteos')?.amount, 5);
+  });
+
+  console.log('\n[tests] pickMaxSpendIndex\n');
+
+  await test('returns the index of the highest amount (first max wins on ties)', () => {
+    assert.equal(pickMaxSpendIndex([10, 50, 30]), 1);
+    assert.equal(pickMaxSpendIndex([40, 40, 10]), 0, 'first max on ties');
+    assert.equal(pickMaxSpendIndex([0, 0, 5]), 2);
+  });
+
+  await test('all-zero or empty series returns -1 (no highlight)', () => {
+    assert.equal(pickMaxSpendIndex([0, 0, 0]), -1);
+    assert.equal(pickMaxSpendIndex([]), -1);
+    assert.equal(pickMaxSpendIndex([-1, 0]), -1, 'non-positive values never highlight');
+  });
+
+  await test('ignores the week-day index position, not the calendar day', () => {
+    // Shape mirrors `aggregateWeeklySpend` output amounts (Sunday → Monday
+    // ordering is irrelevant to the helper: it only compares amounts).
+    assert.equal(pickMaxSpendIndex([5, 100, 3, 2, 1, 0, 50]), 1);
   });
 
   console.log('');
