@@ -12,10 +12,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Card, Divider, Icon, Pressable, Text, View } from '@/components';
 import { useSessionUser } from '@/features/auth';
-import {
-  currentMonthKey,
-  getMonthKey,
-} from '@/features/home';
 import { getExpenseCategory } from '@/features/home/categories';
 import {
   deleteReceipt,
@@ -30,15 +26,18 @@ import {
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
+import { ReceiptCategoryItemsModal } from './ReceiptCategoryItemsModal';
 
 /**
  * View-only receipt detail: the ticket photo the user took, plus the
  * receipt meta (store, date, total), its category breakdown, and item
  * lines. Reached from the Home "Recibos recientes" rows (`/receipts/:id`).
- * Tapping the photo opens it fullscreen; the category rows reuse the
- * expense-category registry so labels/icons match the Home strip.
- * Read-only on purpose — editing and saving live in the scan-flow review
- * screen (`ticket/review/[id]`), which keeps working untouched.
+ * Tapping the photo opens it fullscreen; tapping a category row opens a
+ * bottom sheet with ONLY this receipt's items in that category (the
+ * category rows reuse the expense-category registry so labels/icons match
+ * the Home strip). Read-only on purpose — editing and saving live in the
+ * scan-flow review screen (`ticket/review/[id]`), which keeps working
+ * untouched.
  */
 export default function ReceiptDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -46,6 +45,8 @@ export default function ReceiptDetailScreen() {
   const list = useReceiptsStore((s) => s.list);
   const currency = useSettingsStore((s) => s.currency);
   const [photoOpen, setPhotoOpen] = useState(false);
+  // Slug of the category whose item sheet is open (`null` = closed).
+  const [openCategory, setOpenCategory] = useState<string | null>(null);
   // Demo images (picsum) and remote ticket photos can fail offline; fall
   // back to the "Sin foto del ticket" placeholder instead of a blank box.
   const [photoFailed, setPhotoFailed] = useState(false);
@@ -288,10 +289,15 @@ export default function ReceiptDetailScreen() {
   const categoryEntries = Object.entries(categoryTotals)
     .map(([key, amount]) => ({ key, amount, def: getExpenseCategory(key) }))
     .sort((a, b) => b.amount - a.amount);
-  // Tapping a category opens its monthly drill-down for the month the
-  // receipt belongs to (same route the History screen uses).
-  const receiptMonthKey = getMonthKey(receipt.purchase_date);
-  const isCurrentMonth = receiptMonthKey === currentMonthKey();
+  // Items of the open category sheet: THIS receipt's lines filtered by the
+  // tapped category slug, plus the category's total from this receipt.
+  const openCategoryItems = openCategory
+    ? items.filter((item) => item.category === openCategory)
+    : [];
+  const openCategoryTotal = openCategory ? (categoryTotals[openCategory] ?? 0) : 0;
+  const openCategoryLabel = openCategory
+    ? getExpenseCategory(openCategory).label
+    : '';
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -351,15 +357,9 @@ export default function ReceiptDetailScreen() {
               {categoryEntries.map((entry, idx) => (
                 <View key={entry.key}>
                   <Pressable
-                    onPress={() =>
-                      router.push(
-                        isCurrentMonth
-                          ? `/categories/${entry.key}`
-                          : `/categories/${entry.key}?month=${receiptMonthKey}`,
-                      )
-                    }
+                    onPress={() => setOpenCategory(entry.key)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Ver gastos de ${entry.def.label}`}
+                    accessibilityLabel={`Ver artículos de ${entry.def.label}`}
                     style={({ pressed }) => pressed && styles.catRowPressed}
                   >
                     <View style={styles.catRow}>
@@ -485,6 +485,15 @@ export default function ReceiptDetailScreen() {
           </Animated.View>
         </View>
       </Modal>
+
+      <ReceiptCategoryItemsModal
+        visible={openCategory !== null}
+        categoryLabel={openCategoryLabel}
+        total={openCategoryTotal}
+        items={openCategoryItems}
+        currency={currency}
+        onClose={() => setOpenCategory(null)}
+      />
     </SafeAreaView>
   );
 }
