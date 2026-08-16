@@ -20,6 +20,7 @@
   },
   "include": [
     "../src/features/charts/aggregate.ts",
+    "../src/features/charts/categoryHref.ts",
     "../src/features/home/hooks/useHomeFeed.ts",
     "../src/features/home/categories.ts",
     "../src/features/auth/use-session-user.ts",
