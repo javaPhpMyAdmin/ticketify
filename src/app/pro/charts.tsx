@@ -59,6 +59,7 @@ import {
   getMondayOfWeek,
   getTopCategory,
   pickMaxSpendIndex,
+  WEEKDAY_NAMES,
 } from '@/features/charts';
 import { getExpenseCategory } from '@/features/home/categories';
 import {
@@ -106,17 +107,6 @@ function shortMonthLabel(monthKey: string): string {
   const label = MONTHS_SHORT_ES[month - 1] ?? '';
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
-
-/** Full Spanish weekday names indexed Sunday-first (matches `Date.getDay`). */
-const WEEKDAY_NAMES = [
-  'Domingo',
-  'Lunes',
-  'Martes',
-  'Miércoles',
-  'Jueves',
-  'Viernes',
-  'Sábado',
-];
 
 /**
  * ISO date of the `index`-th day of the week whose Monday is
@@ -390,6 +380,13 @@ function ChartsBody() {
             })}
           </View>
         </View>
+        {/* The weekly bars exclude servicios (utility bills); the caption
+            documents that so the card title isn't read as the full daily
+            spend. Month/year views include servicios, so the note only
+            renders for the week period. */}
+        {period === 'week' ? (
+          <Text style={styles.weeklyCaption}>Por día · sin servicios</Text>
+        ) : null}
         <CapsuleBarChart
           items={chartData.items}
           currency={currency}
@@ -455,6 +452,16 @@ function ChartsBody() {
                         percent={t.percent_of_total}
                         icon={category.icon}
                         currency={currency}
+                        // Drill into the existing category detail screen
+                        // (same History pattern): current month omits the
+                        // month param, any other month scopes it.
+                        onPress={() =>
+                          monthKey === currentMonthKey()
+                            ? router.push(`/categories/${t.category_slug}`)
+                            : router.push(
+                                `/categories/${t.category_slug}?month=${monthKey}`,
+                              )
+                        }
                       />
                     );
                   })}
@@ -564,6 +571,13 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: '700',
     flexShrink: 1,
+  },
+  // Documentational note under the weekly card title: the bars exclude
+  // servicios. Only rendered for the week period.
+  weeklyCaption: {
+    ...typography.labelSm,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
   },
   segmentedControl: {
     flexDirection: 'row',
