@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { Icon, Text, type IconName } from '@/components';
+import { Icon, Pressable, Text, type IconName } from '@/components';
 import { formatCurrency } from '@/lib/format';
 import { colors, spacing, typography } from '@/theme';
 import { getCategoryColor } from '@/features/home/categories';
@@ -20,6 +20,12 @@ export interface CategoryBudgetRowProps {
   limit?: number;
   /** Currency code used for amounts. */
   currency?: string;
+  /**
+   * Optional tap handler. When provided the row renders as a themed
+   * Pressable (role "button", labeled with name + amount); without it the
+   * row stays a plain non-interactive View (byte-identical output).
+   */
+  onPress?: () => void;
 }
 
 /**
@@ -29,6 +35,9 @@ export interface CategoryBudgetRowProps {
  * percent of total spend, and the amount. When a per-category budget limit
  * exists it also shows "$X of $Y"; the limit line is omitted when no limit
  * is provided, matching the spec (per-category budgets do not exist yet).
+ * With `onPress` the whole row becomes a themed Pressable for drill-down;
+ * without it the output is a plain View, so non-interactive consumers
+ * (the analytics tab) stay byte-identical.
  */
 export function CategoryBudgetRow({
   categoryKey,
@@ -38,11 +47,12 @@ export function CategoryBudgetRow({
   icon,
   limit,
   currency = 'UYU',
+  onPress,
 }: CategoryBudgetRowProps) {
   const color = getCategoryColor(categoryKey);
 
-  return (
-    <View style={styles.row}>
+  const rowContent = (
+    <>
       <View
         style={[
           styles.iconCircle,
@@ -66,7 +76,20 @@ export function CategoryBudgetRow({
       <View style={styles.amountColumn}>
         <Text style={styles.amount}>{formatCurrency(amount, currency)}</Text>
       </View>
-    </View>
+    </>
+  );
+
+  return onPress ? (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${name}: ${formatCurrency(amount, currency)}`}
+      style={styles.row}
+    >
+      {rowContent}
+    </Pressable>
+  ) : (
+    <View style={styles.row}>{rowContent}</View>
   );
 }
 
