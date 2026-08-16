@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Bar, CartesianChart } from 'victory-native';
 
@@ -7,7 +7,11 @@ import { formatCurrency } from '@/lib/format';
 import { colors, radii, spacing, typography } from '@/theme';
 
 import type { DailySpendPoint } from '../aggregate';
-import { buildVisibleDailySeries, weekdayInitialsForMonth } from '../aggregate';
+import {
+  buildDailyInsight,
+  buildVisibleDailySeries,
+  weekdayInitialsForMonth,
+} from '../aggregate';
 
 /**
  * Horizontal space allotted to each day of the month, in dp. The chart is a
@@ -107,6 +111,15 @@ export function InsightHeroCard({
   }, [dailyData]);
 
   const hasData = dailyData.some((point) => point.total > 0);
+
+  // Highest-spend day + "Nx tu promedio" for the insight line. Pure
+  // function of the card's own props; null on all-zero months, so a
+  // no-spend month hides BOTH the line and the chart consistently.
+  const insight = useMemo(
+    () => buildDailyInsight(dailyData, monthKey),
+    [dailyData, monthKey],
+  );
+
   // Cbrt-scale the daily totals (see `buildVisibleDailySeries`) so small
   // days stay visible next to outliers; each bar keeps its day's real
   // scaled value.
@@ -203,6 +216,17 @@ export function InsightHeroCard({
           </View>
         ) : null}
       </View>
+
+      {insight ? (
+        <Text
+          style={styles.insight}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+        >
+          {`Tu día más caro fue el ${insight.weekday} ${insight.day} (${formatCurrency(insight.amount, currency)} · ${insight.multiple}x tu promedio)`}
+        </Text>
+      ) : null}
 
       {hasData ? (
         <ScrollView
@@ -388,6 +412,14 @@ const styles = StyleSheet.create({
     ...typography.displayCurrency,
     color: colors.heroText,
     marginTop: spacing.sm,
+  },
+  // Single-line daily-spend insight ("Tu día más caro fue el Lunes 3
+  // ($20,289.51 · 15x tu promedio)"). Shrinks to fit on narrow screens
+  // instead of wrapping — one line, per spec.
+  insight: {
+    ...typography.bodyMd,
+    color: colors.heroText,
+    opacity: 0.7,
   },
   chip: {
     flexDirection: 'row',
