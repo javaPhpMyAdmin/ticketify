@@ -548,3 +548,77 @@ export function pickMaxSpendIndex(amounts: readonly number[]): number {
   }
   return max > 0 ? maxIndex : -1;
 }
+
+/**
+ * Full Spanish weekday names indexed by `Date.prototype.getDay()`
+ * (0 = Sunday .. 6 = Saturday). Single source of truth for full-name
+ * labels: the Pro charts screen imports it for the day-detail label
+ * ("Lunes 11") and the hero insight reads its weekday from here.
+ */
+export const WEEKDAY_NAMES: readonly string[] = [
+  'Domingo',
+  'Lunes',
+  'Martes',
+  'Miércoles',
+  'Jueves',
+  'Viernes',
+  'Sábado',
+];
+
+/**
+ * Highest-spend day of a month, derived for the hero insight line.
+ * `amount` uses the services-INCLUDED daily base (same numbers as the
+ * hero bars); `multiple` compares that day against the monthly daily
+ * average. See `buildDailyInsight` for the exact derivation.
+ */
+export interface DailyInsight {
+  /** Day of the month of the highest-spend day (first max wins on ties). */
+  day: number;
+  /** Full Spanish weekday name of that day, e.g. 'Lunes'. */
+  weekday: string;
+  /** That day's total (servicios included — the hero bars' base). */
+  amount: number;
+  /** `Math.max(1, Math.round(amount / (sum(dailyData) / dailyData.length)))`. */
+  multiple: number;
+}
+
+/**
+ * Pure insight for the hero card: which day cost the most in `monthKey`
+ * and how many times that day exceeds the month's daily average. The
+ * average derives from `dailyData` itself (sum ÷ length) — the card's
+ * daily series is zero-filled by `aggregateDailySpend`, so this equals
+ * total ÷ days-in-month and the function is a pure function of the card's
+ * own props.
+ *
+ * Returns `null` when no day has spend (all-zero month — `pickMaxSpendIndex`
+ * yields -1), which also covers an empty series. The math notes:
+ * max ≥ mean always, so `Math.round(max ÷ avg) ≥ 1` — `max(1, ·)` is
+ * defense-in-depth; the avg = 0 edge is unreachable (maxIndex !== -1
+ * implies max > 0, so the sum and average are > 0). Guards are enforced
+ * so the result never carries 0/NaN.
+ */
+export function buildDailyInsight(
+  dailyData: readonly DailySpendPoint[],
+  monthKey: string,
+): DailyInsight | null {
+  const [year, month] = monthKey.split('-').map(Number);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return null;
+  }
+  // Highest-spend day (first max wins on ties); -1 when every day is $0.
+  const maxIndex = pickMaxSpendIndex(dailyData.map((point) => point.total));
+  if (maxIndex === -1) return null;
+  const maxPoint = dailyData[maxIndex];
+  // Services-INCLUDED monthly daily average (sum ÷ length) — NOT the
+  // services-excluded "Promedio diario" card base. Accepted product
+  // tradeoff (pro-trends-insights spec): the bases MUST NOT be unified.
+  const average =
+    dailyData.reduce((sum, point) => sum + point.total, 0) / dailyData.length;
+  const multiple = Math.max(1, Math.round(maxPoint.total / average));
+  return {
+    day: maxPoint.day,
+    weekday: WEEKDAY_NAMES[new Date(year, month - 1, maxPoint.day).getDay()],
+    amount: maxPoint.total,
+    multiple,
+  };
+}

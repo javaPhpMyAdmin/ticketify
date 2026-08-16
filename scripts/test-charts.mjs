@@ -153,6 +153,7 @@ async function run() {
     pickMaxSpendIndex,
     buildVisibleDailySeries,
     weekdayInitialsForMonth,
+    buildDailyInsight,
   } = chartsMod;
   const { aggregateCategoriesByMonth: directAggregate } = homeFeedMod;
 
@@ -1132,6 +1133,75 @@ async function run() {
   await test('malformed month key returns empty array', () => {
     assert.deepEqual(weekdayInitialsForMonth('garbage'), []);
     assert.deepEqual(weekdayInitialsForMonth('2026-13'), []);
+  });
+
+  console.log('\n[tests] buildDailyInsight\n');
+
+  // Real August 2026 fixture (same shape as the hero curve tests): day 3
+  // is the $20,289.51 spike, Monday. Sum = 41,205.36 → avg ≈ $1,329.21 →
+  // 20,289.51 / 1,329.21 ≈ 15.26 → rounds to 15.
+  const AUGUST_2026 = [
+    572.27, 762.77, 20289.51, 4820.72, 3367.32, 1973.37, 1276.71,
+    0, 0, 560.45, 526.42, 381.58, 5862, 812.24,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  ].map((total, index) => ({ day: index + 1, total }));
+
+  await test('real august fixture: day 3 → Lunes, $20,289.51, ≈15x', () => {
+    const insight = buildDailyInsight(AUGUST_2026, '2026-08');
+    assert.equal(insight.day, 3);
+    assert.equal(insight.weekday, 'Lunes');
+    assert.equal(insight.amount, 20289.51);
+    assert.equal(insight.multiple, 15);
+  });
+
+  await test('first max wins on ties (and weekday is monthKey-derived)', () => {
+    const insight = buildDailyInsight(
+      [
+        { day: 1, total: 0 },
+        { day: 2, total: 100 },
+        { day: 3, total: 100 },
+      ],
+      '2026-08',
+    );
+    assert.equal(insight.day, 2, 'first of the two max days wins');
+    assert.equal(insight.weekday, 'Domingo', 'Aug 2, 2026 is a Sunday');
+    assert.equal(insight.amount, 100);
+  });
+
+  await test('single spend day → multiple equals days in month', () => {
+    const dailyData = Array.from({ length: 31 }, (_, i) => ({
+      day: i + 1,
+      total: i === 4 ? 310 : 0, // only day 5 has spend
+    }));
+    const insight = buildDailyInsight(dailyData, '2026-08');
+    assert.equal(insight.day, 5);
+    assert.equal(insight.amount, 310);
+    // 310 / (310 / 31) = 31 — a single-spend month is "31x your average".
+    assert.equal(insight.multiple, 31);
+  });
+
+  await test('rounds to 1 and never emits 0 or negative (max(1, ·) floor)', () => {
+    const insight = buildDailyInsight(
+      [
+        { day: 1, total: 100 },
+        { day: 2, total: 99 },
+      ],
+      '2026-08',
+    );
+    // 100 / 99.5 ≈ 1.005 → rounds to 1; the floor keeps it at 1, not 0.
+    assert.equal(insight.multiple, 1);
+    assert.ok(insight.multiple >= 1, 'never below 1');
+    assert.ok(Number.isFinite(insight.multiple), 'never NaN');
+    assert.ok(Number.isFinite(insight.amount), 'amount is a finite number');
+  });
+
+  await test('all-zero month → null (insight hidden)', () => {
+    const allZero = Array.from({ length: 31 }, (_, i) => ({ day: i + 1, total: 0 }));
+    assert.equal(buildDailyInsight(allZero, '2026-08'), null);
+  });
+
+  await test('empty daily data → null', () => {
+    assert.equal(buildDailyInsight([], '2026-08'), null);
   });
 
   console.log('');

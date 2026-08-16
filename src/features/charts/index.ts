@@ -23,7 +23,9 @@ export {
   getTopCategory,
   pickMaxSpendIndex,
   buildVisibleDailySeries,
+  buildDailyInsight,
   weekdayInitialsForMonth,
+  WEEKDAY_NAMES,
 } from './aggregate';
 export type {
   SpendTrendPoint,
@@ -32,6 +34,7 @@ export type {
   MonthlyDelta,
   WeeklySpendPoint,
   DayItemGroup,
+  DailyInsight,
   DailySpendPoint,
   YearlySpendPoint,
   VisibleDailySeries,
