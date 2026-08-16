@@ -204,6 +204,13 @@ function ChartsBody() {
     () => aggregateDailySpend(list, monthKey),
     [list, monthKey],
   );
+  // TEMP DEBUG: hero curve hydration check
+  console.log('[hero-debug]', {
+    listLength: list.length,
+    dailySpendLength: dailySpend.length,
+    nonZeroDays: dailySpend.filter((p) => p.total > 0).length,
+    monthKey,
+  });
   // Per-store totals for the "Por tienda" horizontal bars (month-scoped).
   const stores = useMemo(
     () => aggregateStoresByMonth(list, monthKey),
