@@ -11,6 +11,7 @@ import {
   buildDailyInsight,
   buildVisibleDailySeries,
   weekdayInitialsForMonth,
+  WEEKDAY_NAMES,
 } from '../aggregate';
 
 /**
@@ -27,8 +28,12 @@ const DAY_SLOT_WIDTH = 44;
 const TOOLTIP_WIDTH = 104;
 const TOOLTIP_HEIGHT = 36;
 
-/** Full Spanish weekday names, indexed by `Date.prototype.getDay()`. */
-const WEEKDAY_SHORT = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+/**
+ * Short Spanish weekday names (first 3 letters), indexed by
+ * `Date.prototype.getDay()`. Derived from `WEEKDAY_NAMES` — the single
+ * source of full names in `aggregate.ts` — so the two can never drift.
+ */
+const WEEKDAY_SHORT = WEEKDAY_NAMES.map((name) => name.slice(0, 3));
 
 export interface InsightHeroCardProps {
   /** Display label for the selected month, e.g. "Agosto 2026". */
@@ -134,7 +139,7 @@ export function InsightHeroCard({
   const xDomain: [number, number] = [0.5, daysInMonth + 0.5];
   // Drawn bar width inside a slot: `innerPadding` is 0.25, so each bar
   // occupies 75% of its 44dp slot, centered.
-  const BAR_WIDTH = DAY_SLOT_WIDTH * 0.75;
+  const barWidth = DAY_SLOT_WIDTH * 0.75;
 
   // Real x/y position of every day's bar, reported by victory-native's
   // `points.total` (canvas coordinates == dp). The manual day labels are
@@ -318,9 +323,9 @@ export function InsightHeroCard({
                         style={[
                           styles.tapBar,
                           {
-                            left: anchor.x - BAR_WIDTH / 2,
+                            left: anchor.x - barWidth / 2,
                             top: barTop,
-                            width: BAR_WIDTH,
+                            width: barWidth,
                             height: barHeight,
                           },
                         ]}
@@ -378,7 +383,7 @@ export function InsightHeroCard({
           </View>
         </ScrollView>
       ) : (
-        <View style={styles.emptyChart}>
+        <View style={[styles.emptyChart, { height: chartHeight }]}>
           <Text style={styles.emptyText}>Sin gastos este mes</Text>
         </View>
       )}
@@ -502,10 +507,12 @@ const styles = StyleSheet.create({
     color: colors.onPrimary,
     lineHeight: 15,
   },
+  // Empty-state box mirrors the chart canvas height: the inline
+  // `{ height: chartHeight }` on the usage keeps it coupled to the
+  // `chartHeight` prop (default 120) instead of a hardcoded duplicate.
   emptyChart: {
     alignItems: 'center',
     justifyContent: 'center',
-    height: 120,
   },
   emptyText: {
     ...typography.bodyMd,

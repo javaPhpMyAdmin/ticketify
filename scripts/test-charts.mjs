@@ -4,8 +4,10 @@
  * (`src/features/charts/aggregate.ts` → `aggregateSpendTrend`,
  * `aggregateStoresByMonth`, `aggregateMonthlyDelta`, `aggregateWeeklySpend`,
  * `aggregateDailyAverage`, `aggregateDailySpend`, `aggregateYearlySpend`,
- * `aggregateDayItems`, `aggregateDayTotal`, and the
- * `aggregateCategoriesByMonth` re-export parity check).
+ * `aggregateDayItems`, `aggregateDayTotal`, `buildVisibleDailySeries`,
+ * `weekdayInitialsForMonth`, `buildDailyInsight`, and the
+ * `aggregateCategoriesByMonth` re-export parity check; plus
+ * `src/features/charts/categoryHref.ts` → `categoryDetailHref`).
  *
  * Compiles `aggregate.ts` plus its dependency graph (home feed hook,
  * categories registry, auth/session plumbing, receipts store, react-query)
@@ -155,6 +157,10 @@ async function run() {
     weekdayInitialsForMonth,
     buildDailyInsight,
   } = chartsMod;
+  const categoryHrefMod = await import(
+    pathToFileURL(join(outDir, 'src/features/charts/categoryHref.js')).href
+  );
+  const { categoryDetailHref } = categoryHrefMod;
   const { aggregateCategoriesByMonth: directAggregate } = homeFeedMod;
 
   console.log('\n[tests] aggregateSpendTrend\n');
@@ -1180,7 +1186,31 @@ async function run() {
     assert.equal(insight.multiple, 31);
   });
 
-  await test('rounds to 1 and never emits 0 or negative (max(1, ·) floor)', () => {
+  await test('single spend day in February 2026 (28 days) → multiple 28', () => {
+    const dailyData = Array.from({ length: 28 }, (_, i) => ({
+      day: i + 1,
+      total: i === 4 ? 280 : 0, // only day 5 has spend
+    }));
+    const insight = buildDailyInsight(dailyData, '2026-02');
+    assert.equal(insight.day, 5);
+    assert.equal(insight.amount, 280);
+    // 280 / (280 / 28) = 28 — a single-spend February is "28x your average".
+    assert.equal(insight.multiple, 28);
+  });
+
+  await test('single spend day in leap February 2024 (29 days) → multiple 29', () => {
+    const dailyData = Array.from({ length: 29 }, (_, i) => ({
+      day: i + 1,
+      total: i === 4 ? 290 : 0, // only day 5 has spend
+    }));
+    const insight = buildDailyInsight(dailyData, '2024-02');
+    assert.equal(insight.day, 5);
+    assert.equal(insight.amount, 290);
+    // 290 / (290 / 29) = 29 — a single-spend leap February is "29x".
+    assert.equal(insight.multiple, 29);
+  });
+
+  await test('round + clamp: rounds to nearest integer, never emits 0 or negative (Math.max(1, ·))', () => {
     const insight = buildDailyInsight(
       [
         { day: 1, total: 100 },
@@ -1188,11 +1218,25 @@ async function run() {
       ],
       '2026-08',
     );
-    // 100 / 99.5 ≈ 1.005 → rounds to 1; the floor keeps it at 1, not 0.
+    // 100 / 99.5 ≈ 1.005 → rounds to 1; the clamp keeps it at 1, not 0.
     assert.equal(insight.multiple, 1);
     assert.ok(insight.multiple >= 1, 'never below 1');
     assert.ok(Number.isFinite(insight.multiple), 'never NaN');
     assert.ok(Number.isFinite(insight.amount), 'amount is a finite number');
+  });
+
+  await test('malformed month keys → null (strict YYYY-MM guard)', () => {
+    // A spend-bearing series proves the monthKey guard (not the all-zero
+    // path) is what rejects these: month out of range, unpadded month,
+    // non-numeric garbage, and a full ISO date (not a month key).
+    const dailyData = Array.from({ length: 31 }, (_, i) => ({
+      day: i + 1,
+      total: i === 4 ? 310 : 0, // only day 5 has spend
+    }));
+    assert.equal(buildDailyInsight(dailyData, '2026-13'), null, 'month 13 out of range');
+    assert.equal(buildDailyInsight(dailyData, '2026-8'), null, 'unpadded month');
+    assert.equal(buildDailyInsight(dailyData, 'garbage'), null, 'non-numeric key');
+    assert.equal(buildDailyInsight(dailyData, '2026-08-15'), null, 'full ISO date is not a month key');
   });
 
   await test('all-zero month → null (insight hidden)', () => {
@@ -1202,6 +1246,22 @@ async function run() {
 
   await test('empty daily data → null', () => {
     assert.equal(buildDailyInsight([], '2026-08'), null);
+  });
+
+  console.log('\n[tests] categoryDetailHref\n');
+
+  await test('current month → bare route, no month param', () => {
+    assert.equal(
+      categoryDetailHref('compras', '2026-08', '2026-08'),
+      '/categories/compras',
+    );
+  });
+
+  await test('other month → route scoped with ?month=YYYY-MM', () => {
+    assert.equal(
+      categoryDetailHref('compras', '2026-07', '2026-08'),
+      '/categories/compras?month=2026-07',
+    );
   });
 
   console.log('');

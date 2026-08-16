@@ -24,6 +24,7 @@ import {
   useItemSearch,
 } from '@/features/home';
 import { formatCurrency } from '@/lib/format';
+import { categoryDetailHref } from '@/features/charts';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -362,9 +363,7 @@ export default function HistoryScreen() {
                   itemCount={categoryItemCounts[category.key]}
                   onPress={() =>
                     router.push(
-                      monthKey === currentMonthKey()
-                        ? `/categories/${category.key}`
-                        : `/categories/${category.key}?month=${monthKey}`,
+                      categoryDetailHref(category.key, monthKey, currentMonthKey()),
                     )
                   }
                 />

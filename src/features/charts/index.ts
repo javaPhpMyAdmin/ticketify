@@ -40,6 +40,8 @@ export type {
   VisibleDailySeries,
 } from './aggregate';
 
+export { categoryDetailHref } from './categoryHref';
+
 export { CapsuleBarChart } from './components/CapsuleBarChart';
 export type {
   CapsuleBarChartItem,

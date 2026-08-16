@@ -56,6 +56,7 @@ import {
   aggregateStoresByMonth,
   aggregateWeeklySpend,
   aggregateYearlySpend,
+  categoryDetailHref,
   getMondayOfWeek,
   getTopCategory,
   pickMaxSpendIndex,
@@ -194,13 +195,6 @@ function ChartsBody() {
     () => aggregateDailySpend(list, monthKey),
     [list, monthKey],
   );
-  // TEMP DEBUG: hero curve hydration check
-  console.log('[hero-debug]', {
-    listLength: list.length,
-    dailySpendLength: dailySpend.length,
-    nonZeroDays: dailySpend.filter((p) => p.total > 0).length,
-    monthKey,
-  });
   // Per-store totals for the "Por tienda" horizontal bars (month-scoped).
   const stores = useMemo(
     () => aggregateStoresByMonth(list, monthKey),
@@ -453,14 +447,17 @@ function ChartsBody() {
                         icon={category.icon}
                         currency={currency}
                         // Drill into the existing category detail screen
-                        // (same History pattern): current month omits the
-                        // month param, any other month scopes it.
+                        // (same History pattern via `categoryDetailHref`):
+                        // current month omits the month param, any other
+                        // month scopes it.
                         onPress={() =>
-                          monthKey === currentMonthKey()
-                            ? router.push(`/categories/${t.category_slug}`)
-                            : router.push(
-                                `/categories/${t.category_slug}?month=${monthKey}`,
-                              )
+                          router.push(
+                            categoryDetailHref(
+                              t.category_slug,
+                              monthKey,
+                              currentMonthKey(),
+                            ),
+                          )
                         }
                       />
                     );

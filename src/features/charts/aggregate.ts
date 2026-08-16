@@ -601,6 +601,10 @@ export function buildDailyInsight(
   dailyData: readonly DailySpendPoint[],
   monthKey: string,
 ): DailyInsight | null {
+  // Strict `YYYY-MM` month key (zero-padded): an unpadded key ('2026-8') or
+  // a full ISO date ('2026-08-15') is malformed for this function and must
+  // not silently parse as a valid month.
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) return null;
   const [year, month] = monthKey.split('-').map(Number);
   if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
     return null;
