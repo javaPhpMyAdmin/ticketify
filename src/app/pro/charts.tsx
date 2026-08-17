@@ -573,27 +573,25 @@ function ChartsBody() {
                   })}
                 </View>
               </Card>
-              {/* CTA: show when no budgets are configured for the month */}
-              {!hasAnyBudgets ? (
-                <Pressable
-                  onPress={() => router.push('/settings/category-budgets')}
-                  style={({ pressed }) => [
-                    styles.budgetCta,
-                    pressed && styles.budgetCtaPressed,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Configurar presupuestos por categoría"
-                >
-                  <Icon
-                    name="chart.pie.fill"
-                    size={18}
-                    color={colors.primary}
-                  />
-                  <Text style={styles.budgetCtaText}>
-                    Configurar presupuestos
-                  </Text>
-                </Pressable>
-              ) : null}
+              {/* CTA: always show so users can configure or edit budgets */}
+              <Pressable
+                onPress={() => router.push('/settings/category-budgets')}
+                style={({ pressed }) => [
+                  styles.budgetCta,
+                  pressed && styles.budgetCtaPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Configurar presupuestos por categoría"
+              >
+                <Icon
+                  name="chart.pie.fill"
+                  size={18}
+                  color={colors.primary}
+                />
+                <Text style={styles.budgetCtaText}>
+                  {hasAnyBudgets ? 'Editar presupuestos' : 'Configurar presupuestos'}
+                </Text>
+              </Pressable>
               </>
             )}
             {/* Background refetch failed but the last good totals are on
