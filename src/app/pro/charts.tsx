@@ -208,6 +208,12 @@ function ChartsBody() {
     () => getTopCategory(list, monthKey),
     [list, monthKey],
   );
+
+  // Check if any budgets are configured for the selected month
+  const hasAnyBudgets = useMemo(
+    () => totals.some((t) => t.budget_limit !== null),
+    [totals],
+  );
   // Line items for the open day-detail sheet. `tappedDay` guards the
   // aggregator so it never runs on an empty ISO date.
   const tappedDayItems = useMemo(
@@ -433,6 +439,7 @@ function ChartsBody() {
             {totals.length === 0 ? (
               <EmptyState title="Sin categorías este mes." />
             ) : (
+              <>
               <Card padding={spacing.lg}>
                 <View style={styles.categoryList}>
                   {totals.map((t) => {
@@ -445,6 +452,7 @@ function ChartsBody() {
                         amount={t.total}
                         percent={t.percent_of_total}
                         icon={category.icon}
+                        limit={t.budget_limit ?? undefined}
                         currency={currency}
                         // Drill into the existing category detail screen
                         // (same History pattern via `categoryDetailHref`):
@@ -464,6 +472,28 @@ function ChartsBody() {
                   })}
                 </View>
               </Card>
+              {/* CTA: show when no budgets are configured for the month */}
+              {!hasAnyBudgets ? (
+                <Pressable
+                  onPress={() => router.push('/settings/category-budgets')}
+                  style={({ pressed }) => [
+                    styles.budgetCta,
+                    pressed && styles.budgetCtaPressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Configurar presupuestos por categoría"
+                >
+                  <Icon
+                    name="chart.pie.fill"
+                    size={18}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.budgetCtaText}>
+                    Configurar presupuestos
+                  </Text>
+                </Pressable>
+              ) : null}
+              </>
             )}
             {/* Background refetch failed but the last good totals are on
                 screen — keep them and add a subtle inline note. */}
@@ -624,6 +654,25 @@ const styles = StyleSheet.create({
   },
   skeletonList: {
     gap: spacing.lg,
+  },
+  budgetCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 12,
+  },
+  budgetCtaPressed: {
+    opacity: 0.85,
+  },
+  budgetCtaText: {
+    ...typography.bodyMd,
+    color: colors.primary,
+    fontWeight: '700',
   },
   error: {
     ...typography.labelSm,
