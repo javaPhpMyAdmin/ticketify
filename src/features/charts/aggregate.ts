@@ -444,6 +444,8 @@ export interface DayItemGroup {
   quantity: number;
   /** Total amount spent on the product that day. */
   amount: number;
+  /** Store where this item was purchased. */
+  store?: string;
 }
 
 /**
@@ -475,8 +477,8 @@ export function aggregateDayItems(
     if (receipt.items && receipt.items.length > 0) {
       for (const item of receipt.items) {
         if (excluded.has(item.category)) continue;
-        const key = item.name.trim().toLowerCase();
-        if (!key) continue;
+        const key = `${item.name.trim().toLowerCase()}|${receipt.store_name ?? ''}`;
+        if (!item.name.trim()) continue;
         const existing = byKey.get(key);
         if (existing) {
           existing.quantity += item.quantity ?? 0;
@@ -486,13 +488,14 @@ export function aggregateDayItems(
             name: item.name,
             quantity: item.quantity ?? 0,
             amount: item.amount,
+            store: receipt.store_name,
           });
         }
       }
     } else if (receipt.category_totals) {
       for (const [slug, amount] of Object.entries(receipt.category_totals)) {
         if (excluded.has(slug) || amount <= 0) continue;
-        const key = slug;
+        const key = `${slug}|${receipt.store_name ?? ''}`;
         const existing = byKey.get(key);
         if (existing) {
           existing.amount += amount;
@@ -501,6 +504,7 @@ export function aggregateDayItems(
             name: slug,
             quantity: 1,
             amount,
+            store: receipt.store_name,
           });
         }
       }
