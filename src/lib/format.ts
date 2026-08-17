@@ -134,6 +134,14 @@ export function todayLocalISO(): string {
 }
 
 /**
+ * Display label for a 4-digit year string. Returns as-is — keeps format
+ * logic centralized in case future i18n needs prefixing or ordinal form.
+ */
+export function yearLabel(year: string): string {
+  return year;
+}
+
+/**
  * Rough UUID generator. We use this for local-only ids (e.g. the
  * `temp_id` on `ReviewItem` rows). Don't use for anything that
  * will hit the database.

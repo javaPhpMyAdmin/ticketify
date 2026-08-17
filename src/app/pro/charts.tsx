@@ -69,7 +69,7 @@ import {
   monthKeyToLabel,
   previousMonthKey,
 } from '@/features/home/hooks/useHomeFeed';
-import { formatCurrency, MONTHS_SHORT_ES, todayLocalISO } from '@/lib/format';
+import { formatCurrency, MONTHS_SHORT_ES, todayLocalISO, yearLabel } from '@/lib/format';
 import { ProRouteGuard } from '@/features/pro';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
@@ -229,6 +229,36 @@ function ChartsBody() {
     () => (tappedDay ? aggregateDayTotal(list, tappedDay, ['servicios']) : 0),
     [list, tappedDay],
   );
+
+  // ── Annual trend card ──────────────────────────────────────────────
+  const currentYear = String(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const availableYears = useMemo(
+    () =>
+      [...new Set(list.map((r) => r.purchase_date.slice(0, 4)))].sort(),
+    [list],
+  );
+  const monthsOfYear = useMemo(() => {
+    const y = selectedYear;
+    return Array.from({ length: 12 }, (_, i) =>
+      `${y}-${String(i + 1).padStart(2, '0')}`,
+    );
+  }, [selectedYear]);
+  const annualTrend = useMemo(
+    () => aggregateSpendTrend(list, monthsOfYear),
+    [list, monthsOfYear],
+  );
+  const hasAnnualData = annualTrend.some((p) => p.total > 0);
+  const currentMonthIdx = new Date().getMonth(); // 0–11
+  const highlightIdx = selectedYear === currentYear ? currentMonthIdx : -1;
+
+  const canGoPrevYear =
+    availableYears.length > 0 && selectedYear > availableYears[0];
+  const canGoNextYear = selectedYear < currentYear;
+  const goPrevYear = () =>
+    setSelectedYear(String(Number(selectedYear) - 1));
+  const goNextYear = () =>
+    setSelectedYear(String(Number(selectedYear) + 1));
 
   /**
    * Items for the capsule bar chart card, derived from the selected
@@ -415,6 +445,64 @@ function ChartsBody() {
           icon="calendar"
         />
       </View>
+
+      {/* ── Tendencia anual ──────────────────────────────────────────── */}
+      <Card>
+        <View style={styles.yearSelector}>
+          <Pressable
+            onPress={goPrevYear}
+            disabled={!canGoPrevYear}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Año anterior"
+            accessibilityState={{ disabled: !canGoPrevYear }}
+          >
+            <Icon
+              name="chevron.left"
+              size={22}
+              color={canGoPrevYear ? colors.textPrimary : colors.textSecondary}
+            />
+          </Pressable>
+          <Text style={styles.yearLabel}>{yearLabel(selectedYear)}</Text>
+          <Pressable
+            onPress={goNextYear}
+            disabled={!canGoNextYear}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Año siguiente"
+            accessibilityState={{ disabled: !canGoNextYear }}
+          >
+            <Icon
+              name="chevron.right"
+              size={22}
+              color={canGoNextYear ? colors.textPrimary : colors.textSecondary}
+            />
+          </Pressable>
+        </View>
+        {hasAnnualData ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ minWidth: 12 * 44 }}
+          >
+            <CapsuleBarChart
+              items={annualTrend.map((point, i) => ({
+                label: shortMonthLabel(point.month),
+                value: point.total,
+                highlight: i === highlightIdx,
+              }))}
+              currency={currency}
+              onPressItem={(_item, index) => {
+                const monthKey = monthsOfYear[index];
+                setMonthKey(monthKey);
+              }}
+            />
+          </ScrollView>
+        ) : (
+          <Text style={styles.emptyYear}>Sin gastos este año</Text>
+        )}
+      </Card>
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Por categoría</Text>
         {totalsLoading ? (
@@ -585,6 +673,23 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '900',
     color: colors.textSecondary,
+  },
+  yearSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  yearLabel: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: colors.textSecondary,
+  },
+  emptyYear: {
+    ...typography.bodyMd,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingVertical: spacing.lg,
   },
   chartHeader: {
     flexDirection: 'row',
