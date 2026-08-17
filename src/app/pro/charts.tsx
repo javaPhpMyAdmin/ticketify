@@ -218,17 +218,17 @@ function ChartsBody() {
   // aggregator so it never runs on an empty ISO date.
   const tappedDayItems = useMemo(() => {
     if (!tappedDay) return [];
-    const items = aggregateDayItems(list, tappedDay, ['servicios']);
-    // Debug: log the data shape when the modal opens for a day that
-    // should have spending (helps diagnose empty-items issues).
     const dayReceipts = list.filter((r) => r.purchase_date.slice(0, 10) === tappedDay);
-    if (dayReceipts.length > 0 && items.length === 0) {
-      console.warn(`[day-detail] ${tappedDay}: ${dayReceipts.length} receipts but 0 items`, {
-        hasItems: dayReceipts.map((r) => !!r.items?.length),
-        categoryTotals: dayReceipts.map((r) => r.category_totals),
-      });
+    if (dayReceipts.length > 0) {
+      console.warn(`[day-detail] ${tappedDay}: ${dayReceipts.length} receipts`, dayReceipts.map((r) => ({
+        id: r.id,
+        store: r.store_name,
+        total: r.total,
+        itemsLen: r.items?.length ?? 'undef',
+        catTotals: r.category_totals,
+      })));
     }
-    return items;
+    return aggregateDayItems(list, tappedDay, ['servicios']);
   }, [list, tappedDay]);
   // Headline total for the open day-detail sheet — the EXACT number the
   // weekly bar showed for that day (`aggregateDayTotal`: receipt totals
