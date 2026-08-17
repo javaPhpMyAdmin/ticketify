@@ -52,6 +52,18 @@ export function DayDetailModal({
   const itemsTotal = items.reduce((sum, item) => sum + item.amount, 0);
   const displayedTotal = total ?? itemsTotal;
 
+  // When the caller reports a non-zero total but aggregation produced no
+  // line items (e.g. purchase_items weren't hydrated by the Supabase join
+  // or all items belong to excluded categories), surface a single generic
+  // entry so the modal never shows "Sin gastos" for a day that clearly
+  // had spending.
+  const displayItems =
+    items.length > 0
+      ? items
+      : displayedTotal > 0
+        ? [{ name: 'Recibo', quantity: 1, amount: displayedTotal }]
+        : [];
+
   const renderItem: ListRenderItem<DayItemGroup> = ({ item, index }) => (
     <View>
       {index > 0 ? <Divider /> : null}
@@ -115,7 +127,7 @@ export function DayDetailModal({
             </Text>
           </View>
           <Divider />
-          {items.length === 0 ? (
+          {displayItems.length === 0 ? (
             <View style={styles.emptyWrap}>
               <EmptyState
                 icon="doc.text"
@@ -125,7 +137,7 @@ export function DayDetailModal({
             </View>
           ) : (
             <FlatList
-              data={items}
+              data={displayItems}
               keyExtractor={(item) => item.name}
               renderItem={renderItem}
               contentContainerStyle={styles.listContent}
