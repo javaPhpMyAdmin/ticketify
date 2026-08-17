@@ -233,7 +233,9 @@ export default function ReviewReceiptScreen() {
   // HIGHER than the item sum, on the other hand, can never be explained by a
   // discount and signals a parse error. So the check only flags the
   // impossible direction (paid more than the items add up to).
-  const matches = draft ? draft.total <= itemsTotal + 0.01 : false;
+  // In edit mode the user is intentionally changing items, so the declared
+  // total may lag behind — skip the mismatch check.
+  const matches = editingMode ? true : (draft ? draft.total <= itemsTotal + 0.01 : false);
 
   // Read-only card detail shown inside the "Tarjeta" chip, e.g.
   // "Tarjeta · Maestro Débito". Gated on the selected payment method:

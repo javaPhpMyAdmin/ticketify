@@ -517,7 +517,27 @@ function ChartsBody() {
       </Card>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Por categoría</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Por categoría</Text>
+          <Pressable
+            onPress={() => router.push('/settings/category-budgets')}
+            style={({ pressed }) => [
+              styles.budgetLink,
+              pressed && styles.budgetLinkPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Configurar presupuestos por categoría"
+          >
+            <Icon
+              name="pencil"
+              size={14}
+              color={colors.primary}
+            />
+            <Text style={styles.budgetLinkText}>
+              {hasAnyBudgets ? 'Editar' : 'Configurar'}
+            </Text>
+          </Pressable>
+        </View>
         {totalsLoading ? (
           <View style={styles.skeletonList}>
             {[0, 1, 2, 3].map((i) => (
@@ -573,25 +593,6 @@ function ChartsBody() {
                   })}
                 </View>
               </Card>
-              {/* CTA: always show so users can configure or edit budgets */}
-              <Pressable
-                onPress={() => router.push('/settings/category-budgets')}
-                style={({ pressed }) => [
-                  styles.budgetCta,
-                  pressed && styles.budgetCtaPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Configurar presupuestos por categoría"
-              >
-                <Icon
-                  name="chart.pie.fill"
-                  size={18}
-                  color={colors.primary}
-                />
-                <Text style={styles.budgetCtaText}>
-                  {hasAnyBudgets ? 'Editar presupuestos' : 'Configurar presupuestos'}
-                </Text>
-              </Pressable>
               </>
             )}
             {/* Background refetch failed but the last good totals are on
@@ -760,35 +761,37 @@ const styles = StyleSheet.create({
   section: {
     gap: spacing.md,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   sectionTitle: {
     color: colors.textPrimary,
     fontSize: 20,
     fontWeight: '600',
+  },
+  budgetLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  budgetLinkPressed: {
+    backgroundColor: colors.surface,
+  },
+  budgetLinkText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
   },
   categoryList: {
     gap: spacing.sm,
   },
   skeletonList: {
     gap: spacing.lg,
-  },
-  budgetCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: 12,
-  },
-  budgetCtaPressed: {
-    opacity: 0.85,
-  },
-  budgetCtaText: {
-    ...typography.bodyMd,
-    color: colors.primary,
-    fontWeight: '700',
   },
   error: {
     ...typography.labelSm,
