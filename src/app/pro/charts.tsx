@@ -643,7 +643,7 @@ function ChartsBody() {
         items={tappedDayItems}
         total={tappedDayTotal}
         currency={currency}
-        onClose={() => setTappedDay(null)}
+        onClose={() => { setTappedDay(null); setTappedFromHero(false); }}
       />
     </>
   );
