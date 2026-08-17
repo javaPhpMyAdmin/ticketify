@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { Icon, Pressable, Text, type IconName } from '@/components';
+import { Icon, Pressable, ProgressBar, Text, type IconName } from '@/components';
 import { formatCurrency } from '@/lib/format';
 import { colors, spacing, typography } from '@/theme';
 import { getCategoryColor } from '@/features/home/categories';
@@ -26,6 +26,20 @@ export interface CategoryBudgetRowProps {
    * row stays a plain non-interactive View (byte-identical output).
    */
   onPress?: () => void;
+}
+
+/**
+ * Progress bar color based on spend vs. limit ratio:
+ * - green (<70%): on track
+ * - amber (70–100%): approaching limit
+ * - red (>100%): over budget
+ */
+export function budgetProgressColor(spent: number, limit: number): string {
+  if (limit <= 0) return colors.primary;
+  const ratio = spent / limit;
+  if (ratio >= 1) return '#EF4444'; // red
+  if (ratio >= 0.7) return '#F59E0B'; // amber
+  return '#10B981'; // green
 }
 
 /**
@@ -67,10 +81,17 @@ export function CategoryBudgetRow({
         </Text>
         <Text style={styles.percent}>{Math.round(percent)}% del gasto</Text>
         {typeof limit === 'number' ? (
-          <Text style={styles.limit}>
-            {formatCurrency(amount, currency)} de{' '}
-            {formatCurrency(limit, currency)}
-          </Text>
+          <>
+            <Text style={styles.limit}>
+              {formatCurrency(amount, currency)} de{' '}
+              {formatCurrency(limit, currency)}
+            </Text>
+            <ProgressBar
+              value={Math.min(1, amount / limit)}
+              color={budgetProgressColor(amount, limit)}
+              height={4}
+            />
+          </>
         ) : null}
       </View>
       <View style={styles.amountColumn}>

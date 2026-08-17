@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import { Icon, Pressable, Text, View, type IconName } from '@/components';
+import { Icon, Pressable, ProgressBar, Text, View, type IconName } from '@/components';
 import { formatCurrency } from '@/lib/format';
 import { radii, spacing, typography } from '@/theme';
 
@@ -18,6 +18,8 @@ export interface CategoryBudgetCardProps {
    * present, renders a small "{n} artículos" line under the percent.
    */
   itemCount?: number;
+  /** Optional per-category budget limit; when set, renders a progress bar. */
+  limit?: number;
   onPress?: () => void;
 }
 
@@ -38,9 +40,20 @@ export function CategoryBudgetCard({
   icon,
   currency = 'UYU',
   itemCount,
+  limit,
   onPress,
 }: CategoryBudgetCardProps) {
   const color = getCategoryColor(categoryKey);
+
+  /** Color based on spend vs limit ratio. */
+  const progressColor =
+    typeof limit === 'number' && limit > 0
+      ? amount / limit >= 1
+        ? '#EF4444'
+        : amount / limit >= 0.7
+          ? '#F59E0B'
+          : '#10B981'
+      : undefined;
 
   return (
     <Pressable
@@ -79,6 +92,22 @@ export function CategoryBudgetCard({
             </Text>
           ) : null}
         </View>
+        {typeof limit === 'number' && limit > 0 ? (
+          <View style={styles.budgetSection}>
+            <Text style={[styles.limitText, { color: color.foreground }]}>
+              {formatCurrency(amount, currency)} de{' '}
+              {formatCurrency(limit, currency)}
+            </Text>
+            <View style={styles.progressTrack}>
+              <ProgressBar
+                value={Math.min(1, amount / limit)}
+                color={progressColor}
+                height={4}
+                trackColor={`${color.foreground}33`}
+              />
+            </View>
+          </View>
+        ) : null}
       </View>
       <Text style={[styles.amount, { color: color.foreground }]}>
         {formatCurrency(amount, currency)}
@@ -136,6 +165,17 @@ const styles = StyleSheet.create({
   itemCount: {
     ...typography.labelSm,
     opacity: 0.75,
+  },
+  budgetSection: {
+    gap: 2,
+    backgroundColor: 'transparent',
+  },
+  limitText: {
+    ...typography.labelSm,
+    opacity: 0.8,
+  },
+  progressTrack: {
+    marginTop: 2,
   },
   amount: {
     ...typography.headlineMd,

@@ -1,4 +1,5 @@
 export { useMonthlyTotals } from './hooks/useMonthlyTotals';
+export { useCategoryBudgets } from './hooks/useCategoryBudgets';
 export { usePriceAlerts } from './hooks/usePriceAlerts';
 export { useMonthlyOverview } from './hooks/useMonthlyOverview';
 export { CategoryBreakdownList } from './components/CategoryBreakdownList';
@@ -12,6 +13,7 @@ export type { InsightBannerProps } from './components/InsightBanner';
 export { MetricSummaryCard } from './components/MetricSummaryCard';
 export type { MetricSummaryCardProps } from './components/MetricSummaryCard';
 export { CategoryBudgetRow } from './components/CategoryBudgetRow';
+export { budgetProgressColor } from './components/CategoryBudgetRow';
 export type { CategoryBudgetRowProps } from './components/CategoryBudgetRow';
 export { fetchMonthlyTotals, fetchCategoryBreakdown } from './api';
 export { computePriceAlerts } from './price-alerts';

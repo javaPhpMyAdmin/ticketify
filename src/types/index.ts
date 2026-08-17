@@ -223,6 +223,17 @@ export interface ReviewItem {
   ai_suggested_category_id: string | null;
 }
 
+/**
+ * Per-category monthly budget limit. One row per (user, category, month).
+ * Mirrors `public.category_budgets`.
+ */
+export interface CategoryBudget {
+  user_id: string;
+  category_slug: string;
+  month: string; // 'YYYY-MM'
+  amount: number;
+}
+
 /** Aggregated total for the analytics screen. */
 export interface CategoryMonthlyTotal {
   category_id: string;
@@ -231,6 +242,8 @@ export interface CategoryMonthlyTotal {
   total: number;
   item_count: number;
   percent_of_total: number;
+  /** Per-category budget limit for the month; null when no budget is set. */
+  budget_limit: number | null;
 }
 
 /**

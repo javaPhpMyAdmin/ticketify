@@ -63,4 +63,7 @@ export const queryKeys = {
    */
   itemSearchPrefix: (userId: string) =>
     ['home', 'item-search', userId] as const,
+  /** Per-category budget limits for a month. */
+  categoryBudgets: (userId: string, yearMonth: string) =>
+    ['category-budgets', userId, yearMonth] as const,
 };

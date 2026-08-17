@@ -57,6 +57,13 @@ export default function ProfileScreen() {
       onPress: () => router.push('/settings/budget'),
     },
     {
+      id: 'category-budgets',
+      label: 'Presupuestos por categoría',
+      icon: 'chart.bar.fill',
+      trailing: { type: 'chevron' },
+      onPress: () => router.push('/settings/category-budgets'),
+    },
+    {
       id: 'household',
       label: 'Uso compartido del hogar',
       icon: 'person.fill',

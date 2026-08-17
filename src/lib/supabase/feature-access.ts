@@ -11,7 +11,7 @@
  * failure, unconfigured).
  */
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
-import type { CategoryMonthlyTotal, ScanUsage, User } from '@/types';
+import type { CategoryBudget, CategoryMonthlyTotal, ScanUsage, User } from '@/types';
 
 /**
  * User-safe copy shown when an authenticated read fails. Raw PostgREST text
@@ -137,4 +137,77 @@ export async function readMonthlyPurchasesTotal(
     return { status: 'error', message: READ_ERROR_MESSAGE };
   }
   return { status: 'ok', data: (data ?? []) as { total: number }[] };
+}
+
+/**
+ * Read the user's category budget limits for a month. Returns an array
+ * (possibly empty) — an empty array means no budgets are configured.
+ */
+export async function readCategoryBudgets(
+  userId: string,
+  yearMonth: string,
+): Promise<FeatureReadResult<CategoryBudget[]>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { data, error } = await supabase
+    .from('category_budgets')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('month', yearMonth);
+  if (error) {
+    console.warn('[read] category budgets failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: (data ?? []) as CategoryBudget[] };
+}
+
+/**
+ * Upsert category budget amounts for a month. Items with amount > 0 are
+ * inserted or updated; items with amount <= 0 are deleted (clearing the
+ * budget for that category). Returns `ok` on success or `error` on failure.
+ */
+export async function upsertCategoryBudgets(
+  budgets: Array<{ category_slug: string; amount: number }>,
+  yearMonth: string,
+  userId: string,
+): Promise<FeatureReadResult<null>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+
+  const toUpsert = budgets.filter((b) => b.amount > 0);
+  const toDelete = budgets.filter((b) => b.amount <= 0);
+
+  // Delete budgets that are being cleared
+  if (toDelete.length > 0) {
+    const { error: deleteError } = await supabase
+      .from('category_budgets')
+      .delete()
+      .eq('user_id', userId)
+      .eq('month', yearMonth)
+      .in(
+        'category_slug',
+        toDelete.map((b) => b.category_slug),
+      );
+    if (deleteError) {
+      console.warn('[upsert] category budgets delete failed:', deleteError.code, deleteError.message);
+      return { status: 'error', message: READ_ERROR_MESSAGE };
+    }
+  }
+
+  // Upsert budgets with amount > 0
+  if (toUpsert.length > 0) {
+    const rows = toUpsert.map((b) => ({
+      user_id: userId,
+      category_slug: b.category_slug,
+      month: yearMonth,
+      amount: b.amount,
+    }));
+    const { error: upsertError } = await supabase
+      .from('category_budgets')
+      .upsert(rows, { onConflict: 'user_id,category_slug,month' });
+    if (upsertError) {
+      console.warn('[upsert] category budgets upsert failed:', upsertError.code, upsertError.message);
+      return { status: 'error', message: READ_ERROR_MESSAGE };
+    }
+  }
+
+  return { status: 'ok', data: null };
 }
