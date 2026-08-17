@@ -56,6 +56,7 @@ export type CallLogEntry =
  */
 export type QueryOp =
   | { op: 'eq'; column: string; value: unknown }
+  | { op: 'in'; column: string; values: unknown[] }
   | { op: 'ilike'; column: string; pattern: string }
   | { op: 'gte'; column: string; value: unknown }
   | { op: 'lt'; column: string; value: unknown }
@@ -90,6 +91,7 @@ export interface FromBuilder {
  */
 export interface QueryBuilder extends PromiseLike<{ data: unknown; error: StubError }> {
   eq: (column: string, value: unknown) => QueryBuilder;
+  in: (column: string, values: unknown[]) => QueryBuilder;
   ilike: (column: string, pattern: string) => QueryBuilder;
   gte: (column: string, value: unknown) => QueryBuilder;
   lt: (column: string, value: unknown) => QueryBuilder;
@@ -260,6 +262,10 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
   const builder = {
     eq: (column: string, value: unknown) => {
       ops.push({ op: 'eq', column, value });
+      return builder;
+    },
+    in: (column: string, values: unknown[]) => {
+      ops.push({ op: 'in', column, values });
       return builder;
     },
     ilike: (column: string, pattern: string) => {
