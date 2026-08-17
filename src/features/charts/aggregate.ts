@@ -492,7 +492,7 @@ export function aggregateDayItems(
           });
         }
       }
-    } else if (receipt.category_totals) {
+    } else if (receipt.category_totals && Object.keys(receipt.category_totals).length > 0) {
       for (const [slug, amount] of Object.entries(receipt.category_totals)) {
         if (excluded.has(slug) || amount <= 0) continue;
         const key = `${slug}|${receipt.store_name ?? ''}`;
@@ -507,6 +507,22 @@ export function aggregateDayItems(
             store: receipt.store_name,
           });
         }
+      }
+    } else if ((receipt.total ?? 0) > 0) {
+      // Last resort: receipt has a total but no line items or category
+      // breakdown (e.g. items weren't hydrated by the Supabase join).
+      // Show the receipt as a single "Recibo" entry with its store.
+      const key = `recibo|${receipt.store_name ?? ''}`;
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.amount += receipt.total!;
+      } else {
+        byKey.set(key, {
+          name: 'Recibo',
+          quantity: 1,
+          amount: receipt.total!,
+          store: receipt.store_name,
+        });
       }
     }
   }
