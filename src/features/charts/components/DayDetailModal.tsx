@@ -56,10 +56,17 @@ export function DayDetailModal({
     <View>
       {index > 0 ? <Divider /> : null}
       <View style={styles.row}>
-        <Text style={styles.rowName} numberOfLines={2}>
-          {item.name}
-          {item.quantity > 1 ? ` ×${item.quantity}` : ''}
-        </Text>
+        <View style={styles.rowText}>
+          <Text style={styles.rowName} numberOfLines={2}>
+            {item.name}
+            {item.quantity > 1 ? ` ×${item.quantity}` : ''}
+          </Text>
+          {item.store ? (
+            <Text style={styles.rowStore} numberOfLines={1}>
+              {item.store}
+            </Text>
+          ) : null}
+        </View>
         <Text style={styles.rowAmount}>
           {formatCurrency(item.amount, currency)}
         </Text>
@@ -208,10 +215,17 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     gap: spacing.md,
   },
+  rowText: {
+    flex: 1,
+    gap: 2,
+  },
   rowName: {
     ...typography.bodyLg,
     color: colors.textPrimary,
-    flex: 1,
+  },
+  rowStore: {
+    ...typography.labelSm,
+    color: colors.textSecondary,
   },
   rowAmount: {
     ...typography.bodyLg,
