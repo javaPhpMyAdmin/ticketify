@@ -157,9 +157,11 @@ function ChartsBody() {
   const currency = useSettingsStore((s) => s.currency);
   const [monthKey, setMonthKey] = useState(currentMonthKey);
   const [period, setPeriod] = useState<ChartPeriod>('week');
-  // ISO date of the day whose detail sheet is open (`null` = closed). Only
-  // the week view opens it — bars in the month/year views stay inert.
+  // ISO date of the day whose detail sheet is open (`null` = closed).
   const [tappedDay, setTappedDay] = useState<string | null>(null);
+  // Hero bars include servicios in their totals; weekly bars exclude them.
+  // The day-detail modal must match the source's exclusion rule.
+  const [tappedFromHero, setTappedFromHero] = useState(false);
 
   const monthKeys = useMemo(() => getAvailableMonthKeys(list), [list]);
 
@@ -218,27 +220,20 @@ function ChartsBody() {
   // aggregator so it never runs on an empty ISO date.
   const tappedDayItems = useMemo(() => {
     if (!tappedDay) return [];
-    const dayReceipts = list.filter((r) => r.purchase_date.slice(0, 10) === tappedDay);
-    if (dayReceipts.length > 0) {
-      console.warn(`[day-detail] ${tappedDay}: ${dayReceipts.length} receipts`, dayReceipts.map((r) => ({
-        id: r.id,
-        store: r.store_name,
-        total: r.total,
-        itemsLen: r.items?.length ?? 'undef',
-        catTotals: r.category_totals,
-      })));
-    }
-    return aggregateDayItems(list, tappedDay, ['servicios']);
-  }, [list, tappedDay]);
+    // Hero includes servicios; weekly excludes them.
+    const exclude = tappedFromHero ? [] : ['servicios'];
+    return aggregateDayItems(list, tappedDay, exclude);
+  }, [list, tappedDay, tappedFromHero]);
   // Headline total for the open day-detail sheet — the EXACT number the
   // weekly bar showed for that day (`aggregateDayTotal`: receipt totals
   // minus servicios, clamped at 0). The item list alone can't reproduce
   // it (items are pre-discount lines), so the modal displays this instead
   // of re-summing the rows.
-  const tappedDayTotal = useMemo(
-    () => (tappedDay ? aggregateDayTotal(list, tappedDay, ['servicios']) : 0),
-    [list, tappedDay],
-  );
+  const tappedDayTotal = useMemo(() => {
+    if (!tappedDay) return 0;
+    const exclude = tappedFromHero ? [] : ['servicios'];
+    return aggregateDayTotal(list, tappedDay, exclude);
+  }, [list, tappedDay, tappedFromHero]);
 
   // ── Annual trend card ──────────────────────────────────────────────
   const currentYear = String(new Date().getFullYear());
@@ -388,6 +383,7 @@ function ChartsBody() {
         currency={currency}
         onDayPress={(dayIndex) => {
           const day = String(dayIndex + 1).padStart(2, '0');
+          setTappedFromHero(true);
           setTappedDay(`${monthKey}-${day}`);
         }}
       />
@@ -436,7 +432,10 @@ function ChartsBody() {
           currency={currency}
           onPressItem={
             period === 'week'
-              ? (_item, index) => setTappedDay(weekDayISO(weekStartISO, index))
+              ? (_item, index) => {
+                  setTappedFromHero(false);
+                  setTappedDay(weekDayISO(weekStartISO, index));
+                }
               : undefined
           }
         />
