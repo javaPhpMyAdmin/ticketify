@@ -376,6 +376,10 @@ function ChartsBody() {
         previousMonthLabel={previousMonthLabel}
         dailyData={dailySpend}
         currency={currency}
+        onDayPress={(dayIndex) => {
+          const day = String(dayIndex + 1).padStart(2, '0');
+          setTappedDay(`${monthKey}-${day}`);
+        }}
       />
       <InsightBanner
         deltaPct={overview.changePct}

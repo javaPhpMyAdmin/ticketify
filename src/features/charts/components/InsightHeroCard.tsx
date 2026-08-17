@@ -11,7 +11,6 @@ import {
   buildDailyInsight,
   buildVisibleDailySeries,
   weekdayInitialsForMonth,
-  WEEKDAY_NAMES,
 } from '../aggregate';
 
 /**
@@ -23,17 +22,6 @@ import {
  * the bars — days 13-14 read as 15-16 and days 10-11 looked empty).
  */
 const DAY_SLOT_WIDTH = 44;
-
-/** Floating legend shown when a bar is tapped; fixed box for positioning. */
-const TOOLTIP_WIDTH = 104;
-const TOOLTIP_HEIGHT = 36;
-
-/**
- * Short Spanish weekday names (first 3 letters), indexed by
- * `Date.prototype.getDay()`. Derived from `WEEKDAY_NAMES` — the single
- * source of full names in `aggregate.ts` — so the two can never drift.
- */
-const WEEKDAY_SHORT = WEEKDAY_NAMES.map((name) => name.slice(0, 3));
 
 export interface InsightHeroCardProps {
   /** Display label for the selected month, e.g. "Agosto 2026". */
@@ -55,6 +43,11 @@ export interface InsightHeroCardProps {
   currency?: string;
   /** Pixel height of the chart canvas. */
   chartHeight?: number;
+  /**
+   * Called when a non-zero bar is tapped. The argument is the 0-based day
+   * index (0 = day 1). When omitted, taps are no-ops (read-only mode).
+   */
+  onDayPress?: (dayIndex: number) => void;
 }
 
 /**
@@ -90,6 +83,7 @@ export function InsightHeroCard({
   dailyData,
   currency = 'UYU',
   chartHeight = 120,
+  onDayPress,
 }: InsightHeroCardProps) {
   const hasChange = deltaPct !== null;
   const isUp = hasChange && deltaPct >= 0;
@@ -101,19 +95,6 @@ export function InsightHeroCard({
     const handle = setTimeout(() => setHasMounted(true), 0);
     return () => clearTimeout(handle);
   }, []);
-
-  // Tap-to-inspect: the selected day (null = legend hidden). Tapping a bar
-  // toggles its legend; tapping anywhere else (chart background, empty slots,
-  // the label row) dismisses it. Hit targets are the bars themselves — a
-  // Pressable per non-zero bar over the chart, with a dismiss Pressable
-  // underneath — so the legend closes exactly when the touch is "outside
-  // the bar", and scrolling is untouched (native drag beats the Pressables).
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
-
-  // A new month clears any lingering legend.
-  useEffect(() => {
-    setActiveIndex(null);
-  }, [dailyData]);
 
   const hasData = dailyData.some((point) => point.total > 0);
 
@@ -161,32 +142,6 @@ export function InsightHeroCard({
   // one per slot, with the weekday initial (L M M J V S D) under it.
   const dayTicks = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const weekdayInitials = weekdayInitialsForMonth(monthKey);
-
-  // Tap legend: the selected day's label (e.g. "Sáb 13") and its real spend.
-  const activeDay =
-    activeIndex !== null ? activeIndex + 1 : null;
-  const activePoint =
-    activeIndex !== null && barAnchors ? barAnchors[activeIndex] : null;
-  const activeTotal =
-    activeIndex !== null && dailyData[activeIndex]
-      ? dailyData[activeIndex].total
-      : 0;
-  const [activeYear, activeMonth] = monthKey
-    .split('-')
-    .map((part) => Number(part));
-  const activeWeekday =
-    activeDay !== null && activeYear && activeMonth
-      ? WEEKDAY_SHORT[new Date(activeYear, activeMonth - 1, activeDay).getDay()]
-      : '';
-  const tooltipLeft = activePoint
-    ? Math.min(
-        Math.max(activePoint.x - TOOLTIP_WIDTH / 2, 6),
-        totalWidth - TOOLTIP_WIDTH - 6,
-      )
-    : 0;
-  const tooltipTop = activePoint
-    ? Math.max(activePoint.y - TOOLTIP_HEIGHT - 8, 4)
-    : 0;
 
   return (
     <View style={styles.card}>
@@ -239,7 +194,6 @@ export function InsightHeroCard({
           showsHorizontalScrollIndicator={false}
           style={styles.chartScroll}
           contentContainerStyle={styles.chartScrollContent}
-          onScrollBeginDrag={() => setActiveIndex(null)}
         >
           <View style={{ width: totalWidth }}>
             <View style={[styles.chart, { height: chartHeight }]}>
@@ -301,15 +255,9 @@ export function InsightHeroCard({
                   );
                 }}
               </CartesianChart>
-              {/* Tap handling: a full-area dismiss layer, with one Pressable
-                  per non-zero bar on top. Tapping a bar toggles its legend;
-                  tapping anywhere else (background, empty days, above the
-                  bars) dismisses it. */}
-              <Pressable
-                style={styles.tapDismissLayer}
-                onPress={() => setActiveIndex(null)}
-              />
-              {barAnchors && baselineY !== null
+              {/* Tap handling: one Pressable per non-zero bar that opens
+                  the day detail modal via onDayPress. */}
+              {barAnchors && baselineY !== null && onDayPress
                 ? dayTicks.map((day, index) => {
                     const total = dailyData[index]?.total ?? 0;
                     const anchor = barAnchors[index];
@@ -329,33 +277,13 @@ export function InsightHeroCard({
                             height: barHeight,
                           },
                         ]}
-                        onPress={() =>
-                          setActiveIndex((prev) =>
-                            prev === index ? null : index,
-                          )
-                        }
+                        onPress={() => onDayPress(index)}
                       />
                     );
                   })
                 : null}
-              {activePoint ? (
-                <View
-                  style={[
-                    styles.tooltip,
-                    { left: tooltipLeft, top: tooltipTop },
-                  ]}
-                >
-                  <Text style={styles.tooltipDay}>
-                    {activeWeekday} {activeDay}
-                  </Text>
-                  <Text style={styles.tooltipAmount}>
-                    {formatCurrency(activeTotal, currency)}
-                  </Text>
-                </View>
-              ) : null}
             </View>
-            <Pressable onPress={() => setActiveIndex(null)}>
-              <View style={styles.dayAxis}>
+            <View style={styles.dayAxis}>
                 {dayTicks.map((day, index) => {
                   // Prefer the bar's real anchor (`points.total`); fall back
                   // to the slot center before the chart reports positions.
@@ -379,8 +307,7 @@ export function InsightHeroCard({
                   );
                 })}
               </View>
-            </Pressable>
-          </View>
+            </View>
         </ScrollView>
       ) : (
         <View style={[styles.emptyChart, { height: chartHeight }]}>
@@ -447,11 +374,6 @@ const styles = StyleSheet.create({
   chart: {
     width: '100%',
   },
-  // Invisible full-area tap target: any touch outside a bar dismisses the
-  // legend. Sits below the per-bar Pressables so bars win on top.
-  tapDismissLayer: {
-    ...StyleSheet.absoluteFillObject,
-  },
   // Invisible tap target exactly over a drawn bar. No visual — the bar
   // itself is the affordance.
   tapBar: {
@@ -482,30 +404,6 @@ const styles = StyleSheet.create({
     color: colors.heroText,
     opacity: 0.4,
     lineHeight: 11,
-  },
-  // Floating legend shown above the tapped bar. Red chip (the app's danger
-  // color) with white text so it pops against the dark card.
-  tooltip: {
-    position: 'absolute',
-    width: TOOLTIP_WIDTH,
-    backgroundColor: colors.danger,
-    borderRadius: radii.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    alignItems: 'center',
-  },
-  tooltipDay: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.onPrimary,
-    opacity: 0.9,
-    lineHeight: 13,
-  },
-  tooltipAmount: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: colors.onPrimary,
-    lineHeight: 15,
   },
   // Empty-state box mirrors the chart canvas height: the inline
   // `{ height: chartHeight }` on the usage keeps it coupled to the
