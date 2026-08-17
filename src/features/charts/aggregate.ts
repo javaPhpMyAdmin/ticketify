@@ -467,21 +467,42 @@ export function aggregateDayItems(
   const byKey = new Map<string, DayItemGroup>();
   for (const receipt of records) {
     if (receipt.purchase_date.slice(0, 10) !== isoDate) continue;
-    for (const item of receipt.items ?? []) {
-      if (excluded.has(item.category)) continue;
-      const key = item.name.trim().toLowerCase();
-      if (!key) continue;
-      const existing = byKey.get(key);
-      if (existing) {
-        existing.quantity += item.quantity ?? 0;
-        existing.amount += item.amount;
-      } else {
-        // First-seen casing wins.
-        byKey.set(key, {
-          name: item.name,
-          quantity: item.quantity ?? 0,
-          amount: item.amount,
-        });
+
+    // Prefer per-item breakdown when available; fall back to
+    // category_totals when the purchase_items join didn't hydrate
+    // (empty/undefined items). category_totals is a slug→amount map
+    // already stored on every feed row by buildFeedRow.
+    if (receipt.items && receipt.items.length > 0) {
+      for (const item of receipt.items) {
+        if (excluded.has(item.category)) continue;
+        const key = item.name.trim().toLowerCase();
+        if (!key) continue;
+        const existing = byKey.get(key);
+        if (existing) {
+          existing.quantity += item.quantity ?? 0;
+          existing.amount += item.amount;
+        } else {
+          byKey.set(key, {
+            name: item.name,
+            quantity: item.quantity ?? 0,
+            amount: item.amount,
+          });
+        }
+      }
+    } else if (receipt.category_totals) {
+      for (const [slug, amount] of Object.entries(receipt.category_totals)) {
+        if (excluded.has(slug) || amount <= 0) continue;
+        const key = slug;
+        const existing = byKey.get(key);
+        if (existing) {
+          existing.amount += amount;
+        } else {
+          byKey.set(key, {
+            name: slug,
+            quantity: 1,
+            amount,
+          });
+        }
       }
     }
   }
