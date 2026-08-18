@@ -47,6 +47,7 @@ export default function HomeScreen() {
     error: budgetError,
     isLoading: budgetLoading,
     hasData: budgetHasData,
+    isRefetching: budgetRefetching,
   } = useBudget();
   const {
     receipts,
@@ -55,6 +56,7 @@ export default function HomeScreen() {
     isLoading: feedLoading,
     error: feedError,
     hasData: feedHasData,
+    isRefetching: feedRefetching,
   } = useHomeFeed();
   const insets = useSafeAreaInsets();
   const { session } = useSessionStore();
@@ -111,8 +113,9 @@ export default function HomeScreen() {
               onPressSnacks={() => setSnacksOpen(true)}
             />
             {/* Background refetch failed but the last good budget is on
-                screen — keep it and add a subtle inline note. */}
-            {budgetError ? (
+                screen — keep the section, only show error when NOT refetching
+                so transient failures after save don't flash red. */}
+            {budgetError && !budgetRefetching ? (
               <Text style={styles.error}>{budgetError}</Text>
             ) : null}
           </>
@@ -131,8 +134,9 @@ export default function HomeScreen() {
         ) : (
           <>
             {/* Background refetch failed but the last good feed is on
-                screen — keep the sections and add a subtle inline note. */}
-            {feedError ? (
+                screen — keep the sections, only show error when NOT refetching
+                so transient failures after save don't flash red. */}
+            {feedError && !feedRefetching ? (
               <Text style={styles.error}>{feedError}</Text>
             ) : null}
             {/* Recent receipts */}

@@ -49,6 +49,8 @@ export interface BudgetSnapshot {
    * in for a failed budget read.
    */
   hasData: boolean;
+  /** True while a background refetch is in flight (data is stale but valid). */
+  isRefetching: boolean;
 }
 
 /** Neutral fallback while an authenticated read loads or fails — never fabricated. */
@@ -89,5 +91,6 @@ export function useBudget(): BudgetSnapshot {
         : null,
     isLoading: budgetQuery.isLoading || spentQuery.isLoading,
     hasData: budgetQuery.data !== undefined,
+    isRefetching: budgetQuery.isRefetching || spentQuery.isRefetching,
   };
 }
