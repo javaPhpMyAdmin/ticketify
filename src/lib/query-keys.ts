@@ -51,10 +51,20 @@ export const queryKeys = {
    */
   monthlyTotalsPrefix: (userId: string) =>
     ['analytics', 'monthly-totals', userId] as const,
+  /**
+   * Materialized monthly cache row (migration 0015). Key for a specific
+   * (user, month) row in `monthly_user_totals`.
+   */
+  monthlyCache: (userId: string, yearMonth: string) =>
+    ['analytics', 'monthly-cache', userId, yearMonth] as const,
+  /**
+   * Prefix of the monthlyCache keys for a user, used to invalidate every
+   * month variant at once (e.g. after a receipt save).
+   */
+  monthlyCachePrefix: (userId: string) =>
+    ['analytics', 'monthly-cache', userId] as const,
   /** The home feed (purchase list; all months, current-month derived). */
   homeFeed: (userId: string) => ['home', 'feed', userId] as const,
-  /** Full non-paginated purchase list (hydrates the receipts store for analytics/charts/history). */
-  purchaseList: (userId: string) => ['home', 'purchase-list', userId] as const,
   /** Paginated home feed — one page of recent receipts. */
   homeFeedPage: (userId: string, page: number) =>
     ['home', 'feed', userId, 'page', page] as const,

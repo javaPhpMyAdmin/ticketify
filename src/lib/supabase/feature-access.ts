@@ -18,6 +18,7 @@ import type {
   HouseholdFeedItem,
   HouseholdMember,
   InviteCode,
+  MonthlyTotalsCacheRow,
   ScanUsage,
   User,
 } from '@/types';
@@ -447,4 +448,51 @@ export async function readHouseholdFeed(
     return { status: 'error', message: READ_ERROR_MESSAGE };
   }
   return { status: 'ok', data: (data ?? []) as HouseholdFeedItem[] };
+}
+
+// ---------------------------------------------------------------------------
+// Monthly totals cache (migration 0015)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the materialized monthly cache row for a user and month. Returns
+ * null when no row exists yet (cache miss — the hook triggers a recalc).
+ */
+export async function readMonthlyCacheRow(
+  userId: string,
+  yearMonth: string,
+): Promise<FeatureReadResult<MonthlyTotalsCacheRow | null>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { data, error } = await supabase
+    .from('monthly_user_totals')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('year_month', yearMonth)
+    .maybeSingle();
+  if (error) {
+    console.warn('[read] monthly cache failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: (data as MonthlyTotalsCacheRow | null) ?? null };
+}
+
+/**
+ * Trigger a one-time recalculation of the monthly cache row via the
+ * `recalculate_monthly_totals` RPC. Used by the hook on cache miss — the
+ * hook then refetches the read to pick up the freshly computed row.
+ */
+export async function triggerMonthlyRecalc(
+  userId: string,
+  yearMonth: string,
+): Promise<FeatureReadResult<void>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { error } = await supabase.rpc('recalculate_monthly_totals', {
+    p_user_id: userId,
+    p_year_month: yearMonth,
+  });
+  if (error) {
+    console.warn('[write] trigger monthly recalc failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: undefined };
 }

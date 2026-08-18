@@ -309,6 +309,26 @@ export interface InviteCode {
   created_at: string;
 }
 
+// ---------------------------------------------------------------------------
+// Monthly totals cache (migration 0015)
+// ---------------------------------------------------------------------------
+
+/**
+ * Materialized monthly spend totals maintained by a Postgres trigger on
+ * `purchases`. Client reads a single row per (user, month) for all
+ * month-scoped analytics.
+ */
+export interface MonthlyTotalsCacheRow {
+  user_id: string;
+  year_month: string;
+  total: number;
+  category_totals: Record<string, { total: number; count: number; name: string }>;
+  store_totals: Record<string, { total: number; count: number }>;
+  daily_totals: Record<string, number>; // { "2026-08-15": 1234.56 }
+  items_count: number;
+  updated_at: string;
+}
+
 /**
  * Level B household receipt feed item (get_household_feed RPC).
  * Totals + category breakdown + store name, no individual items.
