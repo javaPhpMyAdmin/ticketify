@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 
 import type { IconName } from '@/components';
@@ -10,7 +10,7 @@ import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters'
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import type { HomeFeedReceiptRow } from '@/types';
-import { readPurchaseList, searchPurchaseItems } from '../api';
+import { readPurchasePage, searchPurchaseItems, PURCHASE_PAGE_SIZE } from '../api';
 import { getExpenseCategory } from '../categories';
 
 /**
@@ -63,6 +63,14 @@ export interface HomeFeedResult extends HomeFeed {
    * hide retained data.
    */
   hasData: boolean;
+  /** True while a background refetch is in flight (data is stale but valid). */
+  isRefetching: boolean;
+  /** Load the next page of receipts (called on scroll near bottom). */
+  fetchNextPage: () => void;
+  /** True when there are more pages to load. */
+  hasNextPage: boolean;
+  /** True while the next page is being fetched. */
+  isFetchingNextPage: boolean;
 }
 
 /** Neutral empty feed — no fabricated content renders inside a session. */
@@ -453,28 +461,6 @@ export function useItemDetail(itemName: string, monthKey = currentMonthKey()) {
  * Per-store drill-down: the receipts the user scanned at the named
  * store in the requested month, plus the store's monthly total.
  * Sibling to `useItemDetail` — same shape, different axis.
- *
- * `purchases` are aggregated at the RECEIPT level (one row per
- * ticket) rather than the item level. The store detail screen's tap
- * target is "open the ticket photo for that receipt" (`/receipts/[id]`),
- * so the natural grain is one row per ticket, with that ticket's
- * subtotal-for-this-store as the row amount. A user who bought three
- * items at Coto across one ticket sees one row, not three. Without
- * item-name data on the `ItemPurchaseSummary` shape, the per-item grain
- * would render as `(date, amount)` blobs with no semantic meaning; the
- * per-receipt grain reads as "tickets I scanned at this store".
- *
- * The store name is compared in normalized form (trim + lowercase) so
- * "Coto", "COTO" and " coto " all collapse onto one row, matching
- * `aggregateStoresByMonth`'s normalization. The receipt's `store_name`
- * is used directly (no separate `store_id` field today) — once a
- * parser-backed `store_id` exists, this filter should switch from name
- * to id.
- *
- * `total` is the per-store monthly total (the same number the bar
- * chart shows for this store in this month). Receipts that landed in
- * OTHER stores in the same month are not counted here even if some of
- * their items share a category with this store.
  */
 export function useStoreDetail(storeName: string, monthKey?: string) {
   const list = useReceiptsStore((s) => s.list);
@@ -499,13 +485,6 @@ export function useStoreDetail(storeName: string, monthKey?: string) {
     for (const item of receipt.items ?? []) {
       receiptSubtotal += item.amount;
     }
-    // Always derive the row amount from the items, not `receipt.total`
-    // — `receipt.total` covers the entire ticket (which can include
-    // items at OTHER stores if a single ticket bagged purchases from
-    // multiple merchants, an edge case the parser doesn't yet surface
-    // but the aggregator should be defensive against). The subtotal
-    // computed from `receipt.items` is the source of truth for this
-    // store's contribution.
     total += receiptSubtotal;
     if (receiptId) {
       const existing = purchasesByReceipt.get(receiptId);
@@ -521,14 +500,9 @@ export function useStoreDetail(storeName: string, monthKey?: string) {
       }
     }
   }
-  // Newest first — most recent trip to the store surfaces at the top.
   const purchases = [...purchasesByReceipt.values()].sort((a, b) =>
     a.date < b.date ? 1 : a.date > b.date ? -1 : 0,
   );
-  // Cast to the public shape — the screen consumes `ItemPurchaseSummary`
-  // for the common fields (receiptId, storeName, date, amount). The
-  // optional `purchaseItemId` is absent by design (item-level grain
-  // doesn't apply here).
   return {
     total,
     purchases: purchases as unknown as ItemPurchaseSummary[],
@@ -538,12 +512,7 @@ export function useStoreDetail(storeName: string, monthKey?: string) {
 /**
  * Orders "Recibos recientes" by `scanned_at` (when the ticket was
  * captured), newest first, falling back to `purchase_date` when the scan
- * stamp is missing; ties break by purchase date (newer first). A proper
- * TOTAL ORDER: equal keys return 0 and swapped arguments return opposite
- * signs (`cmp(a, b) === -cmp(b, a)`), so `.sort()` is stable and the
- * result does not depend on the input order. Comparing `undefined`
- * against a string is not anti-symmetric (both directions return the same
- * sign); the `?? purchase_date` fallback keeps both sides comparable.
+ * stamp is missing; ties break by purchase date (newer first).
  */
 export function compareReceiptsByScan(
   a: { scanned_at?: string | null; purchase_date: string },
@@ -596,24 +565,24 @@ export function mapPurchaseRowsToHomeFeed(
 }
 
 /**
- * Home screen feed through TanStack Query (server-state-caching spec, D7).
- * The feed is scoped to the current month: categories, recent receipts,
- * and the impulse total only cover receipts whose purchase month matches
- * `currentMonthKey()` — past months live in the History tab. The query
- * source is the full purchase list (all months), read from `purchases` /
- * `purchase_items` (one batched round trip). The feed also hydrates the
- * receipts store with the full list, so the store-based History/Analytics
- * screens and drill-downs render the same rows. The query is disabled
- * until a signed-in user exists, so no read ever runs without a session.
+ * Home screen feed through TanStack Query with infinite scroll.
+ * Loads receipts 10 at a time via `readPurchasePage`. Categories and
+ * snacks totals are computed from whatever pages have been loaded so far.
+ * The receipts store is hydrated with all loaded rows so History/Analytics
+ * render the same data.
  */
 export function useHomeFeed(): HomeFeedResult {
   const { userId } = useSessionUser();
   const householdId = useHouseholdStore((s) => s.household?.id);
 
-  const rowsQuery = useQuery<HomeFeedReceiptRow[]>({
+  const feedQuery = useInfiniteQuery({
     queryKey: queryKeys.homeFeed(userId!),
     enabled: !!userId,
-    queryFn: async () => toQueryData(await readPurchaseList(userId!)),
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) =>
+      toQueryData(await readPurchasePage(userId!, pageParam as number)),
+    getNextPageParam: (lastPage: HomeFeedReceiptRow[]) =>
+      lastPage.length < PURCHASE_PAGE_SIZE ? undefined : lastPage.length,
   });
 
   // ── Household total (current month, when household is active) ──────────
@@ -635,32 +604,36 @@ export function useHomeFeed(): HomeFeedResult {
       ? (householdTotalQuery.data[0]?.total ?? 0)
       : null;
 
-  // Hydrates the receipts store with the full purchase list so the
-  // store-subscribing screens (History, Analytics, drill-downs, price
-  // alerts) render the same rows the feed does. Keys on the DATA only —
-  // the loading/error flags added below must never re-fire this effect.
-  const rows = rowsQuery.data;
+  // Flatten all pages into a single list
+  const rows = useMemo(
+    () => feedQuery.data?.pages.flat() ?? [],
+    [feedQuery.data],
+  );
+
+  // Hydrate the receipts store with loaded rows so History/Analytics see them.
   useEffect(() => {
-    if (rows) {
+    if (rows.length > 0) {
       useReceiptsStore.setState({ list: rows });
     }
   }, [rows]);
 
   const feed = useMemo(
-    () => (rows ? mapPurchaseRowsToHomeFeed(rows, householdTotal) : EMPTY_FEED),
+    () => (rows.length > 0 ? mapPurchaseRowsToHomeFeed(rows, householdTotal) : EMPTY_FEED),
     [rows, householdTotal],
   );
 
-  // A failed read must not be silent — log it so the failure is visible in
-  // dev (the feed still renders the neutral empty state, never crashes).
-  if (__DEV__ && rowsQuery.isError) {
-    console.error('[HomeFeed] feed query failed:', rowsQuery.error);
+  if (__DEV__ && feedQuery.isError) {
+    console.error('[HomeFeed] feed query failed:', feedQuery.error);
   }
 
   return {
     ...feed,
-    isLoading: rowsQuery.isLoading,
-    error: rowsQuery.error ? toQueryErrorMessage(rowsQuery.error) : null,
-    hasData: rowsQuery.data !== undefined,
+    isLoading: feedQuery.isLoading,
+    error: feedQuery.error ? toQueryErrorMessage(feedQuery.error) : null,
+    hasData: feedQuery.data !== undefined,
+    isRefetching: feedQuery.isRefetching,
+    fetchNextPage: feedQuery.fetchNextPage,
+    hasNextPage: feedQuery.hasNextPage ?? false,
+    isFetchingNextPage: feedQuery.isFetchingNextPage,
   };
 }

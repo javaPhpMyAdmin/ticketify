@@ -5,7 +5,6 @@ import { router } from 'expo-router';
 
 import { Pressable, ProfileHeader, Spinner, Text, View } from '@/components';
 import { useSessionStore, useSessionUser } from '@/features/auth';
-import { JoinHouseholdModal } from '@/features/household/components/JoinHouseholdModal';
 import { useProEntitlement } from '@/features/pro';
 import {
   AccountSettingsList,
@@ -21,7 +20,7 @@ import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
 
 export default function ProfileScreen() {
-  const { user, usage, error, getHouseholdId } = useProfile();
+  const { user, usage, error } = useProfile();
   const currency = useSettingsStore((s) => s.currency);
   const household = useSettingsStore((s) => s.household_sharing);
   const setHousehold = useSettingsStore((s) => s.setHouseholdSharing);
@@ -33,7 +32,6 @@ export default function ProfileScreen() {
 
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
-  const [joinModalVisible, setJoinModalVisible] = useState(false);
   const [togglingHousehold, setTogglingHousehold] = useState(false);
   const { userId } = useSessionUser();
 
@@ -46,28 +44,24 @@ export default function ProfileScreen() {
   const handleHouseholdToggle = async (value: boolean) => {
     if (togglingHousehold) return;
 
+    // Use the household_id already cached from the profile query instead of
+    // making a fresh network request via getHouseholdId() — eliminates the
+    // toggle delay.
+    const cachedHouseholdId = user?.household_id ?? null;
+
     if (value) {
       // ── Turning ON ──────────────────────────────────────────────────
       if (!isPro) {
         router.push('/pro');
         return;
       }
-      setTogglingHousehold(true);
-      try {
-        const householdId = await getHouseholdId();
-        setHousehold(true);
-        if (householdId) {
-          router.push('/settings/household');
-        } else {
-          setJoinModalVisible(true);
-        }
-      } finally {
-        setTogglingHousehold(false);
-      }
+      setHousehold(true);
+      // Always go to the household settings screen which shows both
+      // "Crear hogar" and "Unirse con código" when no household exists.
+      router.push('/settings/household');
     } else {
       // ── Turning OFF ─────────────────────────────────────────────────
-      const householdId = await getHouseholdId();
-      if (householdId) {
+      if (cachedHouseholdId) {
         setTogglingHousehold(true);
         try {
           const result = await leaveHousehold();
@@ -185,11 +179,6 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
       </ScrollView>
-
-      <JoinHouseholdModal
-        visible={joinModalVisible}
-        onClose={() => setJoinModalVisible(false)}
-      />
     </SafeAreaView>
   );
 }

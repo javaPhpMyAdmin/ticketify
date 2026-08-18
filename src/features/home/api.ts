@@ -134,6 +134,45 @@ export async function readPurchaseList(
   };
 }
 
+/** Default page size for paginated purchase reads. */
+export const PURCHASE_PAGE_SIZE = 10;
+
+/**
+ * Paginated purchase read — fetches a single page of confirmed purchases,
+ * newest capture first. Used by the infinite-query home feed to load
+ * receipts 10 at a time. Returns a full page means there may be more;
+ * a short page means this is the last one.
+ */
+export async function readPurchasePage(
+  userId: string,
+  page: number,
+  pageSize: number = PURCHASE_PAGE_SIZE,
+): Promise<FeatureReadResult<HomeFeedReceiptRow[]>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const from = page * pageSize;
+  const to = from + pageSize - 1;
+  const { data, error } = await supabase
+    .from('purchases')
+    .select(
+      `id, store_id, purchase_date, created_at, total, payment_method, image_url, status,
+       stores ( name ),
+       purchase_items ( id, name, quantity, unit_price, total_price, is_impulse, sort_order, categories ( slug ) )`,
+    )
+    .eq('user_id', userId)
+    .eq('status', 'confirmed')
+    .order('created_at', { ascending: false })
+    .range(from, to);
+  if (error) {
+    console.warn('[read] purchase page failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  const rows = (data as unknown[] | null) ?? [];
+  return {
+    status: 'ok',
+    data: rows.map((row) => mapPurchaseRow(row as RawPurchaseRow)),
+  };
+}
+
 /** `YYYY-MM` one month after `monthKey` (string math, no Date parsing). */
 function nextMonthKey(monthKey: string): string {
   const [year, month] = monthKey.split('-').map(Number);

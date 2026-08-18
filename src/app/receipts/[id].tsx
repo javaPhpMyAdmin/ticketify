@@ -10,7 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Card, Divider, Icon, Pressable, Text, View } from '@/components';
+import { Card, Divider, Icon, Pressable, Spinner, Text, View } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import { getExpenseCategory } from '@/features/home/categories';
 import {
@@ -176,19 +176,30 @@ export default function ReceiptDetailScreen() {
   // to a signed URL (expires ~1h) before rendering. The effect keys on the
   // RAW string so re-renders (photo modal toggle) never re-resolve.
   const [photoSource, setPhotoSource] = useState<string | null>(null);
+  // True while the signed URL is being fetched — shows a loading state
+  // instead of "Sin foto del ticket" so the user knows the photo is coming.
+  const [photoLoading, setPhotoLoading] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const classified = resolveReceiptPhotoPath(receipt?.image_url);
     if (!classified) {
       setPhotoSource(null);
+      setPhotoLoading(false);
       return;
     }
     if (classified.kind === 'url') {
       setPhotoSource(classified.value);
+      setPhotoLoading(false);
       return;
     }
+    setPhotoLoading(true);
     getSignedReceiptPhotoUrl(classified.value).then((signed) => {
-      if (!cancelled) setPhotoSource(signed);
+      if (!cancelled) {
+        setPhotoSource(signed);
+        setPhotoLoading(false);
+      }
+    }).catch(() => {
+      if (!cancelled) setPhotoLoading(false);
     });
     return () => {
       cancelled = true;
@@ -320,6 +331,11 @@ export default function ReceiptDetailScreen() {
               onError={() => setPhotoFailed(true)}
             />
           </Pressable>
+        ) : photoLoading || (receipt?.image_url && !photoFailed) ? (
+          <View style={styles.photoPlaceholder}>
+            <Spinner size="sm" color={colors.textSecondary} />
+            <Text style={styles.photoPlaceholderText}>Cargando recibo...</Text>
+          </View>
         ) : (
           <View style={styles.photoPlaceholder}>
             <Icon name="doc.text" size={40} color={colors.textSecondary} />

@@ -21,9 +21,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, EmptyState, Icon, Pressable, Spinner, Text, View } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import { useHousehold } from '@/features/household';
+import { CreateHouseholdModal } from '@/features/household/components/CreateHouseholdModal';
 import { JoinHouseholdModal } from '@/features/household/components/JoinHouseholdModal';
 import {
-  createHousehold,
   disbandHousehold,
   leaveHousehold,
   READ_ERROR_MESSAGE,
@@ -42,10 +42,10 @@ export default function HouseholdScreen() {
   const { household, members, role, isLoading } = useHousehold();
   const setHouseholdSharing = useSettingsStore((s) => s.setHouseholdSharing);
 
-  const [creating, setCreating] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [disbanding, setDisbanding] = useState(false);
   const [joinModalVisible, setJoinModalVisible] = useState(false);
+  const [createModalVisible, setCreateModalVisible] = useState(false);
 
   const isOwner = role === 'owner';
 
@@ -112,33 +112,9 @@ export default function HouseholdScreen() {
     );
   };
 
-  // ── Create household ───────────────────────────────────────────────────
+  // ── Create household (via modal) ──────────────────────────────────────
   const handleCreate = () => {
-    Alert.prompt?.(
-      'Crear hogar',
-      'Elegí un nombre para tu hogar:',
-      async (name: string) => {
-        const trimmed = name?.trim();
-        if (!trimmed) return;
-        setCreating(true);
-        const result = await createHousehold(trimmed);
-        if (result.status === 'ok') {
-          useHouseholdStore.getState().setHousehold(result.data, 'owner');
-          useHouseholdStore.getState().setMembers([]);
-          setHouseholdSharing(true);
-          if (userId) {
-            void queryClient.invalidateQueries({
-              queryKey: queryKeys.household(userId),
-            });
-          }
-        } else {
-          Alert.alert('Error', READ_ERROR_MESSAGE);
-        }
-        setCreating(false);
-      },
-      'plain-text',
-      '',
-    );
+    setCreateModalVisible(true);
   };
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -188,7 +164,6 @@ export default function HouseholdScreen() {
           <View style={styles.emptyActions}>
             <Pressable
               onPress={handleCreate}
-              disabled={creating}
               style={({ pressed }) => [
                 styles.createButton,
                 pressed && styles.createButtonPressed,
@@ -196,11 +171,7 @@ export default function HouseholdScreen() {
               accessibilityRole="button"
               accessibilityLabel="Crear hogar"
             >
-              {creating ? (
-                <Spinner size="sm" color={colors.onPrimary} />
-              ) : (
-                <Text style={styles.createButtonText}>Crear hogar</Text>
-              )}
+              <Text style={styles.createButtonText}>Crear hogar</Text>
             </Pressable>
 
             <Pressable
@@ -220,6 +191,10 @@ export default function HouseholdScreen() {
         <JoinHouseholdModal
           visible={joinModalVisible}
           onClose={() => setJoinModalVisible(false)}
+        />
+        <CreateHouseholdModal
+          visible={createModalVisible}
+          onClose={() => setCreateModalVisible(false)}
         />
       </SafeAreaView>
     );
