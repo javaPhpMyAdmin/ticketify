@@ -102,7 +102,7 @@ export function useHousehold(): HouseholdData {
     queryKey: [...queryKeys.household(userId!), 'role'],
     enabled: !!householdId,
     queryFn: async () => {
-      const result = await readHouseholdRole(householdId!);
+      const result = await readHouseholdRole(householdId!, userId!);
       return toQueryData(result);
     },
   });
