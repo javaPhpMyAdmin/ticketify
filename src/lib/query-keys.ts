@@ -53,6 +53,8 @@ export const queryKeys = {
     ['analytics', 'monthly-totals', userId] as const,
   /** The home feed (purchase list; all months, current-month derived). */
   homeFeed: (userId: string) => ['home', 'feed', userId] as const,
+  /** Full non-paginated purchase list (hydrates the receipts store for analytics/charts/history). */
+  purchaseList: (userId: string) => ['home', 'purchase-list', userId] as const,
   /** Paginated home feed — one page of recent receipts. */
   homeFeedPage: (userId: string, page: number) =>
     ['home', 'feed', userId, 'page', page] as const,

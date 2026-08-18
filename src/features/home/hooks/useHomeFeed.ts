@@ -10,7 +10,7 @@ import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters'
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import type { HomeFeedReceiptRow } from '@/types';
-import { readPurchasePage, searchPurchaseItems, PURCHASE_PAGE_SIZE } from '../api';
+import { readPurchaseList, readPurchasePage, searchPurchaseItems, PURCHASE_PAGE_SIZE } from '../api';
 import { getExpenseCategory } from '../categories';
 
 /**
@@ -610,12 +610,26 @@ export function useHomeFeed(): HomeFeedResult {
     [feedQuery.data],
   );
 
-  // Hydrate the receipts store with loaded rows so History/Analytics see them.
+  // ── Full list for the receipts store (analytics/charts/history) ──────────
+  // The infinite scroll feed only loads pages as the user scrolls, but the
+  // analytics tab, charts screen, and history screen derive totals, trends,
+  // and aggregations from `useReceiptsStore.list`. A separate non-paginated
+  // query ensures the store always has the full receipt list regardless of
+  // how far the user has scrolled on the home feed.
+  const fullListQuery = useQuery({
+    queryKey: queryKeys.purchaseList(userId!),
+    enabled: !!userId,
+    queryFn: () => readPurchaseList(userId!).then(toQueryData),
+  });
+
+  // Hydrate the receipts store with the FULL list so all consumers
+  // (Analytics, Charts, History) see every receipt, not just the home
+  // feed's paginated subset.
   useEffect(() => {
-    if (rows.length > 0) {
-      useReceiptsStore.setState({ list: rows });
+    if (fullListQuery.data && fullListQuery.data.length > 0) {
+      useReceiptsStore.setState({ list: fullListQuery.data });
     }
-  }, [rows]);
+  }, [fullListQuery.data]);
 
   const feed = useMemo(
     () => (rows.length > 0 ? mapPurchaseRowsToHomeFeed(rows, householdTotal) : EMPTY_FEED),
