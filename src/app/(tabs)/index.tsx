@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Image, Platform, ScrollView, StyleSheet } from 'react-native';
+import type { NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -57,6 +58,9 @@ export default function HomeScreen() {
     error: feedError,
     hasData: feedHasData,
     isRefetching: feedRefetching,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
   } = useHomeFeed();
   const insets = useSafeAreaInsets();
   const { session } = useSessionStore();
@@ -70,11 +74,30 @@ export default function HomeScreen() {
   const displayName = firstName || 'Usuario';
   const avatarUrl = session?.user?.user_metadata?.avatar_url;
 
+  // Infinite scroll: fetch next page when user scrolls near the bottom.
+  const loadMoreRef = useRef(false);
+  const onScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (!hasNextPage || isFetchingNextPage || loadMoreRef.current) return;
+      const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+      const distFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+      if (distFromBottom < 400) {
+        loadMoreRef.current = true;
+        Promise.resolve(fetchNextPage()).finally(() => {
+          loadMoreRef.current = false;
+        });
+      }
+    },
+    [hasNextPage, isFetchingNextPage, fetchNextPage],
+  );
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        onScroll={onScroll}
+        scrollEventThrottle={200}
       >
         <View style={styles.greeting}>
           <Text style={styles.greetingText}>¡Hola {displayName}!</Text>
@@ -169,6 +192,11 @@ export default function HomeScreen() {
                       onPress={() => router.push(`/receipts/${r.id}`)}
                     />
                   ))}
+                  {isFetchingNextPage && (
+                    <View style={{ paddingVertical: spacing.md, alignItems: 'center' }}>
+                      <ReceiptRowSkeleton />
+                    </View>
+                  )}
                 </View>
               )}
             </View>
