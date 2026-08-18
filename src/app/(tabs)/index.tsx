@@ -22,6 +22,7 @@ import {
   useBudget,
 } from '@/features/budget';
 import { useHomeFeed } from '@/features/home';
+import { HouseholdCard } from '@/features/household';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
 import { useSessionStore } from '../../features/auth';
@@ -50,6 +51,7 @@ export default function HomeScreen() {
   const {
     receipts,
     wantsSnacksTotal,
+    householdTotal,
     isLoading: feedLoading,
     error: feedError,
     hasData: feedHasData,
@@ -115,6 +117,12 @@ export default function HomeScreen() {
             ) : null}
           </>
         )}
+
+        {/* Household summary card — only visible when the user has a household */}
+        <HouseholdCard
+          householdTotal={householdTotal}
+          isLoading={feedLoading}
+        />
 
         {feedError && !feedHasData ? (
           // A failed feed read with nothing to show must never render as

@@ -13,6 +13,7 @@ import {
 } from 'react-native-safe-area-context';
 
 import { EmptyState, Icon, Pressable, SearchRowSkeleton, Text, View } from '@/components';
+import { useMonthlyTotals } from '@/features/analytics';
 import {
   aggregateCategoriesByMonth,
   aggregateCategoryItemCounts,
@@ -23,8 +24,10 @@ import {
   SegmentedBudgetBar,
   useItemSearch,
 } from '@/features/home';
+import { getExpenseCategory } from '@/features/home/categories';
 import { formatCurrency } from '@/lib/format';
 import { categoryDetailHref } from '@/features/charts';
+import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -78,6 +81,22 @@ export default function HistoryScreen() {
   const firstName = fullName.trim().split(' ')[0];
   const displayName = firstName || 'Usuario';
   const avatarUrl = session?.user?.user_metadata?.avatar_url;
+
+  // Personal vs household view toggle
+  const [viewMode, setViewMode] = useState<'personal' | 'household'>('personal');
+  const householdId = useHouseholdStore((s) => s.household?.id);
+  const hasHousehold = !!householdId;
+
+  // Household-scoped category totals (when in household mode)
+  const {
+    totals: householdTotals,
+    isLoading: householdTotalsLoading,
+    error: householdTotalsError,
+    hasData: householdTotalsHasData,
+  } = useMonthlyTotals(
+    monthKey,
+    viewMode === 'household' ? householdId : null,
+  );
 
   // Combined total across every VISIBLE result row: searching "yerba"
   // matches both "Yerba 1kg" and "Yerba mate 1kg" as separate rows, and this
@@ -195,14 +214,46 @@ export default function HistoryScreen() {
               setQuery(text);
               setHiddenItems(new Set());
             }}
-            placeholder="Buscar producto…"
+            placeholder={viewMode === 'household' ? 'Buscador no disponible en modo hogar' : 'Buscar producto…'}
             placeholderTextColor={colors.textSecondary}
             autoCorrect={false}
             autoCapitalize="none"
             clearButtonMode="while-editing"
             accessibilityLabel="Buscar producto"
+            editable={viewMode !== 'household'}
           />
         </View>
+
+        {/* Personal / Household toggle — only when the user has a household */}
+        {hasHousehold ? (
+          <View style={styles.viewToggle}>
+            {(['personal', 'household'] as const).map((mode) => {
+              const active = viewMode === mode;
+              return (
+                <Pressable
+                  key={mode}
+                  onPress={() => {
+                    setViewMode(mode);
+                    setQuery('');
+                    setHiddenItems(new Set());
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  style={[styles.viewSegment, active && styles.viewSegmentActive]}
+                >
+                  <Text
+                    style={[
+                      styles.viewSegmentLabel,
+                      active && styles.viewSegmentLabelActive,
+                    ]}
+                  >
+                    {mode === 'personal' ? 'Mi gasto' : 'Hogar'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
       </View>
 
       <ScrollView
@@ -341,6 +392,41 @@ export default function HistoryScreen() {
                   </Pressable>
                 </View>
               ))}
+            </View>
+          )
+        ) : viewMode === 'household' ? (
+          // Household mode: show RPC-backed category totals
+          householdTotalsLoading ? (
+            <Text style={styles.empty}>Cargando datos del hogar…</Text>
+          ) : householdTotalsError && !householdTotalsHasData ? (
+            <EmptyState
+              icon="exclamationmark.triangle.fill"
+              title={householdTotalsError}
+            />
+          ) : householdTotals.length === 0 ? (
+            <Text style={styles.empty}>Sin gastos este mes en el hogar.</Text>
+          ) : (
+            <View style={styles.categoryList}>
+              {householdTotals.map((t) => {
+                const category = getExpenseCategory(t.category_slug);
+                return (
+                  <CategoryBudgetCard
+                    key={t.category_id}
+                    categoryKey={t.category_slug}
+                    name={t.category_name}
+                    amount={t.total}
+                    percent={t.percent_of_total}
+                    currency={currency}
+                    icon={category.icon}
+                    itemCount={t.item_count}
+                    onPress={() =>
+                      router.push(
+                        categoryDetailHref(t.category_slug, monthKey, currentMonthKey()),
+                      )
+                    }
+                  />
+                );
+              })}
             </View>
           )
         ) : categories.length === 0 ? (
@@ -573,6 +659,39 @@ const styles = StyleSheet.create({
   },
   categoryList: {
     gap: spacing.md,
+  },
+  viewToggle: {
+    flexDirection: 'row',
+    backgroundColor: colors.border,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.full,
+    padding: 3,
+    gap: 2,
+  },
+  viewSegment: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+  },
+  viewSegmentActive: {
+    backgroundColor: colors.surface,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  viewSegmentLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  viewSegmentLabelActive: {
+    color: colors.textPrimary,
+    fontWeight: '700',
   },
   empty: {
     ...typography.bodyMd,

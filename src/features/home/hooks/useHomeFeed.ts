@@ -3,9 +3,11 @@ import { useEffect, useMemo } from 'react';
 
 import type { IconName } from '@/components';
 import { useSessionUser } from '@/features/auth';
+import { readMonthlyPurchasesTotal } from '@/lib/supabase/feature-access';
 import { formatYearMonth } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters';
+import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import type { HomeFeedReceiptRow } from '@/types';
 import { readPurchaseList, searchPurchaseItems } from '../api';
@@ -40,6 +42,8 @@ export interface HomeFeed {
   categories: HomeCategory[];
   receipts: ReceiptSummary[];
   wantsSnacksTotal: number;
+  /** Total household spend for the current month (null when no household). */
+  householdTotal: number | null;
 }
 
 /**
@@ -62,7 +66,7 @@ export interface HomeFeedResult extends HomeFeed {
 }
 
 /** Neutral empty feed — no fabricated content renders inside a session. */
-const EMPTY_FEED: HomeFeed = { categories: [], receipts: [], wantsSnacksTotal: 0 };
+const EMPTY_FEED: HomeFeed = { categories: [], receipts: [], wantsSnacksTotal: 0, householdTotal: null };
 
 /**
  * One aggregated item inside a category's detail ("cuánto gasté en cada
@@ -565,7 +569,10 @@ export function compareReceiptsByScan(
  * the strip answers "en qué se me va el dinero" by item type, not by
  * store), and the snacks total sums the impulse totals (0 when none).
  */
-export function mapPurchaseRowsToHomeFeed(rows: HomeFeedReceiptRow[]): HomeFeed {
+export function mapPurchaseRowsToHomeFeed(
+  rows: HomeFeedReceiptRow[],
+  householdTotal?: number | null,
+): HomeFeed {
   const monthKey = currentMonthKey();
 
   const receipts: ReceiptSummary[] = rows
@@ -585,7 +592,7 @@ export function mapPurchaseRowsToHomeFeed(rows: HomeFeedReceiptRow[]): HomeFeed 
     .filter((item) => getMonthKey(item.purchase_date) === monthKey)
     .reduce((sum, item) => sum + (item.wants_snacks_total ?? 0), 0);
 
-  return { categories, receipts, wantsSnacksTotal };
+  return { categories, receipts, wantsSnacksTotal, householdTotal: householdTotal ?? null };
 }
 
 /**
@@ -601,12 +608,32 @@ export function mapPurchaseRowsToHomeFeed(rows: HomeFeedReceiptRow[]): HomeFeed 
  */
 export function useHomeFeed(): HomeFeedResult {
   const { userId } = useSessionUser();
+  const householdId = useHouseholdStore((s) => s.household?.id);
 
   const rowsQuery = useQuery<HomeFeedReceiptRow[]>({
     queryKey: queryKeys.homeFeed(userId!),
     enabled: !!userId,
     queryFn: async () => toQueryData(await readPurchaseList(userId!)),
   });
+
+  // ── Household total (current month, when household is active) ──────────
+  const householdTotalQuery = useQuery<{ total: number }[]>({
+    queryKey: householdId
+      ? queryKeys.householdMonthlyPurchasesTotal(householdId, currentMonthKey())
+      : ['household-purchases-total', 'disabled'],
+    enabled: !!userId && !!householdId,
+    queryFn: async () => {
+      const result = await readMonthlyPurchasesTotal(
+        currentMonthKey(),
+        householdId!,
+      );
+      return toQueryData(result);
+    },
+  });
+  const householdTotal =
+    householdId && householdTotalQuery.data
+      ? (householdTotalQuery.data[0]?.total ?? 0)
+      : null;
 
   // Hydrates the receipts store with the full purchase list so the
   // store-subscribing screens (History, Analytics, drill-downs, price
@@ -620,8 +647,8 @@ export function useHomeFeed(): HomeFeedResult {
   }, [rows]);
 
   const feed = useMemo(
-    () => (rows ? mapPurchaseRowsToHomeFeed(rows) : EMPTY_FEED),
-    [rows],
+    () => (rows ? mapPurchaseRowsToHomeFeed(rows, householdTotal) : EMPTY_FEED),
+    [rows, householdTotal],
   );
 
   // A failed read must not be silent — log it so the failure is visible in

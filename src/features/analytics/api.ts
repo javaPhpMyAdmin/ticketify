@@ -15,16 +15,22 @@ import type { CategoryMonthlyTotal } from '@/types';
 
 export type CategoryTotalsReadResult = FeatureReadResult<CategoryMonthlyTotal[]>;
 
-/** Current-month category totals for the signed-in user. */
+/**
+ * Current-month category totals for the signed-in user.
+ * When `householdId` is provided, aggregates across all household members
+ * via the `p_household_id` RPC parameter.
+ */
 export async function fetchMonthlyTotals(
   yearMonth: string,
+  householdId?: string | null,
 ): Promise<CategoryTotalsReadResult> {
-  return readCategoryTotals(yearMonth);
+  return readCategoryTotals(yearMonth, householdId);
 }
 
 /** Per-category breakdown for a given year-month (same RPC, one source). */
 export async function fetchCategoryBreakdown(
   yearMonth: string,
+  householdId?: string | null,
 ): Promise<CategoryTotalsReadResult> {
-  return readCategoryTotals(yearMonth);
+  return readCategoryTotals(yearMonth, householdId);
 }

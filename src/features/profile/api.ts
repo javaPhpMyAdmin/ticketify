@@ -103,11 +103,18 @@ export async function fetchScanUsage(
 }
 
 /**
- * Non-functional for now. A real write is out of scope for this change.
+ * Read the user's `household_id` from their profile row. Used by the
+ * household toggle to decide whether to show the join modal or navigate
+ * to the household settings screen.
  */
-export async function setHouseholdSharing(
-  _userId: string,
-  _enabled: boolean,
-): Promise<void> {
-  // TODO: real write once household sharing ships.
+export async function readHouseholdId(
+  userId: string,
+): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data } = await supabase
+    .from('profiles')
+    .select('household_id')
+    .eq('id', userId)
+    .maybeSingle();
+  return (data?.household_id as string | null) ?? null;
 }

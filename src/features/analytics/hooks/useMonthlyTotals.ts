@@ -20,9 +20,14 @@ import type { CategoryMonthlyTotal } from '@/types';
  * The `monthly_category_totals` RPC is scoped to `auth.uid()` server-side —
  * only the year-month is sent. Errors surface via `toQueryErrorMessage`;
  * there is no fabricated fallback.
+ *
+ * When `householdId` is provided, the RPC aggregates across all household
+ * members instead of just the calling user. The query key includes the
+ * household ID to keep personal and household caches separate.
  */
 export function useMonthlyTotals(
   yearMonth = utcYearMonth(),
+  householdId?: string | null,
 ): {
   totals: CategoryMonthlyTotal[];
   monthTotal: number;
@@ -40,9 +45,11 @@ export function useMonthlyTotals(
   const { userId } = useSessionUser();
 
   const totalsQuery = useQuery({
-    queryKey: queryKeys.monthlyTotals(userId!, yearMonth),
+    queryKey: householdId
+      ? [...queryKeys.monthlyTotals(userId!, yearMonth), householdId]
+      : queryKeys.monthlyTotals(userId!, yearMonth),
     enabled: !!userId,
-    queryFn: () => fetchMonthlyTotals(yearMonth).then(toQueryData),
+    queryFn: () => fetchMonthlyTotals(yearMonth, householdId).then(toQueryData),
   });
 
   const totals = totalsQuery.data ?? [];

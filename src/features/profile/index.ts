@@ -11,7 +11,7 @@ export type {
 export {
   fetchProfile,
   fetchScanUsage,
-  setHouseholdSharing,
+  readHouseholdId,
   setProfileBudget,
   setProfileCurrency,
   WRITE_ERROR_MESSAGE,
