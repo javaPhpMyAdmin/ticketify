@@ -235,10 +235,14 @@ function ChartsBody() {
     if (cacheRow) {
       const [year, month] = monthKey.split('-').map(Number);
       const daysInMonth = new Date(year, month, 0).getDate();
-      return Array.from({ length: daysInMonth }, (_, i) => ({
-        day: i + 1,
-        total: cacheRow.daily_totals[String(i + 1).padStart(2, '0')] ?? 0,
-      }));
+      return Array.from({ length: daysInMonth }, (_, i) => {
+        const dd = String(i + 1).padStart(2, '0');
+        const dateKey = `${monthKey}-${dd}`;
+        return {
+          day: i + 1,
+          total: cacheRow.daily_totals[dateKey] ?? 0,
+        };
+      });
     }
     // Household mode or cache not loaded: aggregate from list.
     const [year, month] = monthKey.split('-').map(Number);
@@ -368,10 +372,25 @@ function ChartsBody() {
       `${y}-${String(i + 1).padStart(2, '0')}`,
     );
   }, [selectedYear]);
-  const annualTrend = useMemo(
-    () => aggregateSpendTrend(list, monthsOfYear),
-    [list, monthsOfYear],
-  );
+
+  // Annual trend from the materialized cache (personal mode).
+  const yearQuery = useQuery({
+    queryKey: queryKeys.monthlyCache(userId ?? '', `annual:${selectedYear}`),
+    enabled: !!userId,
+    queryFn: () =>
+      readMonthlyCacheRows(userId!, monthsOfYear).then(toQueryData),
+  });
+  const annualTrend = useMemo(() => {
+    if (yearQuery.data) {
+      const byMonth = new Map<string, MonthlyTotalsCacheRow>();
+      for (const row of yearQuery.data) byMonth.set(row.year_month, row);
+      return monthsOfYear.map((m) => ({
+        month: m,
+        total: byMonth.get(m)?.total ?? 0,
+      }));
+    }
+    return aggregateSpendTrend(list, monthsOfYear);
+  }, [yearQuery.data, list, monthsOfYear]);
   const hasAnnualData = annualTrend.some((p) => p.total > 0);
   const currentMonthIdx = new Date().getMonth(); // 0–11
   const highlightIdx = selectedYear === currentYear ? currentMonthIdx : -1;
