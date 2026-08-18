@@ -1,4 +1,4 @@
-export { readPurchaseList, searchPurchaseItems } from './api';
+export { readPurchaseList, readPurchaseListByMonth, searchPurchaseItems } from './api';
 export { buildFeedRow, reviewItemsToFeedItems } from './feed-row';
 export type { FeedRowMeta } from './feed-row';
 export { useHomeFeed } from './hooks/useHomeFeed';

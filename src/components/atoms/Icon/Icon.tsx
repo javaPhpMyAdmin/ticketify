@@ -11,6 +11,7 @@ import { useTheme } from '@/hooks/use-theme';
  * app actually uses. The Material map below mirrors it for Android.
  */
 export type IconName =
+  | 'trash'
   | 'qr-code-scanner'
   | 'qrcode.viewfinder'
   | 'house.fill'
@@ -64,6 +65,7 @@ export type IconName =
  * but TS can't infer the per-key literal type through the index access.
  */
 const materialMap: Record<IconName, string> = {
+  trash: 'delete',
   'qr-code-scanner': 'qr-code',
   'qrcode.viewfinder': 'qr-code',
   'house.fill': 'home',
@@ -106,7 +108,6 @@ const materialMap: Record<IconName, string> = {
   'lock.fill': 'lock',
   'chart.pie.fill': 'pie-chart',
   pencil: 'edit',
-  trash: 'delete',
   'doc.on.doc': 'content-copy',
   'person.badge.plus': 'person-add',
   'rectangle.portrait.and.arrow.right': 'logout',
