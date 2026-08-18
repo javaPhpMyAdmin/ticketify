@@ -52,7 +52,11 @@ export type IconName =
   | 'waterbottle.fill'
   | 'lock.fill'
   | 'chart.pie.fill'
-  | 'pencil';
+  | 'pencil'
+  | 'trash'
+  | 'doc.on.doc'
+  | 'person.badge.plus'
+  | 'rectangle.portrait.and.arrow.right';
 
 /**
  * Material icon names are a strict union from the MaterialIcons glyph map.
@@ -102,6 +106,10 @@ const materialMap: Record<IconName, string> = {
   'lock.fill': 'lock',
   'chart.pie.fill': 'pie-chart',
   pencil: 'edit',
+  trash: 'delete',
+  'doc.on.doc': 'content-copy',
+  'person.badge.plus': 'person-add',
+  'rectangle.portrait.and.arrow.right': 'logout',
 };
 
 export interface IconProps {

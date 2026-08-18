@@ -71,6 +71,7 @@ import {
 } from '@/features/home/hooks/useHomeFeed';
 import { formatCurrency, MONTHS_SHORT_ES, todayLocalISO, yearLabel } from '@/lib/format';
 import { ProRouteGuard } from '@/features/pro';
+import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -162,6 +163,11 @@ function ChartsBody() {
   // Hero bars include servicios in their totals; weekly bars exclude them.
   // The day-detail modal must match the source's exclusion rule.
   const [tappedFromHero, setTappedFromHero] = useState(false);
+  // Personal vs household view toggle. Only shown when the user has a household.
+  const [viewMode, setViewMode] = useState<'personal' | 'household'>('personal');
+
+  const householdId = useHouseholdStore((s) => s.household?.id);
+  const hasHousehold = !!householdId;
 
   const monthKeys = useMemo(() => getAvailableMonthKeys(list), [list]);
 
@@ -179,7 +185,10 @@ function ChartsBody() {
     error,
     hasData: totalsHasData,
     refetch,
-  } = useMonthlyTotals(monthKey);
+  } = useMonthlyTotals(
+    monthKey,
+    viewMode === 'household' ? householdId : null,
+  );
   const overview = useMonthlyOverview(monthKey);
 
   // Store-derived lenses for the Insights layout. These are independent of
@@ -340,6 +349,33 @@ function ChartsBody() {
           Visualizá tu gasto a lo largo del tiempo, por categoría y por semana.
         </Text>
       </View>
+
+      {/* Personal / Household toggle — only when the user has a household */}
+      {hasHousehold ? (
+        <View style={styles.viewToggle}>
+          {(['personal', 'household'] as const).map((mode) => {
+            const active = viewMode === mode;
+            return (
+              <Pressable
+                key={mode}
+                onPress={() => setViewMode(mode)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                style={[styles.viewSegment, active && styles.viewSegmentActive]}
+              >
+                <Text
+                  style={[
+                    styles.viewSegmentLabel,
+                    active && styles.viewSegmentLabelActive,
+                  ]}
+                >
+                  {mode === 'personal' ? 'Mi gasto' : 'Hogar'}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
 
       <View style={styles.monthSelector}>
         <Pressable
@@ -669,6 +705,39 @@ const styles = StyleSheet.create({
   subtitle: {
     ...typography.bodyMd,
     color: colors.textSecondary,
+  },
+  viewToggle: {
+    flexDirection: 'row',
+    backgroundColor: colors.border,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.full,
+    padding: 3,
+    gap: 2,
+  },
+  viewSegment: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+  },
+  viewSegmentActive: {
+    backgroundColor: colors.surface,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  viewSegmentLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  viewSegmentLabelActive: {
+    color: colors.textPrimary,
+    fontWeight: '700',
   },
   monthSelector: {
     flexDirection: 'row',

@@ -11,7 +11,16 @@
  * failure, unconfigured).
  */
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
-import type { CategoryBudget, CategoryMonthlyTotal, ScanUsage, User } from '@/types';
+import type {
+  CategoryBudget,
+  CategoryMonthlyTotal,
+  Household,
+  HouseholdFeedItem,
+  HouseholdMember,
+  InviteCode,
+  ScanUsage,
+  User,
+} from '@/types';
 
 /**
  * User-safe copy shown when an authenticated read fails. Raw PostgREST text
@@ -104,11 +113,12 @@ export async function readMonthlyBudgetRow(
  */
 export async function readCategoryTotals(
   yearMonth: string,
+  householdId?: string | null,
 ): Promise<FeatureReadResult<CategoryMonthlyTotal[]>> {
   if (!isSupabaseConfigured) return { status: 'unconfigured' };
-  const { data, error } = await supabase.rpc('monthly_category_totals', {
-    p_year_month: yearMonth,
-  });
+  const params: Record<string, string> = { p_year_month: yearMonth };
+  if (householdId) params.p_household_id = householdId;
+  const { data, error } = await supabase.rpc('monthly_category_totals', params);
   if (error) {
     console.warn('[read] category totals failed:', error.code, error.message);
     return { status: 'error', message: READ_ERROR_MESSAGE };
@@ -127,11 +137,12 @@ export async function readCategoryTotals(
  */
 export async function readMonthlyPurchasesTotal(
   yearMonth: string,
+  householdId?: string | null,
 ): Promise<FeatureReadResult<{ total: number }[]>> {
   if (!isSupabaseConfigured) return { status: 'unconfigured' };
-  const { data, error } = await supabase.rpc('monthly_purchases_total', {
-    p_year_month: yearMonth,
-  });
+  const params: Record<string, string> = { p_year_month: yearMonth };
+  if (householdId) params.p_household_id = householdId;
+  const { data, error } = await supabase.rpc('monthly_purchases_total', params);
   if (error) {
     console.warn('[read] monthly purchases total failed:', error.code, error.message);
     return { status: 'error', message: READ_ERROR_MESSAGE };
@@ -210,4 +221,225 @@ export async function upsertCategoryBudgets(
   }
 
   return { status: 'ok', data: null };
+}
+
+// ---------------------------------------------------------------------------
+// Household sharing (migration 0014)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the household the signed-in user belongs to. Joins `households`
+ * through `profiles.household_id` → returns the household row or null.
+ */
+export async function readHouseholdInfo(
+  userId: string,
+): Promise<FeatureReadResult<Household | null>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { data: profile, error: profileErr } = await supabase
+    .from('profiles')
+    .select('household_id')
+    .eq('id', userId)
+    .maybeSingle();
+  if (profileErr) {
+    console.warn('[read] household profile failed:', profileErr.code, profileErr.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  if (!profile?.household_id) return { status: 'ok', data: null };
+  const { data, error } = await supabase
+    .from('households')
+    .select('*')
+    .eq('id', profile.household_id)
+    .maybeSingle();
+  if (error) {
+    console.warn('[read] household info failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: (data as Household | null) ?? null };
+}
+
+/**
+ * Read the signed-in user's role in a household. Returns the role string
+ * or null if the user is not a member (should not happen when household_id
+ * is set, but we guard defensively).
+ */
+export async function readHouseholdRole(
+  householdId: string,
+): Promise<FeatureReadResult<string | null>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { data, error } = await supabase
+    .from('household_members')
+    .select('role')
+    .eq('household_id', householdId)
+    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+    .maybeSingle();
+  if (error) {
+    console.warn('[read] household role failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: (data?.role as string | null) ?? null };
+}
+
+/**
+ * Read all members of a household, joined with profile denorm fields
+ * (full_name, avatar_url) for display.
+ */
+export async function readHouseholdMembers(
+  householdId: string,
+): Promise<FeatureReadResult<HouseholdMember[]>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { data, error } = await supabase
+    .from('household_members')
+    .select('household_id, user_id, role, joined_at, profiles!inner(full_name, avatar_url)')
+    .eq('household_id', householdId);
+  if (error) {
+    console.warn('[read] household members failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  const members = (data ?? []).map((row: Record<string, unknown>) => {
+    const profile = row.profiles as Record<string, unknown> | null;
+    return {
+      household_id: row.household_id as string,
+      user_id: row.user_id as string,
+      role: row.role as HouseholdMember['role'],
+      joined_at: row.joined_at as string,
+      full_name: (profile?.full_name as string | null) ?? undefined,
+      avatar_url: (profile?.avatar_url as string | null) ?? undefined,
+    } satisfies HouseholdMember;
+  });
+  return { status: 'ok', data: members };
+}
+
+/**
+ * Read the active (non-consumed) invite code for a household.
+ * Returns the most recently created unconsumed code, or null.
+ */
+export async function readActiveInviteCode(
+  householdId: string,
+): Promise<FeatureReadResult<InviteCode | null>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { data, error } = await supabase
+    .from('invite_codes')
+    .select('*')
+    .eq('household_id', householdId)
+    .is('consumed_by', null)
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.warn('[read] active invite code failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: (data as InviteCode | null) ?? null };
+}
+
+// ---------------------------------------------------------------------------
+// Household write RPCs
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a new household. Calls the `create_household` RPC which inserts
+ * the household row, adds the caller as owner, and sets `profiles.household_id`.
+ */
+export async function createHousehold(
+  name: string,
+): Promise<FeatureReadResult<Household>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { data, error } = await supabase.rpc('create_household', {
+    p_name: name,
+  });
+  if (error) {
+    console.warn('[write] create household failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: data as Household };
+}
+
+/**
+ * Generate an invite code for a household. Calls the `generate_invite_code`
+ * RPC which rate-limits to 3 codes per 24h and returns the new code row.
+ */
+export async function generateInviteCode(
+  householdId: string,
+): Promise<FeatureReadResult<InviteCode>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { data, error } = await supabase.rpc('generate_invite_code', {
+    p_household_id: householdId,
+  });
+  if (error) {
+    console.warn('[write] generate invite code failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: data as InviteCode };
+}
+
+/**
+ * Join a household via invite code. Calls the `join_household` RPC which
+ * validates the code, adds the caller as member, and sets profiles.household_id.
+ * Returns the household_id on success.
+ */
+export async function joinHousehold(
+  code: string,
+): Promise<FeatureReadResult<{ household_id: string }>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { data, error } = await supabase.rpc('join_household', {
+    p_code: code,
+  });
+  if (error) {
+    console.warn('[write] join household failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: data as { household_id: string } };
+}
+
+/**
+ * Leave the current household. Calls the `leave_household` RPC which handles
+ * ownership transfer (to longest-tenured member) or automatic disband if last.
+ */
+export async function leaveHousehold(): Promise<FeatureReadResult<void>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { error } = await supabase.rpc('leave_household');
+  if (error) {
+    console.warn('[write] leave household failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: undefined };
+}
+
+/**
+ * Disband a household (owner only). Calls the `disband_household` RPC
+ * which clears all member profiles and cascade-deletes the household.
+ */
+export async function disbandHousehold(
+  householdId: string,
+): Promise<FeatureReadResult<void>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { error } = await supabase.rpc('disband_household', {
+    p_household_id: householdId,
+  });
+  if (error) {
+    console.warn('[write] disband household failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: undefined };
+}
+
+/**
+ * Read the household receipt feed (Level B — totals + categories + store
+ * names, no individual items). Calls the `get_household_feed` RPC which
+ * verifies membership server-side. Optional `yearMonth` filters by month.
+ */
+export async function readHouseholdFeed(
+  householdId: string,
+  yearMonth?: string | null,
+): Promise<FeatureReadResult<HouseholdFeedItem[]>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const params: Record<string, string> = { p_household_id: householdId };
+  if (yearMonth) params.p_year_month = yearMonth;
+  const { data, error } = await supabase.rpc('get_household_feed', params);
+  if (error) {
+    console.warn('[read] household feed failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: (data ?? []) as HouseholdFeedItem[] };
 }

@@ -66,4 +66,35 @@ export const queryKeys = {
   /** Per-category budget limits for a month. */
   categoryBudgets: (userId: string, yearMonth: string) =>
     ['category-budgets', userId, yearMonth] as const,
+
+  // -----------------------------------------------------------------------
+  // Household sharing (migration 0014)
+  // -----------------------------------------------------------------------
+
+  /** The current user's household info (single row or null). */
+  household: (userId: string) => ['household', userId] as const,
+  /** Members of a household (array of denormalized profile rows). */
+  householdMembers: (householdId: string) =>
+    ['household', householdId, 'members'] as const,
+  /** Household-scoped home feed (receipt list). */
+  householdFeed: (householdId: string, monthKey: string) =>
+    ['household', householdId, 'feed', monthKey] as const,
+  /** Prefix for all household feed keys (invalidate on receipt save). */
+  householdFeedPrefix: (householdId: string) =>
+    ['household', householdId, 'feed'] as const,
+  /**
+   * Household-scoped monthly purchases total. Distinct from the user-scoped
+   * key so personal and household caches never mix.
+   */
+  householdMonthlyPurchasesTotal: (
+    householdId: string,
+    yearMonth: string,
+  ) => ['analytics', 'household-purchases-total', householdId, yearMonth] as const,
+  /**
+   * Household-scoped category totals. Distinct from the user-scoped key.
+   */
+  householdMonthlyTotals: (
+    householdId: string,
+    yearMonth: string,
+  ) => ['analytics', 'household-totals', householdId, yearMonth] as const,
 };

@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import {
   fetchProfile,
   fetchScanUsage,
-  setHouseholdSharing,
+  readHouseholdId,
   setProfileBudget,
   setProfileCurrency,
   WRITE_ERROR_MESSAGE,
@@ -17,6 +17,7 @@ import {
   toQueryData,
   toQueryErrorMessage,
 } from '@/lib/supabase/query-adapters';
+import { useHouseholdStore } from '@/stores/use-household-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import type { ScanUsage, User } from '@/types';
 
@@ -26,7 +27,12 @@ export interface UseProfileResult {
   isLoading: boolean;
   /** User-safe message when an authenticated read fails or the profile is missing. */
   error: string | null;
-  setHouseholdSharing: (enabled: boolean) => Promise<void>;
+  /**
+   * Read the user's household_id from their profile. Returns the id or
+   * null — used by the profile screen to decide whether to show the join
+   * modal or navigate to the household settings when the toggle is enabled.
+   */
+  getHouseholdId: () => Promise<string | null>;
   /**
    * Persists the user's `profiles.currency` and resolves with the write
    * result: `{ status: 'ok' }` on success, or a user-safe `message` the UI
@@ -49,6 +55,11 @@ export interface UseProfileResult {
  * request ever runs without a session. The profile query is fresh for 60s;
  * scan usage goes stale sooner (30s). A missing profile or failed read
  * surfaces via `toQueryErrorMessage` — never a fabricated fallback.
+ *
+ * Household hydration: when the profile loads and contains a household_id,
+ * the household_sharing toggle is automatically enabled. This keeps the
+ * local preference in sync with the server-side household membership on
+ * every app launch and post-write refetch.
  */
 export function useProfile(): UseProfileResult {
   const { userId } = useSessionUser();
@@ -83,6 +94,17 @@ export function useProfile(): UseProfileResult {
     }
   }, [profileQuery.data?.currency]);
 
+  // Hydrate household_sharing toggle from profile: when the profile loads
+  // and the user has a household_id, enable sharing. This keeps the toggle
+  // in sync with server-side household membership on every app launch and
+  // post-write refetch.
+  useEffect(() => {
+    const householdId = profileQuery.data?.household_id;
+    if (householdId && !useSettingsStore.getState().household_sharing) {
+      useSettingsStore.getState().setHouseholdSharing(true);
+    }
+  }, [profileQuery.data?.household_id]);
+
   return {
     user: profileQuery.data ?? null,
     usage: usageQuery.data ?? null,
@@ -92,20 +114,14 @@ export function useProfile(): UseProfileResult {
       : usageQuery.error
         ? toQueryErrorMessage(usageQuery.error)
         : null,
-    setHouseholdSharing: async (enabled: boolean) => {
-      if (userId) {
-        await setHouseholdSharing(userId, enabled);
-      }
-    },
+    getHouseholdId: () =>
+      userId ? readHouseholdId(userId) : Promise.resolve(null),
     setCurrency: async (currency: string) => {
       if (!userId) {
         return { status: 'error', message: WRITE_ERROR_MESSAGE };
       }
       const result = await setProfileCurrency(userId, currency);
       if (result.status === 'ok') {
-        // The budget card and the profile row both carry the currency:
-        // invalidate both so the next refetch re-reads the new value
-        // (server-state-caching spec — same pattern as saveReceipt).
         void queryClient.invalidateQueries({ queryKey: queryKeys.profile(userId) });
         void queryClient.invalidateQueries({ queryKey: queryKeys.budget(userId) });
       }
@@ -117,9 +133,6 @@ export function useProfile(): UseProfileResult {
       }
       const result = await setProfileBudget(userId, amount);
       if (result.status === 'ok') {
-        // The budget bar reads from the budget query and the profile row
-        // also carries the limit; invalidate both so the home card reflects
-        // the new value without a manual pull-to-refresh.
         void queryClient.invalidateQueries({ queryKey: queryKeys.profile(userId) });
         void queryClient.invalidateQueries({ queryKey: queryKeys.budget(userId) });
       }

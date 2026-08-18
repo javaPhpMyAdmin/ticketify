@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 
 import { Pressable, ProfileHeader, Spinner, Text, View } from '@/components';
 import { useSessionStore, useSessionUser } from '@/features/auth';
+import { JoinHouseholdModal } from '@/features/household/components/JoinHouseholdModal';
 import { useProEntitlement } from '@/features/pro';
 import {
   AccountSettingsList,
@@ -12,11 +13,15 @@ import {
   useProfile,
   type AccountSettingRow,
 } from '@/features/profile';
+import { leaveHousehold } from '@/lib/supabase/feature-access';
+import { queryClient } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
+import { useHouseholdStore } from '@/stores/use-household-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
 
 export default function ProfileScreen() {
-  const { user, usage, error, setHouseholdSharing } = useProfile();
+  const { user, usage, error, getHouseholdId } = useProfile();
   const currency = useSettingsStore((s) => s.currency);
   const household = useSettingsStore((s) => s.household_sharing);
   const setHousehold = useSettingsStore((s) => s.setHouseholdSharing);
@@ -24,14 +29,63 @@ export default function ProfileScreen() {
   const { email } = useSessionUser();
   const { isPro, isLoading: proLoading } = useProEntitlement();
 
+  const householdName = useHouseholdStore((s) => s.household?.name);
+
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [joinModalVisible, setJoinModalVisible] = useState(false);
+  const [togglingHousehold, setTogglingHousehold] = useState(false);
+  const { userId } = useSessionUser();
 
   // Export is a Pro feature (REQ-GATE-1): free users see the row, but
   // tapping it routes to the paywall instead of the exporter. The row
   // stays visible so users know what unlocks with Pro — hiding it would
   // remove the upgrade signal entirely.
   const exportTarget = !isPro && !proLoading ? '/pro' : '/settings/export';
+
+  const handleHouseholdToggle = async (value: boolean) => {
+    if (togglingHousehold) return;
+
+    if (value) {
+      // ── Turning ON ──────────────────────────────────────────────────
+      if (!isPro) {
+        router.push('/pro');
+        return;
+      }
+      setTogglingHousehold(true);
+      try {
+        const householdId = await getHouseholdId();
+        setHousehold(true);
+        if (householdId) {
+          router.push('/settings/household');
+        } else {
+          setJoinModalVisible(true);
+        }
+      } finally {
+        setTogglingHousehold(false);
+      }
+    } else {
+      // ── Turning OFF ─────────────────────────────────────────────────
+      const householdId = await getHouseholdId();
+      if (householdId) {
+        setTogglingHousehold(true);
+        try {
+          const result = await leaveHousehold();
+          if (result.status === 'ok') {
+            useHouseholdStore.getState().reset();
+          }
+        } finally {
+          setTogglingHousehold(false);
+        }
+      }
+      setHousehold(false);
+      if (userId) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.household(userId),
+        });
+      }
+    }
+  };
 
   const settings: AccountSettingRow[] = [
     {
@@ -66,14 +120,12 @@ export default function ProfileScreen() {
     {
       id: 'household',
       label: 'Uso compartido del hogar',
+      value: household && householdName ? householdName : undefined,
       icon: 'person.fill',
       trailing: {
         type: 'switch',
         value: household,
-        onChange: (v) => {
-          setHousehold(v);
-          setHouseholdSharing(v);
-        },
+        onChange: handleHouseholdToggle,
       },
     },
   ];
@@ -83,18 +135,8 @@ export default function ProfileScreen() {
     setSigningOut(true);
     setSignOutError(null);
     try {
-      // SIGNED_OUT fires through onAuthStateChange: the session clears and the
-      // root gate closes to the sign-in screen (user-auth spec: sign out on
-      // demand → back to sign-in).
       await signOut();
     } catch {
-      // Only a genuine sign-out failure surfaces here (the local session is
-      // still intact). An offline/5xx server revoke clears the local session
-      // and fires SIGNED_OUT first, so the store treats it as success — the
-      // user IS signed out on this device, and a "could not sign out" message
-      // would be dead the moment the gate unmounts this screen. The copy is
-      // deliberately generic: a raw supabase-js/GoTrue message must never
-      // reach the UI (same posture as sign-in and sign-up).
       setSignOutError('No se pudo cerrar la sesión. Inténtalo de nuevo.');
     } finally {
       setSigningOut(false);
@@ -108,7 +150,6 @@ export default function ProfileScreen() {
           <ProfileHeader
             name={user.full_name ?? 'Tú'}
             avatarUrl={user.avatar_url}
-            // subtitle={email ?? undefined}
             tier={user.tier}
           />
         ) : null}
@@ -120,6 +161,9 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>CONFIGURACIÓN </Text>
           <AccountSettingsList rows={settings} />
+          {!isPro && !proLoading ? (
+            <Text style={styles.proNote}>Función premium</Text>
+          ) : null}
         </View>
 
         <View style={styles.section}>
@@ -141,6 +185,11 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
       </ScrollView>
+
+      <JoinHouseholdModal
+        visible={joinModalVisible}
+        onClose={() => setJoinModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -160,9 +209,12 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   sectionTitle: {
-    // ...typography.headlineMd,
     fontSize: 20,
     fontWeight: '900',
+    color: colors.textSecondary,
+  },
+  proNote: {
+    ...typography.labelSm,
     color: colors.textSecondary,
   },
   error: {

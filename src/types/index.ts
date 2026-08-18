@@ -57,6 +57,8 @@ export interface User {
   currency: string; // ISO 4217 — 'USD', 'EUR', 'ARS'
   tier: ScanTier;
   created_at: string;
+  /** Household FK — set by migration 0014 when the user joins a household. */
+  household_id: string | null;
 }
 
 /** Mirrors `public.categories`. Global taxonomy, readable by all auth users. */
@@ -268,4 +270,59 @@ export interface PriceAlert {
   changePct: number;
   /** Source receipt id (current month) — see S2 deterministic rule. */
   receiptId: string;
+}
+
+// ---------------------------------------------------------------------------
+// Household sharing (migration 0014)
+// ---------------------------------------------------------------------------
+
+export type HouseholdRole = 'owner' | 'member';
+
+/** Mirrors `public.households`. */
+export interface Household {
+  id: string;
+  name: string;
+  created_by: string;
+  created_at: string;
+}
+
+/** Mirrors `public.household_members` with denormalized profile fields. */
+export interface HouseholdMember {
+  household_id: string;
+  user_id: string;
+  role: HouseholdRole;
+  joined_at: string;
+  // Denormalized from profiles for display:
+  full_name?: string;
+  avatar_url?: string;
+}
+
+/** Mirrors `public.invite_codes`. */
+export interface InviteCode {
+  id: string;
+  household_id: string;
+  code: string;
+  created_by: string;
+  expires_at: string;
+  consumed_by: string | null;
+  consumed_at: string | null;
+  created_at: string;
+}
+
+/**
+ * Level B household receipt feed item (get_household_feed RPC).
+ * Totals + category breakdown + store name, no individual items.
+ */
+export interface HouseholdFeedItem {
+  id: string;
+  store_name: string | null;
+  purchase_date: string;
+  total: number;
+  member_name: string | null;
+  category_totals: Record<string, number> | null;
+}
+
+/** Extended profile with household linkage. */
+export interface ProfileWithHousehold extends User {
+  household_id: string | null;
 }

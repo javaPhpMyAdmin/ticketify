@@ -8,14 +8,17 @@ import {
 
 import {
   Card,
+  EmptyState,
   Icon,
   Pressable,
   Text,
 } from '@/components';
 import {
+  CategoryBudgetRow,
   MonthlyOverviewCard,
   TopItemsBreakdown,
   useMonthlyOverview,
+  useMonthlyTotals,
   usePriceAlerts,
 } from '@/features/analytics';
 import type { PriceAlert } from '@/features/analytics';
@@ -26,7 +29,9 @@ import {
   monthKeyToLabel,
   previousMonthKey,
 } from '@/features/home/hooks/useHomeFeed';
+import { getExpenseCategory } from '@/features/home/categories';
 import { useProEntitlement } from '@/features/pro';
+import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -57,6 +62,21 @@ export default function AnalyticsScreen() {
   const currency = useSettingsStore((s) => s.currency);
   const { isPro } = useProEntitlement();
   const [monthKey, setMonthKey] = useState(currentMonthKey);
+  // Personal vs household view toggle — mirrors history.tsx pattern.
+  const [viewMode, setViewMode] = useState<'personal' | 'household'>('personal');
+  const householdId = useHouseholdStore((s) => s.household?.id);
+  const hasHousehold = !!householdId;
+
+  // Household-scoped category totals (when in household mode).
+  const {
+    totals: householdTotals,
+    isLoading: householdTotalsLoading,
+    error: householdTotalsError,
+    hasData: householdTotalsHasData,
+  } = useMonthlyTotals(
+    monthKey,
+    viewMode === 'household' ? householdId : null,
+  );
 
   const monthKeys = useMemo(() => getAvailableMonthKeys(list), [list]);
   const alerts = usePriceAlerts(monthKey);
@@ -153,6 +173,33 @@ export default function AnalyticsScreen() {
             />
           </Pressable>
         </View>
+
+        {/* Personal / Household toggle — only when the user has a household */}
+        {hasHousehold ? (
+          <View style={styles.viewToggle}>
+            {(['personal', 'household'] as const).map((mode) => {
+              const active = viewMode === mode;
+              return (
+                <Pressable
+                  key={mode}
+                  onPress={() => setViewMode(mode)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  style={[styles.viewSegment, active && styles.viewSegmentActive]}
+                >
+                  <Text
+                    style={[
+                      styles.viewSegmentLabel,
+                      active && styles.viewSegmentLabelActive,
+                    ]}
+                  >
+                    {mode === 'personal' ? 'Mi gasto' : 'Hogar'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
       </View>
 
       <ScrollView
@@ -177,12 +224,50 @@ export default function AnalyticsScreen() {
         {alerts.map((alert) => (
           <PriceAlertBanner key={alert.name} alert={alert} isPro={isPro} />
         ))}
-        <TopItemsBreakdown
-          rows={topItems}
-          total={monthTotal}
-          currency={currency}
-          title="Top Artículos"
-        />
+        {viewMode === 'household' ? (
+          householdTotalsLoading ? (
+            <Card>
+              <Text style={styles.empty}>Cargando datos del hogar…</Text>
+            </Card>
+          ) : householdTotalsError && !householdTotalsHasData ? (
+            <EmptyState
+              framed
+              icon="exclamationmark.triangle.fill"
+              title={householdTotalsError}
+            />
+          ) : householdTotals.length === 0 ? (
+            <Card>
+              <Text style={styles.empty}>Sin categorías este mes en el hogar.</Text>
+            </Card>
+          ) : (
+            <Card padding={spacing.lg}>
+              <View style={styles.categoryList}>
+                {householdTotals.map((t) => {
+                  const category = getExpenseCategory(t.category_slug);
+                  return (
+                    <CategoryBudgetRow
+                      key={t.category_id}
+                      categoryKey={t.category_slug}
+                      name={t.category_name}
+                      amount={t.total}
+                      percent={t.percent_of_total}
+                      icon={category.icon}
+                      limit={t.budget_limit ?? undefined}
+                      currency={currency}
+                    />
+                  );
+                })}
+              </View>
+            </Card>
+          )
+        ) : (
+          <TopItemsBreakdown
+            rows={topItems}
+            total={monthTotal}
+            currency={currency}
+            title="Top Artículos"
+          />
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -264,6 +349,48 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '900',
     color: colors.textSecondary,
+  },
+  viewToggle: {
+    flexDirection: 'row',
+    backgroundColor: colors.border,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.full,
+    padding: 3,
+    gap: 2,
+  },
+  viewSegment: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+  },
+  viewSegmentActive: {
+    backgroundColor: colors.surface,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  viewSegmentLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  viewSegmentLabelActive: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  categoryList: {
+    gap: spacing.sm,
+  },
+  empty: {
+    ...typography.bodyMd,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingVertical: spacing.xl,
   },
   alertBanner: {
     height: 100,
