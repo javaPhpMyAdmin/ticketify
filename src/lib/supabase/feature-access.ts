@@ -244,11 +244,12 @@ export async function readHouseholdInfo(
     console.warn('[read] household profile failed:', profileErr.code, profileErr.message);
     return { status: 'error', message: READ_ERROR_MESSAGE };
   }
-  if (!profile?.household_id) return { status: 'ok', data: null };
+  const profileRow = profile as Record<string, unknown> | null;
+  if (!profileRow?.household_id) return { status: 'ok', data: null };
   const { data, error } = await supabase
     .from('households')
     .select('*')
-    .eq('id', profile.household_id)
+    .eq('id', profileRow.household_id as string)
     .maybeSingle();
   if (error) {
     console.warn('[read] household info failed:', error.code, error.message);
@@ -264,19 +265,21 @@ export async function readHouseholdInfo(
  */
 export async function readHouseholdRole(
   householdId: string,
+  userId: string,
 ): Promise<FeatureReadResult<string | null>> {
   if (!isSupabaseConfigured) return { status: 'unconfigured' };
   const { data, error } = await supabase
     .from('household_members')
     .select('role')
     .eq('household_id', householdId)
-    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+    .eq('user_id', userId)
     .maybeSingle();
   if (error) {
     console.warn('[read] household role failed:', error.code, error.message);
     return { status: 'error', message: READ_ERROR_MESSAGE };
   }
-  return { status: 'ok', data: (data?.role as string | null) ?? null };
+  const row = data as Record<string, unknown> | null;
+  return { status: 'ok', data: (row?.role as string | null) ?? null };
 }
 
 /**
@@ -295,7 +298,7 @@ export async function readHouseholdMembers(
     console.warn('[read] household members failed:', error.code, error.message);
     return { status: 'error', message: READ_ERROR_MESSAGE };
   }
-  const members = (data ?? []).map((row: Record<string, unknown>) => {
+  const members = ((data as unknown as Array<Record<string, unknown>>) ?? []).map((row) => {
     const profile = row.profiles as Record<string, unknown> | null;
     return {
       household_id: row.household_id as string,
@@ -317,10 +320,12 @@ export async function readActiveInviteCode(
   householdId: string,
 ): Promise<FeatureReadResult<InviteCode | null>> {
   if (!isSupabaseConfigured) return { status: 'unconfigured' };
-  const { data, error } = await supabase
-    .from('invite_codes')
-    .select('*')
-    .eq('household_id', householdId)
+  // `.is()` is a valid PostgREST operator for NULL checks but the untyped
+  // SupabaseClient doesn't expose it on QueryBuilder, so we cast.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const qb: any = supabase.from('invite_codes').select('*')
+    .eq('household_id', householdId);
+  const { data, error } = await qb
     .is('consumed_by', null)
     .gt('expires_at', new Date().toISOString())
     .order('created_at', { ascending: false })
@@ -352,7 +357,7 @@ export async function createHousehold(
     console.warn('[write] create household failed:', error.code, error.message);
     return { status: 'error', message: READ_ERROR_MESSAGE };
   }
-  return { status: 'ok', data: data as Household };
+  return { status: 'ok', data: (data as unknown as Household) };
 }
 
 /**
@@ -370,7 +375,7 @@ export async function generateInviteCode(
     console.warn('[write] generate invite code failed:', error.code, error.message);
     return { status: 'error', message: READ_ERROR_MESSAGE };
   }
-  return { status: 'ok', data: data as InviteCode };
+  return { status: 'ok', data: (data as unknown as InviteCode) };
 }
 
 /**
@@ -389,7 +394,7 @@ export async function joinHousehold(
     console.warn('[write] join household failed:', error.code, error.message);
     return { status: 'error', message: READ_ERROR_MESSAGE };
   }
-  return { status: 'ok', data: data as { household_id: string } };
+  return { status: 'ok', data: (data as unknown as { household_id: string }) };
 }
 
 /**
