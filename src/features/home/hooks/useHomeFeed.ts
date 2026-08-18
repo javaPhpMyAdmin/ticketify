@@ -10,7 +10,7 @@ import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters'
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import type { HomeFeedReceiptRow } from '@/types';
-import { readPurchaseList, readPurchasePage, searchPurchaseItems, PURCHASE_PAGE_SIZE } from '../api';
+import { readPurchasePage, searchPurchaseItems, PURCHASE_PAGE_SIZE } from '../api';
 import { getExpenseCategory } from '../categories';
 
 /**
@@ -581,8 +581,8 @@ export function useHomeFeed(): HomeFeedResult {
     initialPageParam: 0,
     queryFn: async ({ pageParam }) =>
       toQueryData(await readPurchasePage(userId!, pageParam as number)),
-    getNextPageParam: (lastPage: HomeFeedReceiptRow[]) =>
-      lastPage.length < PURCHASE_PAGE_SIZE ? undefined : lastPage.length,
+    getNextPageParam: (lastPage: HomeFeedReceiptRow[], allPages) =>
+      lastPage.length < PURCHASE_PAGE_SIZE ? undefined : allPages.length,
   });
 
   // ── Household total (current month, when household is active) ──────────
@@ -610,26 +610,12 @@ export function useHomeFeed(): HomeFeedResult {
     [feedQuery.data],
   );
 
-  // ── Full list for the receipts store (analytics/charts/history) ──────────
-  // The infinite scroll feed only loads pages as the user scrolls, but the
-  // analytics tab, charts screen, and history screen derive totals, trends,
-  // and aggregations from `useReceiptsStore.list`. A separate non-paginated
-  // query ensures the store always has the full receipt list regardless of
-  // how far the user has scrolled on the home feed.
-  const fullListQuery = useQuery({
-    queryKey: queryKeys.purchaseList(userId!),
-    enabled: !!userId,
-    queryFn: () => readPurchaseList(userId!).then(toQueryData),
-  });
-
-  // Hydrate the receipts store with the FULL list so all consumers
-  // (Analytics, Charts, History) see every receipt, not just the home
-  // feed's paginated subset.
+  // Hydrate the receipts store with loaded rows so History/Analytics see them.
   useEffect(() => {
-    if (fullListQuery.data && fullListQuery.data.length > 0) {
-      useReceiptsStore.setState({ list: fullListQuery.data });
+    if (rows.length > 0) {
+      useReceiptsStore.setState({ list: rows });
     }
-  }, [fullListQuery.data]);
+  }, [rows]);
 
   const feed = useMemo(
     () => (rows.length > 0 ? mapPurchaseRowsToHomeFeed(rows, householdTotal) : EMPTY_FEED),
