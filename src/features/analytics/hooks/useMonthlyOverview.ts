@@ -1,49 +1,26 @@
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
 
 import { currentMonthKey, previousMonthKey } from '@/features/home/hooks/useHomeFeed';
-import { useSessionUser } from '@/features/auth';
-import { queryKeys } from '@/lib/query-keys';
-import { readMonthlyPurchasesTotal } from '@/lib/supabase/feature-access';
-import {
-  toQueryData,
-  toQueryErrorMessage,
-} from '@/lib/supabase/query-adapters';
-import type { MonthOverview } from '../monthly-overview';
+import { useMonthlyCache } from './useMonthlyCache';
 
 /**
  * Reactive month-over-month overview for the analytics tab.
  *
- * MIGRATION NOTE: this hook previously derived totals from the
- * `useReceiptsStore` local store, which only contains the pages the user
- * has scrolled through (infinite scroll). That produced incomplete totals
- * (e.g. 15k vs the real 43k). It now uses the `monthly_purchases_total`
- * RPC for both the current and previous month, guaranteeing a full-server-
- * side total regardless of how much of the feed has been loaded.
+ * Uses `useMonthlyCache` for both the current and previous month totals.
+ * The cache reads from the materialized `monthly_user_totals` table
+ * (trigger-maintained on purchase writes), guaranteeing full-server-side
+ * totals regardless of how much of the paginated receipt feed has been
+ * loaded. Cache misses trigger a one-time recalculation automatically.
  */
-export function useMonthlyOverview(monthKey = currentMonthKey()): MonthOverview {
-  const { userId } = useSessionUser();
+export function useMonthlyOverview(monthKey = currentMonthKey()) {
   const prevMonth = previousMonthKey(monthKey);
 
-  // Current month total — same RPC useBudget uses for the home bar.
-  const currentQuery = useQuery({
-    queryKey: queryKeys.monthlyPurchasesTotal(userId!, monthKey),
-    enabled: !!userId,
-    queryFn: () => readMonthlyPurchasesTotal(monthKey).then(toQueryData),
-  });
-
-  // Previous month total — for the month-over-month badge.
-  const previousQuery = useQuery({
-    queryKey: queryKeys.monthlyPurchasesTotal(userId!, prevMonth),
-    enabled: !!userId,
-    queryFn: () => readMonthlyPurchasesTotal(prevMonth).then(toQueryData),
-  });
+  const current = useMonthlyCache(monthKey);
+  const previous = useMonthlyCache(prevMonth);
 
   return useMemo(() => {
-    const currentTotal =
-      currentQuery.data?.reduce((acc, row) => acc + (Number.isFinite(row.total) ? row.total : 0), 0) ?? 0;
-    const previousTotal =
-      previousQuery.data?.reduce((acc, row) => acc + (Number.isFinite(row.total) ? row.total : 0), 0) ?? 0;
+    const currentTotal = current.monthTotal;
+    const previousTotal = previous.monthTotal;
 
     const changePct =
       previousTotal > 0
@@ -51,5 +28,5 @@ export function useMonthlyOverview(monthKey = currentMonthKey()): MonthOverview 
         : null;
 
     return { currentTotal, previousTotal, changePct };
-  }, [currentQuery.data, previousQuery.data]);
+  }, [current.monthTotal, previous.monthTotal]);
 }
