@@ -12,8 +12,16 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 
-import { EmptyState, Icon, Pressable, SearchRowSkeleton, Text, View } from '@/components';
+import {
+  EmptyState,
+  Icon,
+  Pressable,
+  SearchRowSkeleton,
+  Text,
+  View,
+} from '@/components';
 import { useMonthlyTotals } from '@/features/analytics';
+import { categoryDetailHref } from '@/features/charts';
 import {
   aggregateCategoriesByMonth,
   aggregateCategoryItemCounts,
@@ -26,7 +34,6 @@ import {
 } from '@/features/home';
 import { getExpenseCategory } from '@/features/home/categories';
 import { formatCurrency } from '@/lib/format';
-import { categoryDetailHref } from '@/features/charts';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
@@ -83,7 +90,9 @@ export default function HistoryScreen() {
   const avatarUrl = session?.user?.user_metadata?.avatar_url;
 
   // Personal vs household view toggle
-  const [viewMode, setViewMode] = useState<'personal' | 'household'>('personal');
+  const [viewMode, setViewMode] = useState<'personal' | 'household'>(
+    'personal',
+  );
   const householdId = useHouseholdStore((s) => s.household?.id);
   const hasHousehold = !!householdId;
 
@@ -93,10 +102,7 @@ export default function HistoryScreen() {
     isLoading: householdTotalsLoading,
     error: householdTotalsError,
     hasData: householdTotalsHasData,
-  } = useMonthlyTotals(
-    monthKey,
-    viewMode === 'household' ? householdId : null,
-  );
+  } = useMonthlyTotals(monthKey, viewMode === 'household' ? householdId : null);
 
   // Combined total across every VISIBLE result row: searching "yerba"
   // matches both "Yerba 1kg" and "Yerba mate 1kg" as separate rows, and this
@@ -214,7 +220,11 @@ export default function HistoryScreen() {
               setQuery(text);
               setHiddenItems(new Set());
             }}
-            placeholder={viewMode === 'household' ? 'Buscador no disponible en modo hogar' : 'Buscar producto…'}
+            placeholder={
+              viewMode === 'household'
+                ? 'Buscador no disponible en modo hogar'
+                : 'Buscar producto…'
+            }
             placeholderTextColor={colors.textSecondary}
             autoCorrect={false}
             autoCapitalize="none"
@@ -239,7 +249,10 @@ export default function HistoryScreen() {
                   }}
                   accessibilityRole="button"
                   accessibilityState={{ selected: active }}
-                  style={[styles.viewSegment, active && styles.viewSegmentActive]}
+                  style={[
+                    styles.viewSegment,
+                    active && styles.viewSegmentActive,
+                  ]}
                 >
                   <Text
                     style={[
@@ -360,16 +373,11 @@ export default function HistoryScreen() {
                     <Text style={styles.searchResultAmount}>
                       {formatCurrency(item.amount, currency)}
                     </Text>
-                    <View style={styles.searchWrapGo}>
-                      <Text style={styles.searchGo} numberOfLines={1}>
-                        VER
-                      </Text>
-                      <Icon
-                        name="chevron.right"
-                        size={16}
-                        color={colors.onPrimary}
-                      />
-                    </View>
+                    <Icon
+                      name="chevron.right"
+                      size={16}
+                      color={colors.onPrimary}
+                    />
                   </Pressable>
                   <Pressable
                     style={({ pressed }) => [
@@ -377,18 +385,12 @@ export default function HistoryScreen() {
                       pressed && styles.hideItemPressed,
                     ]}
                     onPress={() =>
-                      setHiddenItems(
-                        (prev) => new Set(prev).add(item.name),
-                      )
+                      setHiddenItems((prev) => new Set(prev).add(item.name))
                     }
                     accessibilityRole="button"
                     accessibilityLabel={`Ocultar ${item.name}`}
                   >
-                    <Icon
-                      name="xmark"
-                      size={14}
-                      color={colors.textSecondary}
-                    />
+                    <Icon name="trash" size={24} color="red" />
                   </Pressable>
                 </View>
               ))}
@@ -421,7 +423,11 @@ export default function HistoryScreen() {
                     itemCount={t.item_count}
                     onPress={() =>
                       router.push(
-                        categoryDetailHref(t.category_slug, monthKey, currentMonthKey()),
+                        categoryDetailHref(
+                          t.category_slug,
+                          monthKey,
+                          currentMonthKey(),
+                        ),
                       )
                     }
                   />
@@ -449,7 +455,11 @@ export default function HistoryScreen() {
                   itemCount={categoryItemCounts[category.key]}
                   onPress={() =>
                     router.push(
-                      categoryDetailHref(category.key, monthKey, currentMonthKey()),
+                      categoryDetailHref(
+                        category.key,
+                        monthKey,
+                        currentMonthKey(),
+                      ),
                     )
                   }
                 />

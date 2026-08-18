@@ -1,0 +1,204 @@
+<!DOCTYPE html><html class="light" lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Ticketify - Presupuesto</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                            "surface-bright": "#f8f9fa",
+                            "surface": "#ffffff",
+                            "on-tertiary": "#ffffff",
+                            "surface-container-high": "#e7e8e9",
+                            "error-container": "#ffdad6",
+                            "on-primary": "#ffffff",
+                            "tertiary-container": "#ff7a73",
+                            "on-background": "#191c1d",
+                            "on-primary-container": "#00422b",
+                            "error": "#ba1a1a",
+                            "on-tertiary-container": "#79000e",
+                            "surface-container": "#edeeef",
+                            "on-surface": "#191c1d",
+                            "secondary": "#575e70",
+                            "secondary-fixed": "#dce2f7",
+                            "outline": "#6c7a71",
+                            "primary-container": "#10b981",
+                            "inverse-primary": "#4edea3",
+                            "tertiary-fixed": "#ffdad7",
+                            "on-tertiary-fixed": "#410004",
+                            "on-secondary-fixed": "#141b2b",
+                            "tertiary-fixed-dim": "#ffb3ad",
+                            "on-secondary-container": "#5c6274",
+                            "surface-container-low": "#f3f4f5",
+                            "primary-fixed": "#6ffbbe",
+                            "surface-container-highest": "#e1e3e4",
+                            "tertiary": "#b91a24",
+                            "primary-fixed-dim": "#4edea3",
+                            "outline-variant": "#bbcabf",
+                            "on-secondary-fixed-variant": "#404758",
+                            "secondary-container": "#d9dff5",
+                            "on-secondary": "#ffffff",
+                            "background": "#ffffff",
+                            "primary": "#006c49",
+                            "inverse-surface": "#2e3132",
+                            "on-error": "#ffffff",
+                            "on-error-container": "#93000a",
+                            "inverse-on-surface": "#f0f1f2",
+                            "on-primary-fixed": "#002113",
+                            "surface-container-lowest": "#ffffff",
+                            "surface-dim": "#d9dadb",
+                            "secondary-fixed-dim": "#c0c6db",
+                            "on-primary-fixed-variant": "#005236",
+                            "on-tertiary-fixed-variant": "#930013",
+                            "on-surface-variant": "#3c4a42",
+                            "surface-variant": "#e1e3e4",
+                            "surface-tint": "#006c49"
+                    },
+                    "borderRadius": {
+                            "DEFAULT": "0.25rem",
+                            "lg": "0.5rem",
+                            "xl": "0.75rem",
+                            "full": "9999px"
+                    },
+                    "spacing": {
+                            "safe-area-bottom": "34px",
+                            "container-margin": "20px",
+                            "stack-lg": "24px",
+                            "stack-md": "16px",
+                            "gutter": "12px",
+                            "stack-sm": "8px"
+                    },
+                    "fontFamily": {
+                            "headline-md": ["Inter"],
+                            "label-caps": ["Inter"],
+                            "body-lg": ["Inter"],
+                            "headline-lg": ["Inter"],
+                            "label-sm": ["Inter"],
+                            "display-currency": ["Inter"],
+                            "body-md": ["Inter"],
+                            "headline-lg-mobile": ["Inter"]
+                    },
+                    "fontSize": {
+                            "headline-md": ["20px", { "lineHeight": "26px", "fontWeight": "600" }],
+                            "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700" }],
+                            "body-lg": ["17px", { "lineHeight": "24px", "fontWeight": "400" }],
+                            "headline-lg": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                            "label-sm": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                            "display-currency": ["40px", { "lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                            "body-md": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                            "headline-lg-mobile": ["24px", { "lineHeight": "30px", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .icon-fill { font-variation-settings: 'FILL' 1; }
+        
+        /* Custom progress bar styles to match reference */
+        .progress-bar-track {
+            height: 12px;
+            border-radius: 6px;
+            background-color: transparent;
+            display: flex;
+            gap: 4px;
+        }
+        
+        .progress-segment {
+            height: 100%;
+            border-radius: 6px;
+        }
+        
+        /* Specific colors requested */
+        .bg-housing { background-color: #3B82F6; }
+        .bg-food { background-color: #F87171; }
+        .bg-groceries { background-color: #10B981; }
+        .bg-shopping { background-color: #FBBF24; }
+        .bg-transport { background-color: #A855F7; }
+        .bg-pink-bar { background-color: #EC4899; }
+        .bg-empty-bar { background-color: #F3F4F6; }
+        
+        /* Hide scrollbar for clean UI */
+        ::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="bg-background text-on-background antialiased pb-[88px] min-h-screen">
+<!-- TopAppBar -->
+<header class="bg-surface docked full-width top-0 border-b border-outline-variant flat no shadows flex justify-between items-center w-full px-container-margin h-16 sticky z-40">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest overflow-hidden">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="A small, professional avatar portrait of a modern user in a light-mode, minimalist style suitable for an app header, featuring soft natural lighting and a neutral background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDr5A5YKzPF8Z0hlq1YusZRDaWtH053CebH2ZbUd2ePdNth3W7TIDT3EoMNbvabKgnnDnfd0wFilgEYmYJfOKF6917NTSIRkf8hud786u3BKgAXG2PP5GXpj9v2lEEZzHrViTRVU72bQz-KR2nIETDmvFuWuT5Nxbum4qO-IO-ns0bOelVaoMNn3WkPP9MneGmnBLNJNHAB9q7SMc2ZEfChST64TaoyLxY6aZaclb6vTMe1e3jezVar7A">
+</div>
+<h1 class="text-headline-md font-headline-md font-bold text-primary">Ticketify</h1>
+</div>
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-transform duration-200 active:scale-[0.98] text-on-surface-variant">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="px-container-margin pt-stack-lg pb-stack-lg flex flex-col gap-stack-lg max-w-md mx-auto">
+<!-- Header Section -->
+<section class="flex justify-between items-center mb-2">
+<h2 class="text-[32px] leading-10 font-bold tracking-tight">Budget</h2>
+<div class="flex items-center gap-2">
+<button class="flex items-center gap-1 bg-surface-container-lowest border border-surface-variant rounded-full px-4 py-2 shadow-sm text-label-sm font-label-sm">
+<span class="">Octubre</span>
+<span class="material-symbols-outlined text-[16px]">expand_more</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center rounded-full bg-surface-container-lowest border border-surface-variant shadow-sm text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]">light_mode</span>
+</button>
+</div>
+</section>
+<!-- Budget Summary -->
+<section class="flex flex-col mb-4">
+<div class="text-[11px] font-bold text-secondary uppercase tracking-widest mb-1">LEFT TO SPEND</div>
+<div class="flex justify-between items-end mb-4">
+<div class="flex items-start">
+<span class="text-[24px] font-bold leading-none mt-1">$</span>
+<span class="text-[48px] font-bold leading-none tracking-tight">760</span>
+<span class="text-[20px] font-bold leading-none mt-1">.00</span>
+</div>
+<div class="text-right pb-1">
+<div class="text-[15px] font-bold text-on-surface leading-tight">$1,240</div>
+<div class="text-[12px] text-secondary">of $2,000 spent</div>
+</div>
+</div>
+<!-- Segmented Progress Bar -->
+<div class="progress-bar-track w-full mt-2"><div class="progress-segment bg-housing w-[25%]"></div><div class="progress-segment bg-food w-[18%]"></div><div class="progress-segment bg-groceries w-[14%]"></div><div class="progress-segment bg-shopping w-[8%]"></div><div class="progress-segment bg-transport w-[5%]"></div><div class="progress-segment bg-pink-bar w-[4%]"></div><div class="progress-segment bg-empty-bar w-[26%]"></div></div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="bg-surface-container-lowest docked full-width bottom-0 border-t border-outline-variant flat no shadows fixed bottom-0 w-full z-50 flex justify-around items-center h-[88px] px-container-margin pb-safe-area-bottom md:hidden">
+<button class="flex flex-col items-center justify-center text-secondary hover:bg-surface-container rounded-xl w-16 h-14">
+<span class="material-symbols-outlined">home</span>
+<span class="text-label-sm font-label-sm mt-1">Home</span>
+</button>
+<button class="flex flex-col items-center justify-center text-primary font-bold scale-[0.98] transition-transform duration-200 w-16 h-14">
+<span class="material-symbols-outlined icon-fill">insights</span>
+<span class="text-label-sm font-label-sm mt-1">Analytics</span>
+</button>
+<button class="flex flex-col items-center justify-center text-secondary hover:bg-surface-container rounded-xl w-16 h-14">
+<span class="material-symbols-outlined">qr_code_scanner</span>
+<span class="text-label-sm font-label-sm mt-1">Scan</span>
+</button>
+<button class="flex flex-col items-center justify-center text-secondary hover:bg-surface-container rounded-xl w-16 h-14">
+<span class="material-symbols-outlined">history</span>
+<span class="text-label-sm font-label-sm mt-1">History</span>
+</button>
+<button class="flex flex-col items-center justify-center text-secondary hover:bg-surface-container rounded-xl w-16 h-14">
+<span class="material-symbols-outlined">person</span>
+<span class="text-label-sm font-label-sm mt-1">Profile</span>
+</button>
+</nav>
+
+
+</body></html>

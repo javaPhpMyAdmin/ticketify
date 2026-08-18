@@ -181,6 +181,42 @@ function nextMonthKey(monthKey: string): string {
     : `${year}-${String(month + 1).padStart(2, '0')}`;
 }
 
+/**
+ * Fetch ALL confirmed receipts for a specific month (no pagination).
+ * Used by the charts screen so detail views (day tap, category drill-down)
+ * have the full receipt set regardless of how much of the home feed
+ * has been scrolled.
+ */
+export async function readPurchaseListByMonth(
+  userId: string,
+  yearMonth: string,
+): Promise<FeatureReadResult<HomeFeedReceiptRow[]>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const startDate = `${yearMonth}-01`;
+  const endDate = `${nextMonthKey(yearMonth)}-01`;
+  const { data, error } = await supabase
+    .from('purchases')
+    .select(
+      `id, store_id, purchase_date, created_at, total, payment_method, image_url, status,
+       stores ( name ),
+       purchase_items ( id, name, quantity, unit_price, total_price, is_impulse, sort_order, categories ( slug ) )`,
+    )
+    .eq('user_id', userId)
+    .eq('status', 'confirmed')
+    .gte('purchase_date', startDate)
+    .lt('purchase_date', endDate)
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.warn('[read] purchase list by month failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  const rows = (data as unknown[] | null) ?? [];
+  return {
+    status: 'ok',
+    data: rows.map((row) => mapPurchaseRow(row as RawPurchaseRow)),
+  };
+}
+
 /** Raw PostgREST shape of one `purchase_items` row with its purchase. */
 interface RawSearchItemRow {
   id: string;

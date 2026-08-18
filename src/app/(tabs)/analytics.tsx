@@ -6,13 +6,8 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 
-import {
-  Card,
-  EmptyState,
-  Icon,
-  Pressable,
-  Text,
-} from '@/components';
+import { Card, EmptyState, Icon, Pressable, Text } from '@/components';
+import type { PriceAlert } from '@/features/analytics';
 import {
   CategoryBudgetRow,
   MonthlyOverviewCard,
@@ -21,7 +16,7 @@ import {
   useMonthlyTotals,
   usePriceAlerts,
 } from '@/features/analytics';
-import type { PriceAlert } from '@/features/analytics';
+import { getExpenseCategory } from '@/features/home/categories';
 import {
   aggregateItemsByMonth,
   currentMonthKey,
@@ -29,7 +24,6 @@ import {
   monthKeyToLabel,
   previousMonthKey,
 } from '@/features/home/hooks/useHomeFeed';
-import { getExpenseCategory } from '@/features/home/categories';
 import { useProEntitlement } from '@/features/pro';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
@@ -63,7 +57,9 @@ export default function AnalyticsScreen() {
   const { isPro } = useProEntitlement();
   const [monthKey, setMonthKey] = useState(currentMonthKey);
   // Personal vs household view toggle — mirrors history.tsx pattern.
-  const [viewMode, setViewMode] = useState<'personal' | 'household'>('personal');
+  const [viewMode, setViewMode] = useState<'personal' | 'household'>(
+    'personal',
+  );
   const householdId = useHouseholdStore((s) => s.household?.id);
   const hasHousehold = !!householdId;
 
@@ -73,10 +69,7 @@ export default function AnalyticsScreen() {
     isLoading: householdTotalsLoading,
     error: householdTotalsError,
     hasData: householdTotalsHasData,
-  } = useMonthlyTotals(
-    monthKey,
-    viewMode === 'household' ? householdId : null,
-  );
+  } = useMonthlyTotals(monthKey, viewMode === 'household' ? householdId : null);
 
   const monthKeys = useMemo(() => getAvailableMonthKeys(list), [list]);
   const alerts = usePriceAlerts(monthKey);
@@ -138,7 +131,7 @@ export default function AnalyticsScreen() {
             </View>
           )}
         </Pressable>
-        <Text style={styles.title}>Ticketify</Text>
+        <Text style={styles.title}>Ticketifyasdasd</Text>
         <Icon name="qr-code-scanner" size={33} color={colors.primary} />
       </View>
       <View style={styles.fixedHeader}>
@@ -185,7 +178,10 @@ export default function AnalyticsScreen() {
                   onPress={() => setViewMode(mode)}
                   accessibilityRole="button"
                   accessibilityState={{ selected: active }}
-                  style={[styles.viewSegment, active && styles.viewSegmentActive]}
+                  style={[
+                    styles.viewSegment,
+                    active && styles.viewSegmentActive,
+                  ]}
                 >
                   <Text
                     style={[
@@ -237,7 +233,9 @@ export default function AnalyticsScreen() {
             />
           ) : householdTotals.length === 0 ? (
             <Card>
-              <Text style={styles.empty}>Sin categorías este mes en el hogar.</Text>
+              <Text style={styles.empty}>
+                Sin categorías este mes en el hogar.
+              </Text>
             </Card>
           ) : (
             <Card padding={spacing.lg}>
@@ -526,11 +524,7 @@ function ChartsEntryCard({ isPro }: ChartsEntryCardProps) {
                 Tendencias de gasto, categorías y tiendas
               </Text>
             </View>
-            <Icon
-              name="chevron.right"
-              size={22}
-              color={colors.textSecondary}
-            />
+            <Icon name="chevron.right" size={22} color={colors.textSecondary} />
           </View>
         </Card>
       </Pressable>
@@ -563,11 +557,7 @@ function ChartsEntryCard({ isPro }: ChartsEntryCardProps) {
               Tendencias de gasto, categorías y tiendas
             </Text>
           </View>
-          <Icon
-            name="chevron.right"
-            size={22}
-            color={colors.textSecondary}
-          />
+          <Icon name="chevron.right" size={22} color={colors.textSecondary} />
         </View>
       </Card>
     </Pressable>
@@ -608,7 +598,9 @@ function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={
-        isPro ? 'Ver recibo de la alerta de precio' : 'Desbloquear Alerta de precio Pro'
+        isPro
+          ? 'Ver recibo de la alerta de precio'
+          : 'Desbloquear Alerta de precio Pro'
       }
       style={({ pressed }) => [
         styles.alertBanner,

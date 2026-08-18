@@ -10,7 +10,7 @@ import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters'
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import type { HomeFeedReceiptRow } from '@/types';
-import { readPurchasePage, searchPurchaseItems, PURCHASE_PAGE_SIZE } from '../api';
+import { readPurchasePage, readPurchaseListByMonth, searchPurchaseItems, PURCHASE_PAGE_SIZE } from '../api';
 import { getExpenseCategory } from '../categories';
 
 /**
@@ -343,8 +343,18 @@ export function aggregateImpulseItemsByMonth(
  */
 export function useCategoryDetail(categoryKey: string, monthKey = currentMonthKey()) {
   const list = useReceiptsStore((s) => s.list);
+  const { userId } = useSessionUser();
+
+  // Fetch full month receipts for accurate category breakdown.
+  const monthQuery = useQuery({
+    queryKey: ['month-receipts', userId, monthKey],
+    enabled: !!userId,
+    queryFn: () => readPurchaseListByMonth(userId!, monthKey).then(toQueryData),
+  });
+  const monthList = monthQuery.data ?? list;
+
   const category = getExpenseCategory(categoryKey);
-  const items = aggregateItemsByCategory(list, categoryKey, monthKey);
+  const items = aggregateItemsByCategory(monthList, categoryKey, monthKey);
   const total = items.reduce((sum, item) => sum + item.amount, 0);
 
   return { category, total, items };
@@ -438,9 +448,16 @@ export function useItemSearch(
  */
 export function useItemDetail(itemName: string, monthKey = currentMonthKey()) {
   const list = useReceiptsStore((s) => s.list);
+  const { userId } = useSessionUser();
+  const monthQuery = useQuery({
+    queryKey: ['month-receipts', userId, monthKey],
+    enabled: !!userId,
+    queryFn: () => readPurchaseListByMonth(userId!, monthKey).then(toQueryData),
+  });
+  const monthList = monthQuery.data ?? list;
   const purchases: ItemPurchaseSummary[] = [];
   let total = 0;
-  for (const receipt of list) {
+  for (const receipt of monthList) {
     if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
     for (const item of receipt.items ?? []) {
       if (normalizeItemName(item.name) !== itemName) continue;
@@ -464,7 +481,14 @@ export function useItemDetail(itemName: string, monthKey = currentMonthKey()) {
  */
 export function useStoreDetail(storeName: string, monthKey?: string) {
   const list = useReceiptsStore((s) => s.list);
+  const { userId } = useSessionUser();
   const month = monthKey ?? currentMonthKey();
+  const monthQuery = useQuery({
+    queryKey: ['month-receipts', userId, month],
+    enabled: !!userId,
+    queryFn: () => readPurchaseListByMonth(userId!, month).then(toQueryData),
+  });
+  const monthList = monthQuery.data ?? list;
   const normalizedTarget = storeName.trim().toLowerCase();
   type ReceiptPurchase = {
     receiptId: string;
@@ -475,7 +499,7 @@ export function useStoreDetail(storeName: string, monthKey?: string) {
   };
   const purchasesByReceipt = new Map<string, ReceiptPurchase>();
   let total = 0;
-  for (const receipt of list) {
+  for (const receipt of monthList) {
     if (getMonthKey(receipt.purchase_date) !== month) continue;
     if ((receipt.store_name ?? '').trim().toLowerCase() !== normalizedTarget) {
       continue;
