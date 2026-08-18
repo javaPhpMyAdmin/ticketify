@@ -25,6 +25,7 @@
  */
 import { Stack, router } from 'expo-router';
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -40,6 +41,7 @@ import {
   CategoryBudgetRow,
   InsightBanner,
   MetricSummaryCard,
+  useMonthlyCacheData,
   useMonthlyOverview,
   useMonthlyTotals,
 } from '@/features/analytics';
@@ -48,33 +50,36 @@ import {
   CapsuleBarChart,
   DayDetailModal,
   StoreBars,
-  aggregateDailyAverage,
-  aggregateDailySpend,
   aggregateDayItems,
   aggregateDayTotal,
   aggregateSpendTrend,
-  aggregateStoresByMonth,
   aggregateWeeklySpend,
   aggregateYearlySpend,
   categoryDetailHref,
   getMondayOfWeek,
-  getTopCategory,
   pickMaxSpendIndex,
   WEEKDAY_NAMES,
 } from '@/features/charts';
+import { useSessionUser } from '@/features/auth';
 import { getExpenseCategory } from '@/features/home/categories';
 import {
+  aggregateCategoriesByMonth,
   currentMonthKey,
   getAvailableMonthKeys,
+  getMonthKey,
   monthKeyToLabel,
   previousMonthKey,
 } from '@/features/home/hooks/useHomeFeed';
 import { formatCurrency, MONTHS_SHORT_ES, todayLocalISO, yearLabel } from '@/lib/format';
+import { queryKeys } from '@/lib/query-keys';
+import { readMonthlyCacheRows } from '@/lib/supabase/feature-access';
+import { toQueryData } from '@/lib/supabase/query-adapters';
 import { ProRouteGuard } from '@/features/pro';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
+import type { MonthlyTotalsCacheRow } from '@/types';
 
 /**
  * Build a chronological window of `count` months ending at `monthKey`.
@@ -191,34 +196,139 @@ function ChartsBody() {
   );
   const overview = useMonthlyOverview(monthKey);
 
-  // Store-derived lenses for the Insights layout. These are independent of
-  // the RPC-backed category breakdown so the hero/weekly/summary cards can
-  // render immediately while the breakdown section keeps its existing
-  // loading/error/empty states.
-  const trendData = useMemo(
-    () => aggregateSpendTrend(list, lastNMonths(monthKey, 6)),
-    [list, monthKey],
-  );
-  // Daily spend curve for the hero line chart: one point per day of the
-  // selected month, zero-filled, `receipt.total` (servicios included —
-  // the hero header total includes them too).
-  const dailySpend = useMemo(
-    () => aggregateDailySpend(list, monthKey),
-    [list, monthKey],
-  );
-  // Per-store totals for the "Por tienda" horizontal bars (month-scoped).
-  const stores = useMemo(
-    () => aggregateStoresByMonth(list, monthKey),
-    [list, monthKey],
-  );
-  const dailyAverage = useMemo(
-    () => aggregateDailyAverage(list, monthKey, ['servicios']),
-    [list, monthKey],
-  );
-  const topCategory = useMemo(
-    () => getTopCategory(list, monthKey),
-    [list, monthKey],
-  );
+  // ── Cache data ──────────────────────────────────────────────────────
+  const cacheRow = useMonthlyCacheData(monthKey);
+  const { userId } = useSessionUser();
+
+  // 6-month spend trend from the materialized cache (personal mode).
+  const monthKeys6 = lastNMonths(monthKey, 6);
+  const trendQuery = useQuery({
+    queryKey: queryKeys.monthlyCache(userId ?? '', `trend:${monthKey}`),
+    enabled: !!userId,
+    queryFn: () =>
+      readMonthlyCacheRows(userId!, monthKeys6).then(toQueryData),
+  });
+  const spendTrend = useMemo(() => {
+    if (trendQuery.data) {
+      const byMonth = new Map<string, MonthlyTotalsCacheRow>();
+      for (const row of trendQuery.data) byMonth.set(row.year_month, row);
+      return monthKeys6.map((m) => ({
+        month: m,
+        total: byMonth.get(m)?.total ?? 0,
+      }));
+    }
+    // Household mode or cache not loaded: fall back to list aggregation.
+    const totalsByMonth = new Map<string, number>();
+    for (const receipt of list) {
+      const key = getMonthKey(receipt.purchase_date);
+      totalsByMonth.set(key, (totalsByMonth.get(key) ?? 0) + (receipt.total ?? 0));
+    }
+    return monthKeys6.map((m) => ({
+      month: m,
+      total: totalsByMonth.get(m) ?? 0,
+    }));
+  }, [trendQuery.data, list, monthKeys6]);
+
+  // Daily spend curve for the hero line chart: read from cache
+  // (`daily_totals` jsonb, servicios included) or fall back to list.
+  const dailySpend = useMemo(() => {
+    if (cacheRow) {
+      const [year, month] = monthKey.split('-').map(Number);
+      const daysInMonth = new Date(year, month, 0).getDate();
+      return Array.from({ length: daysInMonth }, (_, i) => ({
+        day: i + 1,
+        total: cacheRow.daily_totals[String(i + 1).padStart(2, '0')] ?? 0,
+      }));
+    }
+    // Household mode or cache not loaded: aggregate from list.
+    const [year, month] = monthKey.split('-').map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const totalsByDay = new Map<number, number>();
+    for (const receipt of list) {
+      if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
+      const day = Number(receipt.purchase_date.slice(8, 10));
+      totalsByDay.set(day, (totalsByDay.get(day) ?? 0) + (receipt.total ?? 0));
+    }
+    return Array.from({ length: daysInMonth }, (_, i) => ({
+      day: i + 1,
+      total: totalsByDay.get(i + 1) ?? 0,
+    }));
+  }, [cacheRow, list, monthKey]);
+
+  // Per-store totals from cache (`store_totals` jsonb) or list aggregation.
+  const stores = useMemo(() => {
+    if (cacheRow) {
+      const entries = Object.entries(cacheRow.store_totals);
+      if (entries.length === 0) return [];
+      return entries
+        .map(([name, { total }]) => ({
+          storeId: name,
+          storeName: name,
+          total,
+        }))
+        .sort((a, b) => b.total - a.total);
+    }
+    const totalsByStore = new Map<string, { storeName: string; total: number }>();
+    for (const receipt of list) {
+      if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
+      const rawName = receipt.store_name ?? '';
+      const displayName = rawName.trim() || 'Sin tienda';
+      const key = displayName.toLowerCase();
+      const entry = totalsByStore.get(key) ?? { storeName: displayName, total: 0 };
+      entry.total += receipt.total ?? 0;
+      if (entry.storeName !== displayName && entry.storeName.toLowerCase() !== key) {
+        entry.storeName = displayName;
+      }
+      totalsByStore.set(key, entry);
+    }
+    return [...totalsByStore.entries()]
+      .map(([storeId, { storeName, total }]) => ({ storeId, storeName, total }))
+      .sort((a, b) => {
+        if (b.total !== a.total) return b.total - a.total;
+        return a.storeName.localeCompare(b.storeName);
+      });
+  }, [cacheRow, list, monthKey]);
+
+  // Daily average from cache total or list aggregation.
+  const dailyAverage = useMemo(() => {
+    if (cacheRow) {
+      const [year, month] = monthKey.split('-').map(Number);
+      const daysInMonth = new Date(year, month, 0).getDate();
+      return daysInMonth > 0 ? cacheRow.total / daysInMonth : 0;
+    }
+    let total = 0;
+    const excluded = new Set(['servicios']);
+    for (const receipt of list) {
+      if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
+      let excludedAmount = 0;
+      for (const slug of excluded) {
+        excludedAmount += receipt.category_totals?.[slug] ?? 0;
+      }
+      total += Math.max(0, (receipt.total ?? 0) - excludedAmount);
+    }
+    const [year, month] = monthKey.split('-').map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    return daysInMonth > 0 ? total / daysInMonth : 0;
+  }, [cacheRow, list, monthKey]);
+
+  // Top category from cache `category_totals` or list aggregation.
+  const topCategory = useMemo(() => {
+    if (cacheRow) {
+      const entries = Object.entries(cacheRow.category_totals);
+      if (entries.length === 0) return null;
+      const sorted = entries.sort(([, a], [, b]) => b.total - a.total);
+      const [slug, { total }] = sorted[0];
+      const cat = getExpenseCategory(slug);
+      return {
+        key: slug,
+        name: cat.label,
+        amount: total,
+        icon: cat.icon,
+      };
+    }
+    const categories = aggregateCategoriesByMonth(list, monthKey);
+    return categories[0] ?? null;
+  }, [cacheRow, list, monthKey]);
 
   // Check if any budgets are configured for the selected month
   const hasAnyBudgets = useMemo(
@@ -300,10 +410,10 @@ function ChartsBody() {
       };
     }
     if (period === 'month') {
-      const lastIndex = trendData.length - 1;
+      const lastIndex = spendTrend.length - 1;
       return {
         title: 'Últimos 6 meses',
-        items: trendData.map((point, index) => ({
+        items: spendTrend.map((point, index) => ({
           label: shortMonthLabel(point.month),
           value: point.total,
           highlight: index === lastIndex,
@@ -319,7 +429,7 @@ function ChartsBody() {
         highlight: point.year === currentYear,
       })),
     };
-  }, [list, period, trendData, weekStartISO]);
+  }, [list, period, spendTrend, weekStartISO]);
 
   // `monthKeys` is newest-first. The selected month may not be in it (e.g.
   // the current month with no receipts yet): it is then newer than

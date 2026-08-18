@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { useSessionUser } from '@/features/auth';
+import { fetchMonthlyTotals } from '../api';
 import { queryKeys, utcYearMonth } from '@/lib/query-keys';
 import {
   readMonthlyCacheRow,
@@ -12,8 +13,6 @@ import {
   toQueryErrorMessage,
 } from '@/lib/supabase/query-adapters';
 import type { CategoryMonthlyTotal, MonthlyTotalsCacheRow } from '@/types';
-
-import { useMonthlyTotals } from './useMonthlyTotals';
 
 // ---------------------------------------------------------------------------
 // Transform: cache row → CategoryMonthlyTotal[]
@@ -53,8 +52,9 @@ export function transformCacheToCategoryTotals(
 // ---------------------------------------------------------------------------
 
 /**
- * Reads the materialized monthly cache for personal mode. Falls through
- * to `useMonthlyTotals` (existing RPCs) when a `householdId` is provided.
+ * Reads the materialized monthly cache for personal mode. When a
+ * `householdId` is provided, falls through to the `monthly_category_totals`
+ * RPC directly (no cache — avoids cross-user invalidation complexity).
  *
  * Cache-miss path: when the read returns no row, a one-time
  * `triggerMonthlyRecalc` mutation fires and refetches once complete.
@@ -75,19 +75,32 @@ export function useMonthlyCache(
 } {
   const { userId } = useSessionUser();
 
-  // Household mode: fall through to existing RPCs (no cache).
-  if (householdId) {
-    return useMonthlyTotals(yearMonth, householdId);
-  }
+  const isHousehold = !!householdId;
 
+  // Both query keys must be stable regardless of mode (React hooks rules).
+  const cacheKey = queryKeys.monthlyCache(userId ?? '', yearMonth);
+  const householdKey = [
+    ...queryKeys.monthlyTotals(userId ?? '', yearMonth),
+    householdId,
+  ] as const;
+
+  // Personal mode: read from the materialized cache row.
   const cacheQuery = useQuery({
-    queryKey: queryKeys.monthlyCache(userId!, yearMonth),
-    enabled: !!userId,
+    queryKey: cacheKey,
+    enabled: !!userId && !isHousehold,
     queryFn: () =>
       readMonthlyCacheRow(userId!, yearMonth).then(toQueryData),
   });
 
-  // Cache miss: trigger a one-time recalculation via RPC.
+  // Household mode: fall through to the category totals RPC directly.
+  const householdQuery = useQuery({
+    queryKey: householdKey,
+    enabled: !!userId && isHousehold,
+    queryFn: () =>
+      fetchMonthlyTotals(yearMonth, householdId).then(toQueryData),
+  });
+
+  // Cache miss (personal mode): trigger a one-time recalculation via RPC.
   const triggerMutation = useMutation({
     mutationFn: () =>
       triggerMonthlyRecalc(userId!, yearMonth).then(toQueryData),
@@ -99,13 +112,29 @@ export function useMonthlyCache(
   // Auto-trigger recalc when cache is empty and not already in flight.
   useEffect(() => {
     if (
+      !isHousehold &&
       cacheQuery.data === null &&
       !cacheQuery.isLoading &&
       !triggerMutation.isPending
     ) {
       triggerMutation.mutate();
     }
-  }, [cacheQuery.data, cacheQuery.isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cacheQuery.data, cacheQuery.isLoading, isHousehold]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (isHousehold) {
+    const totals = householdQuery.data ?? [];
+    const monthTotal = totals.reduce((acc, t) => acc + t.total, 0);
+    return {
+      totals,
+      monthTotal,
+      isLoading: householdQuery.isLoading,
+      error: householdQuery.error
+        ? toQueryErrorMessage(householdQuery.error)
+        : null,
+      hasData: householdQuery.data !== undefined,
+      refetch: householdQuery.refetch,
+    };
+  }
 
   const row = cacheQuery.data ?? null;
   const totals = useMemo(() => transformCacheToCategoryTotals(row), [row]);

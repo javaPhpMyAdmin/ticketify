@@ -477,6 +477,29 @@ export async function readMonthlyCacheRow(
 }
 
 /**
+ * Batch-read cache rows for multiple year-months in a single query.
+ * Used by the 6-month spend trend chart to replace the paginated
+ * store aggregation with a single indexed read per month.
+ */
+export async function readMonthlyCacheRows(
+  userId: string,
+  yearMonths: string[],
+): Promise<FeatureReadResult<MonthlyTotalsCacheRow[]>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  if (yearMonths.length === 0) return { status: 'ok', data: [] };
+  const { data, error } = await supabase
+    .from('monthly_user_totals')
+    .select('*')
+    .eq('user_id', userId)
+    .in('year_month', yearMonths);
+  if (error) {
+    console.warn('[read] monthly cache batch failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: (data ?? []) as MonthlyTotalsCacheRow[] };
+}
+
+/**
  * Trigger a one-time recalculation of the monthly cache row via the
  * `recalculate_monthly_totals` RPC. Used by the hook on cache miss — the
  * hook then refetches the read to pick up the freshly computed row.

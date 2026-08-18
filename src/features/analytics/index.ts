@@ -1,5 +1,6 @@
 export { useMonthlyTotals } from './hooks/useMonthlyTotals';
 export { useMonthlyCache } from './hooks/useMonthlyCache';
+export { useMonthlyCacheData } from './hooks/useMonthlyCacheData';
 export { useCategoryBudgets } from './hooks/useCategoryBudgets';
 export { usePriceAlerts } from './hooks/usePriceAlerts';
 export { useMonthlyOverview } from './hooks/useMonthlyOverview';
