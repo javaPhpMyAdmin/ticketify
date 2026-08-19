@@ -463,6 +463,12 @@ export async function saveReceipt(
   userId: string,
   draft: ReceiptDraft,
 ): Promise<{ id: string }> {
+  // A whitespace-only store name is invalid — the draft must carry either a
+  // real name or an empty string (list-mode scans use empty to mean "no store").
+  if (draft.store_name.trim() === '' && draft.store_name !== '') {
+    throw new Error(SAVE_ERROR_MESSAGE);
+  }
+
   // List-mode scans produce drafts with an empty store name. The
   // `purchases.store_id` column is nullable, so a blank name saves with
   // `store_id: null`; only a NON-empty name that fails to resolve (no
