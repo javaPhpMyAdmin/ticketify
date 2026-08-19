@@ -12,6 +12,8 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 
+import { useQuery } from '@tanstack/react-query';
+
 import {
   EmptyState,
   Icon,
@@ -29,11 +31,14 @@ import {
   currentMonthKey,
   getAvailableMonthKeys,
   monthKeyToLabel,
+  readPurchaseListByMonth,
   SegmentedBudgetBar,
   useItemSearch,
 } from '@/features/home';
 import { getExpenseCategory } from '@/features/home/categories';
 import { formatCurrency } from '@/lib/format';
+import { useSessionUser } from '@/features/auth';
+import { toQueryData } from '@/lib/supabase/query-adapters';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
@@ -61,6 +66,17 @@ export default function HistoryScreen() {
   const currency = useSettingsStore((s) => s.currency);
   const insets = useSafeAreaInsets();
   const [monthKey, setMonthKey] = useState(currentMonthKey);
+  const { userId } = useSessionUser();
+
+  // Fetch ALL receipts for the current month (not paginated) so category
+  // totals are accurate regardless of infinite scroll position.
+  const { data: monthList } = useQuery({
+    queryKey: ['history-month-receipts', userId, monthKey],
+    enabled: !!userId,
+    queryFn: () => readPurchaseListByMonth(userId!, monthKey).then(toQueryData),
+  });
+  // Use the full month list when available, fall back to paginated list.
+  const fullList = monthList ?? list;
   // Item search: empty query shows the category list; typing switches the
   // scroll area to product-level results (cross-category, month-scoped).
   const [query, setQuery] = useState('');
@@ -114,14 +130,14 @@ export default function HistoryScreen() {
     0,
   );
 
-  const monthKeys = useMemo(() => getAvailableMonthKeys(list), [list]);
+  const monthKeys = useMemo(() => getAvailableMonthKeys(fullList), [fullList]);
   const categories = useMemo(
-    () => aggregateCategoriesByMonth(list, monthKey),
-    [list, monthKey],
+    () => aggregateCategoriesByMonth(fullList, monthKey),
+    [fullList, monthKey],
   );
   const categoryItemCounts = useMemo(
-    () => aggregateCategoryItemCounts(list, monthKey),
-    [list, monthKey],
+    () => aggregateCategoryItemCounts(fullList, monthKey),
+    [fullList, monthKey],
   );
   // Percent base for the category cards: what the month actually spent on
   // categorized items (the bar + cards only cover the categories that

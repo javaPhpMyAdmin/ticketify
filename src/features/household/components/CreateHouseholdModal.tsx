@@ -5,10 +5,14 @@
  */
 import {
   Alert,
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   TextInput,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -89,62 +93,71 @@ export function CreateHouseholdModal({
     >
       <View style={styles.backdrop}>
         <Pressable style={styles.backdropTouch} onPress={handleClose} />
-        <SafeAreaView style={styles.sheet} edges={['bottom']}>
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <Text style={styles.kicker}>Crear hogar</Text>
-            <Pressable
-              onPress={handleClose}
-              hitSlop={12}
-              style={styles.closeButton}
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar"
-            >
-              <Text style={styles.closeX}>✕</Text>
-            </Pressable>
-          </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.sheet}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
+              <View style={styles.handle} />
+              <View style={styles.header}>
+                <Text style={styles.kicker}>Crear hogar</Text>
+                <Pressable
+                  onPress={handleClose}
+                  hitSlop={12}
+                  style={styles.closeButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cerrar"
+                >
+                  <Text style={styles.closeX}>✕</Text>
+                </Pressable>
+              </View>
 
-          <View style={styles.body}>
-            <Text style={styles.helper}>
-              Elegí un nombre para identificar a tu hogar (ej: &quot;Familia Pérez&quot;).
-            </Text>
+              <View style={styles.body}>
+                <Text style={styles.helper}>
+                  Elegí un nombre para identificar a tu hogar (ej: &quot;Familia Pérez&quot;).
+                </Text>
 
-            <TextInput
-              value={name}
-              onChangeText={(v) => {
-                setName(v);
-                setError(null);
-              }}
-              placeholder="Mi hogar"
-              placeholderTextColor={colors.textSecondary}
-              maxLength={30}
-              autoCorrect={false}
-              editable={!loading}
-              style={styles.input}
-              accessibilityLabel="Nombre del hogar"
-            />
+                <TextInput
+                  value={name}
+                  onChangeText={(v) => {
+                    setName(v);
+                    setError(null);
+                  }}
+                  placeholder="Mi hogar"
+                  placeholderTextColor={colors.textSecondary}
+                  maxLength={30}
+                  autoCorrect={false}
+                  editable={!loading}
+                  style={styles.input}
+                  accessibilityLabel="Nombre del hogar"
+                  returnKeyType="done"
+                  blurOnSubmit
+                />
 
-            {error ? <Text style={styles.error}>{error}</Text> : null}
+                {error ? <Text style={styles.error}>{error}</Text> : null}
 
-            <Pressable
-              onPress={handleCreate}
-              disabled={!isValid || loading}
-              style={({ pressed }) => [
-                styles.createButton,
-                (!isValid || loading) && styles.createButtonDisabled,
-                pressed && styles.createButtonPressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Crear hogar"
-            >
-              {loading ? (
-                <Spinner size="sm" color={colors.onPrimary} />
-              ) : (
-                <Text style={styles.createButtonText}>Crear</Text>
-              )}
-            </Pressable>
-          </View>
-        </SafeAreaView>
+                <Pressable
+                  onPress={handleCreate}
+                  disabled={!isValid || loading}
+                  style={({ pressed }) => [
+                    styles.createButton,
+                    (!isValid || loading) && styles.createButtonDisabled,
+                    pressed && styles.createButtonPressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Crear hogar"
+                >
+                  {loading ? (
+                    <Spinner size="sm" color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.createButtonText}>Crear</Text>
+                  )}
+                </Pressable>
+              </View>
+            </SafeAreaView>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
