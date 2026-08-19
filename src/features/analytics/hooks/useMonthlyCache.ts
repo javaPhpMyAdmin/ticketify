@@ -121,12 +121,16 @@ export function useMonthlyCache(
     }
   }, [cacheQuery.data, cacheQuery.isLoading, isHousehold]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const row = cacheQuery.data ?? null;
+  const totals = useMemo(() => transformCacheToCategoryTotals(row), [row]);
+  const monthTotal = row?.total ?? 0;
+
   if (isHousehold) {
-    const totals = householdQuery.data ?? [];
-    const monthTotal = totals.reduce((acc, t) => acc + t.total, 0);
+    const hTotals = householdQuery.data ?? [];
+    const hMonthTotal = hTotals.reduce((acc, t) => acc + t.total, 0);
     return {
-      totals,
-      monthTotal,
+      totals: hTotals,
+      monthTotal: hMonthTotal,
       isLoading: householdQuery.isLoading,
       error: householdQuery.error
         ? toQueryErrorMessage(householdQuery.error)
@@ -135,10 +139,6 @@ export function useMonthlyCache(
       refetch: householdQuery.refetch,
     };
   }
-
-  const row = cacheQuery.data ?? null;
-  const totals = useMemo(() => transformCacheToCategoryTotals(row), [row]);
-  const monthTotal = row?.total ?? 0;
 
   return {
     totals,
