@@ -138,13 +138,21 @@ export function ProBootstrap(): null {
     // default rather than staying in the loading state.
     void (async () => {
       const info = await getCustomerInfo();
-      useProStore.setState({
-        isPro: info?.isPro ?? false,
-        isLoading: false,
-      });
 
-      // Sync subscription state from DB (frozen-state detection).
-      void syncSubscriptionFromDB(userId);
+      // Sync subscription state from DB FIRST — the DB is authoritative
+      // for trial/active status. RevenueCat entitlements are only relevant
+      // for paid subscriptions, not for our custom trial flow.
+      await syncSubscriptionFromDB(userId);
+
+      // Only set isPro from RevenueCat if the DB didn't already set it
+      // (DB trial/active status overrides RevenueCat entitlements).
+      const store = useProStore.getState();
+      if (!store.isPro) {
+        useProStore.setState({
+          isPro: info?.isPro ?? false,
+        });
+      }
+      useProStore.setState({ isLoading: false });
 
       // The SDK's customerInfoUpdate listener will fire on every
       // subsequent entitlement change (renewal, refund, family-share

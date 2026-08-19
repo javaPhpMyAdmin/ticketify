@@ -96,6 +96,8 @@ export const useProStore = create<ProState>((set) => ({
       trialEndsAt,
       isTrialing,
       isFrozen,
+      // Trial and active users get Pro access.
+      isPro: status === 'trial' || status === 'active',
     });
   },
 }));

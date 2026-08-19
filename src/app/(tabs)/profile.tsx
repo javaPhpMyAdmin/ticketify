@@ -276,10 +276,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    flexGrow: 1,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
-    paddingBottom: spacing.xxl,
+    paddingBottom: 100,
     gap: spacing.lg,
   },
   section: {
