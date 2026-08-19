@@ -140,19 +140,19 @@ async function run() {
   console.log('\n[tests] REQ-GATE-5 truth table\n');
 
   await test('isLoading=true, isPro=true → locked (loading wins, no flash)', () => {
-    assert.equal(resolveGateState(true, true), 'locked');
+    assert.equal(resolveGateState(true, false, true), 'locked');
   });
 
   await test('isLoading=true, isPro=false → locked', () => {
-    assert.equal(resolveGateState(false, true), 'locked');
+    assert.equal(resolveGateState(false, false, true), 'locked');
   });
 
   await test('isLoading=false, isPro=true → unlocked', () => {
-    assert.equal(resolveGateState(true, false), 'unlocked');
+    assert.equal(resolveGateState(true, false, false), 'unlocked');
   });
 
   await test('isLoading=false, isPro=false → locked', () => {
-    assert.equal(resolveGateState(false, false), 'locked');
+    assert.equal(resolveGateState(false, false, false), 'locked');
   });
 
   console.log('\n[tests] exhaustive 4-row truth table\n');
@@ -165,7 +165,7 @@ async function run() {
       { isPro: true, isLoading: true, expected: 'locked' },
     ];
     for (const { isPro, isLoading, expected } of cases) {
-      const actual = resolveGateState(isPro, isLoading);
+      const actual = resolveGateState(isPro, false, isLoading);
       assert.equal(
         actual,
         expected,
@@ -175,19 +175,19 @@ async function run() {
   });
 
   await test('isLoading always wins — both isPro=true cases collapse to locked when loading', () => {
-    assert.equal(resolveGateState(true, true), 'locked');
+    assert.equal(resolveGateState(true, false, true), 'locked');
   });
 
   await test('only isLoading=false AND isPro=true yields unlocked (single source of truth)', () => {
     // Negative assertion: any other combination MUST NOT yield 'unlocked'.
     const combinations = [
-      [false, false],
-      [false, true],
-      [true, true],
+      [false, false, false],
+      [false, false, true],
+      [true, false, true],
     ];
-    for (const [isPro, isLoading] of combinations) {
+    for (const [isPro, isFrozen, isLoading] of combinations) {
       assert.notEqual(
-        resolveGateState(isPro, isLoading),
+        resolveGateState(isPro, isFrozen, isLoading),
         'unlocked',
         `isPro=${isPro}, isLoading=${isLoading} must NOT be unlocked`,
       );
@@ -196,12 +196,12 @@ async function run() {
 
   console.log('\n[tests] return-type guard\n');
 
-  await test('result is always one of the two literal states (no surprises)', () => {
-    const allowed = new Set(['locked', 'unlocked']);
+  await test('result is always one of the three literal states (no surprises)', () => {
+    const allowed = new Set(['locked', 'unlocked', 'frozen']);
     for (const isPro of [false, true]) {
       for (const isLoading of [false, true]) {
         assert.ok(
-          allowed.has(resolveGateState(isPro, isLoading)),
+          allowed.has(resolveGateState(isPro, false, isLoading)),
           `Unexpected state for isPro=${isPro}, isLoading=${isLoading}`,
         );
       }
@@ -214,7 +214,7 @@ async function run() {
     // fast-path and pin the "loading wins" invariant in code.
     for (let i = 0; i < 1000; i++) {
       const isPro = i % 2 === 0;
-      assert.equal(resolveGateState(isPro, true), 'locked');
+      assert.equal(resolveGateState(isPro, false, true), 'locked');
     }
   });
 
@@ -224,7 +224,28 @@ async function run() {
     for (let i = 0; i < 1000; i++) {
       const isPro = i % 2 === 0;
       const expected = isPro ? 'unlocked' : 'locked';
-      assert.equal(resolveGateState(isPro, false), expected);
+      assert.equal(resolveGateState(isPro, false, false), expected);
+    }
+  });
+
+  console.log('\n[tests] frozen state\n');
+
+  await test('isFrozen=true, isLoading=false → frozen (trial expired)', () => {
+    assert.equal(resolveGateState(false, true, false), 'frozen');
+  });
+
+  await test('isFrozen=true, isLoading=true → locked (loading wins over frozen)', () => {
+    assert.equal(resolveGateState(false, true, true), 'locked');
+  });
+
+  await test('isFrozen=true, isPro=true, isLoading=false → frozen (frozen wins over pro)', () => {
+    assert.equal(resolveGateState(true, true, false), 'frozen');
+  });
+
+  await test('isFrozen only matters when isLoading=false', () => {
+    for (let i = 0; i < 500; i++) {
+      const isPro = i % 2 === 0;
+      assert.equal(resolveGateState(isPro, true, true), 'locked');
     }
   });
 
@@ -237,8 +258,8 @@ async function run() {
       [true, false],
       [true, true],
     ]) {
-      const a = resolveGateState(isPro, isLoading);
-      const b = resolveGateState(isPro, isLoading);
+      const a = resolveGateState(isPro, false, isLoading);
+      const b = resolveGateState(isPro, false, isLoading);
       assert.equal(a, b, `divergent result for isPro=${isPro}, isLoading=${isLoading}`);
     }
   });
