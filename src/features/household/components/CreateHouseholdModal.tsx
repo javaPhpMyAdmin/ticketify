@@ -106,7 +106,7 @@ export function CreateHouseholdModal({
 
           <View style={styles.body}>
             <Text style={styles.helper}>
-              Elegí un nombre para identificar a tu hogar (ej: "Familia Pérez").
+              Elegí un nombre para identificar a tu hogar (ej: &quot;Familia Pérez&quot;).
             </Text>
 
             <TextInput
