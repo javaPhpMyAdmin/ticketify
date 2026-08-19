@@ -89,6 +89,42 @@ export async function setProfileBudget(
   return { status: 'ok' };
 }
 
+/**
+ * Persists the signed-in user's `profiles.full_name`. Same posture as
+ * `setProfileCurrency`: scoped to `auth.uid() = id` via RLS, unconfigured
+ * clients return the generic `WRITE_ERROR_MESSAGE`, raw PostgREST errors
+ * never reach the UI.
+ */
+export async function setProfileFullName(
+  userId: string,
+  fullName: string,
+): Promise<ProfileWriteResult> {
+  if (!isSupabaseConfigured) {
+    return { status: 'error', message: WRITE_ERROR_MESSAGE };
+  }
+  const trimmed = fullName.trim();
+  if (!trimmed) {
+    return { status: 'error', message: WRITE_ERROR_MESSAGE };
+  }
+  const { error } = await supabase
+    .from('profiles')
+    .update({ full_name: trimmed })
+    .eq('id', userId);
+  if (error) {
+    console.warn('[write] profile full_name failed:', error.code, error.message);
+    return { status: 'error', message: WRITE_ERROR_MESSAGE };
+  }
+  // Sync auth user metadata so session-derived display name stays current.
+  const { error: metaError } = await supabase.auth.updateUser({
+    data: { full_name: trimmed },
+  });
+  if (metaError) {
+    console.warn('[write] auth metadata full_name failed:', metaError.code, metaError.message);
+    // Non-fatal — profile row is authoritative; metadata sync is best-effort.
+  }
+  return { status: 'ok' };
+}
+
 /** The authenticated user's `profiles` row. */
 export async function fetchProfile(userId: string): Promise<ProfileReadResult> {
   return readProfileRow(userId);

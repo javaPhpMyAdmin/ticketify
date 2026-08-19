@@ -25,7 +25,7 @@ import {
 import { useFrozenGuard } from '@/features/pro';
 import { TrialBanner } from '@/features/pro/components/TrialBanner';
 import { useHomeFeed } from '@/features/home';
-import { HouseholdCard } from '@/features/household';
+import { HouseholdCard, useHousehold } from '@/features/household';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
 import { useSessionStore } from '../../features/auth';
@@ -67,6 +67,7 @@ export default function HomeScreen() {
   const { guard } = useFrozenGuard();
   const insets = useSafeAreaInsets();
   const { session } = useSessionStore();
+  const { members: householdMembers } = useHousehold();
   // Canonical name key is `full_name` (see profile-sync); `name` is kept as a
   // legacy fallback. Both can be absent (email signup sets no metadata).
   const fullName =
@@ -103,7 +104,15 @@ export default function HomeScreen() {
         scrollEventThrottle={200}
       >
         <View style={styles.greeting}>
-          <Text style={styles.greetingText}>¡Hola {displayName}!</Text>
+          <View style={styles.greetingLeft}>
+            <Text style={styles.greetingText}>¡Hola {displayName}!</Text>
+            {householdMembers.length > 1 ? (
+              <HouseholdAvatars
+                members={householdMembers}
+                currentUserId={session?.user?.id}
+              />
+            ) : null}
+          </View>
           <Pressable
             onPress={() => router.push('/profile')}
             accessibilityLabel="Abrir perfil"
@@ -233,6 +242,113 @@ export default function HomeScreen() {
   );
 }
 
+const HOUSEHOLD_AVATAR_SIZE = 28;
+const HOUSEHOLD_AVATAR_OVERLAP = 8;
+const MAX_DISPLAY_MEMBERS = 3;
+
+/**
+ * Overlapping household member avatars, GitHub-contributors style.
+ * Shows up to 3 members (excluding the current user); if more exist,
+ * the last position shows a "+N" count badge.
+ */
+function HouseholdAvatars({
+  members,
+  currentUserId,
+}: {
+  members: Array<{ full_name?: string; avatar_url?: string; user_id: string }>;
+  currentUserId?: string;
+}) {
+  const otherMembers = members.filter((m) => m.user_id !== currentUserId);
+  if (otherMembers.length === 0) return null;
+
+  const shown = otherMembers.slice(0, MAX_DISPLAY_MEMBERS);
+  const overflow = otherMembers.length - MAX_DISPLAY_MEMBERS;
+
+  return (
+    <View style={haStyles.container}>
+      {shown.map((member, idx) => {
+        const initials = (member.full_name ?? 'U')
+          .split(' ')
+          .map((w) => w.charAt(0))
+          .slice(0, 2)
+          .join('')
+          .toUpperCase();
+
+        return (
+          <View
+            key={member.user_id}
+            style={[
+              haStyles.avatarWrap,
+              idx > 0 && { marginLeft: -HOUSEHOLD_AVATAR_OVERLAP },
+            ]}
+          >
+            {member.avatar_url ? (
+              <Image
+                source={{ uri: member.avatar_url }}
+                style={haStyles.avatar}
+              />
+            ) : (
+              <View style={[haStyles.avatar, haStyles.avatarFallback]}>
+                <Text style={haStyles.avatarInitial}>{initials}</Text>
+              </View>
+            )}
+          </View>
+        );
+      })}
+      {overflow > 0 ? (
+        <View
+          style={[
+            haStyles.avatarWrap,
+            { marginLeft: -HOUSEHOLD_AVATAR_OVERLAP },
+          ]}
+        >
+          <View style={[haStyles.avatar, haStyles.overflowBadge]}>
+            <Text style={haStyles.overflowText}>+{overflow}</Text>
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+const haStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarWrap: {
+    width: HOUSEHOLD_AVATAR_SIZE,
+    height: HOUSEHOLD_AVATAR_SIZE,
+  },
+  avatar: {
+    width: HOUSEHOLD_AVATAR_SIZE,
+    height: HOUSEHOLD_AVATAR_SIZE,
+    borderRadius: HOUSEHOLD_AVATAR_SIZE / 2,
+    borderWidth: 2,
+    borderColor: colors.background,
+  },
+  avatarFallback: {
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.background,
+  },
+  overflowBadge: {
+    backgroundColor: colors.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  overflowText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
+});
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -254,6 +370,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     justifyContent: 'space-between',
+  },
+  greetingLeft: {
+    flex: 1,
+    gap: spacing.xs,
   },
   greetingText: {
     ...typography.headlineLgMobile,

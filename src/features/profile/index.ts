@@ -14,6 +14,7 @@ export {
   readHouseholdId,
   setProfileBudget,
   setProfileCurrency,
+  setProfileFullName,
   WRITE_ERROR_MESSAGE,
 } from './api';
 export type { ProfileWriteResult } from './api';

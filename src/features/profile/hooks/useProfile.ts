@@ -7,6 +7,7 @@ import {
   readHouseholdId,
   setProfileBudget,
   setProfileCurrency,
+  setProfileFullName,
   WRITE_ERROR_MESSAGE,
   type ProfileWriteResult,
 } from '../api';
@@ -46,6 +47,11 @@ export interface UseProfileResult {
    * queries so the home budget card re-reads the new limit on next render.
    */
   setBudget: (amount: number) => Promise<ProfileWriteResult>;
+  /**
+   * Persists the user's `profiles.full_name` and syncs auth metadata.
+   * Invalidates the profile query so the display name updates everywhere.
+   */
+  setFullName: (fullName: string) => Promise<ProfileWriteResult>;
 }
 
 /**
@@ -135,6 +141,16 @@ export function useProfile(): UseProfileResult {
       if (result.status === 'ok') {
         void queryClient.invalidateQueries({ queryKey: queryKeys.profile(userId) });
         void queryClient.invalidateQueries({ queryKey: queryKeys.budget(userId) });
+      }
+      return result;
+    },
+    setFullName: async (fullName: string) => {
+      if (!userId) {
+        return { status: 'error', message: WRITE_ERROR_MESSAGE };
+      }
+      const result = await setProfileFullName(userId, fullName);
+      if (result.status === 'ok') {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.profile(userId) });
       }
       return result;
     },
