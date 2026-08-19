@@ -22,6 +22,8 @@ import {
   SnacksBreakdownModal,
   useBudget,
 } from '@/features/budget';
+import { useFrozenGuard } from '@/features/pro';
+import { TrialBanner } from '@/features/pro/components/TrialBanner';
 import { useHomeFeed } from '@/features/home';
 import { HouseholdCard } from '@/features/household';
 import { useSettingsStore } from '@/stores/use-settings-store';
@@ -62,6 +64,7 @@ export default function HomeScreen() {
     hasNextPage,
     isFetchingNextPage,
   } = useHomeFeed();
+  const { guard } = useFrozenGuard();
   const insets = useSafeAreaInsets();
   const { session } = useSessionStore();
   // Canonical name key is `full_name` (see profile-sync); `name` is kept as a
@@ -117,6 +120,8 @@ export default function HomeScreen() {
             )}
           </Pressable>
         </View>
+
+        <TrialBanner />
 
         {budgetLoading ? (
           <MonthlyBudgetCardSkeleton />
@@ -177,7 +182,7 @@ export default function HomeScreen() {
                   title="Aún no hay tickets recientes."
                   body="Escanea tu primer recibo para empezar."
                   actionLabel="Escanear recibo"
-                  onAction={() => router.push('/ticket/camera')}
+                  onAction={() => guard(() => router.push('/ticket/camera'))}
                 />
               ) : (
                 <View style={styles.receiptList}>
@@ -193,8 +198,10 @@ export default function HomeScreen() {
                     />
                   ))}
                   {isFetchingNextPage && (
-                    <View style={{ paddingVertical: spacing.md, alignItems: 'center' }}>
-                      <ReceiptRowSkeleton />
+                    <View style={{ paddingVertical: spacing.md }}>
+                      {[0, 1, 2].map((i) => (
+                        <ReceiptRowSkeleton key={i} />
+                      ))}
                     </View>
                   )}
                 </View>
@@ -214,7 +221,7 @@ export default function HomeScreen() {
         <Fab
           label="Escanear ticket"
           icon="camera.fill"
-          onPress={() => router.push('/ticket/camera')}
+          onPress={() => guard(() => router.push('/ticket/camera'))}
         />
       </View>
 

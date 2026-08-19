@@ -42,7 +42,13 @@
 // it authenticates via its own shared secret (REQ-SYNC-4).
 
 import { createClient } from '@supabase/supabase-js';
-import { isProductionEnvironment, mapTier, type Tier } from './lib/event-types.ts';
+import {
+  isProductionEnvironment,
+  mapTier,
+  mapTrialStatus,
+  TRIAL_EVENT_TYPES,
+  type Tier,
+} from './lib/event-types.ts';
 import { isUuid } from './lib/uuid.ts';
 import { verifySecret } from './lib/verify.ts';
 
@@ -366,6 +372,33 @@ Deno.serve(async (req: Request) => {
     return jsonResponse(500, { error: 'internal' });
   }
 
-  // ----- 11. Success ---------------------------------------------------
+  // ----- 11. Trial-specific sync (TRIAL_STARTED / TRIAL_ENDED) ----------
+  // For trial events, `set_profile_tier` alone does not set the correct
+  // subscription_status lifecycle value:
+  //   - TRIAL_STARTED: set_profile_tier('pro') → subscription_status='active'
+  //     but we need 'trial'. Call sync_subscription_status to correct it.
+  //   - TRIAL_ENDED: set_profile_tier('free') already sets status='expired'
+  //     (per §4 logic when current is 'trial'), but we call sync explicitly
+  //     for idempotency — a duplicate delivery won't hurt.
+  const trialStatus = mapTrialStatus(eventType);
+  if (trialStatus !== null) {
+    const { error: syncErr } = await svc.rpc('sync_subscription_status', {
+      p_user_id: appUserId,
+      p_status: trialStatus,
+    });
+    if (syncErr) {
+      // Non-fatal: the tier change from step 10 already applied. The
+      // trial_status sync is a refinement — a failure here means the
+      // subscription_status column may lag by one event, which the next
+      // delivery will reconcile.
+      console.error(
+        '[revenuecat-webhook]',
+        `sync_subscription_status failed for ${eventType}:`,
+        syncErr.message,
+      );
+    }
+  }
+
+  // ----- 12. Success ---------------------------------------------------
   return jsonResponse(200, { received: true } satisfies WebhookResponse);
 });

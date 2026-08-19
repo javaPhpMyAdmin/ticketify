@@ -9,10 +9,15 @@ export type { ProRouteGuardProps } from './ProRouteGuard';
 export { ProLock } from './components/ProLock';
 export type { ProLockProps } from './components/ProLock';
 
+export { TrialBanner } from './components/TrialBanner';
+
 export { useProEntitlement } from './hooks/useProEntitlement';
 export type { ProEntitlement } from './hooks/useProEntitlement';
 
-export { resolveGateState } from './gate';
+export { useFrozenGuard } from './hooks/useFrozenGuard';
+export type { FrozenGuardResult } from './hooks/useFrozenGuard';
+
+export { resolveGateState, isProOverrideEnabled } from './gate';
 export type { GateState } from './gate';
 
 export { ProBootstrap } from './pro-bootstrap';
