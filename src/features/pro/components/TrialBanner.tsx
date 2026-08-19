@@ -39,7 +39,7 @@ export function TrialBanner() {
 
 const styles = StyleSheet.create({
   banner: {
-    backgroundColor: colors.primaryContainer,
+    backgroundColor: colors.primary,
     borderRadius: radii.lg,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
@@ -55,12 +55,13 @@ const styles = StyleSheet.create({
   label: {
     ...typography.bodyMd,
     fontWeight: '600',
-    color: colors.primaryDark,
+    color: colors.onPrimary,
     flex: 1,
   },
   hint: {
     ...typography.labelSm,
-    color: colors.primary,
+    color: colors.onPrimary,
     fontWeight: '700',
+    textDecorationLine: 'underline',
   },
 });
