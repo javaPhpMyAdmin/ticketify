@@ -772,8 +772,8 @@ async function run() {
       '2026-08-10',
     );
     assert.deepEqual(out, [
-      { name: 'leche', quantity: 3, amount: 110 },
-      { name: 'pan', quantity: 2, amount: 20 },
+      { name: 'leche', quantity: 3, amount: 110, store: 'Mercado' },
+      { name: 'pan', quantity: 2, amount: 20, store: 'Mercado' },
     ]);
   });
 
@@ -793,7 +793,7 @@ async function run() {
       ],
       '2026-08-10',
     );
-    assert.deepEqual(out, [{ name: 'leche', quantity: 0, amount: 50 }]);
+    assert.deepEqual(out, [{ name: 'leche', quantity: 0, amount: 50, store: 'Mercado' }]);
   });
 
   await test('excluded categories never appear (servicios)', () => {
@@ -811,7 +811,7 @@ async function run() {
       '2026-08-10',
       ['servicios'],
     );
-    assert.deepEqual(out, [{ name: 'leche', quantity: 0, amount: 50 }]);
+    assert.deepEqual(out, [{ name: 'leche', quantity: 0, amount: 50, store: 'Mercado' }]);
   });
 
   await test('first-seen casing wins for the display name', () => {
@@ -849,7 +849,7 @@ async function run() {
       ],
       '2026-08-10',
     );
-    assert.deepEqual(out, [{ name: 'pan', quantity: 0, amount: 20 }]);
+    assert.deepEqual(out, [{ name: 'pan', quantity: 0, amount: 20, store: 'Mercado' }]);
   });
 
   await test('empty day → empty list', () => {
