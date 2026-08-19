@@ -83,6 +83,13 @@ export default function ProfileScreen() {
 
   const settings: AccountSettingRow[] = [
     {
+      id: 'profile-edit',
+      label: 'Editar perfil',
+      icon: 'pencil',
+      trailing: { type: 'chevron' },
+      onPress: () => router.push('/settings/profile-edit'),
+    },
+    {
       id: 'export',
       label: 'Exportar datos',
       icon: 'square.and.arrow.up',
