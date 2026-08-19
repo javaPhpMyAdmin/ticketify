@@ -451,6 +451,49 @@ export async function readHouseholdFeed(
 }
 
 // ---------------------------------------------------------------------------
+// Subscription trial (migration 0016)
+// ---------------------------------------------------------------------------
+
+/**
+ * Activate the user's one-time free trial. Calls the `start_free_trial`
+ * RPC which sets `trial_ends_at = now() + 5 days` and
+ * `subscription_status = 'trial'`. The RPC validates one-trial-per-user:
+ * if `trial_ends_at IS NOT NULL`, the RPC rejects with an error.
+ */
+export async function startFreeTrial(): Promise<FeatureReadResult<void>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { error } = await supabase.rpc('start_free_trial');
+  if (error) {
+    console.warn('[write] start_free_trial failed:', error.code, error.message);
+    return { status: 'error', message: error.message };
+  }
+  return { status: 'ok', data: undefined };
+}
+
+/**
+ * Optimistically sync subscription_status to the DB after a purchase,
+ * restore, or trial activation. Calls `sync_client_subscription` which
+ * uses `auth.uid()` to scope the update to the caller's own profile.
+ *
+ * This runs BEFORE the RevenueCat webhook arrives so the local store
+ * reflects the new state immediately. The webhook is the authoritative
+ * sync path — this helper is a UX optimization.
+ */
+export async function syncSubscriptionStatus(
+  status: string,
+): Promise<FeatureReadResult<void>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { error } = await supabase.rpc('sync_client_subscription', {
+    p_status: status,
+  });
+  if (error) {
+    console.warn('[syncSubscriptionStatus] failed:', error.code, error.message);
+    return { status: 'error', message: error.message };
+  }
+  return { status: 'ok', data: undefined };
+}
+
+// ---------------------------------------------------------------------------
 // Monthly totals cache (migration 0015)
 // ---------------------------------------------------------------------------
 

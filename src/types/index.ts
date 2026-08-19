@@ -44,6 +44,17 @@ export type CategoryKind = 'need' | 'want';
 
 export type ScanTier = 'free' | 'pro';
 
+/**
+ * Business lifecycle of the subscription. Mirrors the DB CHECK constraint
+ * in `profiles.subscription_status` (migration 0016).
+ *
+ * - `'none'`    — free user, no trial
+ * - `'trial'`   — trial active (tier is 'pro' while trial_ends_at > now)
+ * - `'active'`  — paid subscriber
+ * - `'expired'` — trial expired (tier reverts to 'free', data visible, writes blocked)
+ */
+export type SubscriptionStatus = 'none' | 'trial' | 'active' | 'expired';
+
 // ---------------------------------------------------------------------------
 // Database rows
 // ---------------------------------------------------------------------------
@@ -59,6 +70,16 @@ export interface User {
   created_at: string;
   /** Household FK — set by migration 0014 when the user joins a household. */
   household_id: string | null;
+  /**
+   * Business lifecycle of the subscription (migration 0016).
+   * `tier` is the access-control primitive; this tracks the lifecycle.
+   */
+  subscription_status: SubscriptionStatus;
+  /**
+   * Trial expiry timestamp (migration 0016). Set on trial start, null otherwise.
+   * Used for client-side offline expiry checks.
+   */
+  trial_ends_at: string | null;
 }
 
 /** Mirrors `public.categories`. Global taxonomy, readable by all auth users. */

@@ -15,6 +15,7 @@ import {
   EXPENSE_CATEGORIES,
   type ExpenseCategoryKey,
 } from '@/features/home/categories';
+import { useFrozenGuard } from '@/features/pro';
 import { utcYearMonth } from '@/lib/query-keys';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -30,6 +31,7 @@ import { colors, radii, spacing, typography } from '@/theme';
 export default function CategoryBudgetsScreen() {
   const yearMonth = utcYearMonth();
   const { budgets, isLoading, save, isSaving } = useCategoryBudgets(yearMonth);
+  const { guard } = useFrozenGuard();
 
   // Build a map of category_slug → existing amount
   const existingMap = useMemo(() => {
@@ -64,26 +66,28 @@ export default function CategoryBudgetsScreen() {
 
   const handleSave = async () => {
     if (isSaving || submitting) return;
-    setSubmitting(true);
-    setError(null);
+    return guard(async () => {
+      setSubmitting(true);
+      setError(null);
 
-    const budgetsToSave = categoryKeys.map((key) => {
-      const raw = drafts[key] ?? '';
-      const parsed = Number.parseInt(raw, 10);
-      const amount =
-        raw.trim() !== '' && Number.isFinite(parsed) && parsed >= 0
-          ? parsed
-          : 0;
-      return { category_slug: key, amount };
+      const budgetsToSave = categoryKeys.map((key) => {
+        const raw = drafts[key] ?? '';
+        const parsed = Number.parseInt(raw, 10);
+        const amount =
+          raw.trim() !== '' && Number.isFinite(parsed) && parsed >= 0
+            ? parsed
+            : 0;
+        return { category_slug: key, amount };
+      });
+
+      try {
+        await save(budgetsToSave);
+        router.back();
+      } catch {
+        setSubmitting(false);
+        setError('No se pudieron guardar los presupuestos. Inténtalo de nuevo.');
+      }
     });
-
-    try {
-      await save(budgetsToSave);
-      router.back();
-    } catch {
-      setSubmitting(false);
-      setError('No se pudieron guardar los presupuestos. Inténtalo de nuevo.');
-    }
   };
 
   return (

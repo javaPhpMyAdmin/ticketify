@@ -131,7 +131,7 @@ export default function AnalyticsScreen() {
             </View>
           )}
         </Pressable>
-        <Text style={styles.title}>Ticketifyasdasd</Text>
+        <Text style={styles.title}>Ticketify</Text>
         <Icon name="qr-code-scanner" size={33} color={colors.primary} />
       </View>
       <View style={styles.fixedHeader}>

@@ -26,7 +26,8 @@ export default function ProfileScreen() {
   const setHousehold = useSettingsStore((s) => s.setHouseholdSharing);
   const signOut = useSessionStore((s) => s.signOut);
   const { email } = useSessionUser();
-  const { isPro, isLoading: proLoading } = useProEntitlement();
+  const { isPro, isLoading: proLoading, subscriptionStatus, trialEndsAt, daysRemaining, isFrozen } =
+    useProEntitlement();
 
   const householdName = useHouseholdStore((s) => s.household?.name);
 
@@ -51,10 +52,9 @@ export default function ProfileScreen() {
 
     if (value) {
       // ── Turning ON ──────────────────────────────────────────────────
-      if (!isPro) {
-        router.push('/pro');
-        return;
-      }
+      // Owner-pays rule: free users can access the household settings
+      // screen to join an existing household via invite code. The server
+      // will reject create_household if the caller isn't Pro/trialing.
       setHousehold(true);
       // Always go to the household settings screen which shows both
       // "Crear hogar" and "Unirse con código" when no household exists.
@@ -148,6 +148,90 @@ export default function ProfileScreen() {
           />
         ) : null}
 
+        {/* ── Subscription status ── */}
+        {(() => {
+          if (proLoading) return null;
+
+          // Active paid subscriber
+          if (subscriptionStatus === 'active') {
+            return (
+              <View style={styles.statusRow}>
+                <View style={styles.statusBadgeActive}>
+                  <Text style={styles.statusBadgeText}>PRO</Text>
+                </View>
+                <Text style={styles.statusLabel}>Suscripción activa</Text>
+              </View>
+            );
+          }
+
+          // Active trial
+          if (subscriptionStatus === 'trial' && !isFrozen) {
+            return (
+              <Pressable
+                onPress={() => router.push('/pro')}
+                style={({ pressed }) => [
+                  styles.statusRow,
+                  pressed && styles.statusRowPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Ver planes"
+              >
+                <View style={styles.statusBadgeTrial}>
+                  <Text style={styles.statusBadgeTrialText}>
+                    {daysRemaining}
+                  </Text>
+                </View>
+                <View style={styles.statusTextCol}>
+                  <Text style={styles.statusLabel}>Prueba PRO activa</Text>
+                  <Text style={styles.statusHint}>
+                    {daysRemaining === 1
+                      ? 'Queda 1 día'
+                      : `Quedan ${daysRemaining} días`}
+                  </Text>
+                </View>
+                <Text style={styles.statusLink}>Ver planes</Text>
+              </Pressable>
+            );
+          }
+
+          // Expired trial
+          if (isFrozen) {
+            return (
+              <Pressable
+                onPress={() => router.push('/pro')}
+                style={({ pressed }) => [
+                  styles.statusRow,
+                  styles.statusRowExpired,
+                  pressed && styles.statusRowPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Ver planes"
+              >
+                <Text style={styles.statusLabelExpired}>
+                  Prueba expirada
+                </Text>
+                <Text style={styles.statusLink}>Ver planes</Text>
+              </Pressable>
+            );
+          }
+
+          // Free user (no trial used)
+          return (
+            <Pressable
+              onPress={() => router.push('/pro')}
+              style={({ pressed }) => [
+                styles.statusRow,
+                pressed && styles.statusRowPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Empezar prueba gratis"
+            >
+              <Text style={styles.statusLabel}>Gratis</Text>
+              <Text style={styles.statusLink}>Empezar prueba gratis</Text>
+            </Pressable>
+          );
+        })()}
+
         {usage ? <UsageLimitsCard usage={usage} isPro={isPro} /> : null}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -222,5 +306,70 @@ const styles = StyleSheet.create({
     ...typography.labelSm,
     color: colors.danger,
     fontWeight: '700',
+  },
+  // ── Subscription status ──
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  statusRowPressed: {
+    opacity: 0.7,
+  },
+  statusRowExpired: {
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
+  statusBadgeActive: {
+    backgroundColor: colors.primary,
+    borderRadius: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  statusBadgeText: {
+    ...typography.labelSm,
+    fontWeight: '800',
+    color: colors.onPrimary,
+  },
+  statusBadgeTrial: {
+    backgroundColor: colors.primaryContainer,
+    borderRadius: 8,
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusBadgeTrialText: {
+    ...typography.labelSm,
+    fontWeight: '800',
+    color: colors.primaryDark,
+  },
+  statusTextCol: {
+    flex: 1,
+    gap: 1,
+  },
+  statusLabel: {
+    ...typography.bodyMd,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  statusLabelExpired: {
+    ...typography.bodyMd,
+    fontWeight: '600',
+    color: colors.danger,
+    flex: 1,
+  },
+  statusHint: {
+    ...typography.labelSm,
+    color: colors.textSecondary,
+  },
+  statusLink: {
+    ...typography.labelSm,
+    fontWeight: '700',
+    color: colors.primary,
   },
 });

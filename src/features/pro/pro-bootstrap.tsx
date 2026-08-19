@@ -1,5 +1,6 @@
 /**
- * Pro bootstrap (pro-subscription spec — REQ-PRO-1).
+ * Pro bootstrap (pro-subscription spec — REQ-PRO-1,
+ * subscription-trial — DB subscription state).
  *
  * Configures the RevenueCat SDK exactly once per process and pipes the
  * resulting `CustomerInfo` into `useProStore`. Mounted inside
@@ -21,6 +22,11 @@
  * `Purchases.configure` resets internal SDK state (cached customerInfo,
  * listener registrations), so re-calling it on every session flip would
  * break the customerInfoUpdate listener and the live entitlement state.
+ *
+ * Subscription state (migration 0016):
+ *   On every bootstrap path that resolves to a userId, the profile is
+ *   read from DB to populate `subscriptionStatus` and `trialEndsAt`.
+ *   This ensures the gate can resolve `'frozen'` for expired trials.
  */
 import { useEffect } from 'react';
 
@@ -30,6 +36,7 @@ import {
   getCustomerInfo,
   isNativeAvailable,
 } from '@/lib/revenuecat';
+import { readProfileRow } from '@/lib/supabase/feature-access';
 import { useProStore } from '@/stores/use-pro-store';
 
 import { isProOverrideEnabled } from './gate';
@@ -43,6 +50,22 @@ const REVENUECAT_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? '';
  * never re-configures the SDK.
  */
 let bootstrapped = false;
+
+/**
+ * Read the user's subscription state from the DB profile and push it
+ * into the store. Called on every bootstrap path that has a userId.
+ * Never throws — a failed read leaves the store defaults (none/locked).
+ */
+async function syncSubscriptionFromDB(userId: string): Promise<void> {
+  const result = await readProfileRow(userId);
+  if (result.status === 'ok' && result.data) {
+    const { subscription_status, trial_ends_at } = result.data;
+    useProStore.getState().setSubscriptionState(
+      subscription_status ?? 'none',
+      trial_ends_at ?? null,
+    );
+  }
+}
 
 /**
  * Bootstraps RevenueCat on mount. Returns null — the bootstrap is a
@@ -64,6 +87,8 @@ export function ProBootstrap(): null {
       // first customerInfo snapshot.
       if (userId) {
         useProStore.setState({ isPro: true, isLoading: false });
+        // Still sync subscription state from DB for frozen-state resolution.
+        void syncSubscriptionFromDB(userId);
       } else {
         // No session yet: leave the store in its default `{ isLoading: true,
         // isPro: false }` so the gate stays locked until the session
@@ -83,7 +108,9 @@ export function ProBootstrap(): null {
       // Native module missing: settle the gate so Pro screens do not
       // stay in the loading state forever. The gate resolves to
       // `'locked'` (`isPro: false`), which is the safe default.
+      // Still sync subscription state for frozen-state detection.
       useProStore.setState({ isLoading: false, isPro: false });
+      void syncSubscriptionFromDB(userId);
       return;
     }
     if (!REVENUECAT_API_KEY) {
@@ -94,11 +121,13 @@ export function ProBootstrap(): null {
         '[pro-bootstrap] EXPO_PUBLIC_REVENUECAT_API_KEY is empty; the paywall will report a configuration error.',
       );
       useProStore.setState({ isLoading: false, isPro: false });
+      void syncSubscriptionFromDB(userId);
       return;
     }
     const ok = configureRevenueCat(REVENUECAT_API_KEY);
     if (!ok) {
       useProStore.setState({ isLoading: false, isPro: false });
+      void syncSubscriptionFromDB(userId);
       return;
     }
     bootstrapped = true;
@@ -113,6 +142,10 @@ export function ProBootstrap(): null {
         isPro: info?.isPro ?? false,
         isLoading: false,
       });
+
+      // Sync subscription state from DB (frozen-state detection).
+      void syncSubscriptionFromDB(userId);
+
       // The SDK's customerInfoUpdate listener will fire on every
       // subsequent entitlement change (renewal, refund, family-share
       // transfer). We register it AFTER the initial snapshot so the

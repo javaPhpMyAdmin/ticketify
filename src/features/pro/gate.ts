@@ -1,25 +1,33 @@
 /**
- * Pure gate logic for the Pro tier (feature-gating spec — REQ-GATE-5).
+ * Pure gate logic for the Pro tier (feature-gating spec — REQ-GATE-5,
+ * subscription-trial — frozen state).
  *
  * `resolveGateState` is the single source of truth for "should this
  * content render?" — every gate (route guard, export-row routing,
  * charts entry card) projects through this function so the loading,
  * pro, and free states are decided in exactly one place.
  *
- * The contract:
+ * The contract (3-state, post migration 0016):
  *
  *   - `isLoading === true` → `'locked'`. Pro content must never flash
  *     unlocked while the SDK is still resolving (REQ-GATE-5).
- *   - `isPro === true` → `'unlocked'`.
- *   - Otherwise → `'locked'`.
+ *   - `isFrozen === true`  → `'frozen'`. Trial expired — data visible,
+ *     writes blocked (subscription-trial spec).
+ *   - `isPro === true`     → `'unlocked'`.
+ *   - Otherwise            → `'locked'`.
  *
  * Pure / no React / no I/O so the truth table is unit-tested in M8.1
  * without rendering.
  */
-export type GateState = 'locked' | 'unlocked';
+export type GateState = 'locked' | 'unlocked' | 'frozen';
 
-export function resolveGateState(isPro: boolean, isLoading: boolean): GateState {
+export function resolveGateState(
+  isPro: boolean,
+  isFrozen: boolean,
+  isLoading: boolean,
+): GateState {
   if (isLoading) return 'locked';
+  if (isFrozen) return 'frozen';
   if (isPro) return 'unlocked';
   return 'locked';
 }

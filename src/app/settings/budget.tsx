@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Card, FieldGroup, Icon, Pressable, Spinner, Text, View } from '@/components';
 import { useProfile } from '@/features/profile';
+import { useFrozenGuard } from '@/features/pro';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -36,6 +37,7 @@ import { colors, radii, spacing, typography } from '@/theme';
 export default function BudgetEditorScreen() {
   const { user, setBudget } = useProfile();
   const currency = useSettingsStore((s) => s.currency);
+  const { guard } = useFrozenGuard();
 
   // Local string state so the user can clear the field and retype; an empty
   // string is a valid intermediate state and is sent as 0 only on save.
@@ -62,15 +64,17 @@ export default function BudgetEditorScreen() {
 
   const handleSave = async () => {
     if (saving || !valid) return;
-    setSaving(true);
-    setError(null);
-    const result = await setBudget(parsed);
-    if (result.status === 'ok') {
-      router.back();
-    } else {
-      setSaving(false);
-      setError(result.message);
-    }
+    return guard(async () => {
+      setSaving(true);
+      setError(null);
+      const result = await setBudget(parsed);
+      if (result.status === 'ok') {
+        router.back();
+      } else {
+        setSaving(false);
+        setError(result.message);
+      }
+    });
   };
 
   return (

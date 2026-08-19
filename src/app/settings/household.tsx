@@ -23,6 +23,7 @@ import { useSessionUser } from '@/features/auth';
 import { useHousehold } from '@/features/household';
 import { CreateHouseholdModal } from '@/features/household/components/CreateHouseholdModal';
 import { JoinHouseholdModal } from '@/features/household/components/JoinHouseholdModal';
+import { useFrozenGuard } from '@/features/pro';
 import {
   disbandHousehold,
   leaveHousehold,
@@ -41,6 +42,7 @@ export default function HouseholdScreen() {
   const { userId } = useSessionUser();
   const { household, members, role, isLoading } = useHousehold();
   const setHouseholdSharing = useSettingsStore((s) => s.setHouseholdSharing);
+  const { guard } = useFrozenGuard();
 
   const [leaving, setLeaving] = useState(false);
   const [disbanding, setDisbanding] = useState(false);
@@ -83,38 +85,40 @@ export default function HouseholdScreen() {
   // ── Disband household (owner only) ─────────────────────────────────────
   const handleDisband = () => {
     if (!household) return;
-    Alert.alert(
-      'Disolver hogar',
-      'Se eliminará el hogar para todos los miembros. Esta acción no se puede deshacer.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Disolver',
-          style: 'destructive',
-          onPress: async () => {
-            setDisbanding(true);
-            const result = await disbandHousehold(household.id);
-            if (result.status === 'ok') {
-              useHouseholdStore.getState().reset();
-              setHouseholdSharing(false);
-              if (userId) {
-                void queryClient.invalidateQueries({
-                  queryKey: queryKeys.household(userId),
-                });
+    guard(() => {
+      Alert.alert(
+        'Disolver hogar',
+        'Se eliminará el hogar para todos los miembros. Esta acción no se puede deshacer.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Disolver',
+            style: 'destructive',
+            onPress: async () => {
+              setDisbanding(true);
+              const result = await disbandHousehold(household.id);
+              if (result.status === 'ok') {
+                useHouseholdStore.getState().reset();
+                setHouseholdSharing(false);
+                if (userId) {
+                  void queryClient.invalidateQueries({
+                    queryKey: queryKeys.household(userId),
+                  });
+                }
+              } else {
+                Alert.alert('Error', READ_ERROR_MESSAGE);
               }
-            } else {
-              Alert.alert('Error', READ_ERROR_MESSAGE);
-            }
-            setDisbanding(false);
+              setDisbanding(false);
+            },
           },
-        },
-      ],
-    );
+        ],
+      );
+    });
   };
 
   // ── Create household (via modal) ──────────────────────────────────────
   const handleCreate = () => {
-    setCreateModalVisible(true);
+    guard(() => setCreateModalVisible(true));
   };
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -175,7 +179,7 @@ export default function HouseholdScreen() {
             </Pressable>
 
             <Pressable
-              onPress={() => setJoinModalVisible(true)}
+              onPress={() => guard(() => setJoinModalVisible(true))}
               style={({ pressed }) => [
                 styles.joinButton,
                 pressed && styles.joinButtonPressed,
@@ -261,7 +265,7 @@ export default function HouseholdScreen() {
         <View style={styles.section}>
           {isOwner && members.length < MAX_MEMBERS ? (
             <Pressable
-              onPress={() => router.push('/settings/invite')}
+              onPress={() => guard(() => router.push('/settings/invite'))}
               style={({ pressed }) => [
                 styles.actionRow,
                 pressed && styles.actionRowPressed,
