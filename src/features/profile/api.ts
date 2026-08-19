@@ -152,5 +152,5 @@ export async function readHouseholdId(
     .select('household_id')
     .eq('id', userId)
     .maybeSingle();
-  return (data?.household_id as string | null) ?? null;
+  return ((data as Record<string, unknown>)?.household_id as string | null) ?? null;
 }

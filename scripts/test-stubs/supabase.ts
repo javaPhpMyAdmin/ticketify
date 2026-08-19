@@ -61,6 +61,7 @@ export type QueryOp =
   | { op: 'gte'; column: string; value: unknown }
   | { op: 'lt'; column: string; value: unknown }
   | { op: 'order'; column: string; opts?: { ascending?: boolean; referencedTable?: string } }
+  | { op: 'range'; from: number; to: number }
   | { op: 'limit'; count: number };
 
 /** One builder chain: the table it queried and the ops applied to it. */
@@ -96,6 +97,7 @@ export interface QueryBuilder extends PromiseLike<{ data: unknown; error: StubEr
   gte: (column: string, value: unknown) => QueryBuilder;
   lt: (column: string, value: unknown) => QueryBuilder;
   order: (column: string, opts?: { ascending?: boolean; referencedTable?: string }) => QueryBuilder;
+  range: (from: number, to: number) => QueryBuilder;
   limit: (count: number) => QueryBuilder;
   select: (columns?: string) => QueryBuilder;
   maybeSingle: () => Promise<{ data: unknown | null; error: StubError }>;
@@ -127,6 +129,11 @@ export type SupabaseBehavior = {
     email: string;
     password: string;
   }) => Promise<{ data: { session: Session | null }; error: StubError }>;
+  updateUser: (opts: {
+    data?: Record<string, unknown>;
+    email?: string;
+    password?: string;
+  }) => Promise<{ data: object; error: StubError }>;
   onAuthStateChange: (
     cb: (event: AuthChangeEvent, session: Session | null) => void,
   ) => { data: { subscription: Subscription } };
@@ -284,6 +291,10 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
       ops.push({ op: 'order', column, opts });
       return builder;
     },
+    range: (from: number, to: number) => {
+      ops.push({ op: 'range', from, to } as QueryOp);
+      return builder;
+    },
     limit: (count: number) => {
       ops.push({ op: 'limit', count });
       return builder;
@@ -379,6 +390,7 @@ const defaultBehavior = (): SupabaseBehavior => ({
   signOut: async () => ({ error: null }),
   signInWithPassword: async () => ({ error: null }),
   signUp: async () => ({ data: { session: null }, error: null }),
+  updateUser: async () => ({ data: {}, error: null }),
   onAuthStateChange: (cb) => ({ data: { subscription: makeSubscription(cb) } }),
   from: (table: string) => {
     callLog.push({ kind: 'from', table });
@@ -735,6 +747,9 @@ export const supabase = {
     ) => behavior.signInWithPassword(...args),
     signUp: (...args: Parameters<SupabaseBehavior['signUp']>) =>
       behavior.signUp(...args),
+    updateUser: (
+      ...args: Parameters<SupabaseBehavior['updateUser']>
+    ) => behavior.updateUser(...args),
     onAuthStateChange: (
       ...args: Parameters<SupabaseBehavior['onAuthStateChange']>
     ) => {
