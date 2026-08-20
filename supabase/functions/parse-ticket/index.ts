@@ -152,7 +152,7 @@ const PROMPT = `You are a receipt parser. Extract the purchase data from the rec
 
 Rules:
 - store_name: the merchant name printed on the receipt.
-- purchase_date: the receipt date formatted as YYYY-MM-DD.
+- purchase_date: the receipt date formatted as YYYY-MM-DD. The current year is CURRENT_YEAR. When the receipt does not show a year, use CURRENT_YEAR. When the printed year looks wrong (e.g. 2023), use CURRENT_YEAR instead.
 - total: the FINAL amount the customer actually pays — the "amount to pay" / "total a pagar" / "total a abonar" figure, which is the last money total printed on the receipt. Receipts often show a discount AFTER the items: a payment-method discount (debit/card), a legal discount ("descuento de ley", "descuento por débito", "bonificación", "descuento promocional", "cupón"), or any negative adjustment, followed by a final total to pay that is LOWER than the pre-discount total. The total must ALWAYS be that FINAL amount after the discount (what the card/account is actually charged), in ANY country or language, NEVER the subtotal printed before the discount. When in doubt, prefer the LOWEST money total printed at the end of the receipt. The discount line itself is not an item and must not be added to the total.
 - payment_method: one of cash, card, apple_pay, google_pay, transfer, other.
 - card_brand: the card network printed on the receipt, e.g. Visa, Mastercard, Maestro, OCA, American Express, Diners, etc. null when the receipt shows no card (e.g. cash or transfer) or the brand cannot be determined. Never guess or infer a brand from unrelated text.
@@ -206,7 +206,7 @@ async function callGemini(
     contents: [
       {
         parts: [
-          { text: PROMPT },
+          { text: PROMPT.replace('CURRENT_YEAR', String(new Date().getUTCFullYear())) },
           { inline_data: { mime_type: mimeType, data: imageBase64 } },
         ],
       },

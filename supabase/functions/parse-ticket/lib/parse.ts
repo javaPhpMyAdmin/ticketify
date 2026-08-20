@@ -142,7 +142,13 @@ export function parseReceiptJson(raw: unknown): ParsedReceipt {
       parsedDate.getUTCMonth() === m - 1 &&
       parsedDate.getUTCDate() === d
     ) {
-      purchase_date = rawDate;
+      // Reject years that are obviously wrong (hallucinated by the model).
+      // ±1 year from the current UTC year — a receipt more than a year old
+      // is extremely unlikely and a future receipt is impossible.
+      const currentYear = new Date().getUTCFullYear();
+      if (Math.abs(y - currentYear) <= 1) {
+        purchase_date = rawDate;
+      }
     }
   }
   const total = round2(requireFiniteNumber(raw.total, 'total'));
