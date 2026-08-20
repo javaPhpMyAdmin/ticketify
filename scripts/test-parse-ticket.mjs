@@ -218,6 +218,31 @@ async function run() {
     assert.equal(result.purchase_date, new Date().toISOString().slice(0, 10));
   });
 
+  await test('parseReceiptJson rejects a purchase_date with a wrong year (hallucinated)', () => {
+    // Gemini hallucinated 2023 instead of 2026 — the parser must reject it
+    // and fall back to today (±1 year range guard).
+    const result = parseReceiptJson({
+      store_name: 'Coto',
+      purchase_date: '2023-08-19',
+      total: 100,
+      payment_method: 'other',
+      items: [item()],
+    });
+    assert.equal(result.purchase_date, new Date().toISOString().slice(0, 10));
+  });
+
+  await test('parseReceiptJson accepts a purchase_date within ±1 year', () => {
+    const currentYear = new Date().getUTCFullYear();
+    const result = parseReceiptJson({
+      store_name: 'Coto',
+      purchase_date: `${currentYear}-08-19`,
+      total: 100,
+      payment_method: 'other',
+      items: [item()],
+    });
+    assert.equal(result.purchase_date, `${currentYear}-08-19`);
+  });
+
   await test('parseReceiptJson defaults a missing purchase_date to today', () => {
     const result = parseReceiptJson({
       store_name: 'Coto',
