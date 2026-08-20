@@ -152,6 +152,30 @@ export async function readMonthlyPurchasesTotal(
 }
 
 /**
+ * The month's IMPULSE (snacks/microgastos) total via the
+ * `monthly_impulse_total(p_year_month)` RPC — the SUM of
+ * `purchase_items.total_price` WHERE `is_impulse = true` across confirmed
+ * purchases. Server-side aggregation so the snacks callout loads instantly,
+ * not page-by-page via infinite scroll.
+ * An empty result is a valid month (no impulse purchases), resolving to
+ * `ok` with an empty array.
+ */
+export async function readMonthlyImpulseTotal(
+  yearMonth: string,
+  householdId?: string | null,
+): Promise<FeatureReadResult<{ total: number }[]>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const params: Record<string, string> = { p_year_month: yearMonth };
+  if (householdId) params.p_household_id = householdId;
+  const { data, error } = await supabase.rpc('monthly_impulse_total', params);
+  if (error) {
+    console.warn('[read] monthly impulse total failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: (data ?? []) as { total: number }[] };
+}
+
+/**
  * Read the user's category budget limits for a month. Returns an array
  * (possibly empty) — an empty array means no budgets are configured.
  */

@@ -44,6 +44,20 @@ export const queryKeys = {
   monthlyPurchasesTotalPrefix: (userId: string) =>
     ['analytics', 'monthly-purchases-total', userId] as const,
   /**
+   * The month's IMPULSE (snacks/microgastos) total via the
+   * `monthly_impulse_total` RPC — the SUM of `purchase_items.total_price`
+   * WHERE `is_impulse = true`. Server-side aggregation so the snacks
+   * callout loads instantly, not page-by-page via infinite scroll.
+   */
+  monthlyImpulseTotal: (userId: string, yearMonth: string) =>
+    ['analytics', 'monthly-impulse-total', userId, yearMonth] as const,
+  /**
+   * Prefix of the monthlyImpulseTotal keys for a user, used to invalidate
+   * every month variant at once (e.g. after a receipt save/edit).
+   */
+  monthlyImpulseTotalPrefix: (userId: string) =>
+    ['analytics', 'monthly-impulse-total', userId] as const,
+  /**
    * Prefix of the monthlyTotals keys for a user, used to invalidate every
    * month variant at once (e.g. after a receipt save). The month is appended
    * unconditionally by `monthlyTotals`, so this prefix matches all of them

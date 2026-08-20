@@ -3,7 +3,7 @@ import { useEffect, useMemo } from 'react';
 
 import type { IconName } from '@/components';
 import { useSessionUser } from '@/features/auth';
-import { readMonthlyPurchasesTotal } from '@/lib/supabase/feature-access';
+import { readMonthlyPurchasesTotal, readMonthlyImpulseTotal } from '@/lib/supabase/feature-access';
 import { formatYearMonth } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters';
@@ -628,6 +628,20 @@ export function useHomeFeed(): HomeFeedResult {
       ? (householdTotalQuery.data[0]?.total ?? 0)
       : null;
 
+  // ── Impulse / snacks total (current month, server-side RPC) ──────────
+  // The RPC sums purchase_items.total_price WHERE is_impulse = true across
+  // confirmed purchases for the month. This loads instantly instead of
+  // growing page-by-page via infinite scroll.
+  const impulseTotalQuery = useQuery<{ total: number }[]>({
+    queryKey: queryKeys.monthlyImpulseTotal(userId!, currentMonthKey()),
+    enabled: !!userId,
+    queryFn: async () => {
+      const result = await readMonthlyImpulseTotal(currentMonthKey());
+      return toQueryData(result);
+    },
+  });
+  const impulseTotal = impulseTotalQuery.data?.[0]?.total ?? 0;
+
   // Flatten all pages into a single list
   const rows = useMemo(
     () => feedQuery.data?.pages.flat() ?? [],
@@ -652,6 +666,10 @@ export function useHomeFeed(): HomeFeedResult {
 
   return {
     ...feed,
+    // Override the client-side snacks total (computed from loaded pages)
+    // with the server-side RPC value so the callout loads instantly and
+    // does not grow page-by-page via infinite scroll.
+    wantsSnacksTotal: impulseTotal,
     isLoading: feedQuery.isLoading,
     error: feedQuery.error ? toQueryErrorMessage(feedQuery.error) : null,
     hasData: feedQuery.data !== undefined,
