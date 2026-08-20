@@ -605,6 +605,26 @@ function invalidateReceiptFeeds(userId: string): void {
 }
 
 /**
+ * Edit-only invalidation: refreshes budget and analytics but NOT the home
+ * feed infinite query. The infinite query refetches from page 0, which
+ * collapses all previously loaded pages — the optimistic upsertReceiptRow
+ * already handles the local feed state after an edit, so invalidating the
+ * feed would lose loaded pages and dip aggregate totals (snacks, etc.).
+ */
+function invalidateEditFeeds(userId: string): void {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.budget(userId) });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.monthlyTotalsPrefix(userId),
+  });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.monthlyPurchasesTotalPrefix(userId),
+  });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.itemSearchPrefix(userId),
+  });
+}
+
+/**
  * The full purchase row the edit flow works on: the store name is
  * flattened from the `stores` join and each item carries its category
  * object (slug/name/icon) so the UI can render without another lookup.
@@ -959,7 +979,10 @@ export async function updateReceipt(
     }
   }
 
-  invalidateReceiptFeeds(userId);
+  // Edit-only: budget + analytics, NOT the infinite feed query. The
+  // optimistic upsertReceiptRow already updated the local feed; invalidating
+  // the infinite query would refetch from page 0 and collapse loaded pages.
+  invalidateEditFeeds(userId);
   return { id: purchaseId };
 }
 

@@ -1809,7 +1809,10 @@ async function run() {
     assert.equal(find(keyCurrent).state.isInvalidated, true);
     assert.equal(find(keyOther).state.isInvalidated, true);
     assert.equal(find(keyOtherUser).state.isInvalidated, false);
-    assert.equal(find(keyFeed).state.isInvalidated, true, 'home feed refetches');
+    // Home feed is NOT invalidated after an edit: the optimistic upsertReceiptRow
+    // handles the local feed state. Invalidating the infinite query would refetch
+    // from page 0 and collapse loaded pages (dipping snack/impulse totals).
+    assert.equal(find(keyFeed).state.isInvalidated, false, 'home feed NOT refetched on edit');
     assert.equal(find(keyBudget).state.isInvalidated, true, 'budget spent refetches');
     assert.equal(find(keySearch).state.isInvalidated, true, 'item search refetches (any query)');
     assert.equal(
