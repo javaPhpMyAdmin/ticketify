@@ -34,11 +34,6 @@ export function useScanTicket(): UseScanTicketResult {
   const [draftId, setDraftId] = useState<string | null>(null);
 
   const startDraft = useReceiptsStore((s) => s.startDraft);
-  const setDraftStore = useReceiptsStore((s) => s.setDraftStore);
-  const setDraftDate = useReceiptsStore((s) => s.setDraftDate);
-  const setDraftTotal = useReceiptsStore((s) => s.setDraftTotal);
-  const setDraftPayment = useReceiptsStore((s) => s.setDraftPayment);
-  const setDraftItems = useReceiptsStore((s) => s.setDraftItems);
   const updateDraft = useReceiptsStore((s) => s.updateDraft);
 
   const mutation = useMutation({
@@ -53,18 +48,19 @@ export function useScanTicket(): UseScanTicketResult {
     onSuccess: ({ url, parsed }) => {
       // Step 2: seed the store, then expose the draft id for navigation.
       // The draft keeps the LOCAL uri for preview; `saveReceipt` uploads it.
+      // All fields are set in a SINGLE updateDraft to prevent an intermediate
+      // render where total is set but items are still empty (which would
+      // flash a false "No coincide" mismatch).
       startDraft(url);
-      setDraftStore(parsed.store);
-      setDraftDate(parsed.date);
-      setDraftTotal(parsed.total);
-      setDraftPayment(parsed.payment_method);
-      // Card brand/type are read-only extras on the draft — seed them only
-      // when the parse pipeline detected them (null values are harmless).
       updateDraft({
+        store_name: parsed.store,
+        purchase_date: parsed.date,
+        total: parsed.total,
+        payment_method: parsed.payment_method,
         card_brand: parsed.card_brand,
         card_type: parsed.card_type,
+        items: parsed.items,
       });
-      setDraftItems(parsed.items);
       setDraftId(tempId());
     },
   });

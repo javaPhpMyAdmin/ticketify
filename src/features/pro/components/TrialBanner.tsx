@@ -6,9 +6,9 @@
  * Only renders when `isTrialing === true` — otherwise returns null.
  */
 import { router } from 'expo-router';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View as RNView } from 'react-native';
 
-import { Pressable, Text, View } from '@/components';
+import { Pressable, Text } from '@/components';
 import { useProEntitlement } from '@/features/pro';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -29,10 +29,10 @@ export function TrialBanner() {
       accessibilityLabel="Ver planes de suscripción"
       style={({ pressed }) => [styles.banner, pressed && styles.bannerPressed]}
     >
-      <View style={styles.content}>
+      <RNView style={styles.content}>
         <Text style={styles.label}>{label}</Text>
         <Text style={styles.hint}>Ver planes</Text>
-      </View>
+      </RNView>
     </Pressable>
   );
 }
