@@ -8,58 +8,57 @@ import {
   type ListRenderItem,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
 
 import { Divider, EmptyState, Icon, Text } from '@/components';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 import { formatCurrency } from '@/lib/format';
-import {
-  aggregateImpulseItemsByMonth,
-  currentMonthKey,
-  type CategoryItemSummary,
-  type ReceiptSpendRecord,
-} from '@/features/home/hooks/useHomeFeed';
-import { useReceiptsStore } from '@/stores/use-receipts-store';
+import { readMonthlyImpulseItems } from '@/lib/supabase/feature-access';
+import { toQueryData } from '@/lib/supabase/query-adapters';
+import { useSessionUser } from '@/features/auth';
+import { queryKeys } from '@/lib/query-keys';
+import { currentMonthKey } from '@/features/home/hooks/useHomeFeed';
 
 export interface SnacksBreakdownModalProps {
   visible: boolean;
   onClose: () => void;
 }
 
+interface ImpulseItem {
+  name: string;
+  amount: number;
+}
+
 /**
  * Bottom-sheet style modal showing the per-item breakdown of the
  * Home "Antojos / Snacks" callout for the current month.
  *
- * Opens with `transparent` so the home screen stays visible behind the
- * scrim, slides up from the bottom via `animationType="slide"`, and
- * dismisses on backdrop tap or the close button. The data comes from
- * `useReceiptsStore.list` (the same store the home feed hydrates) so the
- * modal renders whatever the user already sees on the home card — no
- * extra network round-trip, no race with the feed refetch.
- *
- * Items are scoped to the **current month** and to those flagged
- * `is_impulse === true` (older receipts that predate the flag are
- * excluded on purpose — the modal's contract is "things you marked as
- * impulse", not "everything possibly impulse"). Aggregation is the new
- * pure `aggregateImpulseItemsByMonth` (in `useHomeFeed`), so the result
- * is testable in isolation and identical to a future server-derived
- * breakdown without any UI changes.
+ * Data comes from the `monthly_impulse_items` RPC (server-side) so the
+ * breakdown loads ALL impulse items instantly, regardless of how many
+ * infinite-scroll pages the user has loaded.
  */
 export function SnacksBreakdownModal({ visible, onClose }: SnacksBreakdownModalProps) {
   const currency = useSettingsStore((s) => s.currency);
-  const receipts = useReceiptsStore((s) => s.list);
-
+  const { userId } = useSessionUser();
   const monthKey = currentMonthKey();
-  const rows = useMemo(
-    () => aggregateImpulseItemsByMonth(receipts as ReceiptSpendRecord[], monthKey),
-    [receipts, monthKey],
-  );
+
+  const itemsQuery = useQuery<ImpulseItem[]>({
+    queryKey: queryKeys.monthlyImpulseItems(userId!, monthKey),
+    enabled: !!userId && visible,
+    queryFn: async () => {
+      const result = await readMonthlyImpulseItems(monthKey);
+      return toQueryData(result);
+    },
+  });
+
+  const rows = itemsQuery.data ?? [];
   const total = useMemo(
     () => rows.reduce((sum, row) => sum + row.amount, 0),
     [rows],
   );
 
-  const renderItem: ListRenderItem<CategoryItemSummary> = ({ item, index }) => (
+  const renderItem: ListRenderItem<ImpulseItem> = ({ item, index }) => (
     <View>
       {index > 0 ? <Divider /> : null}
       <View style={styles.row}>
