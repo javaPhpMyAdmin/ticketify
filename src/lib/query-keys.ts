@@ -58,6 +58,17 @@ export const queryKeys = {
   monthlyImpulseTotalPrefix: (userId: string) =>
     ['analytics', 'monthly-impulse-total', userId] as const,
   /**
+   * Per-item impulse breakdown for a month. Separate key from the total
+   * because the shapes differ (array of {name, amount} vs {total}).
+   */
+  monthlyImpulseItems: (userId: string, yearMonth: string) =>
+    ['analytics', 'monthly-impulse-items', userId, yearMonth] as const,
+  /**
+   * Prefix of the monthlyImpulseItems keys for a user.
+   */
+  monthlyImpulseItemsPrefix: (userId: string) =>
+    ['analytics', 'monthly-impulse-items', userId] as const,
+  /**
    * Prefix of the monthlyTotals keys for a user, used to invalidate every
    * month variant at once (e.g. after a receipt save). The month is appended
    * unconditionally by `monthlyTotals`, so this prefix matches all of them

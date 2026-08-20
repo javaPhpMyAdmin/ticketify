@@ -603,6 +603,9 @@ function invalidateReceiptFeeds(userId: string): void {
     queryKey: queryKeys.monthlyImpulseTotalPrefix(userId),
   });
   void queryClient.invalidateQueries({
+    queryKey: queryKeys.monthlyImpulseItemsPrefix(userId),
+  });
+  void queryClient.invalidateQueries({
     queryKey: queryKeys.itemSearchPrefix(userId),
   });
 }
@@ -624,6 +627,9 @@ function invalidateEditFeeds(userId: string): void {
   });
   void queryClient.invalidateQueries({
     queryKey: queryKeys.monthlyImpulseTotalPrefix(userId),
+  });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.monthlyImpulseItemsPrefix(userId),
   });
   void queryClient.invalidateQueries({
     queryKey: queryKeys.itemSearchPrefix(userId),

@@ -176,6 +176,26 @@ export async function readMonthlyImpulseTotal(
 }
 
 /**
+ * Per-item impulse breakdown for a month via the
+ * `monthly_impulse_items(p_year_month)` RPC — grouped by normalized name,
+ * sorted by amount desc. Server-side so the snacks breakdown modal loads
+ * all items instantly, not just those loaded via infinite scroll.
+ */
+export async function readMonthlyImpulseItems(
+  yearMonth: string,
+): Promise<FeatureReadResult<{ name: string; amount: number }[]>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { data, error } = await supabase.rpc('monthly_impulse_items', {
+    p_year_month: yearMonth,
+  });
+  if (error) {
+    console.warn('[read] monthly impulse items failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: (data ?? []) as { name: string; amount: number }[] };
+}
+
+/**
  * Read the user's category budget limits for a month. Returns an array
  * (possibly empty) — an empty array means no budgets are configured.
  */
