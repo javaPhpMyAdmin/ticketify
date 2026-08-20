@@ -600,16 +600,19 @@ function invalidateReceiptFeeds(userId: string): void {
     queryKey: queryKeys.monthlyPurchasesTotalPrefix(userId),
   });
   void queryClient.invalidateQueries({
+    queryKey: queryKeys.monthlyImpulseTotalPrefix(userId),
+  });
+  void queryClient.invalidateQueries({
     queryKey: queryKeys.itemSearchPrefix(userId),
   });
 }
 
 /**
- * Edit-only invalidation: refreshes budget and analytics but NOT the home
- * feed infinite query. The infinite query refetches from page 0, which
- * collapses all previously loaded pages — the optimistic upsertReceiptRow
- * already handles the local feed state after an edit, so invalidating the
- * feed would lose loaded pages and dip aggregate totals (snacks, etc.).
+ * Edit-only invalidation: refreshes budget, analytics, and snacks total
+ * but NOT the home feed infinite query. The infinite query refetches from
+ * page 0, which collapses all previously loaded pages — the optimistic
+ * upsertReceiptRow already handles the local feed state after an edit, so
+ * invalidating the feed would lose loaded pages and dip aggregate totals.
  */
 function invalidateEditFeeds(userId: string): void {
   void queryClient.invalidateQueries({ queryKey: queryKeys.budget(userId) });
@@ -618,6 +621,9 @@ function invalidateEditFeeds(userId: string): void {
   });
   void queryClient.invalidateQueries({
     queryKey: queryKeys.monthlyPurchasesTotalPrefix(userId),
+  });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.monthlyImpulseTotalPrefix(userId),
   });
   void queryClient.invalidateQueries({
     queryKey: queryKeys.itemSearchPrefix(userId),
