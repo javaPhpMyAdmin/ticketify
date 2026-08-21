@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Image, Modal, ScrollView, StyleSheet } from 'react-native';
+import { Alert, BackHandler, Image, ScrollView, StyleSheet } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -70,6 +70,19 @@ export default function ReceiptDetailScreen() {
       mounted.current = false;
     };
   }, []);
+  // Android back button: close the photo overlay before navigating back.
+  useEffect(() => {
+    if (!photoOpen) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (photoScaleJs.current > 1) {
+        resetPhotoZoom();
+      } else {
+        setPhotoOpen(false);
+      }
+      return true; // consumed
+    });
+    return () => sub.remove();
+  }, [photoOpen]);
   const receipt = list.find((r) => r.id === id);
 
   // Fullscreen photo zoom: pinch (scale) + double-tap (reset) + pan
@@ -458,14 +471,11 @@ export default function ReceiptDetailScreen() {
         </Pressable>
       </View>
 
-      <Modal
-        visible={photoOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPhotoOpen(false)}
-      >
+      {/* Fullscreen photo overlay — rendered as a regular View (not Modal)
+          so GestureDetector works reliably on Android. */}
+      {photoOpen ? (
         <View style={styles.photoModalBackdrop}>
-          {/* Backdrop press: closes the modal at 1×, resets the zoom when
+          {/* Backdrop press: closes the overlay at 1×, resets the zoom when
               the user is already zoomed in (so the close gesture doesn't
               require the user to first reset). gesture-handler consumes
               double-tap / pinch touches before this fires. */}
@@ -490,8 +500,6 @@ export default function ReceiptDetailScreen() {
                 source={photoSource ? { uri: photoSource } : undefined}
                 style={styles.photoModalImage}
                 resizeMode="contain"
-                // If the photo fails to load fullscreen (offline dev), close the
-                // modal and let the detail view fall back to the placeholder.
                 onError={() => {
                   setPhotoOpen(false);
                   setPhotoFailed(true);
@@ -500,7 +508,7 @@ export default function ReceiptDetailScreen() {
             </GestureDetector>
           </Animated.View>
         </View>
-      </Modal>
+      ) : null}
 
       <ReceiptCategoryItemsModal
         visible={openCategory !== null}
@@ -556,9 +564,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   photoModalBackdrop: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.92)',
     justifyContent: 'center',
+    zIndex: 999,
+    elevation: 999,
   },
   photoModalClose: {
     position: 'absolute',
