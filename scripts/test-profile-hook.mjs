@@ -316,6 +316,9 @@ async function run() {
     signIn();
     stubMod.__setTableRead('profiles', { rows: [PROFILE_EUR] });
     stubMod.__setTableRead('scan_usage', { rows: [SCAN_USAGE_ROW] });
+    // The write is verified through `.select('id')` (fail-closed 0-row
+    // check), so arm the updated-row representation.
+    stubMod.__setDeleteRead('profiles', [{ id: 'u1' }]);
 
     const qc = queryClientMod.queryClient;
     // Seed BOTH budget keys (the hook only ever creates the profile query;
@@ -398,6 +401,9 @@ async function run() {
     signIn();
     stubMod.__setTableRead('profiles', { rows: [PROFILE_EUR] });
     stubMod.__setTableRead('scan_usage', { rows: [SCAN_USAGE_ROW] });
+    // The write is verified through `.select('id')` (fail-closed 0-row
+    // check), so arm the updated-row representation.
+    stubMod.__setDeleteRead('profiles', [{ id: 'u1' }]);
 
     const renderer = await mountProbe();
     try {

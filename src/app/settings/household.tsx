@@ -38,7 +38,20 @@ import type { HouseholdRole } from '@/types';
 
 const MAX_MEMBERS = 5;
 
-export default function HouseholdScreen() {
+interface HouseholdScreenContentProps {
+  onOpenJoin: () => void;
+  onOpenCreate: () => void;
+}
+
+/**
+ * Screen body only. Modals live in the exported wrapper below so a
+ * branch switch (loading / empty / household) never unmounts a native
+ * Modal window mid-animation.
+ */
+function HouseholdScreenContent({
+  onOpenJoin,
+  onOpenCreate,
+}: HouseholdScreenContentProps) {
   const { userId } = useSessionUser();
   const { household, members, role, isLoading } = useHousehold();
   const setHouseholdSharing = useSettingsStore((s) => s.setHouseholdSharing);
@@ -46,8 +59,6 @@ export default function HouseholdScreen() {
 
   const [leaving, setLeaving] = useState(false);
   const [disbanding, setDisbanding] = useState(false);
-  const [joinModalVisible, setJoinModalVisible] = useState(false);
-  const [createModalVisible, setCreateModalVisible] = useState(false);
 
   const isOwner = role === 'owner';
 
@@ -118,7 +129,7 @@ export default function HouseholdScreen() {
 
   // ── Create household (via modal) ──────────────────────────────────────
   const handleCreate = () => {
-    guard(() => setCreateModalVisible(true));
+    guard(() => onOpenCreate());
   };
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -179,7 +190,7 @@ export default function HouseholdScreen() {
             </Pressable>
 
             <Pressable
-              onPress={() => guard(() => setJoinModalVisible(true))}
+              onPress={() => guard(() => onOpenJoin())}
               style={({ pressed }) => [
                 styles.joinButton,
                 pressed && styles.joinButtonPressed,
@@ -191,15 +202,6 @@ export default function HouseholdScreen() {
             </Pressable>
           </View>
         </View>
-
-        <JoinHouseholdModal
-          visible={joinModalVisible}
-          onClose={() => setJoinModalVisible(false)}
-        />
-        <CreateHouseholdModal
-          visible={createModalVisible}
-          onClose={() => setCreateModalVisible(false)}
-        />
       </SafeAreaView>
     );
   }
@@ -331,6 +333,34 @@ export default function HouseholdScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/**
+ * Owns modal visibility and renders both modals at the root, outside
+ * every conditional branch of the screen body. Keeping them mounted
+ * across branch switches lets the native slide-down animation finish
+ * before the household store update swaps the screen content.
+ */
+export default function HouseholdScreen() {
+  const [joinModalVisible, setJoinModalVisible] = useState(false);
+  const [createModalVisible, setCreateModalVisible] = useState(false);
+
+  return (
+    <>
+      <HouseholdScreenContent
+        onOpenJoin={() => setJoinModalVisible(true)}
+        onOpenCreate={() => setCreateModalVisible(true)}
+      />
+      <JoinHouseholdModal
+        visible={joinModalVisible}
+        onClose={() => setJoinModalVisible(false)}
+      />
+      <CreateHouseholdModal
+        visible={createModalVisible}
+        onClose={() => setCreateModalVisible(false)}
+      />
+    </>
   );
 }
 

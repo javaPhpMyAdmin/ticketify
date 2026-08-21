@@ -308,12 +308,17 @@ function ChartsBody() {
       });
   }, [cacheRow, monthList, monthKey]);
 
-  // Daily average from cache total or list aggregation.
+  // Daily average from cache total or list aggregation. Servicios are
+  // excluded in BOTH paths — only the hero card includes them.
   const dailyAverage = useMemo(() => {
     if (cacheRow) {
       const [year, month] = monthKey.split('-').map(Number);
       const daysInMonth = new Date(year, month, 0).getDate();
-      return daysInMonth > 0 ? cacheRow.total / daysInMonth : 0;
+      // The cache total includes servicios; category_totals carries the
+      // per-slug totals, so subtract servicios before averaging (same
+      // exclusion as the list-fallback path below).
+      const serviciosTotal = cacheRow.category_totals?.['servicios']?.total ?? 0;
+      return daysInMonth > 0 ? (cacheRow.total - serviciosTotal) / daysInMonth : 0;
     }
     let total = 0;
     const excluded = new Set(['servicios']);

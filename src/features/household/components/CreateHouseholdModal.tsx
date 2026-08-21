@@ -2,17 +2,19 @@
  * Create household modal — bottom sheet with a name input that
  * calls the `createHousehold` RPC on submit. Works on both iOS and Android
  * (unlike Alert.prompt which is iOS-only).
+ *
+ * On success the sheet closes first; the household store is only updated
+ * after the dismissal animation finishes, so the parent screen never
+ * swaps branches while this Modal is still animating.
  */
 import {
   Alert,
-  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
   StyleSheet,
   TextInput,
-  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,6 +31,9 @@ import { queryKeys } from '@/lib/query-keys';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
+
+/** Rough duration of the native slide-down animation. */
+const DISMISS_ANIMATION_MS = 400;
 
 export interface CreateHouseholdModalProps {
   visible: boolean;
@@ -57,15 +62,22 @@ export function CreateHouseholdModal({
     const result = await createHousehold(trimmed);
     setLoading(false);
     if (result.status === 'ok') {
-      useHouseholdStore.getState().setHousehold(result.data, 'owner');
-      useHouseholdStore.getState().setMembers([]);
-      setHouseholdSharing(true);
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.household(userId),
-      });
-      Alert.alert('¡Listo!', `Creaste el hogar "${trimmed}".`);
+      // Close before touching any store: updating the household store
+      // re-renders the parent into its "household" branch, and doing it
+      // while this Modal is visible tears the native window down without
+      // its dismissal animation (sheet freezes half-open).
       setName('');
+      setError(null);
       onClose();
+      setTimeout(() => {
+        useHouseholdStore.getState().setHousehold(result.data, 'owner');
+        useHouseholdStore.getState().setMembers([]);
+        setHouseholdSharing(true);
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.household(userId),
+        });
+        Alert.alert('¡Listo!', `Creaste el hogar "${trimmed}".`);
+      }, DISMISS_ANIMATION_MS);
     } else {
       setError(
         result.status === 'error'
@@ -91,74 +103,70 @@ export function CreateHouseholdModal({
       onRequestClose={handleClose}
       statusBarTranslucent
     >
-      <View style={styles.backdrop}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.backdrop}
+      >
         <Pressable style={styles.backdropTouch} onPress={handleClose} />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.sheet}
-        >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
-              <View style={styles.handle} />
-              <View style={styles.header}>
-                <Text style={styles.kicker}>Crear hogar</Text>
-                <Pressable
-                  onPress={handleClose}
-                  hitSlop={12}
-                  style={styles.closeButton}
-                  accessibilityRole="button"
-                  accessibilityLabel="Cerrar"
-                >
-                  <Text style={styles.closeX}>✕</Text>
-                </Pressable>
-              </View>
+        <SafeAreaView style={styles.sheet} edges={['bottom']}>
+          <View style={styles.handle} />
+          <View style={styles.header}>
+            <Text style={styles.kicker}>Crear hogar</Text>
+            <Pressable
+              onPress={handleClose}
+              hitSlop={12}
+              style={styles.closeButton}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar"
+            >
+              <Text style={styles.closeX}>✕</Text>
+            </Pressable>
+          </View>
 
-              <View style={styles.body}>
-                <Text style={styles.helper}>
-                  Elegí un nombre para identificar a tu hogar (ej: &quot;Familia Pérez&quot;).
-                </Text>
+          <View style={styles.body}>
+            <Text style={styles.helper}>
+              Elegí un nombre para identificar a tu hogar (ej: &quot;Familia Pérez&quot;).
+            </Text>
 
-                <TextInput
-                  value={name}
-                  onChangeText={(v) => {
-                    setName(v);
-                    setError(null);
-                  }}
-                  placeholder="Mi hogar"
-                  placeholderTextColor={colors.textSecondary}
-                  maxLength={30}
-                  autoCorrect={false}
-                  editable={!loading}
-                  style={styles.input}
-                  accessibilityLabel="Nombre del hogar"
-                  returnKeyType="done"
-                  blurOnSubmit
-                />
+            <TextInput
+              value={name}
+              onChangeText={(v) => {
+                setName(v);
+                setError(null);
+              }}
+              placeholder="Mi hogar"
+              placeholderTextColor={colors.textSecondary}
+              maxLength={30}
+              autoCorrect={false}
+              editable={!loading}
+              style={styles.input}
+              accessibilityLabel="Nombre del hogar"
+              returnKeyType="done"
+              blurOnSubmit
+            />
 
-                {error ? <Text style={styles.error}>{error}</Text> : null}
+            {error ? <Text style={styles.error}>{error}</Text> : null}
 
-                <Pressable
-                  onPress={handleCreate}
-                  disabled={!isValid || loading}
-                  style={({ pressed }) => [
-                    styles.createButton,
-                    (!isValid || loading) && styles.createButtonDisabled,
-                    pressed && styles.createButtonPressed,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Crear hogar"
-                >
-                  {loading ? (
-                    <Spinner size="sm" color={colors.onPrimary} />
-                  ) : (
-                    <Text style={styles.createButtonText}>Crear</Text>
-                  )}
-                </Pressable>
-              </View>
-            </SafeAreaView>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
-      </View>
+            <Pressable
+              onPress={handleCreate}
+              disabled={!isValid || loading}
+              style={({ pressed }) => [
+                styles.createButton,
+                (!isValid || loading) && styles.createButtonDisabled,
+                pressed && styles.createButtonPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Crear hogar"
+            >
+              {loading ? (
+                <Spinner size="sm" color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.createButtonText}>Crear</Text>
+              )}
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

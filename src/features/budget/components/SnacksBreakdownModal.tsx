@@ -10,7 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 
-import { Divider, EmptyState, Icon, Text } from '@/components';
+import { Divider, EmptyState, Icon, Spinner, Text } from '@/components';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 import { formatCurrency } from '@/lib/format';
@@ -111,7 +111,13 @@ export function SnacksBreakdownModal({ visible, onClose }: SnacksBreakdownModalP
             </Text>
           </View>
           <Divider />
-          {rows.length === 0 ? (
+          {itemsQuery.isPending ? (
+            // RPC in flight: spinner instead of a false "Sin antojos" empty
+            // state + $0 flash. The total row above stays $0 while loading.
+            <View style={styles.loadingWrap}>
+              <Spinner />
+            </View>
+          ) : rows.length === 0 ? (
             <View style={styles.emptyWrap}>
               <EmptyState
                 icon="bag.fill"
@@ -230,5 +236,10 @@ const styles = StyleSheet.create({
   emptyWrap: {
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.xl,
+  },
+  loadingWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xxl,
   },
 });

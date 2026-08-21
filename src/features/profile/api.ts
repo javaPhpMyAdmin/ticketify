@@ -42,7 +42,9 @@ export type ProfileWriteResult =
  * `isSupabaseConfigured` like the reads: an unconfigured client reports the
  * user-safe error without touching the network. The write is scoped to the
  * user's own row via `eq('id', userId)` — `profiles_update_own` enforces
- * `auth.uid() = id` server-side.
+ * `auth.uid() = id` server-side. `.select('id')` returns the updated row:
+ * a 0-row result (no profiles row — nothing creates it on signup) fails
+ * closed instead of silently "succeeding" (same pattern as updateReceipt).
  */
 export async function setProfileCurrency(
   userId: string,
@@ -51,12 +53,20 @@ export async function setProfileCurrency(
   if (!isSupabaseConfigured) {
     return { status: 'error', message: WRITE_ERROR_MESSAGE };
   }
-  const { error } = await supabase
+  const { data, error } = (await supabase
     .from('profiles')
     .update({ currency })
-    .eq('id', userId);
-  if (error) {
-    console.warn('[write] profile currency failed:', error.code, error.message);
+    .eq('id', userId)
+    .select('id')) as unknown as {
+    data: { id: string }[] | null;
+    error: { message: string; code?: string } | null;
+  };
+  if (error || !data || data.length === 0) {
+    console.warn(
+      '[write] profile currency:',
+      error?.message ?? 'no row matched',
+      error?.code ?? '0-rows',
+    );
     return { status: 'error', message: WRITE_ERROR_MESSAGE };
   }
   return { status: 'ok' };
@@ -66,7 +76,8 @@ export async function setProfileCurrency(
  * Persists the signed-in user's `profiles.monthly_budget`. Same posture as
  * `setProfileCurrency`: scoped to `auth.uid() = id` via RLS, unconfigured
  * clients return the generic `WRITE_ERROR_MESSAGE`, raw PostgREST errors
- * never reach the UI. The value is rounded to a non-negative integer before
+ * never reach the UI, and a 0-row update (missing profiles row) fails
+ * closed. The value is rounded to a non-negative integer before
  * sending — the home budget bar treats `monthly_budget` as a whole-number
  * cap and the input on `/settings/budget` already constrains it.
  */
@@ -78,12 +89,20 @@ export async function setProfileBudget(
     return { status: 'error', message: WRITE_ERROR_MESSAGE };
   }
   const sanitized = Math.max(0, Math.round(amount));
-  const { error } = await supabase
+  const { data, error } = (await supabase
     .from('profiles')
     .update({ monthly_budget: sanitized })
-    .eq('id', userId);
-  if (error) {
-    console.warn('[write] profile budget failed:', error.code, error.message);
+    .eq('id', userId)
+    .select('id')) as unknown as {
+    data: { id: string }[] | null;
+    error: { message: string; code?: string } | null;
+  };
+  if (error || !data || data.length === 0) {
+    console.warn(
+      '[write] profile budget:',
+      error?.message ?? 'no row matched',
+      error?.code ?? '0-rows',
+    );
     return { status: 'error', message: WRITE_ERROR_MESSAGE };
   }
   return { status: 'ok' };
@@ -93,7 +112,9 @@ export async function setProfileBudget(
  * Persists the signed-in user's `profiles.full_name`. Same posture as
  * `setProfileCurrency`: scoped to `auth.uid() = id` via RLS, unconfigured
  * clients return the generic `WRITE_ERROR_MESSAGE`, raw PostgREST errors
- * never reach the UI.
+ * never reach the UI, and a 0-row update (missing profiles row) fails
+ * closed — the auth metadata sync below only runs after the row write
+ * is verified.
  */
 export async function setProfileFullName(
   userId: string,
@@ -106,12 +127,20 @@ export async function setProfileFullName(
   if (!trimmed) {
     return { status: 'error', message: WRITE_ERROR_MESSAGE };
   }
-  const { error } = await supabase
+  const { data, error } = (await supabase
     .from('profiles')
     .update({ full_name: trimmed })
-    .eq('id', userId);
-  if (error) {
-    console.warn('[write] profile full_name failed:', error.code, error.message);
+    .eq('id', userId)
+    .select('id')) as unknown as {
+    data: { id: string }[] | null;
+    error: { message: string; code?: string } | null;
+  };
+  if (error || !data || data.length === 0) {
+    console.warn(
+      '[write] profile full_name:',
+      error?.message ?? 'no row matched',
+      error?.code ?? '0-rows',
+    );
     return { status: 'error', message: WRITE_ERROR_MESSAGE };
   }
   // Sync auth user metadata so session-derived display name stays current.

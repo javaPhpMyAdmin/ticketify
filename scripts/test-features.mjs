@@ -316,6 +316,9 @@ async function run() {
 
   await test('setProfileCurrency writes profiles.currency for the signed-in user row', async () => {
     resetAll();
+    // The write is verified through `.select('id')` (fail-closed 0-row
+    // check), so arm the updated-row representation like updateReceipt does.
+    stubMod.__setDeleteRead('profiles', [{ id: 'u1' }]);
     const result = await profileMod.setProfileCurrency('u1', 'USD');
     assert.equal(result.status, 'ok');
     // Payload seam: the exact columns written (not just "an update happened").
@@ -344,6 +347,16 @@ async function run() {
     assert.equal(result.message, profileMod.WRITE_ERROR_MESSAGE);
     assert.equal(result.message, 'No se pudo guardar el cambio. Inténtalo de nuevo.');
     assert.notEqual(result.message, 'permission denied for table profiles');
+  });
+
+  await test('setProfileCurrency fails closed when the update matches no rows', async () => {
+    resetAll();
+    // No write-read armed: `update().select('id')` resolves a 0-row result —
+    // the missing-profiles-row case (nothing creates the row on signup).
+    // The write must report an error, never a silent fake success.
+    const result = await profileMod.setProfileCurrency('u1', 'USD');
+    assert.equal(result.status, 'error');
+    assert.equal(result.message, profileMod.WRITE_ERROR_MESSAGE);
   });
 
   await test('setProfileCurrency reports unconfigured without touching the network', async () => {
