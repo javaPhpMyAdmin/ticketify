@@ -104,7 +104,7 @@ export function CreateHouseholdModal({
       statusBarTranslucent
     >
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.backdrop}
       >
         <Pressable style={styles.backdropTouch} onPress={handleClose} />

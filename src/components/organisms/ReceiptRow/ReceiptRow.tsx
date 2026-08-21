@@ -45,11 +45,13 @@ export function ReceiptRow({
   // fallback stays for rows without a photo or after a load error.
   const [signing, setSigning] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
+  const [imageReady, setImageReady] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const classified = resolveReceiptPhotoPath(imageUrl);
     setSigning(false);
     setImageLoading(false);
+    setImageReady(false);
     setImageFailed(false);
     if (!classified) {
       setPhotoSource(null);
@@ -74,21 +76,30 @@ export function ReceiptRow({
   // Demo images (picsum) and remote ticket photos can fail offline; fall
   // back to the icon circle instead of rendering a blank box.
   const [imageFailed, setImageFailed] = useState(false);
+  // Show spinner from the moment we start resolving until the image is fully
+  // decoded. Without `imageReady`, there's a gap between signing=false and
+  // onLoadStart where the image renders blank before the spinner appears.
   const thumbnailLoading =
-    !imageFailed && (signing || (photoSource !== null && imageLoading));
+    !imageFailed && (signing || imageLoading || (photoSource !== null && !imageReady));
   const row = (
     <>
       {photoSource && !imageFailed ? (
-        <Image
-          source={{ uri: photoSource }}
-          style={styles.thumbnail}
-          onLoadStart={() => setImageLoading(true)}
-          onLoadEnd={() => setImageLoading(false)}
-          onError={() => {
-            setImageLoading(false);
-            setImageFailed(true);
-          }}
-        />
+        <View style={styles.iconCircle}>
+          {!imageReady && <Spinner size="sm" style={styles.spinnerOverlay} />}
+          <Image
+            source={{ uri: photoSource }}
+            style={[styles.thumbnail, !imageReady && styles.thumbnailHidden]}
+            onLoadStart={() => setImageLoading(true)}
+            onLoadEnd={() => {
+              setImageLoading(false);
+              setImageReady(true);
+            }}
+            onError={() => {
+              setImageLoading(false);
+              setImageFailed(true);
+            }}
+          />
+        </View>
       ) : thumbnailLoading ? (
         <View style={styles.iconCircle}>
           <Spinner size="sm" />
@@ -151,6 +162,13 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: radii.sm,
+  },
+  thumbnailHidden: {
+    opacity: 0,
+    position: 'absolute',
+  },
+  spinnerOverlay: {
+    position: 'absolute',
   },
   iconCircle: {
     width: 40,
