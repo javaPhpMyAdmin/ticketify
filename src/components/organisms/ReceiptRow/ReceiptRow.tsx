@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Image, StyleSheet } from 'react-native';
 
-import { Icon, Pressable, Text, View, type IconName } from '@/components';
+import { Icon, Pressable, Spinner, Text, View, type IconName } from '@/components';
 import { formatCurrency, formatShortDate } from '@/lib/format';
 import {
   getSignedReceiptPhotoUrl,
@@ -39,9 +39,18 @@ export function ReceiptRow({
   // to a signed URL (expires ~1h) before rendering. The effect keys on the
   // RAW string so re-renders never re-resolve the signed URL.
   const [photoSource, setPhotoSource] = useState<string | null>(null);
+  // Loading covers BOTH async phases: signed-URL resolution (`signing`,
+  // photoSource still null) and image decode (onLoadStart→onLoadEnd).
+  // The 40×40 slot shows a spinner instead of a blank box; the icon
+  // fallback stays for rows without a photo or after a load error.
+  const [signing, setSigning] = useState(false);
+  const [imageLoading, setImageLoading] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const classified = resolveReceiptPhotoPath(imageUrl);
+    setSigning(false);
+    setImageLoading(false);
+    setImageFailed(false);
     if (!classified) {
       setPhotoSource(null);
       return;
@@ -50,8 +59,12 @@ export function ReceiptRow({
       setPhotoSource(classified.value);
       return;
     }
+    setSigning(true);
     getSignedReceiptPhotoUrl(classified.value).then((signed) => {
-      if (!cancelled) setPhotoSource(signed);
+      if (!cancelled) {
+        setPhotoSource(signed);
+        setSigning(false);
+      }
     });
     return () => {
       cancelled = true;
@@ -61,14 +74,25 @@ export function ReceiptRow({
   // Demo images (picsum) and remote ticket photos can fail offline; fall
   // back to the icon circle instead of rendering a blank box.
   const [imageFailed, setImageFailed] = useState(false);
+  const thumbnailLoading =
+    !imageFailed && (signing || (photoSource !== null && imageLoading));
   const row = (
     <>
       {photoSource && !imageFailed ? (
         <Image
           source={{ uri: photoSource }}
           style={styles.thumbnail}
-          onError={() => setImageFailed(true)}
+          onLoadStart={() => setImageLoading(true)}
+          onLoadEnd={() => setImageLoading(false)}
+          onError={() => {
+            setImageLoading(false);
+            setImageFailed(true);
+          }}
         />
+      ) : thumbnailLoading ? (
+        <View style={styles.iconCircle}>
+          <Spinner size="sm" />
+        </View>
       ) : (
         <View style={[styles.iconCircle, { backgroundColor: iconBg }]}>
           <Icon name={iconName} size={18} color={iconColor} />
