@@ -40,7 +40,12 @@ export interface ProState {
   trialEndsAt: string | null;
   /** Derived: true when `subscriptionStatus === 'trial'` AND trial has not expired. */
   isTrialing: boolean;
-  /** Derived: true when `subscriptionStatus === 'expired'` (trial expired, writes blocked). */
+  /**
+   * Derived: true when writes are blocked. Only true for an expired/
+   * overdue trial that still carries a `trial_ends_at` timestamp (the
+   * cron hasn't normalized yet). Once the cron clears `trial_ends_at`
+   * the profile is a legitimate FREE plan (quota reset) and NOT frozen.
+   */
   isFrozen: boolean;
 
   // --- Actions ---
@@ -69,7 +74,14 @@ function deriveTrialState(
   // 'frozen' (→ paywall) immediately.
   const isExpired = status === 'trial' && trialEndsAt !== null && trialEndsTs <= now;
   const isTrialing = status === 'trial' && !isExpired;
-  const isFrozen = status === 'expired' || isExpired;
+  // 'expired' means frozen ONLY while a trial_ends_at timestamp is still
+  // set — i.e. the cron `expire_overdue_trials` hasn't normalized the
+  // profile yet (blocked, upgrade CTA). Once the cron runs it clears
+  // trial_ends_at to null and the profile becomes a legitimate FREE plan
+  // (tier=free, monthly scan quota reset), so the user must NOT be frozen
+  // and must be able to scan up to the free monthly limit again.
+  const isFrozen =
+    (status === 'expired' && trialEndsAt !== null) || isExpired;
   return { isTrialing, isFrozen };
 }
 
