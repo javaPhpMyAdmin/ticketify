@@ -3,7 +3,6 @@
  * invite code on open, shows it prominently, and offers copy + share.
  */
 import {
-  Alert,
   Modal,
   Pressable,
   Share,
@@ -17,6 +16,7 @@ import { useEffect, useState } from 'react';
 import { Icon, Spinner, Text } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import { generateInviteCode } from '@/lib/supabase/feature-access';
+import { useDialogStore } from '@/stores/use-dialog-store';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -24,6 +24,9 @@ export interface InviteCodeModalProps {
   visible: boolean;
   onClose: () => void;
 }
+
+/** Rough duration of the native slide-down animation. */
+const DISMISS_ANIMATION_MS = 400;
 
 /**
  * Bottom-sheet modal that generates and displays a household invite code.
@@ -72,7 +75,19 @@ export function InviteCodeModal({ visible, onClose }: InviteCodeModalProps) {
   const copyCode = async () => {
     if (!code) return;
     await Clipboard.setStringAsync(code);
-    Alert.alert('Copiado', 'Compartí el código con quien quieras invitar.');
+    // Close the sheet BEFORE the confirmation: DialogHost paints as a root
+    // overlay View, which sits BELOW an open native Modal window — a dialog
+    // shown while the sheet is still up would be invisible. Tradeoff vs the
+    // old native Alert (which floated above the sheet): the sheet closes on
+    // copy and the confirm appears after its dismissal animation.
+    handleClose();
+    setTimeout(() => {
+      useDialogStore.getState().show({
+        title: 'Copiado',
+        message: 'Compartí el código con quien quieras invitar.',
+        primaryLabel: 'Aceptar',
+      });
+    }, DISMISS_ANIMATION_MS);
   };
 
   const shareCode = async () => {

@@ -1,7 +1,6 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -13,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon, Pressable, Spinner, Text, View } from '@/components';
 import { useProfile } from '@/features/profile';
+import { useDialogStore } from '@/stores/use-dialog-store';
 import { colors, radii, spacing, typography } from '@/theme';
 
 /**
@@ -54,9 +54,12 @@ export default function ProfileEditScreen() {
     setError(null);
     const result = await setFullName(trimmed);
     if (result.status === 'ok') {
-      Alert.alert('Listo', 'Tu nombre fue actualizado.', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      useDialogStore.getState().show({
+        title: 'Listo',
+        message: 'Tu nombre fue actualizado.',
+        primaryLabel: 'OK',
+        onPrimary: () => router.back(),
+      });
     } else {
       setSaving(false);
       setError(result.message);

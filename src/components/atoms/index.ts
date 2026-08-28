@@ -26,3 +26,5 @@ export { IconButton } from './IconButton';
 export type { IconButtonProps } from './IconButton';
 
 export { ToastHost } from './Toast';
+
+export { DialogHost } from './Dialog';

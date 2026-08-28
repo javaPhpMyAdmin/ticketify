@@ -10,7 +10,7 @@
  */
 
 // Atoms
-export { Text, View, Icon, Pressable, Spinner, Skeleton, Divider, Badge, IconButton, ToastHost } from './atoms';
+export { Text, View, Icon, Pressable, Spinner, Skeleton, Divider, Badge, IconButton, ToastHost, DialogHost } from './atoms';
 export type {
   TextProps,
   ViewProps,

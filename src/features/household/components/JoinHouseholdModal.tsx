@@ -3,7 +3,6 @@
  * calls the `joinHousehold` RPC on submit.
  */
 import {
-  Alert,
   Modal,
   Pressable,
   StyleSheet,
@@ -16,12 +15,16 @@ import { useState } from 'react';
 import { Icon, Spinner, Text } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import { joinHousehold } from '@/lib/supabase/feature-access';
+import { useDialogStore } from '@/stores/use-dialog-store';
 import { colors, radii, spacing, typography } from '@/theme';
 
 export interface JoinHouseholdModalProps {
   visible: boolean;
   onClose: () => void;
 }
+
+/** Rough duration of the native slide-down animation. */
+const DISMISS_ANIMATION_MS = 400;
 
 /**
  * Bottom-sheet modal for joining a household via a 6-char invite code.
@@ -46,9 +49,20 @@ export function JoinHouseholdModal({ visible, onClose }: JoinHouseholdModalProps
     const result = await joinHousehold(trimmed);
     setLoading(false);
     if (result.status === 'ok') {
-      Alert.alert('¡Listo!', 'Te uniste al hogar.');
+      // Close the sheet BEFORE showing the dialog: DialogHost is a root
+      // overlay View, which paints BELOW an open native Modal window — a
+      // dialog shown while the sheet is still up would be invisible. Reuse
+      // CreateHouseholdModal's pattern: confirm after the dismissal
+      // animation finishes.
       setCode('');
       onClose();
+      setTimeout(() => {
+        useDialogStore.getState().show({
+          title: '¡Listo!',
+          message: 'Te uniste al hogar.',
+          primaryLabel: 'Aceptar',
+        });
+      }, DISMISS_ANIMATION_MS);
     } else {
       setError(
         result.status === 'error'

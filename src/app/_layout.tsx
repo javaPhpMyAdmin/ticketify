@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import { ToastHost } from '@/components';
+import { DialogHost, ToastHost } from '@/components';
 import { useSessionStore } from '@/features/auth';
 import { ProBootstrap } from '@/features/pro';
 import { decideSessionNavigation } from '@/lib/auth/session-nav';
@@ -163,6 +163,10 @@ export default function RootLayout() {
             toast visible on the destination screen instead of dying with
             the source route. */}
         <ToastHost />
+        {/* Root-mounted so a `show()` survives navigation, same as the
+            toast host. Renders a centered overlay View (not Modal) above
+            the Stack — see DialogHost for the layering tradeoff. */}
+        <DialogHost />
       </QueryClientProvider>
     </GestureHandlerRootView>
   );
