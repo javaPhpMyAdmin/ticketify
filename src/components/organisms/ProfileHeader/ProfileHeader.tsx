@@ -15,6 +15,13 @@ export interface ProfileHeaderProps {
   subtitle?: string;
   /** Tier label. 'free' -> "Free Tier", 'pro' -> "Pro Tier". */
   tier: 'free' | 'pro';
+  /**
+   * Optional override for the tier chip label. When provided (e.g. a
+   * "Prueba expirada" state for a frozen trial), it replaces the automatic
+   * "Plan Gratuito / Plan Pro" label so the header reflects the real
+   * subscription lifecycle rather than the access tier alone.
+   */
+  tierLabel?: string;
 }
 
 /**
@@ -29,6 +36,7 @@ export function ProfileHeader({
   avatarUrl,
   subtitle,
   tier,
+  tierLabel,
 }: ProfileHeaderProps) {
   const avatarText = (initial ?? name?.[0] ?? '?').toUpperCase();
   const [avatarFailed, setAvatarFailed] = useState(false);
@@ -54,7 +62,11 @@ export function ProfileHeader({
         <View style={styles.info}>
           <Text style={styles.name}>{name}</Text>
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-          <Chip label={tier === 'free' ? 'Plan Gratuito' : 'Plan Pro'} />
+          <Chip
+            label={
+              tierLabel ?? (tier === 'free' ? 'Plan Gratuito' : 'Plan Pro')
+            }
+          />
         </View>
       </View>
     </Card>

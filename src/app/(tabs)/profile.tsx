@@ -152,6 +152,9 @@ export default function ProfileScreen() {
             name={user.full_name ?? 'Tú'}
             avatarUrl={user.avatar_url}
             tier={user.tier}
+            // A frozen trial (expired) is no longer a paying Pro user; show
+            // the real lifecycle state instead of the access-tier chip.
+            tierLabel={isFrozen ? 'Prueba expirada' : undefined}
           />
         ) : null}
 
