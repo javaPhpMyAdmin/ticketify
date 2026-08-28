@@ -537,6 +537,26 @@ export async function syncSubscriptionStatus(
   return { status: 'ok', data: undefined };
 }
 
+/**
+ * Materialize any overdue trial to the expired/free state, resetting the
+ * current-month scan quota for affected users. Calls `expire_overdue_trials`
+ * (migration 0020) — SECURITY DEFINER so it can transition tier/status and
+ * reset scans even though those columns are server-managed. Idempotent:
+ * users already expired are skipped. Returns the number of profiles expired.
+ *
+ * This is the client-side safety net on app open; the server cron runs the
+ * same RPC every 6 hours for users who never open the app again.
+ */
+export async function expireOverdueTrials(): Promise<FeatureReadResult<number>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { data, error } = await supabase.rpc('expire_overdue_trials');
+  if (error) {
+    console.warn('[expireOverdueTrials] failed:', error.code, error.message);
+    return { status: 'error', message: error.message };
+  }
+  return { status: 'ok', data: (data ?? 0) as number };
+}
+
 // ---------------------------------------------------------------------------
 // Monthly totals cache (migration 0015)
 // ---------------------------------------------------------------------------

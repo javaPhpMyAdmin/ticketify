@@ -4,6 +4,7 @@ import { StyleSheet } from 'react-native';
 import { Card, Icon, Pressable, ProgressBar, Text, View } from '@/components';
 import { colors, spacing, typography } from '@/theme';
 import { computeQuotaState } from '@/features/home/quota';
+import { MONTHS_FULL_ES } from '@/lib/format';
 
 export interface UsageMeterProps {
   used: number;
@@ -20,6 +21,8 @@ export interface UsageMeterProps {
    */
   isPro: boolean;
   kicker?: string;
+  /** Override for the "Reset in N days" label. Defaults to a computed
+   *  "Se restablece el 1º de {próximo mes}" instead of a hardcoded day count. */
   resetLabel?: string;
   upgradeLabel?: string;
   /** Override for the paywall CTA copy. Only rendered when exhausted. */
@@ -44,11 +47,18 @@ export function UsageMeter({
   limit,
   isPro,
   kicker = 'Escaneos gratuitos mensuales',
-  resetLabel = 'Se restablece en 12 días',
+  resetLabel,
   upgradeLabel = 'Actualiza para obtener escaneos ilimitados.',
   ctaLabel = 'Mejorar a Pro',
 }: UsageMeterProps) {
   const state = computeQuotaState(used, limit, isPro);
+  // The monthly quota resets on the 1st of the NEXT month. Compute the
+  // upcoming month name dynamically (es-AR), e.g. today in August →
+  // "Se restablece el 1º de septiembre", instead of a stale day count.
+  const nextMonthIndex = (new Date().getMonth() + 1) % 12;
+  const computedResetLabel =
+    resetLabel ??
+    `Se restablece el 1º de ${MONTHS_FULL_ES[nextMonthIndex]}`;
 
   if (state.unlimited) {
     return (
@@ -87,7 +97,7 @@ export function UsageMeter({
       <View style={styles.progressWrap}>
         <ProgressBar value={state.ratio} />
       </View>
-      <Text style={styles.reset}>{resetLabel}</Text>
+      <Text style={styles.reset}>{computedResetLabel}</Text>
       {state.exhausted ? (
         <>
           <Text style={styles.upgrade}>{upgradeLabel}</Text>

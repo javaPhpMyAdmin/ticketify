@@ -62,11 +62,14 @@ function deriveTrialState(
   trialEndsAt: string | null,
 ): { isTrialing: boolean; isFrozen: boolean } {
   const now = Date.now();
-  const isTrialing =
-    status === 'trial' &&
-    trialEndsAt !== null &&
-    new Date(trialEndsAt).getTime() > now;
-  const isFrozen = status === 'expired';
+  const trialEndsTs = trialEndsAt ? new Date(trialEndsAt).getTime() : 0;
+  // A trial whose timestamp is in the past is expired even if the DB still
+  // says 'trial' (the cron that persists 'expired' may not have run yet).
+  // This is the client-side safety net so an overdue trial drops to
+  // 'frozen' (→ paywall) immediately.
+  const isExpired = status === 'trial' && trialEndsAt !== null && trialEndsTs <= now;
+  const isTrialing = status === 'trial' && !isExpired;
+  const isFrozen = status === 'expired' || isExpired;
   return { isTrialing, isFrozen };
 }
 
@@ -91,13 +94,15 @@ export const useProStore = create<ProState>((set) => ({
 
   setSubscriptionState: (status, trialEndsAt) => {
     const { isTrialing, isFrozen } = deriveTrialState(status, trialEndsAt);
+    // isTrialing is false only when the trial is genuinely expired, so a
+    // non-expired trial OR an active subscription grants Pro access.
+    const isPro = status === 'active' || isTrialing;
     set({
       subscriptionStatus: status,
       trialEndsAt,
       isTrialing,
       isFrozen,
-      // Trial and active users get Pro access.
-      isPro: status === 'trial' || status === 'active',
+      isPro,
     });
   },
 }));

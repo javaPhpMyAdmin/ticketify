@@ -36,7 +36,10 @@ import {
   getCustomerInfo,
   isNativeAvailable,
 } from '@/lib/revenuecat';
-import { readProfileRow } from '@/lib/supabase/feature-access';
+import {
+  expireOverdueTrials,
+  readProfileRow,
+} from '@/lib/supabase/feature-access';
 import { useProStore } from '@/stores/use-pro-store';
 
 import { isProOverrideEnabled } from './gate';
@@ -60,10 +63,24 @@ async function syncSubscriptionFromDB(userId: string): Promise<void> {
   const result = await readProfileRow(userId);
   if (result.status === 'ok' && result.data) {
     const { subscription_status, trial_ends_at } = result.data;
-    useProStore.getState().setSubscriptionState(
-      subscription_status ?? 'none',
-      trial_ends_at ?? null,
-    );
+    const status = subscription_status ?? 'none';
+    const trialEndsAt = trial_ends_at ?? null;
+
+    // If the DB still says 'trial' but the trial has already expired by
+    // date, materialize the transition server-side via the shared
+    // `expire_overdue_trials` RPC (sets expired + free tier + resets the
+    // current-month scan quota). This keeps the DB (the source of truth)
+    // consistent even before the cron runs, so a reboot/re-login does not
+    // resurrect a stale 'trial' → PRO.
+    const isOverdueTrial =
+      status === 'trial' &&
+      trialEndsAt !== null &&
+      new Date(trialEndsAt).getTime() <= Date.now();
+    if (isOverdueTrial) {
+      void expireOverdueTrials();
+    }
+
+    useProStore.getState().setSubscriptionState(status, trialEndsAt);
   }
 }
 
