@@ -4,7 +4,7 @@
  *
  * Instead of overlaying entire screens, this hook intercepts individual
  * write actions: if the user's trial is expired, the action is blocked
- * and an Alert offers an upgrade CTA. Reads remain unaffected.
+ * and a centered dialog offers an upgrade CTA. Reads remain unaffected.
  *
  * Usage:
  *   const { guard, isFrozen } = useFrozenGuard();
@@ -12,8 +12,9 @@
  *   // or guard(async () => { await save(...) });
  */
 import { useCallback } from 'react';
-import { Alert } from 'react-native';
 import { useRouter } from 'expo-router';
+
+import { useDialogStore } from '@/stores/use-dialog-store';
 
 import { useProEntitlement } from './useProEntitlement';
 
@@ -21,7 +22,7 @@ export interface FrozenGuardResult {
   /** True when the user's trial is expired and writes are blocked. */
   isFrozen: boolean;
   /**
-   * Wraps a write action: when frozen, shows an upgrade Alert and does
+   * Wraps a write action: when frozen, shows an upgrade dialog and does
    * NOT call the action. When not frozen, calls the action immediately.
    * Supports both sync and async callbacks.
    */
@@ -39,13 +40,13 @@ export function useFrozenGuard(): FrozenGuardResult {
   const guard = useCallback(
     <T>(action: () => T | Promise<T>): T | Promise<T> | undefined => {
       if (isFrozen) {
-        Alert.alert(FROZEN_TITLE, FROZEN_MESSAGE, [
-          { text: 'Cancelar', style: 'cancel' },
-          {
-            text: 'Ver planes',
-            onPress: () => router.push('/pro'),
-          },
-        ]);
+        useDialogStore.getState().show({
+          title: FROZEN_TITLE,
+          message: FROZEN_MESSAGE,
+          primaryLabel: 'Ver planes',
+          onPrimary: () => router.push('/pro'),
+          secondaryLabel: 'Cancelar',
+        });
         return undefined;
       }
       return action();

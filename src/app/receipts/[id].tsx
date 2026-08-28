@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, BackHandler, Image, ScrollView, StyleSheet } from 'react-native';
+import { BackHandler, Image, ScrollView, StyleSheet } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -24,6 +24,7 @@ import {
   resolveReceiptPhotoPath,
 } from '@/lib/supabase/receipt-photo';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
+import { useDialogStore } from '@/stores/use-dialog-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 import { ReceiptCategoryItemsModal } from './ReceiptCategoryItemsModal';
@@ -232,10 +233,11 @@ export default function ReceiptDetailScreen() {
       if (mounted.current) router.push(`/ticket/review/${id}`);
     } catch (err) {
       if (mounted.current) {
-        Alert.alert(
-          'No se pudo editar el recibo',
-          err instanceof Error ? err.message : undefined,
-        );
+        useDialogStore.getState().show({
+          title: 'No se pudo editar el recibo',
+          message: err instanceof Error ? err.message : undefined,
+          primaryLabel: 'Aceptar',
+        });
       }
     } finally {
       editInFlight.current = false;
@@ -259,27 +261,25 @@ export default function ReceiptDetailScreen() {
       if (mounted.current) router.back();
     } catch (err) {
       setDeleting(false);
-      Alert.alert(
-        'No se pudo eliminar el recibo',
-        err instanceof Error ? err.message : undefined,
-      );
+      useDialogStore.getState().show({
+        title: 'No se pudo eliminar el recibo',
+        message: err instanceof Error ? err.message : undefined,
+        primaryLabel: 'Aceptar',
+      });
     }
   };
 
   const handleDeletePress = () => {
     if (deleting || loading) return;
-    Alert.alert(
-      'Eliminar recibo',
-      'Se eliminará el recibo y su foto. Esta acción no se puede deshacer.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: () => void deleteAndBack(),
-        },
-      ],
-    );
+    useDialogStore.getState().show({
+      title: 'Eliminar recibo',
+      message:
+        'Se eliminará el recibo y su foto. Esta acción no se puede deshacer.',
+      primaryLabel: 'Eliminar',
+      tone: 'danger',
+      secondaryLabel: 'Cancelar',
+      onPrimary: () => void deleteAndBack(),
+    });
   };
 
   const header = (

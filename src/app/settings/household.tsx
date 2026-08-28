@@ -11,7 +11,6 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-  Alert,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -31,6 +30,7 @@ import {
 } from '@/lib/supabase/feature-access';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
+import { useDialogStore } from '@/stores/use-dialog-store';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -64,66 +64,68 @@ function HouseholdScreenContent({
 
   // ── Leave household ────────────────────────────────────────────────────
   const handleLeave = () => {
-    Alert.alert(
-      'Salir del hogar',
-      '¿Seguro que querés salir? Si sos el único miembro, el hogar se disuelve.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Salir',
-          style: 'destructive',
-          onPress: async () => {
-            setLeaving(true);
-            const result = await leaveHousehold();
-            if (result.status === 'ok') {
-              useHouseholdStore.getState().reset();
-              setHouseholdSharing(false);
-              if (userId) {
-                void queryClient.invalidateQueries({
-                  queryKey: queryKeys.household(userId),
-                });
-              }
-            } else {
-              Alert.alert('Error', READ_ERROR_MESSAGE);
-            }
-            setLeaving(false);
-          },
-        },
-      ],
-    );
+    useDialogStore.getState().show({
+      title: 'Salir del hogar',
+      message:
+        '¿Seguro que querés salir? Si sos el único miembro, el hogar se disuelve.',
+      primaryLabel: 'Salir',
+      tone: 'danger',
+      secondaryLabel: 'Cancelar',
+      onPrimary: async () => {
+        setLeaving(true);
+        const result = await leaveHousehold();
+        if (result.status === 'ok') {
+          useHouseholdStore.getState().reset();
+          setHouseholdSharing(false);
+          if (userId) {
+            void queryClient.invalidateQueries({
+              queryKey: queryKeys.household(userId),
+            });
+          }
+        } else {
+          useDialogStore.getState().show({
+            title: 'Error',
+            message: READ_ERROR_MESSAGE,
+            primaryLabel: 'Aceptar',
+          });
+        }
+        setLeaving(false);
+      },
+    });
   };
 
   // ── Disband household (owner only) ─────────────────────────────────────
   const handleDisband = () => {
     if (!household) return;
     guard(() => {
-      Alert.alert(
-        'Disolver hogar',
-        'Se eliminará el hogar para todos los miembros. Esta acción no se puede deshacer.',
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          {
-            text: 'Disolver',
-            style: 'destructive',
-            onPress: async () => {
-              setDisbanding(true);
-              const result = await disbandHousehold(household.id);
-              if (result.status === 'ok') {
-                useHouseholdStore.getState().reset();
-                setHouseholdSharing(false);
-                if (userId) {
-                  void queryClient.invalidateQueries({
-                    queryKey: queryKeys.household(userId),
-                  });
-                }
-              } else {
-                Alert.alert('Error', READ_ERROR_MESSAGE);
-              }
-              setDisbanding(false);
-            },
-          },
-        ],
-      );
+      useDialogStore.getState().show({
+        title: 'Disolver hogar',
+        message:
+          'Se eliminará el hogar para todos los miembros. Esta acción no se puede deshacer.',
+        primaryLabel: 'Disolver',
+        tone: 'danger',
+        secondaryLabel: 'Cancelar',
+        onPrimary: async () => {
+          setDisbanding(true);
+          const result = await disbandHousehold(household.id);
+          if (result.status === 'ok') {
+            useHouseholdStore.getState().reset();
+            setHouseholdSharing(false);
+            if (userId) {
+              void queryClient.invalidateQueries({
+                queryKey: queryKeys.household(userId),
+              });
+            }
+          } else {
+            useDialogStore.getState().show({
+              title: 'Error',
+              message: READ_ERROR_MESSAGE,
+              primaryLabel: 'Aceptar',
+            });
+          }
+          setDisbanding(false);
+        },
+      });
     });
   };
 

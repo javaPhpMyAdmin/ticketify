@@ -8,7 +8,6 @@
  * swaps branches while this Modal is still animating.
  */
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -28,6 +27,7 @@ import {
 } from '@/lib/supabase/feature-access';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
+import { useDialogStore } from '@/stores/use-dialog-store';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -76,7 +76,14 @@ export function CreateHouseholdModal({
         void queryClient.invalidateQueries({
           queryKey: queryKeys.household(userId),
         });
-        Alert.alert('¡Listo!', `Creaste el hogar "${trimmed}".`);
+        // The sheet is already hidden by this point, so the dialog (a root
+        // overlay View that paints below any open native Modal window) is
+        // visible over the destination screen.
+        useDialogStore.getState().show({
+          title: '¡Listo!',
+          message: `Creaste el hogar "${trimmed}".`,
+          primaryLabel: 'Aceptar',
+        });
       }, DISMISS_ANIMATION_MS);
     } else {
       setError(
