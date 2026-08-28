@@ -108,13 +108,15 @@ const styles = StyleSheet.create({
   },
   amount: {
     color: colors.textSecondary,
-    fontSize: 17.5,
+    fontSize: 17,
     fontWeight: '700',
+    right: 3,
   },
   percent: {
     color: colors.primary,
-    fontSize: 17.5,
+    fontSize: 17,
     fontWeight: '700',
+    right: 3,
   },
   track: {
     height: 8,

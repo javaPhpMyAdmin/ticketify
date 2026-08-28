@@ -1,6 +1,13 @@
 import { StyleSheet } from 'react-native';
 
-import { Icon, Pressable, ProgressBar, Text, View, type IconName } from '@/components';
+import {
+  Icon,
+  Pressable,
+  ProgressBar,
+  Text,
+  View,
+  type IconName,
+} from '@/components';
 import { formatCurrency } from '@/lib/format';
 import { radii, spacing, typography } from '@/theme';
 
@@ -51,8 +58,8 @@ export function CategoryBudgetCard({
       ? amount / limit >= 1
         ? '#EF4444'
         : amount / limit >= 0.7
-          ? '#F59E0B'
-          : '#10B981'
+        ? '#F59E0B'
+        : '#10B981'
       : undefined;
 
   return (
@@ -153,6 +160,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    top: 10,
   },
   name: {
     ...typography.headlineMd,
@@ -163,8 +171,10 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   itemCount: {
-    ...typography.labelSm,
-    opacity: 0.75,
+    // ...typography.labelSm,
+    fontSize: 14,
+    fontWeight: '900',
+    opacity: 0.9,
   },
   budgetSection: {
     gap: 2,
