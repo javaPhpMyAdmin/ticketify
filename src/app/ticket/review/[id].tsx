@@ -8,7 +8,13 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Animated, Image, ScrollView, StyleSheet, TextInput } from 'react-native';
+import {
+  Animated,
+  Image,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -24,15 +30,15 @@ import {
 import { useSessionUser } from '@/features/auth';
 import { RenameItemModal, sanitizeItemName } from '@/features/items';
 import {
+  buildFeedRow,
   CategoryPickerModal,
   ReceiptItemsList,
-  buildFeedRow,
   reviewItemsToFeedItems,
+  saveReceipt,
+  updateReceipt,
   useReceiptDraftActions,
   useReceiptDraftDraft,
   useScanTicket,
-  saveReceipt,
-  updateReceipt,
 } from '@/features/tickets';
 import { formatCurrency, todayLocalISO } from '@/lib/format';
 import {
@@ -43,8 +49,8 @@ import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { useToastStore } from '@/stores/use-toast-store';
 import { colors, radii, spacing, typography } from '@/theme';
-import { PAYMENT_METHOD_LABELS } from '@/types';
 import type { CardType, PaymentMethod, ReviewItem } from '@/types';
+import { PAYMENT_METHOD_LABELS } from '@/types';
 
 /**
  * User-safe copy for save failures. Same posture as the profile/budget
@@ -235,7 +241,11 @@ export default function ReviewReceiptScreen() {
   // impossible direction (paid more than the items add up to).
   // In edit mode the user is intentionally changing items, so the declared
   // total may lag behind — skip the mismatch check.
-  const matches = editingMode ? true : (draft ? draft.total <= itemsTotal + 0.01 : false);
+  const matches = editingMode
+    ? true
+    : draft
+    ? draft.total <= itemsTotal + 0.01
+    : false;
 
   // Read-only card detail shown inside the "Tarjeta" chip, e.g.
   // "Tarjeta · Maestro Débito". Gated on the selected payment method:
@@ -384,10 +394,12 @@ export default function ReviewReceiptScreen() {
       // mounted at the root in `_layout.tsx`, so it survives the unmount
       // and renders on the destination route instead of dying with the
       // review screen.
-      useToastStore.getState().show(
-        editingMode ? 'Cambios guardados.' : 'Recibo guardado.',
-        'success',
-      );
+      useToastStore
+        .getState()
+        .show(
+          editingMode ? 'Cambios guardados.' : 'Recibo guardado.',
+          'success',
+        );
       router.dismiss();
     } catch {
       // Writes can reject (network, RLS); the review screen stays up with
@@ -482,22 +494,30 @@ export default function ReviewReceiptScreen() {
                     driver). Separate nodes keep the dots on the same line
                     AND give them a real node to animate. */}
                 <View style={styles.parsingRow}>
-                  <Text style={styles.parsingTitle}>Procesando recibo</Text>
+                  <Text style={styles.parsingTitle}>Procesando ticket</Text>
                   {dotOpacity.map((dot, index) => (
                     <Animated.Text
                       key={index}
-                      style={[styles.parsingTitle, styles.parsingDot, { opacity: dot }]}
+                      style={[
+                        styles.parsingTitle,
+                        styles.parsingDot,
+                        { opacity: dot },
+                      ]}
                     >
                       .
                     </Animated.Text>
                   ))}
                 </View>
                 <View style={styles.parsingRow}>
-                  <Text style={styles.parsingHint}>Esperá un momento</Text>
+                  <Text style={styles.parsingHint}>Espera un momento</Text>
                   {dotOpacity.map((dot, index) => (
                     <Animated.Text
                       key={index}
-                      style={[styles.parsingHint, styles.parsingDot, { opacity: dot }]}
+                      style={[
+                        styles.parsingHint,
+                        styles.parsingDot,
+                        { opacity: dot },
+                      ]}
                     >
                       .
                     </Animated.Text>
@@ -514,7 +534,7 @@ export default function ReviewReceiptScreen() {
                 No se pudo procesar este recibo
               </Text>
               <Text style={styles.parsingHint}>
-                Revisa la imagen e inténtalo de nuevo.
+                Revisa que la foto sea clara y inténtalo de nuevo.
               </Text>
               <Pressable
                 onPress={() => void runParse()}
@@ -597,7 +617,7 @@ export default function ReviewReceiptScreen() {
         {!parsing ? (
           <View style={styles.footerWrap}>
             <View style={styles.totalRow}>
-              <Text style={styles.kicker}>Total del recibo</Text>
+              <Text style={styles.kicker}>Total del ticket</Text>
               <Text style={styles.totalValue}>
                 {formatCurrency(draft?.total ?? itemsTotal, currency)}
               </Text>
@@ -653,7 +673,7 @@ export default function ReviewReceiptScreen() {
         itemName={sheetTarget?.name ?? ''}
         selectedKey={
           sheetTarget
-            ? (sheetTarget.category_id ?? sheetTarget.ai_suggested_category_id)
+            ? sheetTarget.category_id ?? sheetTarget.ai_suggested_category_id
             : null
         }
         onSelect={handleSelectCategory}

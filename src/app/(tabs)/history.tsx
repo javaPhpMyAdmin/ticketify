@@ -23,6 +23,7 @@ import {
   View,
 } from '@/components';
 import { useMonthlyTotals } from '@/features/analytics';
+import { useSessionStore, useSessionUser } from '@/features/auth';
 import { categoryDetailHref } from '@/features/charts';
 import {
   aggregateCategoriesByMonth,
@@ -37,13 +38,11 @@ import {
 } from '@/features/home';
 import { getExpenseCategory } from '@/features/home/categories';
 import { formatCurrency } from '@/lib/format';
-import { useSessionUser } from '@/features/auth';
 import { toQueryData } from '@/lib/supabase/query-adapters';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
-import { useSessionStore } from '../../features/auth';
 
 /**
  * NativeTabs (iOS) does not push screen content up: the ScrollView must clear
@@ -406,7 +405,7 @@ export default function HistoryScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={`Ocultar ${item.name}`}
                   >
-                    <Icon name="trash" size={24} color="red" />
+                    <Icon name="trash" size={27} color="red" />
                   </Pressable>
                 </View>
               ))}
@@ -616,7 +615,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
+    // backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   },
