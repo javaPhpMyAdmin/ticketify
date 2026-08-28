@@ -391,7 +391,7 @@ export default function HistoryScreen() {
                     <Icon
                       name="chevron.right"
                       size={16}
-                      color={colors.onPrimary}
+                      color={colors.primary}
                     />
                   </Pressable>
                   <Pressable
@@ -405,7 +405,7 @@ export default function HistoryScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={`Ocultar ${item.name}`}
                   >
-                    <Icon name="trash" size={27} color="red" />
+                    <Icon name="trash" size={30} color="red" />
                   </Pressable>
                 </View>
               ))}
@@ -616,7 +616,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     // backgroundColor: colors.surface,
-    borderWidth: 1,
+    // borderWidth: 1,
     borderColor: colors.border,
   },
   hideItemPressed: {

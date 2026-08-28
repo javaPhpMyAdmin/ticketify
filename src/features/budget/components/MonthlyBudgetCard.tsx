@@ -43,9 +43,9 @@ export function MonthlyBudgetCard({
   // pixel-stable across states.
   const body = (
     <>
-      <View style={{ backgroundColor: colors.surface }}>
+      <View style={{ height: 50, backgroundColor: colors.surface }}>
         <Text style={styles.kicker}>MICROGASTOS</Text>
-        <Text style={styles.calloutLabel}>Antojos/Snacks</Text>
+        <Text style={styles.calloutLabel}>Antojos/Impulsos</Text>
       </View>
       <View style={styles.calloutRow}>
         <View
@@ -140,6 +140,7 @@ const styles = StyleSheet.create({
     top: 2,
     fontWeight: '600',
     fontSize: 22,
+    lineHeight: 26,
   },
   calloutAmount: {
     // ...typography.labelSm,
