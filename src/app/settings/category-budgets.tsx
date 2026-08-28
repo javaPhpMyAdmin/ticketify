@@ -56,7 +56,18 @@ export default function CategoryBudgetsScreen() {
       const existing = existingMap[key];
       initial[key] = existing !== undefined ? String(existing) : '';
     }
-    setDrafts(initial);
+    // Only replace the drafts object when the computed values actually
+    // differ from the previous ones. Returning `prev` (same reference)
+    // when unchanged prevents a fresh-object setState on every effect run,
+    // which previously caused "Maximum update depth exceeded".
+    setDrafts((prev) => {
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(initial);
+      const same =
+        prevKeys.length === nextKeys.length &&
+        prevKeys.every((k) => prev[k] === initial[k]);
+      return same ? prev : initial;
+    });
   }, [existingMap, dirty, submitting]);
 
   const categoryKeys = useMemo(
