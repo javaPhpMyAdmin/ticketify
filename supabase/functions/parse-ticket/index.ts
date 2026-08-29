@@ -27,6 +27,7 @@ import {
   ParseError,
   parseListJson,
   parseReceiptJson,
+  ProviderOverloadedError,
   type ParsedItem,
   type ParsedReceipt,
 } from './lib/parse.ts';
@@ -49,6 +50,7 @@ interface ErrorResponse {
     | 'quota_exceeded'
     | 'bad_request'
     | 'parse_failed'
+    | 'provider_overloaded'
     | 'internal';
   /** Quota metadata, only present on quota_exceeded responses. */
   limit?: number;
@@ -249,6 +251,14 @@ async function callGemini(
       `Gemini request failed (HTTP ${res.status})`,
       detail,
     );
+    if (res.status === 503 || res.status === 429) {
+      // Provider saturation (model "high demand" / rate limiting) is
+      // transient, not a user or image problem — mark it so the handler
+      // answers with the provider_overloaded envelope.
+      throw new ProviderOverloadedError(
+        `Gemini request failed (HTTP ${res.status}): ${detail}`,
+      );
+    }
     throw new Error(`Gemini request failed (HTTP ${res.status}): ${detail}`);
   }
 
@@ -333,6 +343,13 @@ async function callGeminiListMode(
       `Gemini list-mode request failed (HTTP ${res.status})`,
       detail,
     );
+    if (res.status === 503 || res.status === 429) {
+      // Same provider-saturation classification as receipt mode: transient
+      // overload, not a user/photo problem.
+      throw new ProviderOverloadedError(
+        `Gemini list-mode request failed (HTTP ${res.status}): ${detail}`,
+      );
+    }
     throw new Error(
       `Gemini list-mode request failed (HTTP ${res.status}): ${detail}`,
     );
@@ -586,12 +603,24 @@ Deno.serve(async (req: Request) => {
         const list = await callGeminiListMode(body.image_base64, mimeType);
         parsed = listToReceipt(list);
       } catch (listErr) {
+        if (listErr instanceof ProviderOverloadedError) {
+          // List mode hit provider saturation (Gemini 503 / 429): the image
+          // is fine, the provider is overloaded — same envelope as receipt
+          // mode. Returning parse_failed here would falsely blame the photo.
+          return jsonError(503, 'provider_overloaded', listErr.message);
+        }
         const listDetail =
           listErr instanceof Error ? listErr.message : 'unknown list error';
         console.error('[parse-ticket]', 'list mode failed:', listDetail);
         console.error('[parse-ticket]', 'parse failed:', err.message);
         return jsonError(422, 'parse_failed', err.message);
       }
+    } else if (err instanceof ProviderOverloadedError) {
+      // Provider saturation (Gemini HTTP 503 / provider 429 "high demand")
+      // is transient, not a user or image problem: answer with a dedicated
+      // envelope so the client can ask the user to retry in a moment. The
+      // full detail was already logged at the throw site.
+      return jsonError(503, 'provider_overloaded', err.message);
     } else {
       // Never leak server-side detail (Gemini HTTP text, RPC errors) to the
       // client — log it for operators and answer with a generic message.
