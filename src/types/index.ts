@@ -80,6 +80,12 @@ export interface User {
    * Used for client-side offline expiry checks.
    */
   trial_ends_at: string | null;
+  /**
+   * Monotonic flag: true once the user has EVER made a real paid purchase
+   * (migration 0021). Set server-side only (mark_ever_paid). A former paid
+   * user can never start a free trial again.
+   */
+  ever_paid: boolean;
 }
 
 /** Mirrors `public.categories`. Global taxonomy, readable by all auth users. */

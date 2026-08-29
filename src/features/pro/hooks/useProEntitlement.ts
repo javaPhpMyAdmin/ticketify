@@ -32,6 +32,8 @@ export interface ProEntitlement {
   isTrialing: boolean;
   /** True when subscription_status === 'expired' (trial expired, writes blocked). */
   isFrozen: boolean;
+  /** True once the user has EVER made a real paid purchase (monotonic, 0021). */
+  everPaid: boolean;
   /** Whole days remaining in the trial, or 0 if no active trial. */
   daysRemaining: number;
 }
@@ -52,6 +54,7 @@ export function useProEntitlement(): ProEntitlement {
   const trialEndsAt = useProStore((s) => s.trialEndsAt);
   const isTrialing = useProStore((s) => s.isTrialing);
   const isFrozen = useProStore((s) => s.isFrozen);
+  const everPaid = useProStore((s) => s.everPaid);
   const daysRemaining = computeDaysRemaining(trialEndsAt);
   return {
     isPro,
@@ -61,6 +64,7 @@ export function useProEntitlement(): ProEntitlement {
     trialEndsAt,
     isTrialing,
     isFrozen,
+    everPaid,
     daysRemaining,
   };
 }

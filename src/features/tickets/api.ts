@@ -194,6 +194,8 @@ function messageFromEdgeError(body: Partial<EdgeErrorBody>): string {
       return 'Ocurrió un problema al procesar el recibo. Inténtalo de nuevo.';
     case 'provider_overloaded':
       return 'El servicio de escaneo está saturado en este momento. Intentá de nuevo en unos segundos.';
+    case 'rate_limited':
+      return 'Escaneaste demasiados recibos en la última hora. Intentá de nuevo más tarde.';
     default:
       return GENERIC_PARSE_MESSAGE;
   }
@@ -383,6 +385,27 @@ export async function parseTicket(imageUri: string): Promise<ParsedReceipt> {
  */
 const SAVE_ERROR_MESSAGE = 'No se pudo guardar el recibo. Inténtalo de nuevo.';
 
+/**
+ * User-safe copy shown when a free user has reached the monthly 15-scan cap:
+ * the save is aborted (HARD cap) and only upgrading lifts the limit. Mirrors
+ * the pre-parse `quota_exceeded` surface so both gates speak the same message.
+ */
+export const QUOTA_ERROR_MESSAGE =
+  'Llegaste al límite de 15 escaneos este mes. Pasate a Pro para escanear sin límite.';
+
+/**
+ * Marker error thrown by `saveReceipt` when `consume_scan_on_save` returns
+ * `ok=false` (the user is at/over the monthly cap). The review screen checks
+ * `instanceof` so it can surface the quota copy instead of the generic save
+ * message — the abort preserves the draft so the user can upgrade and retry.
+ */
+export class QuotaExceededError extends Error {
+  constructor() {
+    super(QUOTA_ERROR_MESSAGE);
+    this.name = 'QuotaExceededError';
+  }
+}
+
 /** User-safe copy when the purchase read for editing fails (same posture). */
 const LOAD_ERROR_MESSAGE = 'No se pudo cargar el recibo. Inténtalo de nuevo.';
 
@@ -497,6 +520,29 @@ export async function saveReceipt(
     imageUrl = uploaded.path;
   }
 
+  // HARD monthly cap: reserve the scan slot BEFORE persisting anything. The
+  // RPC atomically increments the usage row and reports the new count; if
+  // `ok=false` the user is at/over their monthly limit and NO purchase may
+  // be written. We clean up the just-uploaded object (no orphan in the
+  // bucket) and throw a quota-specific error the review screen surfaces as
+  // an upgrade dialog — the draft is preserved so the user can retry after
+  // upgrading. Unlike the old parse-time consume, a slot consumed here that
+  // later hits an infra failure is deliberately left consumed: saving IS the
+  // user's confirmed intent, so the reservation must not silently refund.
+  const consume = await supabase.rpc('consume_scan_on_save');
+  // The RPC returns `{ ok, scans_used, scans_limit }` (or errors on the
+  // network path). Only `ok: false` is the authoritative quota rejection.
+  if (consume.error || consume.data === null) {
+    // A transport/DB failure is NOT a quota answer — surface the generic
+    // save error so the user can retry (the slot stays open).
+    await removeUploadedObject(uploadedPath);
+    throw new Error(SAVE_ERROR_MESSAGE);
+  }
+  if (consume.data.ok === false) {
+    await removeUploadedObject(uploadedPath);
+    throw new QuotaExceededError();
+  }
+
   const { data: purchase, error: purchaseError } = await supabase
     .from('purchases')
     .insert({
@@ -569,7 +615,12 @@ export async function saveReceipt(
   void queryClient.invalidateQueries({
     queryKey: queryKeys.scanUsage(userId, utcYearMonth()),
   });
+  // The scan slot was already reserved (and counted) by the pre-insert
+  // `consume_scan_on_save` above, so refetching the usage now reflects the
+  // incremented count. No post-write consume is needed — the reservation
+  // and the persistence are already coordinated.
   invalidateReceiptFeeds(userId);
+
   return { id: purchaseId };
 }
 

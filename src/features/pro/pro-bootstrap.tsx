@@ -62,7 +62,7 @@ let bootstrapped = false;
 async function syncSubscriptionFromDB(userId: string): Promise<void> {
   const result = await readProfileRow(userId);
   if (result.status === 'ok' && result.data) {
-    const { subscription_status, trial_ends_at } = result.data;
+    const { subscription_status, trial_ends_at, ever_paid } = result.data;
     const status = subscription_status ?? 'none';
     const trialEndsAt = trial_ends_at ?? null;
 
@@ -80,7 +80,7 @@ async function syncSubscriptionFromDB(userId: string): Promise<void> {
       void expireOverdueTrials();
     }
 
-    useProStore.getState().setSubscriptionState(status, trialEndsAt);
+    useProStore.getState().setSubscriptionState(status, trialEndsAt, ever_paid);
   }
 }
 
@@ -91,6 +91,7 @@ async function syncSubscriptionFromDB(userId: string): Promise<void> {
 export function ProBootstrap(): null {
   const { userId } = useSessionUser();
   const setPro = useProStore((s) => s.setPro);
+  const setEverPaid = useProStore((s) => s.setEverPaid);
 
   useEffect(() => {
     if (bootstrapped) return;
@@ -185,6 +186,14 @@ export function ProBootstrap(): null {
             const isPro =
               ci?.entitlements?.all?.['pro']?.isActive === true;
             setPro(isPro);
+            // A real purchase activating the `pro` entitlement is a
+            // MONOTONIC event (migration 0021): the webhook sets
+            // ever_paid=true in the DB, but `syncSubscriptionFromDB`
+            // only runs once per process under the `bootstrapped` guard —
+            // NOT on this listener. Mirror the DB flag immediately so the
+            // store never offers a free trial the server would reject for
+            // an ever-paid user. This is the only caller of `setEverPaid`.
+            if (isPro) setEverPaid(true);
           });
         }
       } catch (err) {
@@ -194,7 +203,7 @@ export function ProBootstrap(): null {
         );
       }
     })();
-  }, [userId, setPro]);
+  }, [userId, setPro, setEverPaid]);
 
   return null;
 }

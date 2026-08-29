@@ -50,7 +50,7 @@ interface OfferingsView {
 }
 
 export default function PaywallScreen() {
-  const { refresh, subscriptionStatus, trialEndsAt, isFrozen, daysRemaining } =
+  const { refresh, subscriptionStatus, trialEndsAt, isFrozen, daysRemaining, everPaid } =
     useProEntitlement();
   const setSubscriptionState = useProStore((s) => s.setSubscriptionState);
   const [state, setState] = useState<PaywallState>('loading');
@@ -157,9 +157,13 @@ export default function PaywallScreen() {
     }
   };
 
-  // Can start trial: not pro, no active trial, no previous trial (trial_ends_at is null).
+  // Can start trial: not pro, no active trial, no previous trial (trial_ends_at is null)
+  // and never ever paid (a former paid user cannot start a free trial again, 0021).
   const canStartTrial =
-    subscriptionStatus === 'none' && trialEndsAt === null && !isFrozen;
+    subscriptionStatus === 'none' &&
+    trialEndsAt === null &&
+    !isFrozen &&
+    !everPaid;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>

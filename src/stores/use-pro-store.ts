@@ -48,6 +48,13 @@ export interface ProState {
    */
   isFrozen: boolean;
 
+  /**
+   * Monotonic flag: true once the user has EVER made a real paid purchase
+   * (migration 0021). A former paid user can never start a free trial
+   * again — the UI must not offer a trial to ever-paid users.
+   */
+  everPaid: boolean;
+
   // --- Actions ---
 
   /** Re-reads `CustomerInfo` from the SDK and updates `isPro`. */
@@ -58,7 +65,13 @@ export interface ProState {
    * Set subscription lifecycle state from the DB profile. Called by
    * `pro-bootstrap` on launch/foreground and by `startFreeTrial` on success.
    */
-  setSubscriptionState: (status: SubscriptionStatus, trialEndsAt: string | null) => void;
+  setSubscriptionState: (
+    status: SubscriptionStatus,
+    trialEndsAt: string | null,
+    everPaid?: boolean,
+  ) => void;
+  /** Direct setter for the monotonic ever-paid flag. */
+  setEverPaid: (everPaid: boolean) => void;
 }
 
 /** Compute derived trial booleans from raw status + timestamp. */
@@ -96,6 +109,7 @@ export const useProStore = create<ProState>((set) => ({
   trialEndsAt: null,
   isTrialing: false,
   isFrozen: false,
+  everPaid: false,
 
   refresh: async () => {
     const info: CustomerInfoSnapshot | null = await getCustomerInfo();
@@ -104,7 +118,7 @@ export const useProStore = create<ProState>((set) => ({
 
   setPro: (isPro) => set({ isPro }),
 
-  setSubscriptionState: (status, trialEndsAt) => {
+  setSubscriptionState: (status, trialEndsAt, everPaid) => {
     const { isTrialing, isFrozen } = deriveTrialState(status, trialEndsAt);
     // isTrialing is false only when the trial is genuinely expired, so a
     // non-expired trial OR an active subscription grants Pro access.
@@ -115,6 +129,10 @@ export const useProStore = create<ProState>((set) => ({
       isTrialing,
       isFrozen,
       isPro,
+      // everPaid is monotonic; only ever overwrite when the caller supplies it.
+      ...(everPaid !== undefined ? { everPaid } : {}),
     });
   },
+
+  setEverPaid: (everPaid) => set({ everPaid }),
 }));
