@@ -192,6 +192,8 @@ function messageFromEdgeError(body: Partial<EdgeErrorBody>): string {
       return 'No se pudo leer el recibo en la imagen. Toma una foto más clara e inténtalo de nuevo.';
     case 'internal':
       return 'Ocurrió un problema al procesar el recibo. Inténtalo de nuevo.';
+    case 'provider_overloaded':
+      return 'El servicio de escaneo está saturado en este momento. Intentá de nuevo en unos segundos.';
     default:
       return GENERIC_PARSE_MESSAGE;
   }

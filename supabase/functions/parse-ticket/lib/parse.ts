@@ -37,6 +37,14 @@ export interface ParsedReceipt {
  */
 export class ParseError extends Error {}
 
+/**
+ * Thrown when the Gemini provider is transiently overloaded (HTTP 503 or a
+ * provider 429 "high demand"). Distinct from ParseError so the handler can
+ * answer with a "service saturated" envelope instead of a user/photo problem
+ * message.
+ */
+export class ProviderOverloadedError extends Error {}
+
 export const PAYMENT_METHODS = new Set([
   'cash',
   'card',
