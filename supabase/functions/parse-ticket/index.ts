@@ -1,14 +1,17 @@
 // supabase/functions/parse-ticket/index.ts
 //
-// v2: real Gemini parsing + atomic quota RPC (verify_jwt = true).
-//
-// Edge function that:
+// v3: real Gemini parsing + hourly parse rate-limit (verify_jwt = true).
+// The monthly scan quota is consumed at SAVE time (consume_scan_on_save,
+// 0021), NOT here — parse never burns a slot. This function only:
 //   1. Authenticates the caller via the Authorization bearer JWT.
-//   2. Validates the monthly scan quota in `public.scan_usage`.
-//   3. Sends the receipt image to Google Gemini (default `gemini-3.1-flash-lite`,
+//   2. Takes one hourly parse permit (parse_try_take, 0022) to bound
+//      Gemini invocations.
+//   3. Pre-checks (non-authoritative) the monthly quota to avoid burning a
+//      Gemini call when the user is clearly out of free slots.
+//   4. Sends the receipt image to Google Gemini (default `gemini-3.1-flash-lite`,
 //      override with the GEMINI_MODEL env var) and parses the structured
 //      response into our domain shape.
-//   4. Returns the parsed receipt to the mobile client.
+//   5. Returns the parsed receipt to the mobile client.
 //
 // The client sends the image base64-encoded (mime image/jpeg) in
 // `image_base64`; the function never touches Storage — upload and
@@ -48,6 +51,7 @@ interface ErrorResponse {
   code:
     | 'unauthenticated'
     | 'quota_exceeded'
+    | 'rate_limited'
     | 'bad_request'
     | 'parse_failed'
     | 'provider_overloaded'
@@ -57,13 +61,11 @@ interface ErrorResponse {
   used?: number;
   /** Year-month key (YYYY-MM, UTC) the quota decision belongs to. */
   month?: string;
-  /**
-   * True only on the post-parse race envelope (WARNING-4): the pre-check
-   * passed, the parse succeeded, but a concurrent request consumed the
-   * last free slot. The parsed receipt is DISCARDED. Free-only by
-   * construction — Pro users never hit this (the RPC is tier-aware).
-   */
-  raceLost?: boolean;
+  /** Rate-limit metadata, only present on rate_limited responses. */
+  attempts?: number;
+  cap?: number;
+  /** Seconds the client should wait before retrying a rate-limited parse. */
+  retryAfterSeconds?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -449,43 +451,52 @@ function listToReceipt(list: { items: ParsedItem[]; total: number }): ParsedRece
  */
 const SCANS_LIMIT = 15;
 
+// ---------------------------------------------------------------------------
+// Parse rate limit (0022) — per-user hourly cap to bound Gemini invocations.
+// The monthly quota is NOT checked here beyond the pre-check below; the real
+// consumption happens at SAVE time via `consume_scan_on_save` (0021).
+// ---------------------------------------------------------------------------
+
+/** Max parse permit takes per user per UTC hour (mirrors the SQL cap 30). */
+const PARSE_RATE_LIMIT = 30;
+
 /**
- * Atomically consumes one monthly scan slot.
+ * Take one hourly parse permit for the user.
  *
- * Delegates to the `try_consume_scan` RPC (migration 0003): the SQL function
- * ensures the (user_id, year_month) row exists and runs a single guarded
- * `UPDATE … SET scans_used = scans_used + 1 WHERE scans_used < scans_limit`.
- * The row lock serializes concurrent scans, so the limit can never be
- * oversold by parallel requests — the old read-modify-write here could.
+ * Delegates to `parse_try_take` (migration 0022): the SQL atomically bumps
+ * the user's attempts for the current UTC hour and reports (allowed,
+ * attempts, cap). Fail-OPEN: if the RPC errors (e.g. not deployed yet) we
+ * log and allow the parse — a rate-limit outage must never block scanning.
  */
-async function consumeScanQuota(
+async function takeParsePermit(
   userId: string,
-): Promise<{ ok: true } | { ok: false; limit: number; used: number }> {
+): Promise<{ allowed: boolean; attempts: number; cap: number }> {
   const svc = serviceClient();
-
-  const { data, error } = await svc.rpc('try_consume_scan', {
-    p_user_id: userId,
-    p_year_month: currentYearMonth(),
-  });
-
-  if (error) {
-    throw new Error(`try_consume_scan failed: ${error.message}`);
+  try {
+    const { data, error } = await svc.rpc('parse_try_take', {
+      p_user_id: userId,
+    });
+    if (error) {
+      throw new Error(`parse_try_take failed: ${error.message}`);
+    }
+    const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
+    if (row) {
+      return {
+        allowed: row.allowed !== false,
+        attempts: row.attempts ?? 0,
+        cap: row.cap ?? PARSE_RATE_LIMIT,
+      };
+    }
+    // No row (unexpected): fail open rather than false-rate-limit.
+    return { allowed: true, attempts: 0, cap: PARSE_RATE_LIMIT };
+  } catch (err) {
+    console.error(
+      '[parse-ticket]',
+      'rate-limit RPC failed (fail-open):',
+      err instanceof Error ? err.message : err,
+    );
+    return { allowed: true, attempts: 0, cap: PARSE_RATE_LIMIT };
   }
-
-  const row =
-    Array.isArray(data) && data.length > 0
-      ? (data[0] as { ok?: boolean; scans_used?: number; scans_limit?: number })
-      : null;
-
-  if (!row || row.ok !== true) {
-    return {
-      ok: false,
-      limit: row?.scans_limit ?? SCANS_LIMIT,
-      used: row?.scans_used ?? 0,
-    };
-  }
-
-  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -543,16 +554,21 @@ Deno.serve(async (req: Request) => {
       ? body.mime_type
       : 'image/jpeg';
 
-  // Pre-check (numeric-only, non-atomic UX optimization, design D2 / CRITICAL-1):
-  // skip the Gemini call when the user is clearly out of free quota. NULL
-  // scans_limit is the Pro marker (set by set_profile_tier on grant, see
-  // migration 0011 §3) — the pre-check MUST skip the comparison entirely
-  // and let the tier-aware RPC accept the scan. JS coerces `null >= 0` to
+  // Monthly-quota pre-check FIRST (numeric-only, non-atomic UX optimization,
+  // design D2 / CRITICAL-1): skip the Gemini call when the user is clearly
+  // out of free quota. NULL scans_limit is the Pro marker (set by
+  // set_profile_tier on grant, see migration 0011 §3) — the pre-check MUST
+  // skip the comparison entirely for Pro rows. JS coerces `null >= 0` to
   // `true` in numeric comparison, so a fresh Pro row (scans_limit=null,
   // scans_used=0) would otherwise evaluate as `0 >= 15 → true` (false 429).
-  // The RPC (try_consume_scan) is the tier-aware authority; this pre-check
-  // is only here to avoid burning a Gemini call when the answer is
-  // obvious (REQ-QUOTA-4).
+  // This pre-check is a pure UX optimization (REQ-QUOTA-4): it is NOT
+  // authoritative — the real cap is enforced at SAVE time by the client's
+  // `consume_scan_on_save` RPC (0021), which returns ok=false (never raises)
+  // when the free cap is reached.
+  //
+  // Ordering note: the quota pre-check runs BEFORE `takeParsePermit` so a
+  // user who is out of monthly quota NEVER burns an hourly parse permit —
+  // the 429 short-circuits before any permit is taken.
   const currentMonth = currentYearMonth();
   const svc = serviceClient();
   let preUsage: { scans_limit: number | null; scans_used: number } | null = null;
@@ -580,6 +596,23 @@ Deno.serve(async (req: Request) => {
         limit: preUsage.scans_limit,
         used: preUsage.scans_used,
         month: currentMonth,
+      } satisfies ErrorResponse),
+      { status: 429, headers: { 'Content-Type': 'application/json' } },
+    );
+  }
+
+  // Rate-limit (0022): take one hourly parse permit per user AFTER the
+  // monthly-quota pre-check. This bounds Gemini invocations independently of
+  // the monthly quota (which is consumed at SAVE time, not parse time).
+  const limit = await takeParsePermit(userId);
+  if (!limit.allowed) {
+    return new Response(
+      JSON.stringify({
+        error: 'rate_limited',
+        code: 'rate_limited',
+        attempts: limit.attempts,
+        cap: limit.cap,
+        retryAfterSeconds: 3600,
       } satisfies ErrorResponse),
       { status: 429, headers: { 'Content-Type': 'application/json' } },
     );
@@ -630,47 +663,10 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  // Consume AFTER successful parse (REQ-QUOTA-4). The RPC is tier-aware
-  // (CRITICAL-1/2): Pro always wins via the `v_tier = 'pro'` branch,
-  // free is gated by `scans_used < coalesce(scans_limit, 15)`. A race
-  // loser (ok=false here after the pre-check passed) gets a distinct
-  // envelope so the client can render the post-parse "consumed by
-  // concurrent use" message (WARNING-4). The parsed receipt is
-  // DISCARDED in this branch — the free slot was lost to a concurrent
-  // request, there is nothing to return (design.md:64).
-  let quota: Awaited<ReturnType<typeof consumeScanQuota>>;
-  try {
-    quota = await consumeScanQuota(userId);
-  } catch (err) {
-    // The RPC can fail when the function is not deployed yet (missing
-    // try_consume_scan), on permission denials, or on SQL errors. Those are
-    // server-side problems: answer with the internal envelope instead of
-    // letting Deno.serve surface a bare platform 500. The quota_exceeded
-    // path below is a normal response, not an error. The parsed receipt
-    // is discarded here as well — we cannot guarantee the slot was
-    // consumed, so handing the receipt back to a client whose quota
-    // state is unknown would be a lie.
-    console.error(
-      '[parse-ticket]',
-      'quota RPC failed:',
-      err instanceof Error ? err.message : err,
-    );
-    return jsonError(500, 'internal', INTERNAL_ERROR_MESSAGE);
-  }
-  if (!quota.ok) {
-    return new Response(
-      JSON.stringify({
-        error: 'quota_exceeded_race',
-        code: 'quota_exceeded',
-        limit: quota.limit,
-        used: quota.used,
-        raceLost: true,
-        month: currentMonth,
-      } satisfies ErrorResponse),
-      { status: 429, headers: { 'Content-Type': 'application/json' } },
-    );
-  }
-
+  // Successful parse → 200. The monthly quota is NOT consumed here: parse
+  // does not burn a scan slot. Consumption happens at SAVE time via the
+  // client's `consume_scan_on_save` RPC (0021) when the user confirms the
+  // draft (a parsed-but-discarded receipt cost nothing).
   return new Response(JSON.stringify(parsed), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },

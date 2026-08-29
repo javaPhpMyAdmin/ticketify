@@ -47,6 +47,7 @@ import {
   mapTier,
   mapTrialStatus,
   TRIAL_EVENT_TYPES,
+  isRealGrant,
   type Tier,
 } from './lib/event-types.ts';
 import { isUuid } from './lib/uuid.ts';
@@ -396,6 +397,28 @@ Deno.serve(async (req: Request) => {
         `sync_subscription_status failed for ${eventType}:`,
         syncErr.message,
       );
+    }
+  }
+
+  // ----- 11b. ever_paid (real grants only) ------------------------------
+  // A real paid grant (INITIAL_PURCHASE / RENEWAL / UNCANCELLATION) sets the
+  // monotonic `profiles.ever_paid` flag — a former paid user can never start
+  // a free trial again. TRIAL_STARTED is deliberately excluded (isRealGrant
+  // returns false): a trial is not a real payment. mark_ever_paid is
+  // monotonic (true is never unset) and SECURITY DEFINER, so re-deliveries
+  // and out-of-order events are safe. Non-fatal: a failure here must NOT 500
+  // — the tier change already applied and a future real grant will retry it.
+  if (isRealGrant(eventType)) {
+    const { error: everPaidErr } = await svc.rpc('mark_ever_paid', {
+      p_user_id: appUserId,
+    });
+    if (everPaidErr && everPaidErr.code !== PROFILE_NOT_FOUND_SQLSTATE) {
+      console.error(
+        '[revenuecat-webhook]',
+        'mark_ever_paid failed:',
+        everPaidErr.message,
+      );
+      // non-fatal; do not 500
     }
   }
 

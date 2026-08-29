@@ -98,6 +98,20 @@ export function mapTier(eventType: string): Tier | null {
 }
 
 /**
+ * True when the event is a REAL paid grant — money actually changing hands
+ * (initial purchase, renewal, or uncancellation). Used to set the monotonic
+ * `profiles.ever_paid` flag: a TRIAL_STARTED (however it maps for tier) is
+ * NOT a real payment, so it must NEVER flip ever_paid.
+ */
+export function isRealGrant(eventType: string): boolean {
+  return (
+    eventType === 'INITIAL_PURCHASE' ||
+    eventType === 'RENEWAL' ||
+    eventType === 'UNCANCELLATION'
+  );
+}
+
+/**
  * True unless the function was configured for sandbox deliveries.
  *
  * The webhook reads `Deno.env.get('REVENUECAT_ENVIRONMENT')`:
