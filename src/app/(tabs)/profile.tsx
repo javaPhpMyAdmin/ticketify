@@ -225,6 +225,30 @@ export default function ProfileScreen() {
             );
           }
 
+          // Expired trial — but NOT frozen (trial ran out and the account was
+          // normalized back to Free): already used the free trial, so this is
+          // a past user, not a prospect. Show the real lifecycle state instead
+          // of wrongly offering "Empezar prueba gratis" again (the paywall
+          // allows a fresh trial only when `status === 'none'` AND no
+          // trialEndsAt AND not frozen). "Ver planes" still routes to the
+          // paywall for a paid upgrade.
+          if (subscriptionStatus === 'expired') {
+            return (
+              <Pressable
+                onPress={() => router.push('/pro')}
+                style={({ pressed }) => [
+                  styles.statusRow,
+                  pressed && styles.statusRowPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Ver planes"
+              >
+                <Text style={styles.statusLabel}>Plan Gratis</Text>
+                <Text style={styles.statusLink}>Ver planes</Text>
+              </Pressable>
+            );
+          }
+
           // Free user (no trial used)
           return (
             <Pressable

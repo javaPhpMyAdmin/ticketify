@@ -45,6 +45,7 @@ import {
   getSignedReceiptPhotoUrl,
   resolveReceiptPhotoPath,
 } from '@/lib/supabase/receipt-photo';
+import { useDialogStore } from '@/stores/use-dialog-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { useToastStore } from '@/stores/use-toast-store';
@@ -205,6 +206,21 @@ export default function ReviewReceiptScreen() {
         useNativeDriver: true,
       }).start();
       await new Promise<void>((resolve) => setTimeout(resolve, SUCCESS_MS));
+    } catch (err) {
+      // A rejected scan (e.g. the parse-ticket edge function timing out) used
+      // to escape as an unhandled promise rejection — dev showed a raw red
+      // error overlay instead of real user copy. Now the failure is surfaced
+      // through the global dialog store; `scan()` already sets `scanError`, so
+      // the inline retry block below remains the retry affordance. The host
+      // dismisses the dialog itself, so there is no onPrimary callback.
+      useDialogStore.getState().show({
+        title: 'No se pudo procesar el ticket',
+        message:
+          err instanceof Error
+            ? err.message
+            : 'No se pudo procesar el ticket. Inténtalo de nuevo.',
+        primaryLabel: 'Aceptar',
+      });
     } finally {
       // Guaranteed cleanup: a rejected scan must never leave the screen
       // stuck on the infinite "Procesando recibo…" state.
@@ -531,10 +547,10 @@ export default function ReviewReceiptScreen() {
             // the draft being absent.
             <View style={styles.parsingWrap}>
               <Text style={styles.parsingTitle}>
-                No se pudo procesar este recibo
+                No se pudo procesar este ticket
               </Text>
               <Text style={styles.parsingHint}>
-                Revisa que la foto sea clara y inténtalo de nuevo.
+                Revisa que la foto sea clara e inténtalo de nuevo.
               </Text>
               <Pressable
                 onPress={() => void runParse()}
