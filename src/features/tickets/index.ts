@@ -16,6 +16,8 @@ export {
   purchaseToDraft,
   updateReceipt,
   deleteReceipt,
+  QuotaExceededError,
+  QUOTA_ERROR_MESSAGE,
 } from './api';
 export type { UploadResult, ParsedReceipt, PurchaseWithItems } from './api';
 // The shared feed-row builder (home-feature pure module): the review flow

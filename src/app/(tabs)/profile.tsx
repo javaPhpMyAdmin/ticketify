@@ -26,7 +26,7 @@ export default function ProfileScreen() {
   const setHousehold = useSettingsStore((s) => s.setHouseholdSharing);
   const signOut = useSessionStore((s) => s.signOut);
   const { email } = useSessionUser();
-  const { isPro, isLoading: proLoading, subscriptionStatus, trialEndsAt, daysRemaining, isFrozen } =
+  const { isPro, isLoading: proLoading, subscriptionStatus, trialEndsAt, daysRemaining, isFrozen, everPaid } =
     useProEntitlement();
 
   const householdName = useHouseholdStore((s) => s.household?.name);
@@ -249,8 +249,24 @@ export default function ProfileScreen() {
             );
           }
 
-          // Free user (no trial used)
-          return (
+          // Free user (no trial used). If the user has EVER paid (monotonic
+          // flag, 0021) they cannot start a free trial again — show the same
+          // "Plan Gratis / Ver planes" as the expired branch instead of
+          // offering a trial that the server would reject.
+          return everPaid ? (
+            <Pressable
+              onPress={() => router.push('/pro')}
+              style={({ pressed }) => [
+                styles.statusRow,
+                pressed && styles.statusRowPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Ver planes"
+            >
+              <Text style={styles.statusLabel}>Plan Gratis</Text>
+              <Text style={styles.statusLink}>Ver planes</Text>
+            </Pressable>
+          ) : (
             <Pressable
               onPress={() => router.push('/pro')}
               style={({ pressed }) => [

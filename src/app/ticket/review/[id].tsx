@@ -32,6 +32,8 @@ import { RenameItemModal, sanitizeItemName } from '@/features/items';
 import {
   buildFeedRow,
   CategoryPickerModal,
+  QuotaExceededError,
+  QUOTA_ERROR_MESSAGE,
   ReceiptItemsList,
   reviewItemsToFeedItems,
   saveReceipt,
@@ -417,15 +419,22 @@ export default function ReviewReceiptScreen() {
           'success',
         );
       router.dismiss();
-    } catch {
+    } catch (err) {
       // Writes can reject (network, RLS); the review screen stays up with
       // the draft intact so the user can retry. The toast surfaces the
       // error inline (root-mounted host) — no blocking Alert — and uses
       // the same user-safe posture as the profile/budget writes
-      // (never raw PostgREST text).
+      // (never raw PostgREST text). A HARD quota rejection surfaces its
+      // own upgrade copy instead of the generic save message.
       savingRef.current = false;
       setSaving(false);
-      useToastStore.getState().show(SAVE_ERROR_MESSAGE);
+      useToastStore
+        .getState()
+        .show(
+          err instanceof QuotaExceededError
+            ? QUOTA_ERROR_MESSAGE
+            : SAVE_ERROR_MESSAGE,
+        );
     }
   };
 
