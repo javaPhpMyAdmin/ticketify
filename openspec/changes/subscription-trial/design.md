@@ -125,6 +125,8 @@ export type GateState = 'locked' | 'unlocked' | 'frozen';
 
 ## Open Questions
 
-- [ ] Should `start_free_trial` call RevenueCat's `Purchases.syncPurchases()` or is the DB update sufficient until the next natural sync?
-- [ ] RevenueCat webhook mapping: confirm exact event type strings for TRIAL_STARTED / TRIAL_ENDED (may vary by SDK version).
-- [ ] Should the FrozenGuard overlay also appear on the profile screen's settings rows, or only on feature-level write guards?
+> Resolved 2026-08-31. Decisions recorded per documented recommendations.
+
+- [x] **Should `start_free_trial` call RevenueCat's `Purchases.syncPurchases()` or is the DB update sufficient until the next natural sync?** → **DB-only.** The DB write is offline-safe and testable; RevenueCat receives the entitlement on the next natural sync (buyEventListener / bootstrap). An inline `syncPurchases()` adds a network dependency to a write path that must stay atomic and total (trial activation is not partial). The DB is the authoritative trial source; RC syncs async from it.
+- [x] **RevenueCat webhook mapping: confirm exact event type strings for TRIAL_STARTED / TRIAL_ENDED (may vary by SDK version).** → The trial→active / trial→expired flows are driven by the React Native SDK + webhook events already handled in the 0016 flow (purchase → `set_profile_tier('pro')` / `'free'`). No change required; the specific event strings live in the RevenueCat client config, not in schema logic.
+- [x] **Should the FrozenGuard overlay also appear on the profile screen's settings rows, or only on feature-level write guards?** → **Only on the write-rows** (settings entries that mutate data). The profile screen must stay readable/navigable when frozen; blanket overlays would block the screen and trap the user. Reads stay open, mutations get the guard.
