@@ -422,5 +422,5 @@ Profile
 
 ## Open Questions
 
-- [ ] Account deletion hook: PostgreSQL trigger on `auth.users` or Supabase edge function webhook? (The existing `revenuecat-webhook` pattern suggests edge function, but triggers are simpler for cascade logic.)
-- [ ] Should the home feed household card show per-member breakdown, or just the total?
+- [ ] Account deletion hook: PostgreSQL trigger on `auth.users` or Supabase edge function webhook? (The existing `revenuecat-webhook` pattern suggests edge function, but triggers are simpler for cascade logic.) → **Still open.** No account-deletion trigger or webhook is implemented. `leave_household` promotes the longest-tenured member on manual leave, but automatic account-deletion handling remains unimplemented.
+- [x] Should the home feed household card show per-member breakdown, or just the total? → **Resolved: total + member count only.** `HouseholdCard` shows the aggregate current-month total and member count, no per-member breakdown.
