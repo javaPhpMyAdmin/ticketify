@@ -113,23 +113,65 @@ function compile() {
   writeFileSync(
     join(workdir, 'lib-stubs/supabase.ts'),
     `
-    // Supabase client stub with a permissive shape api.ts can invoke without
-    // type errors. Every method returns the stub (chainable), and terminal
-    // query methods resolve to a default success shape.
-    function make_chain(): any {
-      const target: any = function () { return make_chain(); };
-      return new Proxy(target, {
-        get(t: any, prop: PropertyKey) {
-          if (prop === Symbol.toPrimitive) return function () { return '[SupabaseStub]'; };
-          if (typeof prop === 'string' && ['maybeSingle', 'single', 'rpc'].includes(prop)) {
-            return function () { return Promise.resolve({ data: null, error: null }); };
-          }
-          return function () { return make_chain(); };
+    // Supabase client stub. Two distinct chain paths:
+    //   - RPC path (.rpc(...)[.single()]) → resolves to the test-injected
+    //     globalThis.__rpcResult (default { data: null, error: null }). This
+    //     is what saveReceipt uses for the save_receipt call.
+    //   - From path (.from().select().order().limit()/.maybeSingle() ...) →
+    //     always resolves { data: null, error: null }. This is what
+    //     fetchCategoryIdsBySlug / resolveStoreId use; keeping it null (never
+    //     the injected rpc result) stops category fetching from misreading
+    //     the save_receipt payload as category rows.
+    const globalObj: any = globalThis;
+    function rpcResult() {
+      return Promise.resolve(globalObj.__rpcResult ?? { data: null, error: null });
+    }
+    // from-builder: chainable; awaiting it (or .then) resolves to a null
+    // result so category/store reads never misread the injected rpc payload.
+    const nullResult = () => Promise.resolve({ data: null, error: null });
+    function makeFromBuilder(): any {
+      const builder: any = function () { return builder(); };
+      return new Proxy(builder, {
+        get(_t, prop) {
+          if (prop === 'then') return (resolve: any, _reject?: any) => resolve({ data: null, error: null });
+          if (prop === Symbol.toPrimitive) return function () { return '[FromBuilder]'; };
+          return function () { return makeFromBuilder(); };
         },
-        apply() { return make_chain(); },
+        apply() { return makeFromBuilder(); },
       });
     }
-    export const supabase: any = make_chain();
+    // top-level client: .rpc() enters the RPC path; .from() enters the from path;
+    // .auth/.storage/.channel/.then fall through to a generic chain that returns nullResult.
+    const supabaseProxy = new Proxy(function () { return makeChain(); }, {
+      get(_t, prop) {
+        if (prop === Symbol.toPrimitive) return function () { return '[SupabaseStub]'; };
+        if (prop === 'rpc') {
+          // .rpc(name, args)[.single()] — the terminal (single or the rpc
+          // call itself) resolves to __rpcResult.
+          return function () {
+            return new Proxy(function () { return Promise.resolve(globalObj.__rpcResult ?? { data: null, error: null }); }, {
+              get(_t2, prop2) {
+                if (prop2 === Symbol.toPrimitive) return function () { return '[RpcBuilder]'; };
+                // .single()/.maybeSingle() after .rpc() → rpc result
+                if (typeof prop2 === 'string' && ['single', 'maybeSingle', 'then'].includes(prop2)) {
+                  return prop2 === 'then'
+                    ? function (resolve?: any, _reject?: any) { return Promise.resolve(globalObj.__rpcResult ?? { data: null, error: null }).then(resolve); }
+                    : function () { return Promise.resolve(globalObj.__rpcResult ?? { data: null, error: null }); };
+                }
+                return function () { return Promise.resolve(globalObj.__rpcResult ?? { data: null, error: null }); };
+              },
+              apply() { return Promise.resolve(globalObj.__rpcResult ?? { data: null, error: null }); },
+            });
+          };
+        }
+        if (prop === 'from') return makeFromBuilder;
+        return function () { return nullResult(); };
+      },
+      apply() { return makeChain(); },
+    });
+    function makeChain(): any { return supabaseProxy; }
+    export const supabase: any = supabaseProxy;
+    export function __resetResults() { globalObj.__rpcResult = undefined; }
     export const isSupabaseConfigured = true;
   `,
   );
@@ -606,23 +648,110 @@ async function run() {
     );
 
     await test(
-      'consume_scan_on_save contract: ok=false when at cap',
+      'save_receipt contract: ok=false when at cap',
       () => {
-        // saveReceipt calls supabase.rpc('consume_scan_on_save').
-        // The RPC returns { ok: boolean, scans_used: number, scans_limit: number }.
-        // When ok=false → QuotaExceededError is thrown (hard cap).
-        // This is the boundary: scans_used >= scans_limit → ok=false.
+        // saveReceipt calls supabase.rpc('save_receipt') — a single
+        // transactional RPC that atomically checks the cap, inserts the
+        // purchase + items, and increments the scan slot. If any step fails,
+        // PL/pgSQL rolls back everything (including the slot increment).
         //
-        // We verify the invariant by checking the saveReceipt source:
+        // The RPC returns { ok: boolean, purchase_id: uuid,
+        // scans_used: number, scans_limit: number }.
+        // When ok=false → QuotaExceededError is thrown (hard cap).
         const saveBlock = apiSrc.slice(apiSrc.indexOf('async function saveReceipt'));
         assert.ok(
-          saveBlock.includes('consume.data.ok === false'),
-          'saveReceipt must check ok === false from consume_scan_on_save',
+          saveBlock.includes(".rpc('save_receipt'"),
+          'saveReceipt must call the save_receipt RPC (single transactional save)',
+        );
+        assert.ok(
+          saveBlock.includes('.single()'),
+          'save_receipt (RETURNS TABLE) must be unwrapped with .single() so ok/purchase_id are read from the single row',
+        );
+        assert.ok(
+          saveBlock.includes('data.ok === false'),
+          'saveReceipt must check ok === false from save_receipt RPC',
         );
         assert.ok(
           saveBlock.includes('QuotaExceededError'),
           'saveReceipt must throw QuotaExceededError on ok=false',
         );
+      },
+    );
+
+    await test(
+      'saveReceipt no longer calls consume_scan_on_save (atomic RPC replaces two-step)',
+      () => {
+        const saveBlock = apiSrc.slice(apiSrc.indexOf('async function saveReceipt'));
+        assert.ok(
+          !saveBlock.includes("rpc('consume_scan_on_save')"),
+          'saveReceipt must NOT call consume_scan_on_save (replaced by save_receipt)',
+        );
+      },
+    );
+    // ------------------------------------------------------------------
+    // saveReceipt — RUNTIME behavior (not source inspection). These exercise
+    // the real saveReceipt with an injected .rpc(...).single() result to
+    // prove the cap rejection and happy path actually work at runtime.
+    // Without them, a regression like accessing rpc.data.foo when PostgREST
+    // returns an array would go unnoticed (the default stub returns data:null
+    // so saveReceipt throws SAVE_ERROR before reading ok).
+    // ------------------------------------------------------------------
+
+    // saveReceipt only — QuotaExceededError is already destructured earlier
+    // in this same apiMod scope (section B).
+    const { saveReceipt } = apiMod;
+
+    const minDraft = {
+      store_name: '', // empty → no resolveStoreId call
+      purchase_date: '2026-08-31',
+      total: 20,
+      payment_method: 'cash',
+      image_url: '', // falsy → no uploadToStorage call
+      items: [
+        {
+          temp_id: 't1',
+          name: 'Café',
+          quantity: 1,
+          unit_price: 20,
+          total_price: 20,
+          category_id: null,
+          is_impulse: false,
+          ai_suggested_category_id: null,
+        },
+      ],
+    };
+
+    await test(
+      'saveReceipt runtime: ok=false (at cap) → throws QuotaExceededError',
+      async () => {
+        // .single() unwraps the single RETURNS TABLE row into a flat object.
+        globalThis.__rpcResult = {
+          data: { ok: false, purchase_id: null, scans_used: 15, scans_limit: 15 },
+          error: null,
+        };
+        let threw = false;
+        try {
+          await saveReceipt('user-uuid', minDraft);
+        } catch (err) {
+          threw = true;
+          assert.ok(
+            err instanceof QuotaExceededError,
+            'must throw QuotaExceededError, got: ' + String(err),
+          );
+        }
+        assert.ok(threw, 'saveReceipt must throw when ok=false (hard cap)');
+      },
+    );
+
+    await test(
+      'saveReceipt runtime: ok=true → returns the purchase_id',
+      async () => {
+        globalThis.__rpcResult = {
+          data: { ok: true, purchase_id: 'purchase-123', scans_used: 1, scans_limit: 15 },
+          error: null,
+        };
+        const res = await saveReceipt('user-uuid', minDraft);
+        assert.deepEqual(res, { id: 'purchase-123' });
       },
     );
   } else {

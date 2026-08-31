@@ -83,6 +83,17 @@ export interface FromBuilder {
 }
 
 /**
+ * Builder returned by `rpc(fn, params)`. Mirrors supabase-js: the builder
+ * is thenable (so `await rpc(fn, params)` resolves the full RPC result),
+ * and supports `.single()` / `.maybeSingle()` terminals that unwrap the
+ * first row of the `rows` array (like PostgREST RETURNS TABLE).
+ */
+export interface RpcQueryBuilder extends PromiseLike<{ data: unknown[] | null; error: StubError }> {
+  single: () => Promise<{ data: unknown | null; error: StubError }>;
+  maybeSingle: () => Promise<{ data: unknown | null; error: StubError }>;
+}
+
+/**
  * Chainable builder returned by `select` / `insert` / `update` / `delete`.
  * Mirrors supabase-js: filter/order/limit calls chain, `.single` /
  * `.maybeSingle` are explicit terminals, and the builder itself is
@@ -141,7 +152,7 @@ export type SupabaseBehavior = {
   rpc: (
     fn: string,
     params?: Record<string, unknown>,
-  ) => Promise<{ data: unknown[] | null; error: StubError }>;
+  ) => RpcQueryBuilder;
   functions: {
     invoke: (
       fn: string,
@@ -380,6 +391,48 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
 /** Monotonic id assigned to inserted rows (the DB assigns uuids on insert). */
 let insertCounter = 0;
 
+/**
+ * Builds a thenable RPC builder that mirrors supabase-js's `rpc()` return.
+ * `await`-ing it resolves `{ data: rows, error }` (the full array); calling
+ * `.single()` or `.maybeSingle()` unwraps to the first row (or null).
+ */
+function makeRpcQueryBuilder(fn: string): RpcQueryBuilder {
+  const state = rpcResults.get(fn) ?? { rows: null, error: null };
+  const result = state.error
+    ? { data: null as unknown[] | null, error: state.error }
+    : { data: state.rows, error: null as StubError };
+
+  const unwrapSingle = (): { data: unknown | null; error: StubError } => {
+    if (result.error) return { data: null, error: result.error };
+    const rows = result.data ?? [];
+    if (rows.length === 0) return { data: null, error: null };
+    if (rows.length === 1) return { data: rows[0], error: null };
+    return {
+      data: null,
+      error: {
+        message: 'JSON object requested, multiple (or no) rows returned',
+        code: 'PGRST116',
+      },
+    };
+  };
+
+  const builder = {
+    single: (): Promise<{ data: unknown | null; error: StubError }> =>
+      Promise.resolve(unwrapSingle()),
+    maybeSingle: (): Promise<{ data: unknown | null; error: StubError }> => {
+      if (result.error) return Promise.resolve({ data: null, error: result.error });
+      const rows = result.data ?? [];
+      return Promise.resolve({ data: rows.length > 0 ? rows[0] : null, error: null });
+    },
+    then: (
+      onfulfilled?: (value: { data: unknown[] | null; error: StubError }) => unknown,
+      onrejected?: (reason: unknown) => unknown,
+    ): Promise<unknown> =>
+      Promise.resolve(result).then(onfulfilled, onrejected),
+  };
+  return builder as RpcQueryBuilder;
+}
+
 const defaultBehavior = (): SupabaseBehavior => ({
   signInWithOAuth: async () => ({
     data: { url: 'https://auth.example/authorize', flowId: null },
@@ -454,9 +507,7 @@ const defaultBehavior = (): SupabaseBehavior => ({
   },
   rpc: (fn: string, params?: Record<string, unknown>) => {
     callLog.push({ kind: 'rpc', fn, params: params ?? null });
-    const state = rpcResults.get(fn) ?? { rows: null, error: null };
-    if (state.error) return Promise.resolve({ data: null, error: state.error });
-    return Promise.resolve({ data: state.rows, error: null });
+    return makeRpcQueryBuilder(fn);
   },
   functions: {
     invoke: (fn: string, opts?: { body?: unknown; timeout?: number }) => {

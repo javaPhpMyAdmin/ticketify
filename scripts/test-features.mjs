@@ -26,22 +26,25 @@
  *     analytics breakdown reads. (The hook itself is out of scope here: it
  *     imports react, so the harness cannot compile it; its cache-collision
  *     behavior is proven by a standalone TanStack probe.)
- *   - `saveReceipt` persists real `purchases` + `purchase_items` rows for
- *     the authenticated user: store resolution (reuse by name or create as
- *     the user's own row), category slug→id mapping, impulse flag
- *     persistence, and the compensating rollback on a failed item write.
- *     The failure branches are exercised through the double's insert seam:
- *     empty store name and store/purchase insert errors surface the
- *     user-safe message with no partial writes; a failed item write fires
- *     the compensating delete on `purchases`. The inserted payloads are
- *     asserted via `__getInserted` (slug→uuid, purchase_id linkage,
- *     user_id, is_impulse, sort_order). A successful save invalidates the
- *     shared monthlyTotals cache by USER PREFIX: the behavioral proof seeds
- *     the real TanStack client (the singleton the compiled api requires)
- *     with the current-UTC-month key and a different-month key, then asserts
- *     BOTH turn isInvalidated after the save while another user's entry
- *     stays untouched — the pinned-UTC-month invalidation this replaces
- *     could only ever hit one of them (the UTC/local month-boundary miss).
+ *   - `saveReceipt` persists a confirmed draft via the single `save_receipt`
+ *     transactional RPC: store resolution (reuse by name or create as the
+ *     user's own row), category slug→id mapping, impulse flag, and the
+ *     atomic cap check + purchases/purchase_items insert all live INSIDE
+ *     the RPC. The failure branches are exercised through the double's rpc
+ *     seam: empty store name and store resolution errors surface the
+ *     user-safe message with no RPC call; an ok=false answer throws
+ *     QuotaExceededError; a transport error (data:null/error) throws the
+ *     user-safe message. On any failure an uploaded photo object is removed
+ *     best-effort. The RPC payload asserts the resolved store id, the
+ *     purchase fields, and each item row (slug→uuid, is_impulse,
+ *     sort_order, no purchase_id). A successful save invalidates the
+ *     scanUsage + shared monthlyTotals cache by USER PREFIX: the
+ *     behavioral proof seeds the real TanStack client (the singleton the
+ *     compiled api requires) with the current-UTC-month key and a
+ *     different-month key, then asserts BOTH turn isInvalidated after the
+ *     save while another user's entry stays untouched — the
+ *     pinned-UTC-month invalidation this replaces could only ever hit one
+ *     of them (the UTC/local month-boundary miss).
  *   - pure query layer: `utcYearMonth` + key factories (userId-scoped, shared
  *     year-month), `currentMonthKey` (the LOCAL current month — local
  *     counterpart of `utcYearMonth`, and the month the budget spent query's
@@ -831,16 +834,27 @@ async function run() {
 
   console.log('\n[tests] purchase write boundary\n');
 
-  await test('saveReceipt persists purchase + items (real mode)', async () => {
+  await test('saveReceipt calls the single save_receipt RPC with the resolved store + items payload (real mode)', async () => {
     resetAll();
     // No matching store row yet → the save creates the store as the user's
-    // own row; categories arm the slug→id map; purchases insert returns the
-    // new id via `.select('id').single()`.
+    // own row; categories arm the slug→id map. The purchases + purchase_items
+    // inserts happen INSIDE the save_receipt RPC, so the client only issues
+    // one rpc call — arm its success result.
     stubMod.__setTableRead('stores', { rows: [] });
     stubMod.__setTableRead('categories', {
       rows: [
         { id: 'cat-lacteos', slug: 'lacteos' },
         { id: 'cat-snacks', slug: 'snacks' },
+      ],
+    });
+    stubMod.__setRpcResult('save_receipt', {
+      rows: [
+        {
+          ok: true,
+          purchase_id: 'purc-uuid',
+          scans_used: 1,
+          scans_limit: 15,
+        },
       ],
     });
     const result = await ticketsMod.saveReceipt('u1', {
@@ -868,52 +882,39 @@ async function run() {
         },
       ],
     });
-    assert.ok(
-      result && typeof result.id === 'string' && result.id.length > 0,
-      'returns the new purchase id',
-    );
+    assert.deepEqual(result, { id: 'purc-uuid' }, 'returns { id: purchase_id } on ok:true');
     const log = stubMod.__getCallLog();
     assert.ok(
       log.some((e) => e.kind === 'from' && e.table === 'stores'),
       'resolves/creates the store',
     );
-    assert.ok(
-      log.some((e) => e.kind === 'from' && e.table === 'purchases'),
-      'writes the purchase row',
-    );
-    assert.ok(
-      log.some((e) => e.kind === 'from' && e.table === 'purchase_items'),
-      'writes the line items',
-    );
-    assert.ok(log.some((e) => e.kind === 'insert'), 'inserted rows');
-    assert.ok(
-      !log.some((e) => e.kind === 'delete'),
-      'no rollback on success',
-    );
-    // Payload seam: assert the exact writes the review said were unasserted —
-    // slug→id category resolution, parent linkage, user scoping, impulse
-    // flag and sort order.
+    // The store the save created is resolved/inserted BEFORE the RPC; the
+    // purchase + items writes now live inside save_receipt, so there is no
+    // client-side insert on purchases / purchase_items.
+    const rpcCall = stubMod.__lastRpcCall();
+    assert.equal(rpcCall.fn, 'save_receipt');
+    const params = rpcCall.params;
     const insertedStores = stubMod.__getInserted('stores');
     assert.equal(insertedStores.length, 1, 'store created as the user own row');
     assert.equal(insertedStores[0].user_id, 'u1');
     assert.equal(insertedStores[0].name, 'Whole Foods Market');
-    const storeId = insertedStores[0].id;
-    const [insertedPurchase] = stubMod.__getInserted('purchases');
-    assert.equal(insertedPurchase.user_id, 'u1');
-    assert.equal(insertedPurchase.store_id, storeId, 'purchase links to the created store');
-    assert.equal(insertedPurchase.purchase_date, '2026-08-02');
-    assert.equal(insertedPurchase.total, 42.18);
-    assert.equal(insertedPurchase.payment_method, 'card');
-    assert.equal(insertedPurchase.image_url, 'https://picsum.photos/seed/ticketify-test/800/1200');
-    assert.equal(insertedPurchase.status, 'confirmed');
-    const itemPayloads = stubMod.__getInserted('purchase_items').map((item) => {
-      const { id, ...payload } = item; // synthetic stub id, not app data
-      void id;
-      return payload;
-    });
-    assert.deepEqual(itemPayloads, [
+    assert.equal(
+      params.p_store_id,
+      insertedStores[0].id,
+      'RPC receives the resolved/created store id',
+    );
+    assert.equal(params.p_purchase_date, '2026-08-02');
+    assert.equal(params.p_total, 42.18);
+    assert.equal(params.p_payment_method, 'card');
+    assert.equal(
+      params.p_image_url,
+      'https://picsum.photos/seed/ticketify-test/800/1200',
+    );
+    // Item payload: each row carries name/quantity/unit_price/total_price/
+    // category_id (slug resolved to uuid)/is_impulse/sort_order — and NO
+    // purchase_id (the RPC provides it).
+    assert.deepEqual(params.p_items, [
       {
-        purchase_id: insertedPurchase.id,
         name: 'Leche',
         quantity: 1,
         unit_price: 3.5,
@@ -923,7 +924,6 @@ async function run() {
         sort_order: 0,
       },
       {
-        purchase_id: insertedPurchase.id,
         name: 'Papas fritas',
         quantity: 2,
         unit_price: 2,
@@ -933,6 +933,10 @@ async function run() {
         sort_order: 1,
       },
     ]);
+    assert.ok(
+      !params.p_items.some((i) => 'purchase_id' in i),
+      'item payload never carries a purchase_id (the RPC provides it)',
+    );
   });
 
   await test('saveReceipt falls back to the otros category when user pick AND AI suggestion are both absent', async () => {
@@ -949,6 +953,9 @@ async function run() {
         { id: 'cat-snacks', slug: 'snacks' },
         { id: 'cat-otros', slug: 'otros' },
       ],
+    });
+    stubMod.__setRpcResult('save_receipt', {
+      rows: [{ ok: true, purchase_id: 'purc-uuid', scans_used: 1, scans_limit: 15 }],
     });
     const result = await ticketsMod.saveReceipt('u1', {
       ...DRAFT,
@@ -978,16 +985,12 @@ async function run() {
       ],
     });
     assert.ok(result.id.length > 0, 'save succeeded');
-    const itemPayloads = stubMod.__getInserted('purchase_items').map((item) => {
-      const { id, ...payload } = item; // synthetic stub id, not app data
-      void id;
-      return payload;
-    });
-    assert.equal(itemPayloads[0].category_id, 'cat-lacteos');
+    const pItems = stubMod.__lastRpcCall().params.p_items;
+    assert.equal(pItems[0].category_id, 'cat-lacteos');
     assert.equal(
-      itemPayloads[1].category_id,
+      pItems[1].category_id,
       'cat-otros',
-      'an unresolved slug (no user pick, no AI suggestion) persists the otros id — never NULL',
+      'an unresolved slug (no user pick, no AI suggestion) passes the otros id — never NULL',
     );
     // Deterministic category map (review fix): the fetch is ordered by slug,
     // so the 200-row cap truncates by a stable key and cannot exclude
@@ -1002,6 +1005,9 @@ async function run() {
     resetAll();
     stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
     stubMod.__setTableRead('categories', { rows: [] });
+    stubMod.__setRpcResult('save_receipt', {
+      rows: [{ ok: true, purchase_id: 'purc-uuid', scans_used: 1, scans_limit: 15 }],
+    });
     // Seed the shared monthlyTotals cache on the REAL TanStack client the
     // compiled api uses: the current UTC month (what the old pinned-UTC
     // invalidation hit) plus a DIFFERENT month (the local-month variant the
@@ -1052,6 +1058,9 @@ async function run() {
       rows: [{ id: 'store-global-1' }],
     });
     stubMod.__setTableRead('categories', { rows: [] });
+    stubMod.__setRpcResult('save_receipt', {
+      rows: [{ ok: true, purchase_id: 'purc-uuid', scans_used: 1, scans_limit: 15 }],
+    });
     const result = await ticketsMod.saveReceipt('u1', DRAFT);
     assert.ok(result.id.length > 0);
     const log = stubMod.__getCallLog();
@@ -1059,6 +1068,11 @@ async function run() {
       (e) => e.kind === 'insert' && e.table === 'stores',
     );
     assert.equal(storeInserts.length, 0, 'store already exists — no insert');
+    assert.equal(
+      stubMod.__lastRpcCall().params.p_store_id,
+      'store-global-1',
+      'RPC receives the existing store id',
+    );
   });
 
   await test('saveReceipt rejects an empty store name with the user-safe message, no writes', async () => {
@@ -1103,10 +1117,15 @@ async function run() {
     );
   });
 
-  await test('saveReceipt purchase insert failure: user-safe message, no item writes', async () => {
+  await test('saveReceipt RPC transport failure surfaces the user-safe message and removes the uploaded photo', async () => {
     resetAll();
+    // `rows: null` arms the RPC to resolve `{ data: null, error }` — a
+    // transport/DB failure, distinct from the ok=false quota answer.
     stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
-    stubMod.__failNextInsert('purchases');
+    stubMod.__setTableRead('categories', { rows: [] });
+    stubMod.__setRpcResult('save_receipt', {
+      error: { message: 'connection reset', code: 'PGRST300' },
+    });
     await assert.rejects(
       () => ticketsMod.saveReceipt('u1', DRAFT),
       (err) => {
@@ -1119,100 +1138,56 @@ async function run() {
     );
     const log = stubMod.__getCallLog();
     assert.ok(
-      !log.some((e) => e.kind === 'from' && e.table === 'purchase_items'),
-      'no item writes attempted',
+      log.some((e) => e.kind === 'rpc' && e.fn === 'save_receipt'),
+      'save_receipt RPC was attempted',
     );
-    assert.ok(!log.some((e) => e.kind === 'delete'), 'no rollback needed — the purchase never persisted');
-    assert.equal(stubMod.__getInserted('purchase_items'), null, 'items never inserted');
+    assert.ok(
+      !log.some((e) => e.kind === 'delete'),
+      'no compensating rollback — the RPC is atomic',
+    );
   });
 
-  await test('saveReceipt item write failure rolls back the purchase and surfaces the user-safe message', async () => {
+  await test('saveReceipt ok=false throws QuotaExceededError and removes the uploaded photo', async () => {
     resetAll();
     stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
-    stubMod.__setTableRead('categories', {
-      rows: [{ id: 'cat-lacteos', slug: 'lacteos' }],
+    stubMod.__setTableRead('categories', { rows: [{ id: 'cat-a', slug: 'a' }] });
+    expoFsMod.__setFileSource('file:///scan.jpg', {
+      size: 2048,
+      type: 'image/jpeg',
+      base64: 'c2FtcGxl',
     });
-    stubMod.__failNextInsert('purchase_items');
-    const draft = {
-      ...DRAFT,
-      items: [
-        {
-          temp_id: 't1',
-          name: 'Leche',
-          quantity: 1,
-          unit_price: 3.5,
-          total_price: 3.5,
-          category_id: 'lacteos',
-          is_impulse: false,
-          ai_suggested_category_id: null,
-        },
-      ],
-    };
+    // Hard cap: the RPC answers ok:false (the user is at/over the cap).
+    stubMod.__setRpcResult('save_receipt', {
+      rows: [{ ok: false, purchase_id: null, scans_used: 15, scans_limit: 15 }],
+    });
+    const draft = { ...DRAFT, image_url: 'file:///scan.jpg' };
     await assert.rejects(
       () => ticketsMod.saveReceipt('u1', draft),
       (err) => {
-        assert.equal(
-          err.message,
-          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+        assert.ok(
+          err instanceof ticketsMod.QuotaExceededError,
+          'cap rejection surfaces QuotaExceededError',
         );
         return true;
       },
     );
     const log = stubMod.__getCallLog();
-    const rollbackDeletes = log.filter(
-      (e) => e.kind === 'delete' && e.table === 'purchases',
-    );
-    assert.equal(
-      rollbackDeletes.length,
-      1,
-      'compensating delete fired on purchases',
-    );
-    // The contract is `delete().eq('id', purchaseId)` (see tickets/api.ts):
-    // a bare delete would remove every purchase of the user, and the call
-    // log above cannot tell them apart — only the chain ops can. The
-    // delete chain is the most recent `purchases` chain, so the query-call
-    // seam returns exactly its filters.
-    const purchaseId = stubMod.__getInserted('purchases')[0].id;
-    const deleteOps = stubMod.__getQueryCalls('purchases');
-    assert.ok(
-      deleteOps.some(
-        (o) => o.op === 'eq' && o.column === 'id' && o.value === purchaseId,
-      ),
-      'compensating delete targets the persisted purchase id (eq filter, not a bare table delete)',
-    );
-    assert.equal(stubMod.__getInserted('purchase_items'), null, 'items never persisted');
-    assert.ok(
-      stubMod.__getInserted('purchases'),
-      'the purchase row existed before the rollback (that is what the delete compensates)',
-    );
-  });
-
-  await test('saveReceipt cleans up the uploaded photo object when a later write fails', async () => {
-    resetAll();
-    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
-    stubMod.__setTableRead('categories', { rows: [{ id: 'cat-a', slug: 'a' }] });
-    expoFsMod.__setFileSource('file:///scan.jpg', {
-      size: 2048,
-      type: 'image/jpeg',
-      base64: 'c2FtcGxl',
-    });
-    stubMod.__failNextInsert('purchase_items', { message: 'items boom' });
-    const draft = { ...DRAFT, image_url: 'file:///scan.jpg' };
-    await assert.rejects(() => ticketsMod.saveReceipt('u1', draft), 'error');
-    const log = stubMod.__getCallLog();
     const uploadCall = log.find((e) => e.kind === 'storage-upload');
-    assert.ok(uploadCall, 'photo was uploaded before the failing write');
+    assert.ok(uploadCall, 'photo was uploaded before the cap answer');
     const removeCall = log.find((e) => e.kind === 'storage-remove');
-    assert.ok(removeCall, 'cleanup attempted after the failed write');
-    assert.equal(removeCall.bucket, 'receipts');
+    assert.ok(removeCall, 'cleanup attempted after the cap rejection');
     assert.deepEqual(
       removeCall.paths,
       [uploadCall.path],
       'cleanup targets exactly the object uploaded by this save',
     );
+    assert.ok(
+      !log.some((e) => e.kind === 'delete'),
+      'no rollback — the RPC never inserted anything',
+    );
   });
 
-  await test('saveReceipt cleans up the uploaded photo when the purchase insert itself fails', async () => {
+  await test('saveReceipt RPC transport failure removes the uploaded photo', async () => {
     resetAll();
     stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
     stubMod.__setTableRead('categories', { rows: [{ id: 'cat-a', slug: 'a' }] });
@@ -1221,23 +1196,20 @@ async function run() {
       type: 'image/jpeg',
       base64: 'c2FtcGxl',
     });
-    stubMod.__failNextInsert('purchases', { message: 'purchase boom' });
+    stubMod.__setRpcResult('save_receipt', {
+      error: { message: 'connection reset', code: 'PGRST300' },
+    });
     const draft = { ...DRAFT, image_url: 'file:///scan.jpg' };
     await assert.rejects(() => ticketsMod.saveReceipt('u1', draft), 'error');
     const log = stubMod.__getCallLog();
     const uploadCall = log.find((e) => e.kind === 'storage-upload');
-    assert.ok(uploadCall, 'photo was uploaded before the failing purchase insert');
+    assert.ok(uploadCall, 'photo was uploaded before the RPC call');
     const removeCall = log.find((e) => e.kind === 'storage-remove');
-    assert.ok(removeCall, 'cleanup attempted after the purchase insert failure');
+    assert.ok(removeCall, 'cleanup attempted after the RPC failure');
     assert.deepEqual(
       removeCall.paths,
       [uploadCall.path],
       'cleanup targets exactly the uploaded object',
-    );
-    assert.equal(
-      stubMod.__getInserted('purchase_items'),
-      null,
-      'no item writes when the purchase never persisted',
     );
   });
 
@@ -1250,7 +1222,9 @@ async function run() {
       type: 'image/jpeg',
       base64: 'c2FtcGxl',
     });
-    stubMod.__failNextInsert('purchase_items', { message: 'items boom' });
+    stubMod.__setRpcResult('save_receipt', {
+      error: { message: 'connection reset', code: 'PGRST300' },
+    });
     stubMod.__setStorageBehavior('receipts', {
       removeError: { message: 'cleanup denied', code: '403' },
     });
@@ -1265,6 +1239,31 @@ async function run() {
         );
         return true;
       },
+    );
+  });
+
+  await test('saveReceipt ok=false with no uploaded photo still throws QuotaExceededError', async () => {
+    resetAll();
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [] });
+    stubMod.__setRpcResult('save_receipt', {
+      rows: [{ ok: false, purchase_id: null, scans_used: 15, scans_limit: 15 }],
+    });
+    await assert.rejects(
+      () => ticketsMod.saveReceipt('u1', DRAFT),
+      (err) => {
+        assert.ok(
+          err instanceof ticketsMod.QuotaExceededError,
+          'cap rejection surfaces QuotaExceededError even without an uploaded photo',
+        );
+        return true;
+      },
+    );
+    const log = stubMod.__getCallLog();
+    assert.equal(
+      log.filter((e) => e.kind === 'storage-remove').length,
+      0,
+      'no upload → no cleanup attempt',
     );
   });
 
@@ -2058,10 +2057,13 @@ async function run() {
     );
   });
 
-  await test('saveReceipt uploads a local draft image and persists the storage path', async () => {
+  await test('saveReceipt uploads a local draft image and passes the storage path to the RPC', async () => {
     resetAll();
     stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
     stubMod.__setTableRead('categories', { rows: [{ id: 'cat-a', slug: 'a' }] });
+    stubMod.__setRpcResult('save_receipt', {
+      rows: [{ ok: true, purchase_id: 'purc-uuid', scans_used: 1, scans_limit: 15 }],
+    });
     expoFsMod.__setFileSource('file:///scan.jpg', {
       size: 2048,
       type: 'image/jpeg',
@@ -2073,11 +2075,11 @@ async function run() {
     };
     const saved = await ticketsMod.saveReceipt('u1', draft);
     assert.ok(saved && saved.id, 'purchase persisted');
-    const insertedPurchase = stubMod.__getInserted('purchases')[0];
+    const rpcParams = stubMod.__lastRpcCall().params;
     assert.match(
-      insertedPurchase.image_url,
+      rpcParams.p_image_url,
       /^u1\/.+\.jpg$/,
-      'image_url stores the storage object path, not the local uri',
+      'p_image_url passes the storage object path, not the local uri',
     );
     assert.ok(
       stubMod.__getCallLog().some((e) => e.kind === 'storage-upload'),
@@ -2089,11 +2091,14 @@ async function run() {
     resetAll();
     stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
     stubMod.__setTableRead('categories', { rows: [{ id: 'cat-a', slug: 'a' }] });
+    stubMod.__setRpcResult('save_receipt', {
+      rows: [{ ok: true, purchase_id: 'purc-uuid', scans_used: 1, scans_limit: 15 }],
+    });
     const saved = await ticketsMod.saveReceipt('u1', DRAFT);
     assert.ok(saved && saved.id, 'purchase persisted');
-    const insertedPurchase = stubMod.__getInserted('purchases')[0];
+    const rpcParams = stubMod.__lastRpcCall().params;
     assert.equal(
-      insertedPurchase.image_url,
+      rpcParams.p_image_url,
       DRAFT.image_url,
       'remote urls pass through unchanged',
     );
@@ -2108,15 +2113,18 @@ async function run() {
     resetAll();
     stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
     stubMod.__setTableRead('categories', { rows: [{ id: 'cat-a', slug: 'a' }] });
+    stubMod.__setRpcResult('save_receipt', {
+      rows: [{ ok: true, purchase_id: 'purc-uuid', scans_used: 1, scans_limit: 15 }],
+    });
     const draft = {
       ...DRAFT,
       image_url: 'u1/abc.jpg',
     };
     const saved = await ticketsMod.saveReceipt('u1', draft);
     assert.ok(saved && saved.id, 'purchase persisted');
-    const insertedPurchase = stubMod.__getInserted('purchases')[0];
+    const rpcParams = stubMod.__lastRpcCall().params;
     assert.equal(
-      insertedPurchase.image_url,
+      rpcParams.p_image_url,
       'u1/abc.jpg',
       'storage paths pass through unchanged',
     );
