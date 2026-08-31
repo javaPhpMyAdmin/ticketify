@@ -23,7 +23,7 @@ Uruguayan couples and roommates who share expenses currently manage Ticketify in
 - Co-owner role — V2
 - Multi-currency households — V2
 - Realtime push for member receipt sync — V2 (V1 uses focus-triggered refetch)
-- Pro tier gating — decision pending (see Open Questions)
+- Pro tier gating — resolved to **owner-pays** (see Proposal Question Round, Q1)
 
 ## Capabilities
 
@@ -80,10 +80,11 @@ Household sharing is additive. Rollback: disable household toggle (feature flag 
 
 ## Proposal Question Round
 
-Before finalizing, these decisions need user input:
+Decisions below were resolved in the implementation where noted. Unresolved
+items remain open for product input.
 
-1. **Is household sharing a Pro-only feature?** Recommendation: yes — it's premium value that drives subscriptions.
-2. **When owner deletes their account, what happens?** Options: (a) dissolve household, (b) transfer ownership to longest-tenured member, (c) prevent account deletion until household is dissolved.
-3. **Should the household card show on home feed by default, or only when user taps into household view?** Current exploration suggests always-on card.
-4. **Max household members?** Recommendation: 5 (covers couples, roommates, small families).
-5. **V1 sharing level: Level B only, or include Level A toggle?** Level B is recommended as default — is Level A needed at all in V1?
+1. **Is household sharing a Pro-only feature?** → **Resolved: owner-pays, not all-Pro-only.** Migration `0017_household_owner_pays.sql` requires only the household **creator** to be Pro or trialing (`tier='pro'` OR `subscription_status IN ('trial','active')`); members join and participate free. Client gates creation via `create_household` RPC + `useFrozenGuard`, and lets free users reach the join flow.
+2. **When owner deletes their account, what happens?** → **Pending.** Ownership transfer on manual leave is implemented (`leave_household` promotes the longest-tenured member), but no automatic account-deletion hook (trigger or webhook) exists yet. See design.md Open Questions.
+3. **Should the household card show on home feed by default, or only when user taps into household view?** → **Resolved: always-on when a household is active.** `HouseholdCard` renders on the home feed whenever `household_sharing` is enabled and a household exists.
+4. **Max household members?** → **Resolved: 5** (owner + 4), enforced server-side in `generate_invite_code`/`join_household` and surfaced as `MAX_MEMBERS = 5` in the settings UI.
+5. **V1 sharing level: Level B only, or include Level A toggle?** → **Resolved: Level B only.** `get_household_feed` returns totals + category + store names, never individual items. Level A is not in V1.

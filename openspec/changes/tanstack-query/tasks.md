@@ -54,8 +54,8 @@ Refs: SSC = server-state-caching, DA = data-access, UA = user-auth.
 
 - [x] 4.1 `pnpm typecheck` passes — profile/index/analytics/review-[id] compile unchanged [SSC-9]
 - [x] 4.2 `pnpm test` (adapter + auth + features) green [SSC-12]
-- [~] 4.3 Device: Home→Profile no second `profiles` read; sign-out→sign-in shows no prior data; foreground refetches stale only [SSC-2, SSC-7, UA-1]
-  - **Manual, deferred to user (no device simulator in apply).** Checklist:
+- [ ] 4.3 Device: Home→Profile no second `profiles` read; sign-out→sign-in shows no prior data; foreground refetches stale only [SSC-2, SSC-7, UA-1]
+  - **Pending — manual verification by the user on a physical device, NOT code.** This is a runtime/device checklist the apply phase (no device/simulator) cannot complete. The code itself is implemented and green (see tasks 1–3 + 4.1/4.2/4.4).
     1. Sign in as user A → Home tab: budget card loads from `profiles`; navigate to Profile → verify NO second `profiles` read fires (single request, deduped cache).
     2. Foreground refetch: background the app for >30s (scan usage stale) but <60s (profile fresh) → return to foreground → scan usage refetches, profile does NOT re-request (stale-only refetch).
     3. Scan flow: scan a ticket → review screen shows the parsed draft (store seeded); trigger a failure path → error state + retry button, store not half-seeded.

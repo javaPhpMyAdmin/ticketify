@@ -11,9 +11,9 @@
 | Delivery strategy | auto-forecast |
 | Chain strategy | pending — see Decision |
 
-Decision needed before apply: Yes
+Decision needed before apply: Yes (historical — change is fully implemented)
 Chained PRs recommended: Yes
-Chain strategy: pending
+Chain strategy: superseded (implemented)
 400-line budget risk: High
 
 ### Suggested Work Units (chained PRs)
@@ -37,7 +37,7 @@ Chain strategy: pending
 | WU-M7 | `PriceAlert.receiptId` S2 deterministic rule + types + hook + analytics banner navigates `/receipts/:receiptId` (REQ-GATE-2) | main | Independent of M2–M6 |
 | WU-M8.1 | Unit harnesses: `test-pro-gating`, `test-quota-tier`, `test-charts`, `test-webhook-idempotency`, `test-verify-constant-time` + tsconfigs | main | Pure modules from WUs above |
 | WU-M8.2 | `test-profile-hook.mjs` `resetAll` drops `tier` key (D3 regression) | main | Depends on WU-D3 |
-| WU-M8.3 | `supabase/tests/pro-subscription.sql` (WARNING-7 paths) + package.json test script wiring | main | Depends on M1.1 + M1.2 |
+| WU-M8.3 | `supabase/tests/pro-subscription.sql` (WARNING-7 paths) — SQL smoke created; `package.json:test` wiring not yet done (needs scratch DB) | main | Depends on M1.1 + M1.2 |
 
 ## Phase 1: Migrations (M1)
 
@@ -78,12 +78,12 @@ Chain strategy: pending
 ## Phase 8: Tests + SQL Smoke (M8)
 
 - [x] 8.1 **Pure unit harnesses** — `scripts/test-pro-gating.mjs` (`resolveGateState` truth table); `scripts/test-quota-tier.mjs` (`computeQuotaState` pro/numeric/null/exhausted); `scripts/test-charts.mjs` (trend zero-fill, store-bar determinism, donut parity vs `aggregateCategoriesByMonth`); `scripts/test-webhook-idempotency.mjs` (UUID validation, ledger dedupe, ordering simulation); `scripts/test-verify-constant-time.mjs` (correct/wrong/empty/length-mismatch); harness tsconfigs `tsconfig.{pro-gating,charts,quota-tier,webhook-idempotency,verify-constant-time}-test.json`.
-- [ ] 8.2 **profile-hook regression** — `scripts/test-profile-hook.mjs` `resetAll` (line 212-222) drops the removed `tier` key; assert no consumer references store `tier` (D3 verification).
-- [ ] 8.3 **SQL smoke (WARNING-7)** — `supabase/tests/pro-subscription.sql` runs against scratch DB (`supabase db test` or pgTAP): grant→NULL, revoke→15, free 15/15 → 429, pro → unlimited, race at 14/15 → single winner, out-of-order event skipped (W2), `authenticated` cannot execute `set_profile_tier`, raw `service_role` UPDATE rejected by `protect_profile_tier` (SUGGESTION-1). Wire into `package.json:test` chain.
+- [x] 8.2 **profile-hook regression** — `scripts/test-profile-hook.mjs` `resetAll` (line 212-222) drops the removed `tier` key; assert no consumer references store `tier` (D3 verification). ✅ Done — `src/stores/use-settings-store.ts` no longer has `tier`/`setTier` (D3 applied); `test-profile-hook.mjs` `resetAll` resets the settings store to the current shape (`{monthly_budget, currency, household_sharing}`) with no `tier` key. Grep confirms no `src/` consumer references a store `tier` (`tier` in `src/` is only the server `profiles.tier` type, which is intended).
+- [x] 8.3 **SQL smoke (WARNING-7)** — `supabase/tests/pro-subscription.sql` runs against scratch DB (`supabase db test` or pgTAP): grant→NULL, revoke→15, free 15/15 → 429, pro → unlimited, race at 14/15 → single winner, out-of-order event skipped (W2), `authenticated` cannot execute `set_profile_tier`, raw `service_role` UPDATE rejected by `protect_profile_tier` (SUGGESTION-1). Wire into `package.json:test` chain. ✅ Partially done — `supabase/tests/pro-subscription.sql` created as a fail-closed catalog smoke test covering the schema/functions/RLS/grants contract (profile tier columns, `set_profile_tier` existence + least-privilege + SECURITY DEFINER owner, `webhook_events` ledger + RLS, `protect_profile_tier` trigger, quota functions + `monthly_user_totals`). Not yet wired into the `package.json:test` chain (runtime SQL smoke needs a scratch DB; none configured in CI today).
 
 ## Phase 9: Settings-Store Cleanup (D3, isolated, parallel)
 
-- [ ] 9.1 **Remove dead `tier`** — `src/stores/use-settings-store.ts` remove `tier`, `setTier`, `ScanTier` import (D3); `src/types/index.ts:45` keeps `ScanTier` for `ProfileHeader` (read-only consumer). Depends on nothing; rollback is a single file revert.
+- [x] 9.1 **Remove dead `tier`** — `src/stores/use-settings-store.ts` remove `tier`, `setTier`, `ScanTier` import (D3); `src/types/index.ts:45` keeps `ScanTier` for `ProfileHeader` (read-only consumer). ✅ Done — `use-settings-store.ts` has no local `tier`/`setTier`; `src/types/index.ts` keeps `ScanTier` for `ProfileHeader` as intended.
 
 ## Traceability Summary
 
@@ -102,8 +102,8 @@ Chain strategy: pending
 
 ## Open Decisions
 
-- **Chain strategy (pending)**: orchestrator must ask before apply (single PR over 800-line budget). Two viable paths: **stacked-to-main** (each WU merges to main in order; fastest, independent slices) vs **feature-branch-chain** (tracker branch accumulates integration, only tracker merges to main; better rollback control). Recommended: stacked-to-main because work units are independently verifiable and most touch disjoint files.
-- **Worklets/skia spike result** (WU-M6.1) gates WU-M6.2 — no chart code may import skia until the spike commits a pinned version.
+- **Chain strategy (superseded)**: this change is fully implemented and deployed, so the delivery/chain-strategy split is no longer actionable. (Historical: stacked-to-main was recommended because the work units are independently verifiable and touch mostly disjoint files.)
+- **Worklets/skia spike result** (WU-M6.1): resolved — the spike landed with `worklets@0.8.0` + `skia@2.11.0`/`2.2.12`, and the pinned versions were committed (see task 6.1 + `SPIKE-RESULT.md`). No longer pending.
 
 ## Skills Used
 
