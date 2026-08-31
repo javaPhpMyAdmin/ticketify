@@ -95,7 +95,14 @@ comment on function public.expire_overdue_trials() is
 -- `cron.schedule` with the same job name REPLACES the existing job, so this
 -- both creates (first run) and realigns (re-run) the schedule to call the
 -- RPC instead of the old direct UPDATE. Requires pg_cron (Supabase default).
+--
+-- pg_cron is shipped with the Supabase Postgres image but is NOT enabled by
+-- default on a fresh DB, so `cron.schedule` fails with SQLSTATE 3F000 (schema
+-- "cron" does not exist) unless the extension is created first. This is a safe,
+-- no-op-if-present dependency declaration.
 -- ---------------------------------------------------------------------------
+create extension if not exists pg_cron;
+
 select cron.schedule(
   'trial-expiry'::text,
   '0 */6 * * *'::text,

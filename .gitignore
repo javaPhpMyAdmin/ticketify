@@ -45,6 +45,7 @@ example
 
 # supabase CLI local cache
 supabase/.temp/
+supabase/.branches/
 
 # generated native folders
 /ios

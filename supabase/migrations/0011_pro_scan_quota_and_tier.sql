@@ -214,7 +214,11 @@ comment on function public.try_consume_scan(uuid, text) is
 --
 -- Idempotent: `alter function … owner to X` is a no-op when the current
 -- owner is already X, so reruns of this migration are safe.
-alter function public.set_profile_tier(uuid, text) owner to postgres;
+-- The `owner to postgres` line was removed from before the `create or
+-- replace`: the function does not exist yet here, and on a fresh database
+-- this `alter` failed with SQLSTATE 42883 (undefined_function), blocking
+-- `supabase start` / `db reset`. Supabase migrations run as `postgres`, so
+-- the `create or replace` already yields a postgres-owned function.
 
 create or replace function public.set_profile_tier(p_user_id uuid, p_tier text)
 returns void

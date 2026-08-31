@@ -72,7 +72,16 @@ create policy "category_budgets_delete_own" on public.category_budgets
 -- Same return shape plus nullable budget_limit (7th column). All existing
 -- fields preserved — additive only. Same security posture (security invoker,
 -- stable, set search_path = public, auth.uid()-scoped).
+--
+-- 42P13 (cannot change return type of existing function): the prior shape of
+-- monthly_category_totals(text) was 6 columns (0002/0009). Adding the 7th
+-- column (budget_limit) changes the return type, which `create or replace`
+-- cannot do. We must drop the old overload first. This `(text)` overload has
+-- no grants and no dependent objects anywhere in the migration chain (verified),
+-- so the drop is safe — nothing is orphaned by it.
 -- ---------------------------------------------------------------------------
+
+drop function if exists public.monthly_category_totals(text);
 
 create or replace function public.monthly_category_totals(p_year_month text)
 returns table (
