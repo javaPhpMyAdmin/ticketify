@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Image, StyleSheet } from 'react-native';
 
-import { Icon, Pressable, Spinner, Text, View, type IconName } from '@/components';
+import {
+  Icon,
+  Pressable,
+  Spinner,
+  Text,
+  View,
+  type IconName,
+} from '@/components';
 import { formatCurrency, formatShortDate } from '@/lib/format';
 import {
   getSignedReceiptPhotoUrl,
@@ -80,7 +87,8 @@ export function ReceiptRow({
   // decoded. Without `imageReady`, there's a gap between signing=false and
   // onLoadStart where the image renders blank before the spinner appears.
   const thumbnailLoading =
-    !imageFailed && (signing || imageLoading || (photoSource !== null && !imageReady));
+    !imageFailed &&
+    (signing || imageLoading || (photoSource !== null && !imageReady));
   const row = (
     <>
       {photoSource && !imageFailed ? (
@@ -188,8 +196,8 @@ const styles = StyleSheet.create({
   },
   date: {
     color: colors.textSecondary,
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
   },
   amount: {
     color: '#606060',
