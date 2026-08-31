@@ -15,7 +15,10 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   UYU: '$',
 };
 
-export function formatCurrency(value: number, currency: string = 'UYU'): string {
+export function formatCurrency(
+  value: number,
+  currency: string = 'UYU',
+): string {
   const symbol = CURRENCY_SYMBOLS[currency.toUpperCase()] ?? `${currency} `;
   const fixed = Math.abs(value).toFixed(2);
   // Add thousands separator to the integer part only.
@@ -29,7 +32,10 @@ export function formatCurrency(value: number, currency: string = 'UYU'): string 
  * Used by the capsule chart amounts and the day-detail total, where the
  * cents add noise to an already long label (UYU has no cents in practice).
  */
-export function formatCurrencyWhole(value: number, currency: string = 'UYU'): string {
+export function formatCurrencyWhole(
+  value: number,
+  currency: string = 'UYU',
+): string {
   const symbol = CURRENCY_SYMBOLS[currency.toUpperCase()] ?? `${currency} `;
   const rounded = Math.abs(value).toFixed(0);
   const withSeparators = rounded.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -38,14 +44,34 @@ export function formatCurrencyWhole(value: number, currency: string = 'UYU'): st
 
 /** Spanish short month names (lowercase, the standard for `es`). */
 export const MONTHS_SHORT_ES = [
-  'ene', 'feb', 'mar', 'abr', 'may', 'jun',
-  'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+  'ene',
+  'feb',
+  'mar',
+  'abr',
+  'may',
+  'jun',
+  'jul',
+  'ago',
+  'sep',
+  'oct',
+  'nov',
+  'dic',
 ];
 
 /** Spanish full month names (lowercase, the standard for `es`). */
 export const MONTHS_FULL_ES = [
-  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
 ];
 
 /**
@@ -67,7 +93,10 @@ function parseLocalDate(iso: string): Date {
 export function formatShortDate(iso: string): string {
   const date = parseLocalDate(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return `${date.getDate()} ${MONTHS_SHORT_ES[date.getMonth()]}`;
+  return `${date.getDate()} ${
+    MONTHS_SHORT_ES[date.getMonth()].charAt(0).toUpperCase() +
+    MONTHS_SHORT_ES[date.getMonth()].slice(1)
+  }. `;
 }
 
 /**
@@ -81,7 +110,12 @@ export function formatYearMonth(
   options: { full?: boolean; capitalize?: boolean } = {},
 ): string {
   const [year, month] = yearMonth.split('-').map(Number);
-  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    month < 1 ||
+    month > 12
+  ) {
     return yearMonth;
   }
   const names = options.full ? MONTHS_FULL_ES : MONTHS_SHORT_ES;

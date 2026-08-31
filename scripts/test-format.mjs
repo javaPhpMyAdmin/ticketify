@@ -87,9 +87,9 @@ async function run() {
     assert.equal(fmt.formatCurrency(5, 'XYZ'), 'XYZ 5.00');
   });
 
-  await test('formatShortDate → day-first "12 ago"', () => {
+  await test('formatShortDate → day-first "12 Ago." (capitalized month + period)', () => {
     const iso = new Date(2026, 7, 12, 14, 30).toISOString();
-    assert.equal(fmt.formatShortDate(iso), '12 ago');
+    assert.equal(fmt.formatShortDate(iso), '12 Ago. ');
   });
 
   await test('formatShortDate returns input on invalid date', () => {
@@ -99,8 +99,8 @@ async function run() {
   await test('formatShortDate parses date-only strings in LOCAL time, not UTC', () => {
     // Under TZ=America/Montevideo (UTC-3) `new Date('2026-08-01')` is UTC
     // midnight → Jul 31 21:00 local → "31 jul". The local parse must stay
-    // on the right calendar day: "1 ago".
-    assert.equal(fmt.formatShortDate('2026-08-01'), '1 ago');
+    // on the right calendar day: "1 Ago. ".
+    assert.equal(fmt.formatShortDate('2026-08-01'), '1 Ago. ');
   });
 
   await test('formatTime → "02:30 p. m."', () => {
@@ -128,7 +128,7 @@ async function run() {
   await test('formatRelativeDay → short date for older days', () => {
     const now = new Date(2026, 7, 12, 9, 0);
     const iso = new Date(2026, 7, 10, 14, 30).toISOString();
-    assert.equal(fmt.formatRelativeDay(iso, now), '10 ago');
+    assert.equal(fmt.formatRelativeDay(iso, now), '10 Ago. ');
   });
 
   await test('formatRelativeDay treats a date-only string as a local day', () => {

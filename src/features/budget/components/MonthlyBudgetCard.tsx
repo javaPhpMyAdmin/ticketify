@@ -139,8 +139,9 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     top: 2,
     fontWeight: '600',
-    fontSize: 22,
-    lineHeight: 26,
+    fontSize: 20,
+    lineHeight: 34,
+    letterSpacing: 0.5,
   },
   calloutAmount: {
     // ...typography.labelSm,
