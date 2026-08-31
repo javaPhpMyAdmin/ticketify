@@ -16,7 +16,7 @@
 
 - [x] 3.1 Run `pnpm typecheck`.
 - [x] 3.2 Run `pnpm test` and any parse-ticket harness.
-- [ ] 3.3 Deploy `parse-ticket` with import-map flag.
+- [x] 3.3 Deploy `parse-ticket` with import-map flag. ✅ Done — deployed ACTIVE v20 (2026-08-31) with `--import-map supabase/functions/deno.json`.
 - [x] 3.4 Mark tasks complete and save apply-progress.
 
 ## Review Workload Forecast
