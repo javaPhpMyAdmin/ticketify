@@ -162,8 +162,10 @@ comment on function public.sync_subscription_status(uuid, text, timestamptz) is
 --   free → pro: subscription_status = 'active', trial_ends_at = null
 -- ---------------------------------------------------------------------------
 
--- W3 fix: ensure owner is postgres before create or replace.
-alter function public.set_profile_tier(uuid, text) owner to postgres;
+-- W3 fix: ensure the function is owned by postgres. Removed the pre-create
+-- `alter` (failed with SQLSTATE 42883 on a fresh DB because the function
+-- does not exist yet); Supabase runs migrations as `postgres`, so the
+-- `create or replace` already yields a postgres-owned function.
 
 create or replace function public.set_profile_tier(p_user_id uuid, p_tier text)
 returns void
