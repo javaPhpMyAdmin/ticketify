@@ -39,6 +39,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: supabase/setup-cli@v1
+        with:
+          # Pin explicitly: setup-cli's lockfile detection does not parse
+          # pnpm (fell back to 2.20.3 which lacks `db query --local`). Match
+          # the local CLI used for development (has db query).
+          version: 2.116.0
 
       - name: Start local Supabase (Postgres only)
         # Starts the local stack on a fresh scratch DB and applies every
