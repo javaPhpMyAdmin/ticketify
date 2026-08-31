@@ -31,3 +31,32 @@ jobs:
 
       - name: Tests
         run: pnpm test
+
+  db-smoke:
+    name: DB schema smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+
+      - name: Start local Supabase (Postgres only)
+        # Starts the local stack on a fresh scratch DB and applies every
+        # migration in supabase/migrations/, so the catalog reflects the
+        # expected schema before the READ-ONLY smoke test runs. Non-DB
+        # services are excluded: `supabase db query --local` connects
+        # directly to Postgres via the wire protocol and never needs
+        # studio/kong/gotrue/etc.
+        run: |
+          supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+
+      - name: Reset to a deterministic migration baseline
+        # Guarantees a clean catalog from scratch regardless of container
+        # caching between runs (fresh DB + all migrations replayed in order).
+        run: supabase db reset --local
+
+      - name: Run pro-subscription SQL smoke test
+        # Executes the arbitrary .sql smoke test (DO/assert blocks, NOT
+        # pgTAP) against the local catalog. Any raised assertion fails the
+        # query and, because steps stop on error, the whole job.
+        run: supabase db query --local --file supabase/tests/pro-subscription.sql
