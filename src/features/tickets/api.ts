@@ -394,7 +394,7 @@ export const QUOTA_ERROR_MESSAGE =
   'Llegaste al límite de 15 escaneos este mes. Pasate a Pro para escanear sin límite.';
 
 /**
- * Marker error thrown by `saveReceipt` when `consume_scan_on_save` returns
+ * Marker error thrown by `saveReceipt` when the `save_receipt` RPC returns
  * `ok=false` (the user is at/over the monthly cap). The review screen checks
  * `instanceof` so it can surface the quota copy instead of the generic save
  * message — the abort preserves the draft so the user can upgrade and retry.
@@ -462,15 +462,23 @@ async function fetchCategoryIdsBySlug(): Promise<Record<string, string>> {
 }
 
 /**
- * Persists the confirmed draft to the DB. Returns the new
- * purchase id on success. Throws a user-safe Error on failure (the review
- * screen keeps the draft and lets the user retry).
+ * Persists the confirmed draft to the DB via the single `save_receipt`
+ * transactional RPC. Returns the new purchase id on success. Throws a
+ * user-safe Error on failure (the review screen keeps the draft and lets
+ * the user retry).
  *
- * Real mode: writes the
- * `purchases` row plus its `purchase_items`, sequential inserts under RLS
- * (`purchases_insert_own`, `purchase_items_insert_own` scope both to the
- * session user). A failed item write rolls back the purchase row
- * (best-effort) so a partial save never renders in the feed.
+ * The RPC atomically:
+ *   1. Checks the monthly scan cap (tier-aware, re-reads tier inside an
+ *      atomic UPDATE to close the TOCTOU window).
+ *   2. Inserts the purchases row (status 'confirmed').
+ *   3. Inserts all purchase_items rows via unnest.
+ *   4. Returns (ok, purchase_id, scans_used, scans_limit).
+ *
+ * Because PL/pgSQL runs in one implicit transaction, a failure at ANY
+ * point rolls back everything — including the scan-slot increment — so
+ * there is no window where the slot is consumed but the write fails.
+ * The SECURITY DEFINER function bypasses RLS on purchases, purchase_items,
+ * and scan_usage (no FORCE ROW LEVEL SECURITY anywhere).
  *
  * The ticket photo upload runs HERE, on confirm (product decision
  * 2026-08-09): when the draft still carries a LOCAL image uri (the scan
@@ -480,9 +488,9 @@ async function fetchCategoryIdsBySlug(): Promise<Record<string, string>> {
  * URLs, or a storage path on a re-save) pass through unchanged. Uploading
  * on confirm means a cancelled scan never leaves an orphaned object.
  *
- * The reads the new receipt feeds (home feed,
- * budget, scan usage, analytics totals) are cached, so they are invalidated
- * after the write (server-state-caching spec).
+ * After a successful save, the new receipt feeds (home feed, budget, scan
+ * usage, analytics totals) are cached, so they are invalidated
+ * (server-state-caching spec).
  */
 export async function saveReceipt(
   userId: string,
@@ -520,51 +528,10 @@ export async function saveReceipt(
     imageUrl = uploaded.path;
   }
 
-  // HARD monthly cap: reserve the scan slot BEFORE persisting anything. The
-  // RPC atomically increments the usage row and reports the new count; if
-  // `ok=false` the user is at/over their monthly limit and NO purchase may
-  // be written. We clean up the just-uploaded object (no orphan in the
-  // bucket) and throw a quota-specific error the review screen surfaces as
-  // an upgrade dialog — the draft is preserved so the user can retry after
-  // upgrading. Unlike the old parse-time consume, a slot consumed here that
-  // later hits an infra failure is deliberately left consumed: saving IS the
-  // user's confirmed intent, so the reservation must not silently refund.
-  const consume = await supabase.rpc('consume_scan_on_save');
-  // The RPC returns `{ ok, scans_used, scans_limit }` (or errors on the
-  // network path). Only `ok: false` is the authoritative quota rejection.
-  if (consume.error || consume.data === null) {
-    // A transport/DB failure is NOT a quota answer — surface the generic
-    // save error so the user can retry (the slot stays open).
-    await removeUploadedObject(uploadedPath);
-    throw new Error(SAVE_ERROR_MESSAGE);
-  }
-  if (consume.data.ok === false) {
-    await removeUploadedObject(uploadedPath);
-    throw new QuotaExceededError();
-  }
-
-  const { data: purchase, error: purchaseError } = await supabase
-    .from('purchases')
-    .insert({
-      user_id: userId,
-      store_id: storeId,
-      purchase_date: draft.purchase_date,
-      total: draft.total,
-      payment_method: draft.payment_method,
-      image_url: imageUrl,
-      status: 'confirmed',
-    })
-    .select('id')
-    .single();
-  if (purchaseError || !purchase) {
-    await removeUploadedObject(uploadedPath);
-    throw new Error(SAVE_ERROR_MESSAGE);
-  }
-  const purchaseId = (purchase as { id: string }).id;
-
+  // Resolve category slug → uuid FK map once, before building item rows.
   const categoryIds = await fetchCategoryIdsBySlug();
   const itemRows = draft.items.map((item, index) => ({
-    purchase_id: purchaseId,
+    purchase_id: '', // placeholder — the RPC provides the real purchase_id
     name: item.name,
     quantity: item.quantity,
     unit_price: item.unit_price,
@@ -576,8 +543,7 @@ export async function saveReceipt(
     // 0009_fix_null_category_items.sql only fixes rows already in the DB.
     // The trailing `?? null` guards the pathological case where 'otros' is
     // missing from the map (fetchCategoryIdsBySlug caps at 200 rows, ordered
-    // by slug so the cap can never skip 'otros'); the RPC's LEFT
-    // JOIN/COALESCE buckets those NULLs under 'otros' read-side.
+    // by slug so the cap can never skip 'otros').
     category_id:
       categoryIds[item.category_id ?? ''] ??
       categoryIds[item.ai_suggested_category_id ?? ''] ??
@@ -587,38 +553,65 @@ export async function saveReceipt(
     sort_order: index,
   }));
 
-  const { error: itemsError } = await supabase
-    .from('purchase_items')
-    .insert(itemRows);
-  if (itemsError) {
-    // Best-effort compensating delete: without it a confirmed purchase with
-    // no line items would render in the feed with empty drill-downs.
-    const { error: rollbackError } = await supabase
-      .from('purchases')
-      .delete()
-      .eq('id', purchaseId);
-    if (rollbackError) {
-      console.warn(
-        '[save] rollback failed:',
-        rollbackError.code,
-        rollbackError.message,
-      );
-    }
-    // The upload already happened before the insert: clean the object up so
-    // a retried confirm does not pile up orphans in the bucket.
+  // Single transactional RPC: atomically checks the monthly scan cap,
+  // inserts the purchases row + purchase_items rows, and increments the
+  // scan slot — all in one guarded DB transaction. If ANY step fails
+  // (including after the slot increment), PL/pgSQL's implicit transaction
+  // rolls back everything, so there is no window where the slot is consumed
+  // but the write fails. ok=false means the free-tier cap is reached; the
+  // review screen surfaces this as an upgrade dialog via QuotaExceededError.
+  // save_receipt uses RETURNS TABLE, which PostgREST returns as a JSON array
+  // (even for a single row). .single() unwraps the one-row result so the
+  // ok / purchase_id fields below are read correctly — without it, ok is
+  // undefined (cap check never fires) and purchase_id is always undefined.
+  // save_receipt uses RETURNS TABLE, which PostgREST returns as a JSON array
+  // (even for a single row). .single() unwraps the one-row result so the
+  // ok / purchase_id fields below are read correctly — without it, ok is
+  // undefined (cap check never fires) and purchase_id is always undefined.
+  //
+  // The client is untyped (no generated `Database` type), so supabase-js'
+  // generic `.rpc<T>` treats T as the function name, not its return shape.
+  // We therefore cast the .single() result to the RPC's return contract.
+  type SaveReceiptResult = {
+    ok: boolean;
+    purchase_id: string | null;
+    scans_used: number;
+    scans_limit: number | null;
+  };
+  const { data, error } = (await supabase
+    .rpc('save_receipt', {
+      p_store_id: storeId,
+      p_purchase_date: draft.purchase_date,
+      p_total: draft.total,
+      p_payment_method: draft.payment_method,
+      p_image_url: imageUrl,
+      p_items: itemRows.map(({ purchase_id: _, ...rest }) => rest),
+    })
+    .single()) as {
+    data: SaveReceiptResult | null;
+    error: { message: string } | null;
+  };
+
+  if (error || data === null) {
+    // A transport/DB failure is NOT a quota answer — surface the generic
+    // save error so the user can retry.
     await removeUploadedObject(uploadedPath);
     throw new Error(SAVE_ERROR_MESSAGE);
   }
+  if (data.ok === false) {
+    await removeUploadedObject(uploadedPath);
+    throw new QuotaExceededError();
+  }
+
+  const purchaseId = data.purchase_id as string;
 
   // A new receipt changes every cached feed read (server-state-caching spec,
   // D5); scan usage is invalidated here too — only a SAVE consumes a scan.
+  // The scan slot was already incremented atomically inside the save_receipt
+  // RPC, so refetching the usage now reflects the new count.
   void queryClient.invalidateQueries({
     queryKey: queryKeys.scanUsage(userId, utcYearMonth()),
   });
-  // The scan slot was already reserved (and counted) by the pre-insert
-  // `consume_scan_on_save` above, so refetching the usage now reflects the
-  // incremented count. No post-write consume is needed — the reservation
-  // and the persistence are already coordinated.
   invalidateReceiptFeeds(userId);
 
   return { id: purchaseId };
