@@ -29,7 +29,8 @@
     "test:charts": "node scripts/test-charts.mjs",
     "test:verify-constant-time": "node scripts/test-verify-constant-time.mjs",
     "test:webhook-idempotency": "node scripts/test-webhook-idempotency.mjs",
-    "test": "pnpm test:format && pnpm test:adapter && pnpm test:auth && pnpm test:export && pnpm test:features && pnpm test:receipts-store && pnpm test:receipts-mapper && pnpm test:profile-hook && pnpm test:home && pnpm test:home-api && pnpm test:monthly-overview && pnpm test:price-alerts && pnpm test:pro-gating && pnpm test:quota-tier && pnpm test:parse-ticket && pnpm test:charts && pnpm test:verify-constant-time && pnpm test:webhook-idempotency"
+    "test:scan-contract": "node scripts/test-scan-contract.mjs",
+    "test": "pnpm test:format && pnpm test:adapter && pnpm test:auth && pnpm test:export && pnpm test:features && pnpm test:receipts-store && pnpm test:receipts-mapper && pnpm test:profile-hook && pnpm test:home && pnpm test:home-api && pnpm test:monthly-overview && pnpm test:price-alerts && pnpm test:pro-gating && pnpm test:quota-tier && pnpm test:parse-ticket && pnpm test:charts && pnpm test:verify-constant-time && pnpm test:webhook-idempotency && pnpm test:scan-contract"
   },
   "dependencies": {
     "@shopify/react-native-skia": "2.11.0",
