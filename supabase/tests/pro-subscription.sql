@@ -6,6 +6,12 @@
 -- Postgres) — never against production. It does NOT apply migrations and
 -- does NOT mutate data; every check is read-only against the catalog.
 --
+-- Note on structure: the whole file is a SINGLE `DO` block. `supabase db
+-- query --local --file <this>` prepares the file as ONE statement, so a
+-- multi-statement script fails with "cannot insert multiple commands into a
+-- prepared statement". All assertions live inside one anonymous block; a
+-- failing `assert` still aborts the block and fails the query (exit != 0).
+--
 -- Coverage (WARNING-7 / REQ-PROF / REQ-QUOTA / REQ-SYNC):
 --   1. profiles exposes the server-managed tier lifecycle columns
 --      (`tier` from 0001, `subscription_status` + `trial_ends_at` from 0016,
@@ -20,15 +26,25 @@
 --      `recalculate_monthly_totals` and the `monthly_user_totals` cache
 --      table (0011 + 0015).
 --
--- Each check is a `DO` block that `assert`s a catalog fact and raises with
--- a clear message on failure. The file is idempotent and safe to re-run.
+-- The file is idempotent and safe to re-run.
 -- ============================================================================
 
--- ---------------------------------------------------------------------------
--- 1. profiles tier lifecycle columns
--- ---------------------------------------------------------------------------
 do $$
+declare
+  -- §2 (set_profile_tier): function metadata + grant posture.
+  v_regd   oid;
+  v_secdef boolean;
+  v_owner  text;
+  v_grants int;
+  -- §3 (webhook_events): RLS enabled + uid()-scoped SELECT policy.
+  v_has_pk boolean;
+  v_policy int;
+  -- §4 (protect_profile_tier trigger).
+  v_trig   int;
 begin
+  -- -------------------------------------------------------------------------
+  -- 1. profiles tier lifecycle columns
+  -- -------------------------------------------------------------------------
   -- `tier` (0001): the access tier, server-managed by set_profile_tier.
   assert exists (
     select 1 from information_schema.columns
@@ -52,19 +68,10 @@ begin
     select 1 from information_schema.columns
     where table_schema = 'public' and table_name = 'profiles' and column_name = 'ever_paid'
   ), 'profiles.ever_paid column is missing (expected from migration 0021)';
-end $$;
 
--- ---------------------------------------------------------------------------
--- 2. set_profile_tier — exists + least-privilege grants
--- ---------------------------------------------------------------------------
-do $$
-declare
-  v_regd   record;
-  v_secdef boolean;
-  v_owner  regrole;
-  v_row    record;
-  v_grants int;
-begin
+  -- -------------------------------------------------------------------------
+  -- 2. set_profile_tier — exists + least-privilege grants
+  -- -------------------------------------------------------------------------
   select p.oid, p.prosecdef, pg_get_userbyid(p.proowner)
     into v_regd, v_secdef, v_owner
     from pg_proc p
@@ -85,16 +92,10 @@ begin
      and p.routine_name = 'set_profile_tier';
 
   assert v_grants = 0, 'set_profile_tier must NOT be executable by anon/authenticated (service_role only)';
-end $$;
 
--- ---------------------------------------------------------------------------
--- 3. webhook_events ledger + RLS
--- ---------------------------------------------------------------------------
-do $$
-declare
-  v_has_pk  boolean;
-  v_policy  int;
-begin
+  -- -------------------------------------------------------------------------
+  -- 3. webhook_events ledger + RLS
+  -- -------------------------------------------------------------------------
   assert exists (
     select 1 from information_schema.tables
     where table_schema = 'public' and table_name = 'webhook_events'
@@ -113,23 +114,20 @@ begin
 
   assert v_has_pk, 'webhook_events must have Row Level Security enabled';
 
+  -- pg_policies.qual is exposed as `text` on this Postgres version, so we
+  -- match the policy expression directly (no pg_get_expr needed).
   select count(*) into v_policy
     from pg_policies
    where schemaname = 'public' and tablename = 'webhook_events'
      and policyname = 'webhook_events_select_own'
      and cmd = 'SELECT'
-     and pg_get_expr(qual, 0)::text like '%uid()%';
+     and qual like '%uid()%';
 
   assert v_policy = 1, 'webhook_events must expose a SELECT policy scoped to auth.uid() (webhook_events_select_own)';
-end $$;
 
--- ---------------------------------------------------------------------------
--- 4. protect_profile_tier trigger still guards tier writes (REQ-SYNC-5)
--- ---------------------------------------------------------------------------
-do $$
-declare
-  v_trig int;
-begin
+  -- -------------------------------------------------------------------------
+  -- 4. protect_profile_tier trigger still guards tier writes (REQ-SYNC-5)
+  -- -------------------------------------------------------------------------
   select coalesce(sum((t.tgname = 'profiles_protect_tier')::int), 0)
     into v_trig
     from pg_trigger t
@@ -138,13 +136,10 @@ begin
    where n.nspname = 'public' and c.relname = 'profiles' and not t.tgisinternal;
 
   assert v_trig = 1, 'profiles_protect_tier trigger is missing on public.profiles (REQ-SYNC-5)';
-end $$;
 
--- ---------------------------------------------------------------------------
--- 5. Quota functions + monthly totals cache
--- ---------------------------------------------------------------------------
-do $$
-begin
+  -- -------------------------------------------------------------------------
+  -- 5. Quota functions + monthly totals cache
+  -- -------------------------------------------------------------------------
   -- try_consume_scan (0011): the tier-aware atomic scan quota consumer.
   assert exists (
     select 1 from pg_proc p
@@ -170,12 +165,9 @@ begin
     select 1 from information_schema.columns
     where table_schema = 'public' and table_name = 'scan_usage' and column_name = 'scans_limit'
   ), 'scan_usage.scans_limit column is missing (expected from migration 0011)';
-end $$;
 
--- ---------------------------------------------------------------------------
--- Summary
--- ---------------------------------------------------------------------------
-do $$
-begin
+  -- -------------------------------------------------------------------------
+  -- Summary — only reached if every assert above passed.
+  -- -------------------------------------------------------------------------
   raise notice 'pro-subscription.sql smoke: all catalog assertions passed';
 end $$;
