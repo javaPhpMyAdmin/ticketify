@@ -593,8 +593,8 @@ export function compareReceiptsByScan(
 export function mapPurchaseRowsToHomeFeed(
   rows: HomeFeedReceiptRow[],
   householdTotal?: number | null,
+  monthKey: string = currentMonthKey(),
 ): HomeFeed {
-  const monthKey = currentMonthKey();
 
   const receipts: ReceiptSummary[] = rows
     .filter((item) => getMonthKey(item.purchase_date) === monthKey)

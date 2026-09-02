@@ -1,5 +1,6 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Image, Platform, ScrollView, StyleSheet } from 'react-native';
 import type { NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import {
@@ -11,6 +12,7 @@ import {
   MonthlyBudgetCardSkeleton,
   EmptyState,
   Fab,
+  Icon,
   Pressable,
   ReceiptRow,
   ReceiptRowSkeleton,
@@ -23,11 +25,21 @@ import {
   useBudget,
 } from '@/features/budget';
 import { useFrozenGuard } from '@/features/pro';
+import type { FrozenGuardResult } from '@/features/pro';
 import { TrialBanner } from '@/features/pro/components/TrialBanner';
-import { useHomeFeed } from '@/features/home';
+import {
+  currentMonthKey,
+  getAvailableMonthKeys,
+  mapPurchaseRowsToHomeFeed,
+  monthKeyToLabel,
+  useHomeFeed,
+  useMonthReceipts,
+} from '@/features/home';
+import type { ReceiptSummary } from '@/features/home/hooks/useHomeFeed';
 import { HouseholdCard, useHousehold } from '@/features/household';
 import { useSettingsStore } from '@/stores/use-settings-store';
-import { colors, spacing, typography } from '@/theme';
+import { colors, radii, spacing, typography } from '@/theme';
+import { formatCurrency } from '@/lib/format';
 import { useSessionStore } from '../../features/auth';
 
 /**
@@ -43,6 +55,8 @@ const TAB_BAR_HEIGHT = Platform.select({ ios: 49, android: 80, default: 49 });
 
 export default function HomeScreen() {
   const [snacksOpen, setSnacksOpen] = useState(false);
+  const [monthKey, setMonthKey] = useState(currentMonthKey);
+  const isCurrentMonth = monthKey === currentMonthKey();
   const currency = useSettingsStore((s) => s.currency);
   const {
     budget,
@@ -64,10 +78,21 @@ export default function HomeScreen() {
     hasNextPage,
     isFetchingNextPage,
   } = useHomeFeed();
+  // Full-month receipts for whichever month is selected. Powers the month
+  // selector's available months and (on past months) the receipts list.
+  const { data: monthList } = useMonthReceipts(monthKey);
   const { guard } = useFrozenGuard();
   const insets = useSafeAreaInsets();
   const { session } = useSessionStore();
   const { members: householdMembers } = useHousehold();
+
+  // Reset to the current month whenever the Home tab re-focuses (REQ-11):
+  // month navigation is deliberately NOT persisted across navigations.
+  useFocusEffect(
+    useCallback(() => {
+      setMonthKey(currentMonthKey());
+    }, []),
+  );
   // Canonical name key is `full_name` (see profile-sync); `name` is kept as a
   // legacy fallback. Both can be absent (email signup sets no metadata).
   const fullName =
@@ -93,6 +118,46 @@ export default function HomeScreen() {
       }
     },
     [hasNextPage, isFetchingNextPage, fetchNextPage],
+  );
+
+  // ── Month selector (REQ-5) ──────────────────────────────────────────────
+  // Available months derive from the full-month query data (not the store),
+  // newest first. On the current month the selector still lets you step back
+  // to any month with receipts; returning to the current month restores the
+  // infinite-scroll feed, budget card, and snacks callout.
+  const monthKeys = useMemo(
+    () => getAvailableMonthKeys(monthList),
+    [monthList],
+  );
+  const currentIndex = monthKeys.indexOf(monthKey);
+  const canGoNewer = currentIndex > 0;
+  const canGoOlder =
+    currentIndex === -1
+      ? monthKeys.length > 0
+      : currentIndex < monthKeys.length - 1;
+  const goOlder = () =>
+    setMonthKey(
+      currentIndex === -1 ? monthKeys[0] : monthKeys[currentIndex + 1],
+    );
+  const goNewer = () => setMonthKey(monthKeys[currentIndex - 1]);
+
+  // Past-month view: pure feed derivation over the full-month rows scoped to
+  // the selected month. NEVER writes the receipts store (REQ-10).
+  const pastMonthFeed = useMemo(
+    () =>
+      isCurrentMonth
+        ? null
+        : mapPurchaseRowsToHomeFeed(monthList, null, monthKey),
+    [isCurrentMonth, monthList, monthKey],
+  );
+  const pastMonthTotal = useMemo(
+    () =>
+      isCurrentMonth
+        ? 0
+        : monthList
+            .filter((r) => r.purchase_date.slice(0, 7) === monthKey)
+            .reduce((sum, r) => sum + (r.total ?? 0), 0),
+    [isCurrentMonth, monthList, monthKey],
   );
 
   return (
@@ -132,91 +197,95 @@ export default function HomeScreen() {
 
         <TrialBanner />
 
-        {budgetLoading ? (
-          <MonthlyBudgetCardSkeleton />
-        ) : budgetError && !budgetHasData ? (
-          // A failed budget read must never look like "Límite: $0" —
-          // surface the user-safe message instead of a card claiming a
-          // limit that was never read.
-          <Text style={styles.error}>{budgetError}</Text>
-        ) : (
-          <>
-            <MonthlyBudgetCard
-              spent={spent}
-              limit={budget.amount}
-              currency={currency}
-              showCallout
-              wantsSnacksTotal={wantsSnacksTotal}
-              onPressSnacks={() => setSnacksOpen(true)}
+        {/* Month selector — lets you browse any month with receipts. On the
+            current month it defaults to the live feed; stepping back shows
+            that month's full list (budget/snacks/household hidden, REQ-4). */}
+        <View style={styles.monthSelector}>
+          <Pressable
+            onPress={goOlder}
+            disabled={!canGoOlder}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Mes anterior"
+            accessibilityState={{ disabled: !canGoOlder }}
+          >
+            <Icon
+              name="chevron.left"
+              size={22}
+              color={canGoOlder ? colors.textPrimary : colors.textSecondary}
             />
-            {/* Background refetch failed but the last good budget is on
-                screen — keep the section, only show error when NOT refetching
-                so transient failures after save don't flash red. */}
-            {budgetError && !budgetRefetching ? (
-              <Text style={styles.error}>{budgetError}</Text>
-            ) : null}
-          </>
+          </Pressable>
+          <Text style={styles.monthLabel}>{monthKeyToLabel(monthKey)}</Text>
+          <Pressable
+            onPress={goNewer}
+            disabled={!canGoNewer}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Mes siguiente"
+            accessibilityState={{ disabled: !canGoNewer }}
+          >
+            <Icon
+              name="chevron.right"
+              size={22}
+              color={canGoNewer ? colors.textPrimary : colors.textSecondary}
+            />
+          </Pressable>
+        </View>
+
+        {isCurrentMonth && (
+          <HomeCurrentMonth
+            budgetLoading={budgetLoading}
+            budgetError={budgetError}
+            budgetHasData={budgetHasData}
+            budgetRefetching={budgetRefetching}
+            budget={budget}
+            spent={spent}
+            currency={currency}
+            wantsSnacksTotal={wantsSnacksTotal}
+            onOpenSnacks={() => setSnacksOpen(true)}
+            householdTotal={householdTotal}
+            feedLoading={feedLoading}
+            feedError={feedError}
+            feedHasData={feedHasData}
+            feedRefetching={feedRefetching}
+            receipts={receipts}
+            isFetchingNextPage={isFetchingNextPage}
+            guard={guard}
+          />
         )}
 
-        {/* Household summary card — only visible when the user has a household */}
-        <HouseholdCard
-          householdTotal={householdTotal}
-          isLoading={feedLoading}
-        />
-
-        {feedError && !feedHasData ? (
-          // A failed feed read with nothing to show must never render as
-          // a false empty feed — surface the message instead of sections.
-          <Text style={styles.error}>{feedError}</Text>
-        ) : (
-          <>
-            {/* Background refetch failed but the last good feed is on
-                screen — keep the sections, only show error when NOT refetching
-                so transient failures after save don't flash red. */}
-            {feedError && !feedRefetching ? (
-              <Text style={styles.error}>{feedError}</Text>
-            ) : null}
-            {/* Recent receipts */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Tickets recientes</Text>
-              {feedLoading ? (
-                <View style={styles.receiptList}>
-                  {[0, 1, 2].map((i) => (
-                    <ReceiptRowSkeleton key={i} />
-                  ))}
-                </View>
-              ) : receipts.length === 0 ? (
-                <EmptyState
-                  icon="doc.text"
-                  title="Aún no hay tickets recientes."
-                  body="Escanea tu primer recibo para empezar."
-                  actionLabel="Escanear recibo"
-                  onAction={() => guard(() => router.push('/ticket/camera'))}
-                />
-              ) : (
-                <View style={styles.receiptList}>
-                  {receipts.map((r) => (
-                    <ReceiptRow
-                      key={r.id}
-                      name={r.name}
-                      date={r.date}
-                      amount={r.amount}
-                      currency={currency}
-                      imageUrl={r.imageUrl}
-                      onPress={() => router.push(`/receipts/${r.id}`)}
-                    />
-                  ))}
-                  {isFetchingNextPage && (
-                    <View style={{ paddingVertical: spacing.md }}>
-                      {[0, 1, 2].map((i) => (
-                        <ReceiptRowSkeleton key={i} />
-                      ))}
-                    </View>
-                  )}
-                </View>
-              )}
+        {!isCurrentMonth && pastMonthFeed && (
+          <View style={styles.section}>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>
+                Total {monthKeyToLabel(monthKey)}
+              </Text>
+              <Text style={styles.totalAmount}>
+                {formatCurrency(pastMonthTotal, currency)}
+              </Text>
             </View>
-          </>
+            {pastMonthFeed.receipts.length === 0 ? (
+              <EmptyState
+                icon="doc.text"
+                title="Sin tickets este mes."
+                body="Este mes no tiene recibos."
+              />
+            ) : (
+              <View style={styles.receiptList}>
+                {pastMonthFeed.receipts.map((r) => (
+                  <ReceiptRow
+                    key={r.id}
+                    name={r.name}
+                    date={r.date}
+                    amount={r.amount}
+                    currency={currency}
+                    imageUrl={r.imageUrl}
+                    onPress={() => router.push(`/receipts/${r.id}`)}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
         )}
       </ScrollView>
 
@@ -239,6 +308,138 @@ export default function HomeScreen() {
         onClose={() => setSnacksOpen(false)}
       />
     </SafeAreaView>
+  );
+}
+
+/**
+ * The current-month rendering path: budget card, household summary, and the
+ * infinite-scroll "Tickets recientes" feed. Only rendered when the selected
+ * month is the current month (REQ-4 — budget/snacks are hidden on past
+ * months; REQ-10 — past months never write the receipts store).
+ */
+function HomeCurrentMonth({
+  budgetLoading,
+  budgetError,
+  budgetHasData,
+  budgetRefetching,
+  budget,
+  spent,
+  currency,
+  wantsSnacksTotal,
+  onOpenSnacks,
+  householdTotal,
+  feedLoading,
+  feedError,
+  feedHasData,
+  feedRefetching,
+  receipts,
+  isFetchingNextPage,
+  guard,
+}: {
+  budgetLoading: boolean;
+  budgetError: string | null;
+  budgetHasData: boolean;
+  budgetRefetching: boolean;
+  budget: { amount: number };
+  spent: number;
+  currency: string;
+  wantsSnacksTotal: number;
+  onOpenSnacks: () => void;
+  householdTotal: number | null;
+  feedLoading: boolean;
+  feedError: string | null;
+  feedHasData: boolean;
+  feedRefetching: boolean;
+  receipts: ReceiptSummary[];
+  isFetchingNextPage: boolean;
+  guard: FrozenGuardResult['guard'];
+}) {
+  return (
+    <>
+      {budgetLoading ? (
+        <MonthlyBudgetCardSkeleton />
+      ) : budgetError && !budgetHasData ? (
+        // A failed budget read must never look like "Límite: $0" —
+        // surface the user-safe message instead of a card claiming a
+        // limit that was never read.
+        <Text style={styles.error}>{budgetError}</Text>
+      ) : (
+        <>
+          <MonthlyBudgetCard
+            spent={spent}
+            limit={budget.amount}
+            currency={currency}
+            showCallout
+            wantsSnacksTotal={wantsSnacksTotal}
+            onPressSnacks={onOpenSnacks}
+          />
+          {/* Background refetch failed but the last good budget is on
+              screen — keep the section, only show error when NOT refetching
+              so transient failures after save don't flash red. */}
+          {budgetError && !budgetRefetching ? (
+            <Text style={styles.error}>{budgetError}</Text>
+          ) : null}
+        </>
+      )}
+
+      {/* Household summary card — only visible when the user has a household */}
+      <HouseholdCard householdTotal={householdTotal} isLoading={feedLoading} />
+
+      {feedError && !feedHasData ? (
+        // A failed feed read with nothing to show must never render as
+        // a false empty feed — surface the message instead of sections.
+        <Text style={styles.error}>{feedError}</Text>
+      ) : (
+        <>
+          {/* Background refetch failed but the last good feed is on
+              screen — keep the sections, only show error when NOT refetching
+              so transient failures after save don't flash red. */}
+          {feedError && !feedRefetching ? (
+            <Text style={styles.error}>{feedError}</Text>
+          ) : null}
+          {/* Recent receipts */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Tickets recientes</Text>
+            {feedLoading ? (
+              <View style={styles.receiptList}>
+                {[0, 1, 2].map((i) => (
+                  <ReceiptRowSkeleton key={i} />
+                ))}
+              </View>
+            ) : receipts.length === 0 ? (
+              <EmptyState
+                icon="doc.text"
+                title="Aún no hay tickets recientes."
+                body="Escanea tu primer recibo para empezar."
+                actionLabel="Escanear recibo"
+                onAction={() => guard(() => router.push('/ticket/camera'))}
+              />
+            ) : (
+              <View style={styles.receiptList}>
+                {receipts.map((r) => (
+                  <ReceiptRow
+                    key={r.id}
+                    name={r.name}
+                    date={r.date}
+                    amount={r.amount}
+                    currency={currency}
+                    imageUrl={r.imageUrl}
+                    onPress={() => router.push(`/receipts/${r.id}`)}
+                  />
+                ))}
+                {isFetchingNextPage && (
+                  <View style={{ paddingVertical: spacing.md }}>
+                    {[0, 1, 2].map((i) => (
+                      <ReceiptRowSkeleton key={i} />
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        </>
+      )}
+    </>
   );
 }
 
@@ -386,6 +587,36 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 20,
     fontWeight: '600',
+  },
+  monthSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  monthLabel: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: colors.textSecondary,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 10,
+  },
+  totalLabel: {
+    ...typography.labelCaps,
+    color: colors.primary,
+  },
+  totalAmount: {
+    ...typography.headlineMd,
+    color: colors.primary,
   },
   receiptList: {
     gap: spacing.md,
