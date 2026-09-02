@@ -30,9 +30,9 @@ import type { FrozenGuardResult } from '@/features/pro';
 import { TrialBanner } from '@/features/pro/components/TrialBanner';
 import {
   currentMonthKey,
-  getAvailableMonthKeys,
   mapPurchaseRowsToHomeFeed,
   monthKeyToLabel,
+  useAvailableMonthKeys,
   useHomeFeed,
   useMonthReceipts,
 } from '@/features/home';
@@ -42,6 +42,7 @@ import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 import { formatCurrency } from '@/lib/format';
 import { useSessionStore } from '../../features/auth';
+import { useSessionUser } from '@/features/auth';
 
 /**
  * NativeTabs (iOS) does not push screen content up: the first ScrollView
@@ -84,6 +85,7 @@ export default function HomeScreen() {
   // isLoading is surfaced so the past-month view can show a loading state
   // instead of flashing the store-fallback as an empty month (REQ-9).
   const { data: monthList, isLoading: monthLoading } = useMonthReceipts(monthKey);
+  const { userId } = useSessionUser();
   const { guard } = useFrozenGuard();
   const insets = useSafeAreaInsets();
   const { session } = useSessionStore();
@@ -128,10 +130,7 @@ export default function HomeScreen() {
   // newest first. On the current month the selector still lets you step back
   // to any month with receipts; returning to the current month restores the
   // infinite-scroll feed, budget card, and snacks callout.
-  const monthKeys = useMemo(
-    () => getAvailableMonthKeys(monthList),
-    [monthList],
-  );
+  const monthKeys = useAvailableMonthKeys(userId);
   const currentIndex = monthKeys.indexOf(monthKey);
   const canGoNewer = currentIndex > 0;
   const canGoOlder =

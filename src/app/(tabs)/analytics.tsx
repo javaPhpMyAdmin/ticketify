@@ -17,11 +17,10 @@ import {
   usePriceAlerts,
 } from '@/features/analytics';
 import { getExpenseCategory } from '@/features/home/categories';
-import { useMonthReceipts } from '@/features/home';
+import { useAvailableMonthKeys, useMonthReceipts } from '@/features/home';
 import {
   aggregateItemsByMonth,
   currentMonthKey,
-  getAvailableMonthKeys,
   monthKeyToLabel,
   previousMonthKey,
 } from '@/features/home/hooks/useHomeFeed';
@@ -29,7 +28,7 @@ import { useProEntitlement } from '@/features/pro';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
-import { useSessionStore } from '../../features/auth';
+import { useSessionStore, useSessionUser } from '../../features/auth';
 
 /**
  * Same FAB-clearance pattern as the home screen: native tabs do not push
@@ -66,6 +65,7 @@ export default function AnalyticsScreen() {
   // list is used ONLY as a loading fallback inside the hook; once the query
   // resolves, all month-scoped aggregation below runs on the FULL month.
   const { data: fullMonthList } = useMonthReceipts(monthKey);
+  const { userId } = useSessionUser();
 
   // Household-scoped category totals (when in household mode).
   const {
@@ -75,10 +75,7 @@ export default function AnalyticsScreen() {
     hasData: householdTotalsHasData,
   } = useMonthlyTotals(monthKey, viewMode === 'household' ? householdId : null);
 
-  const monthKeys = useMemo(
-    () => getAvailableMonthKeys(fullMonthList),
-    [fullMonthList],
-  );
+  const monthKeys = useAvailableMonthKeys(userId);
   const alerts = usePriceAlerts(monthKey);
   const overview = useMonthlyOverview(monthKey);
   const { session } = useSessionStore();

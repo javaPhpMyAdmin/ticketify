@@ -10,7 +10,7 @@ import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters'
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import type { HomeFeedReceiptRow } from '@/types';
-import { readPurchasePage, readPurchaseListByMonth, searchPurchaseItems, PURCHASE_PAGE_SIZE } from '../api';
+import { readPurchasePage, readPurchaseListByMonth, readPurchaseMonthKeys, searchPurchaseItems, PURCHASE_PAGE_SIZE } from '../api';
 import { getExpenseCategory } from '../categories';
 
 /**
@@ -360,6 +360,29 @@ export function useMonthReceipts(monthKey = currentMonthKey()) {
     isLoading: query.isLoading,
     hasData: query.data !== undefined,
   };
+}
+
+/**
+ * First-class source of all months with receipts for the user, independent
+ * of the selected-month query and the infinite-scroll store. Drives the
+ * month selector in Home, Analytics, and History so navigation is never
+ * broken when the current month has no receipts.
+ *
+ * On error the hook fails gracefully (empty array → older-nav disabled),
+ * never throwing. Screens keep rendering the current month.
+ */
+export function useAvailableMonthKeys(
+  userId?: string | null,
+  enabled = true,
+): string[] {
+  const query = useQuery<string[]>({
+    queryKey: queryKeys.monthKeys(userId!),
+    enabled: !!userId && enabled,
+    queryFn: () => readPurchaseMonthKeys(userId!).then(toQueryData),
+    staleTime: 5 * 60 * 1000,
+  });
+  // Fail gracefully: query error → empty array (older-nav disabled)
+  return query.data ?? [];
 }
 
 /**
