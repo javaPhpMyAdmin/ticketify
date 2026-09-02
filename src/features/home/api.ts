@@ -217,6 +217,44 @@ export async function readPurchaseListByMonth(
   };
 }
 
+/**
+ * Fetches all unique month keys (`YYYY-MM`) that contain confirmed
+ * receipts for the user. Lighter than `readPurchaseList` — selects only
+ * `purchase_date` so the month selector can populate without pulling the
+ * full receipt payload. Returns newest-first.
+ *
+ * Used by `useAvailableMonthKeys` so every screen's month navigation
+ * shares the same first-class source of months (independent of the
+ * selected-month query).
+ */
+export async function readPurchaseMonthKeys(
+  userId: string,
+): Promise<FeatureReadResult<string[]>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { data, error } = await supabase
+    .from('purchases')
+    .select('purchase_date')
+    .eq('user_id', userId)
+    .eq('status', 'confirmed')
+    .order('purchase_date', { ascending: false });
+  if (error) {
+    console.warn('[read] purchase month keys failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  const rows = (data as unknown[] | null) ?? [];
+  const keys = new Set<string>();
+  for (const row of rows) {
+    const date = (row as { purchase_date: string }).purchase_date;
+    if (typeof date === 'string' && date.length >= 7) {
+      keys.add(date.slice(0, 7));
+    }
+  }
+  return {
+    status: 'ok',
+    data: [...keys].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0)),
+  };
+}
+
 /** Raw PostgREST shape of one `purchase_items` row with its purchase. */
 interface RawSearchItemRow {
   id: string;

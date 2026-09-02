@@ -213,6 +213,7 @@ function compile() {
       monthlyImpulseItemsPrefix: p('monthly-impulse-items'),
       itemSearchPrefix: p('item-search'),
       monthReceiptsPrefix: p('month-receipts'),
+      monthKeys: p('month-keys'),
     };
   `,
   );
