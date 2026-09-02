@@ -1,7 +1,7 @@
 export { readPurchaseList, readPurchaseListByMonth, searchPurchaseItems } from './api';
 export { buildFeedRow, reviewItemsToFeedItems } from './feed-row';
 export type { FeedRowMeta } from './feed-row';
-export { useHomeFeed } from './hooks/useHomeFeed';
+export { useHomeFeed, useMonthReceipts } from './hooks/useHomeFeed';
 export type { HomeFeed } from './hooks/useHomeFeed';
 export { mapPurchaseRowsToHomeFeed } from './hooks/useHomeFeed';
 export { useCategoryDetail } from './hooks/useHomeFeed';

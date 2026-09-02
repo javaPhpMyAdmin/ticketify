@@ -335,6 +335,34 @@ export function aggregateImpulseItemsByMonth(
 }
 
 /**
+ * Shared month-scoped receipts query. Reads the FULL month via
+ * `readPurchaseListByMonth` (not paginated) so month-scoped aggregations
+ * (analytics top items, category detail, item detail, store detail) are
+ * accurate regardless of the infinite-scroll depth in the receipts store.
+ *
+ * Returns `{ data, isLoading, hasData }`: `data` is the full-month list
+ * once the query resolves (TanStack wins), falling back to the receipts
+ * store's paginated list while loading so the UI never flashes empty.
+ *
+ * IMPORTANT: this hook NEVER writes to `useReceiptsStore`. The full-month
+ * data lives only in the TanStack query cache (REQ-10 store integrity).
+ */
+export function useMonthReceipts(monthKey = currentMonthKey()) {
+  const list = useReceiptsStore((s) => s.list); // fallback only
+  const { userId } = useSessionUser();
+  const query = useQuery({
+    queryKey: queryKeys.monthReceipts(userId!, monthKey),
+    enabled: !!userId,
+    queryFn: () => readPurchaseListByMonth(userId!, monthKey).then(toQueryData),
+  });
+  return {
+    data: query.data ?? list,
+    isLoading: query.isLoading,
+    hasData: query.data !== undefined,
+  };
+}
+
+/**
  * Per-category drill-down: reads the receipts store reactively and
  * aggregates every line item tagged with `categoryKey` within `monthKey`
  * (defaults to the current month), grouped by normalized name, sorted by
@@ -347,7 +375,7 @@ export function useCategoryDetail(categoryKey: string, monthKey = currentMonthKe
 
   // Fetch full month receipts for accurate category breakdown.
   const monthQuery = useQuery({
-    queryKey: ['month-receipts', userId, monthKey],
+    queryKey: queryKeys.monthReceipts(userId!, monthKey),
     enabled: !!userId,
     queryFn: () => readPurchaseListByMonth(userId!, monthKey).then(toQueryData),
   });
@@ -450,7 +478,7 @@ export function useItemDetail(itemName: string, monthKey = currentMonthKey()) {
   const list = useReceiptsStore((s) => s.list);
   const { userId } = useSessionUser();
   const monthQuery = useQuery({
-    queryKey: ['month-receipts', userId, monthKey],
+    queryKey: queryKeys.monthReceipts(userId!, monthKey),
     enabled: !!userId,
     queryFn: () => readPurchaseListByMonth(userId!, monthKey).then(toQueryData),
   });
@@ -484,7 +512,7 @@ export function useStoreDetail(storeName: string, monthKey?: string) {
   const { userId } = useSessionUser();
   const month = monthKey ?? currentMonthKey();
   const monthQuery = useQuery({
-    queryKey: ['month-receipts', userId, month],
+    queryKey: queryKeys.monthReceipts(userId!, month),
     enabled: !!userId,
     queryFn: () => readPurchaseListByMonth(userId!, month).then(toQueryData),
   });
