@@ -38,6 +38,7 @@ import {
 } from '@/features/home';
 import { getExpenseCategory } from '@/features/home/categories';
 import { formatCurrency } from '@/lib/format';
+import { queryKeys } from '@/lib/query-keys';
 import { toQueryData } from '@/lib/supabase/query-adapters';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
@@ -70,7 +71,7 @@ export default function HistoryScreen() {
   // Fetch ALL receipts for the current month (not paginated) so category
   // totals are accurate regardless of infinite scroll position.
   const { data: monthList } = useQuery({
-    queryKey: ['history-month-receipts', userId, monthKey],
+    queryKey: queryKeys.monthReceipts(userId!, monthKey),
     enabled: !!userId,
     queryFn: () => readPurchaseListByMonth(userId!, monthKey).then(toQueryData),
   });
