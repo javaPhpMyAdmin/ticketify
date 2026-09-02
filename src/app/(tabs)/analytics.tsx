@@ -17,6 +17,7 @@ import {
   usePriceAlerts,
 } from '@/features/analytics';
 import { getExpenseCategory } from '@/features/home/categories';
+import { useMonthReceipts } from '@/features/home';
 import {
   aggregateItemsByMonth,
   currentMonthKey,
@@ -26,7 +27,6 @@ import {
 } from '@/features/home/hooks/useHomeFeed';
 import { useProEntitlement } from '@/features/pro';
 import { useHouseholdStore } from '@/stores/use-household-store';
-import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 import { useSessionStore } from '../../features/auth';
@@ -52,7 +52,6 @@ const ANALYTICS_TAB_BAR_HEIGHT = Platform.select({
  */
 export default function AnalyticsScreen() {
   const insets = useSafeAreaInsets();
-  const list = useReceiptsStore((s) => s.list);
   const currency = useSettingsStore((s) => s.currency);
   const { isPro } = useProEntitlement();
   const [monthKey, setMonthKey] = useState(currentMonthKey);
@@ -63,6 +62,11 @@ export default function AnalyticsScreen() {
   const householdId = useHouseholdStore((s) => s.household?.id);
   const hasHousehold = !!householdId;
 
+  // Full-month receipts for the selected month (personal scope). The store
+  // list is used ONLY as a loading fallback inside the hook; once the query
+  // resolves, all month-scoped aggregation below runs on the FULL month.
+  const { data: fullMonthList } = useMonthReceipts(monthKey);
+
   // Household-scoped category totals (when in household mode).
   const {
     totals: householdTotals,
@@ -71,7 +75,10 @@ export default function AnalyticsScreen() {
     hasData: householdTotalsHasData,
   } = useMonthlyTotals(monthKey, viewMode === 'household' ? householdId : null);
 
-  const monthKeys = useMemo(() => getAvailableMonthKeys(list), [list]);
+  const monthKeys = useMemo(
+    () => getAvailableMonthKeys(fullMonthList),
+    [fullMonthList],
+  );
   const alerts = usePriceAlerts(monthKey);
   const overview = useMonthlyOverview(monthKey);
   const { session } = useSessionStore();
@@ -88,8 +95,8 @@ export default function AnalyticsScreen() {
   // bills (servicios) are excluded: they would own the ranking as receipt
   // line items, but they are not consumption.
   const allItems = useMemo(
-    () => aggregateItemsByMonth(list, monthKey, ['servicios']),
-    [list, monthKey],
+    () => aggregateItemsByMonth(fullMonthList, monthKey, ['servicios']),
+    [fullMonthList, monthKey],
   );
   const topItems = allItems.slice(0, 5);
   const monthTotal = allItems.reduce((sum, item) => sum + item.amount, 0);

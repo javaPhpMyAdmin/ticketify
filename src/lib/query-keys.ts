@@ -103,6 +103,20 @@ export const queryKeys = {
    */
   itemSearchPrefix: (userId: string) =>
     ['home', 'item-search', userId] as const,
+  /**
+   * Full month receipts for a user + month (used by useMonthReceipts).
+   * Stores the complete month's receipts so aggregations (analytics top
+   * items, month totals) are accurate regardless of infinite-scroll depth.
+   */
+  monthReceipts: (userId: string, monthKey: string) =>
+    ['home', 'month-receipts', userId, monthKey] as const,
+  /**
+   * Prefix of the monthReceipts keys for a user, used to invalidate every
+   * month variant at once (e.g. after a receipt save/edit).
+   */
+  monthReceiptsPrefix: (userId: string) =>
+    ['home', 'month-receipts', userId] as const,
+
   /** Per-category budget limits for a month. */
   categoryBudgets: (userId: string, yearMonth: string) =>
     ['category-budgets', userId, yearMonth] as const,

@@ -212,6 +212,7 @@ function compile() {
       monthlyImpulseTotalPrefix: p('monthly-impulse-total'),
       monthlyImpulseItemsPrefix: p('monthly-impulse-items'),
       itemSearchPrefix: p('item-search'),
+      monthReceiptsPrefix: p('month-receipts'),
     };
   `,
   );

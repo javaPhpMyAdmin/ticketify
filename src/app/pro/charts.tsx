@@ -182,7 +182,7 @@ function ChartsBody() {
   // month's receipts. This query fetches all receipts for the selected
   // month independently so detail aggregations are always accurate.
   const monthReceiptsQuery = useQuery({
-    queryKey: ['month-receipts', userId, monthKey],
+    queryKey: queryKeys.monthReceipts(userId!, monthKey),
     enabled: !!userId,
     queryFn: () =>
       readPurchaseListByMonth(userId!, monthKey).then(toQueryData),
