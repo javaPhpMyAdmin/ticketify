@@ -30,10 +30,10 @@ import {
   aggregateCategoryItemCounts,
   CategoryBudgetCard,
   currentMonthKey,
-  getAvailableMonthKeys,
   monthKeyToLabel,
   readPurchaseListByMonth,
   SegmentedBudgetBar,
+  useAvailableMonthKeys,
   useItemSearch,
 } from '@/features/home';
 import { getExpenseCategory } from '@/features/home/categories';
@@ -130,7 +130,7 @@ export default function HistoryScreen() {
     0,
   );
 
-  const monthKeys = useMemo(() => getAvailableMonthKeys(fullList), [fullList]);
+  const monthKeys = useAvailableMonthKeys(userId);
   const categories = useMemo(
     () => aggregateCategoriesByMonth(fullList, monthKey),
     [fullList, monthKey],

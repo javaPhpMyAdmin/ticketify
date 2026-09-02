@@ -657,6 +657,7 @@ function invalidateReceiptFeeds(userId: string): void {
   void queryClient.invalidateQueries({
     queryKey: queryKeys.monthReceiptsPrefix(userId),
   });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.monthKeys(userId) });
 }
 
 /**
@@ -686,6 +687,7 @@ function invalidateEditFeeds(userId: string): void {
   void queryClient.invalidateQueries({
     queryKey: queryKeys.monthReceiptsPrefix(userId),
   });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.monthKeys(userId) });
 }
 
 /**
