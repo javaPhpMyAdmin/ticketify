@@ -28,7 +28,7 @@ import { useProEntitlement } from '@/features/pro';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
-import { useSessionStore } from '../../features/auth';
+import { useSessionStore, useSessionUser } from '../../features/auth';
 
 /**
  * Same FAB-clearance pattern as the home screen: native tabs do not push
@@ -65,8 +65,7 @@ export default function AnalyticsScreen() {
   // list is used ONLY as a loading fallback inside the hook; once the query
   // resolves, all month-scoped aggregation below runs on the FULL month.
   const { data: fullMonthList } = useMonthReceipts(monthKey);
-  const { session } = useSessionStore();
-  const { userId } = session?.user ?? {};
+  const { userId } = useSessionUser();
 
   // Household-scoped category totals (when in household mode).
   const {
@@ -79,6 +78,7 @@ export default function AnalyticsScreen() {
   const monthKeys = useAvailableMonthKeys(userId);
   const alerts = usePriceAlerts(monthKey);
   const overview = useMonthlyOverview(monthKey);
+  const { session } = useSessionStore();
   const fullName =
     session?.user?.user_metadata?.full_name ??
     session?.user?.user_metadata?.name ??
