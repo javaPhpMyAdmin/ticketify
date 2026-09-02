@@ -388,8 +388,17 @@ export async function readActiveInviteCode(
 // ---------------------------------------------------------------------------
 
 /**
+ * User-safe copy shown when a free/expired user tries to create a
+ * household (the create_household RPC requires Pro or an active trial).
+ */
+const CREATE_HOUSEHOLD_PRO_MESSAGE =
+  'Necesitás una suscripción PRO (o un trial activo) para crear un hogar.';
+
+/**
  * Create a new household. Calls the `create_household` RPC which inserts
  * the household row, adds the caller as owner, and sets `profiles.household_id`.
+ * The RPC requires Pro (or an active trial); a free/expired user gets a
+ * dedicated message instead of the generic read-error copy.
  */
 export async function createHousehold(
   name: string,
@@ -400,6 +409,10 @@ export async function createHousehold(
   });
   if (error) {
     console.warn('[write] create household failed:', error.code, error.message);
+    const message = error.message ?? '';
+    if (/pro subscription required/i.test(message)) {
+      return { status: 'error', message: CREATE_HOUSEHOLD_PRO_MESSAGE };
+    }
     return { status: 'error', message: READ_ERROR_MESSAGE };
   }
   return { status: 'ok', data: (data as unknown as Household) };
