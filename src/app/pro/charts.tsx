@@ -66,10 +66,10 @@ import { readPurchaseListByMonth } from '@/features/home/api';
 import {
   aggregateCategoriesByMonth,
   currentMonthKey,
-  getAvailableMonthKeys,
   getMonthKey,
   monthKeyToLabel,
   previousMonthKey,
+  useAvailableMonthKeys,
 } from '@/features/home/hooks/useHomeFeed';
 import { formatCurrency, MONTHS_SHORT_ES, todayLocalISO, yearLabel } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
@@ -190,7 +190,7 @@ function ChartsBody() {
   // Use full month data for detail views; fall back to store list.
   const monthList = monthReceiptsQuery.data ?? list;
 
-  const monthKeys = useMemo(() => getAvailableMonthKeys(monthList), [monthList]);
+  const monthKeys = useAvailableMonthKeys(userId);
 
   // Monday of the current week, derived from the LOCAL today. Single source
   // of truth for the weekly bars, the today highlight, and the tap → day
