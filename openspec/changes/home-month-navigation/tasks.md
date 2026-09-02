@@ -63,12 +63,14 @@
 - Do: add optional `monthKey: string = currentMonthKey()` 3rd param; replace hardcoded `const monthKey = currentMonthKey()` (line 569). Filter + aggregation already use the local var.
 - Verify: `pnpm typecheck && pnpm test:home` (mapPurchaseRowsToHomeFeed coverage).
 - Accept: default month is current; existing call sites compile unchanged.
+- [x] Applied. Added optional 3rd param with default; removed hardcoded const. Existing call sites (useHomeFeed internal) compile unchanged.
 
 ### T2.2 Home month selector + month view  (REQ-5, REQ-6, REQ-10, REQ-11)
 - Files: `src/app/(tabs)/index.tsx`
 - Do: add `useState(monthKey)` default `currentMonthKey()`; chevron selector via `getAvailableMonthKeys` (from `useMonthReceipts` data), `goOlder`/`goNewer`/`monthKeyToLabel` (history pattern). Current month → existing `useHomeFeed()` path (infinite scroll, budget card, snacks, household card). `monthKey !== currentMonthKey()` → render `useMonthReceipts(monthKey).data` receipts + month total; HIDE `MonthlyBudgetCard` + `SnacksBreakdownModal`; NO infinite scroll. NEVER write the receipts store. Reset `monthKey` to `currentMonthKey()` via `useFocusEffect` (from `@react-navigation/native`) on tab focus.
 - Verify: `pnpm typecheck && pnpm lint && pnpm test:home`.
 - Accept: `useFocusEffect` imported from `@react-navigation/native`; grep shows no `setState` on `useReceiptsStore` in month view; budget/snacks render only when `monthKey === currentMonthKey()`.
+- [x] Applied. Added `monthKey` state, chevron selector (getAvailableMonthKeys/goOlder/goNewer/monthKeyToLabel), `useFocusEffect` reset from `@react-navigation/native`. Current month → existing infinite-scroll feed; past month → `useMonthReceipts(monthKey)` full list + total, no budget/snacks/household, no infinite scroll, no store writes. Full `pnpm test` chain green (20 suites, 0 failures) incl. test:scan-contract; typecheck + lint pass. Grep confirms `useFocusEffect` from `@react-navigation/native` (index.tsx:1) and no `setState` on `useReceiptsStore` in the screen.
 
 ## Test strategy note
 No jest/vitest — node harnesses in `scripts/`. `test-home.mjs` covers pure home-feed helpers incl. `mapPurchaseRowsToHomeFeed`; `test-charts.mjs` covers aggregation parity (shares the same `ReceiptSpendRecord[]` surface analytics uses); `test-monthly-overview.mjs` / `test-monthly-cache.mjs` cover RPC/cache invalidation. If PR #2 past-month view needs skeletons, extend `useMonthReceipts` interface (`error`, `isRefetching`) in PR #2, not PR #1.
