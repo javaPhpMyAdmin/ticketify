@@ -16,6 +16,7 @@ import {
   Pressable,
   ReceiptRow,
   ReceiptRowSkeleton,
+  Spinner,
   Text,
   View,
 } from '@/components';
@@ -80,7 +81,9 @@ export default function HomeScreen() {
   } = useHomeFeed();
   // Full-month receipts for whichever month is selected. Powers the month
   // selector's available months and (on past months) the receipts list.
-  const { data: monthList } = useMonthReceipts(monthKey);
+  // isLoading is surfaced so the past-month view can show a loading state
+  // instead of flashing the store-fallback as an empty month (REQ-9).
+  const { data: monthList, isLoading: monthLoading } = useMonthReceipts(monthKey);
   const { guard } = useFrozenGuard();
   const insets = useSafeAreaInsets();
   const { session } = useSessionStore();
@@ -254,7 +257,18 @@ export default function HomeScreen() {
           />
         )}
 
-        {!isCurrentMonth && pastMonthFeed && (
+        {!isCurrentMonth && monthLoading && (
+          <View style={styles.section}>
+            <View style={[styles.totalRow, styles.monthLoadingRow]}>
+              <Spinner size="md" />
+              <Text style={styles.monthLoadingText}>
+                Cargando {monthKeyToLabel(monthKey)}…
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {!isCurrentMonth && !monthLoading && pastMonthFeed && (
           <View style={styles.section}>
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>
@@ -617,6 +631,14 @@ const styles = StyleSheet.create({
   totalAmount: {
     ...typography.headlineMd,
     color: colors.primary,
+  },
+  monthLoadingRow: {
+    justifyContent: 'flex-start',
+    gap: spacing.sm,
+  },
+  monthLoadingText: {
+    ...typography.labelSm,
+    color: colors.textSecondary,
   },
   receiptList: {
     gap: spacing.md,
