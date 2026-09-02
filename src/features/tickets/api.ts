@@ -654,6 +654,9 @@ function invalidateReceiptFeeds(userId: string): void {
   void queryClient.invalidateQueries({
     queryKey: queryKeys.itemSearchPrefix(userId),
   });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.monthReceiptsPrefix(userId),
+  });
 }
 
 /**
@@ -679,6 +682,9 @@ function invalidateEditFeeds(userId: string): void {
   });
   void queryClient.invalidateQueries({
     queryKey: queryKeys.itemSearchPrefix(userId),
+  });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.monthReceiptsPrefix(userId),
   });
 }
 
