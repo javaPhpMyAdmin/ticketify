@@ -116,6 +116,12 @@ export const queryKeys = {
    */
   monthReceiptsPrefix: (userId: string) =>
     ['home', 'month-receipts', userId] as const,
+  /**
+   * All months with receipts for the user (newest-first). Independent of
+   * the selected-month query so the month selector's available months are
+   * always complete, even when the current month has no receipts.
+   */
+  monthKeys: (userId: string) => ['home', 'month-keys', userId] as const,
 
   /** Per-category budget limits for a month. */
   categoryBudgets: (userId: string, yearMonth: string) =>
