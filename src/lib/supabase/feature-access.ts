@@ -405,6 +405,15 @@ const ALREADY_IN_HOUSEHOLD_MESSAGE =
   'Ya pertenecés a un hogar. Salí del hogar actual para poder crear uno nuevo.';
 
 /**
+ * User-safe catch-all copy for create_household failures. The raw PostgREST
+ * detail (constraint/RLS/table names from `raise exception`) is logged, never
+ * shown; this fixed message avoids leaking schema internals while still being
+ * more specific than the generic read-error copy.
+ */
+const CREATE_HOUSEHOLD_FALLBACK_MESSAGE =
+  'No se pudo crear el hogar. Revisá tu conexión e intentá de nuevo. Si persiste, salí de tu hogar actual y volvé a intentar.';
+
+/**
  * Create a new household. Calls the `create_household` RPC which inserts
  * the household row, adds the caller as owner, and sets `profiles.household_id`.
  * The RPC requires Pro (or an active trial); a free/expired user gets a
@@ -433,14 +442,15 @@ export async function createHousehold(
     if (/already in a household/i.test(message)) {
       return { status: 'error', message: ALREADY_IN_HOUSEHOLD_MESSAGE };
     }
-    // Catch-all: instead of collapsing every unknown cause into the generic
-    // READ_ERROR_MESSAGE (which misled users — e.g. a transport/RPC/RLS
-    // failure read as "no se pudieron cargar los datos"), surface a friendly
-    // Spanish prefix WITH the underlying reason so the real cause is visible.
-    const detail = message.trim() || (error.code ? `código ${error.code}` : 'error desconocido');
+    // Catch-all: return a FIXED user-safe message. The raw PostgREST
+    // error.message/code (table/constraint/RLS-policy names from `raise
+    // exception`) is NOT shown to the user — that would leak schema internals
+    // (review-risk MEDIUM). The full detail stays in the console.error above
+    // for debugging. The known actionable cases (Pro required / already in a
+    // household) are surfaced above; anything else gets this generic copy.
     return {
       status: 'error',
-      message: `No se pudo crear el hogar. ${detail}`,
+      message: CREATE_HOUSEHOLD_FALLBACK_MESSAGE,
     };
   }
   return { status: 'ok', data: (data as unknown as Household) };
