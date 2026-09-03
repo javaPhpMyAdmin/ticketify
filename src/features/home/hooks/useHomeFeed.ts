@@ -1,5 +1,5 @@
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useCallback, useMemo } from 'react';
 
 import type { IconName } from '@/components';
 import { useSessionUser } from '@/features/auth';
@@ -10,7 +10,7 @@ import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters'
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import type { HomeFeedReceiptRow } from '@/types';
-import { readPurchasePage, readPurchaseListByMonth, readPurchaseMonthKeys, searchPurchaseItems, PURCHASE_PAGE_SIZE } from '../api';
+import { readPurchaseListByMonth, readPurchaseMonthKeys, searchPurchaseItems } from '../api';
 import { getExpenseCategory } from '../categories';
 
 /**
@@ -45,36 +45,6 @@ export interface HomeFeed {
   /** Total household spend for the current month (null when no household). */
   householdTotal: number | null;
 }
-
-/**
- * `useHomeFeed` result: the feed data plus the query flags the screens
- * need to render skeletons (loading) and honest error states instead of
- * a blank section or a false "no data" message.
- */
-export interface HomeFeedResult extends HomeFeed {
-  /** True while the initial feed read is in flight (no data yet). */
-  isLoading: boolean;
-  /** User-safe message when the authenticated read fails. */
-  error: string | null;
-  /**
-   * True once a feed read succeeded, even if a background refetch later
-   * fails (TanStack keeps the data and sets `error`). Screens render
-   * error states only when `error && !hasData` — a stale error must not
-   * hide retained data.
-   */
-  hasData: boolean;
-  /** True while a background refetch is in flight (data is stale but valid). */
-  isRefetching: boolean;
-  /** Load the next page of receipts (called on scroll near bottom). */
-  fetchNextPage: () => void;
-  /** True when there are more pages to load. */
-  hasNextPage: boolean;
-  /** True while the next page is being fetched. */
-  isFetchingNextPage: boolean;
-}
-
-/** Neutral empty feed — no fabricated content renders inside a session. */
-const EMPTY_FEED: HomeFeed = { categories: [], receipts: [], wantsSnacksTotal: 0, householdTotal: null };
 
 /**
  * One aggregated item inside a category's detail ("cuánto gasté en cada
@@ -721,31 +691,22 @@ export function mapPurchaseRowsToHomeFeed(
 }
 
 /**
- * Home screen feed through TanStack Query with infinite scroll.
- * Loads receipts 10 at a time via `readPurchasePage`. Categories and
- * snacks totals are computed from whatever pages have been loaded so far.
- * The receipts store is hydrated with all loaded rows so History/Analytics
- * render the same data.
+ * Household + impulse (snacks) totals for a selected month, the only parts
+ * the Home screen needs from the old `useHomeFeed`. Both are server-side
+ * RPCs scoped to `monthKey`, so Home browsing ANY month (current or past)
+ * gets the correct totals without firing the redundant month-agnostic
+ * infinite-scroll feed or writing the receipts store.
  *
- * `monthKey` scopes the HOUSEHOLD total and the impulse (snacks) total to
- * the selected month (both server-side RPCs). The infinite-scroll feed
- * itself stays month-agnostic (newest-first across all months) — it serves
- * the current-month path and hydrates the receipts store. Defaults to the
- * current month for backwards compatibility.
+ * `isLoading` reflects the household-total read (what the household card
+ * needs); `wantsSnacksTotal` is the impulse RPC total (the Home callout is
+ * actually derived from the full-month rows, but this keeps the RPC parity
+ * that `useHomeFeed` used to provide).
  */
-export function useHomeFeed(monthKey: string = currentMonthKey()): HomeFeedResult {
+export function useHouseholdMonthTotal(
+  monthKey: string = currentMonthKey(),
+): { householdTotal: number | null; wantsSnacksTotal: number; isLoading: boolean } {
   const { userId } = useSessionUser();
   const householdId = useHouseholdStore((s) => s.household?.id);
-
-  const feedQuery = useInfiniteQuery({
-    queryKey: queryKeys.homeFeed(userId!),
-    enabled: !!userId,
-    initialPageParam: 0,
-    queryFn: async ({ pageParam }) =>
-      toQueryData(await readPurchasePage(userId!, pageParam as number)),
-    getNextPageParam: (lastPage: HomeFeedReceiptRow[], allPages) =>
-      lastPage.length < PURCHASE_PAGE_SIZE ? undefined : allPages.length,
-  });
 
   // ── Household total (selected month, when household is active) ────────
   const householdTotalQuery = useQuery<{ total: number }[]>({
@@ -765,8 +726,7 @@ export function useHomeFeed(monthKey: string = currentMonthKey()): HomeFeedResul
 
   // ── Impulse / snacks total (selected month, server-side RPC) ─────────
   // The RPC sums purchase_items.total_price WHERE is_impulse = true across
-  // confirmed purchases for the month. This loads instantly instead of
-  // growing page-by-page via infinite scroll.
+  // confirmed purchases for the month.
   const impulseTotalQuery = useQuery<{ total: number }[]>({
     queryKey: queryKeys.monthlyImpulseTotal(userId!, monthKey),
     enabled: !!userId,
@@ -775,42 +735,11 @@ export function useHomeFeed(monthKey: string = currentMonthKey()): HomeFeedResul
       return toQueryData(result);
     },
   });
-  const impulseTotal = impulseTotalQuery.data?.[0]?.total ?? 0;
-
-  // Flatten all pages into a single list
-  const rows = useMemo(
-    () => feedQuery.data?.pages.flat() ?? [],
-    [feedQuery.data],
-  );
-
-  // Hydrate the receipts store with loaded rows so History/Analytics see them.
-  useEffect(() => {
-    if (rows.length > 0) {
-      useReceiptsStore.setState({ list: rows });
-    }
-  }, [rows]);
-
-  const feed = useMemo(
-    () => (rows.length > 0 ? mapPurchaseRowsToHomeFeed(rows, householdTotal) : EMPTY_FEED),
-    [rows, householdTotal],
-  );
-
-  if (__DEV__ && feedQuery.isError) {
-    console.error('[HomeFeed] feed query failed:', feedQuery.error);
-  }
+  const wantsSnacksTotal = impulseTotalQuery.data?.[0]?.total ?? 0;
 
   return {
-    ...feed,
-    // Override the client-side snacks total (computed from loaded pages)
-    // with the server-side RPC value so the callout loads instantly and
-    // does not grow page-by-page via infinite scroll.
-    wantsSnacksTotal: impulseTotal,
-    isLoading: feedQuery.isLoading,
-    error: feedQuery.error ? toQueryErrorMessage(feedQuery.error) : null,
-    hasData: feedQuery.data !== undefined,
-    isRefetching: feedQuery.isRefetching,
-    fetchNextPage: feedQuery.fetchNextPage,
-    hasNextPage: feedQuery.hasNextPage ?? false,
-    isFetchingNextPage: feedQuery.isFetchingNextPage,
+    householdTotal,
+    wantsSnacksTotal,
+    isLoading: householdTotalQuery.isLoading,
   };
 }

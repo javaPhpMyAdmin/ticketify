@@ -34,7 +34,7 @@ import {
   monthKeyToLabel,
   SegmentedBudgetBar,
   useAvailableMonthKeys,
-  useHomeFeed,
+  useHouseholdMonthTotal,
   useMonthNavigation,
   useMonthReceipts,
 } from '@/features/home';
@@ -73,7 +73,7 @@ export default function HomeScreen() {
   // Kept only for the household card + its loading flag. The receipts list,
   // categories and snacks total come from `useMonthReceipts` below so every
   // month renders the SAME unified structure off the full-month rows.
-  const { householdTotal, isLoading: feedLoading } = useHomeFeed(monthKey);
+  const { householdTotal, isLoading: feedLoading } = useHouseholdMonthTotal(monthKey);
   // Full-month receipts for whichever month is selected. Powers the
   // receipts list, category strip and snacks total for ANY month, and never
   // writes the receipts store (REQ-10). isLoading is surfaced so the month
