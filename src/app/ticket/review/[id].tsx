@@ -32,8 +32,8 @@ import { RenameItemModal, sanitizeItemName } from '@/features/items';
 import {
   buildFeedRow,
   CategoryPickerModal,
-  QuotaExceededError,
   QUOTA_ERROR_MESSAGE,
+  QuotaExceededError,
   ReceiptItemsList,
   reviewItemsToFeedItems,
   saveReceipt,
@@ -453,6 +453,11 @@ export default function ReviewReceiptScreen() {
             }}
             accessibilityLabel="Cerrar revisión"
           />
+          <Text
+            style={{ fontSize: 20, fontWeight: '700', color: colors.primary }}
+          >
+            Revisando ticket escaneado
+          </Text>
           {thumbSource && !thumbFailed ? (
             <Image
               source={{ uri: thumbSource }}
@@ -733,7 +738,7 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.md,
     gap: spacing.md,
   },
