@@ -18,11 +18,12 @@ import { readMonthlyImpulseItems } from '@/lib/supabase/feature-access';
 import { toQueryData } from '@/lib/supabase/query-adapters';
 import { useSessionUser } from '@/features/auth';
 import { queryKeys } from '@/lib/query-keys';
-import { currentMonthKey } from '@/features/home/hooks/useHomeFeed';
 
 export interface SnacksBreakdownModalProps {
   visible: boolean;
   onClose: () => void;
+  /** The `YYYY-MM` month whose impulse items this modal breaks down. */
+  monthKey: string;
 }
 
 interface ImpulseItem {
@@ -38,10 +39,13 @@ interface ImpulseItem {
  * breakdown loads ALL impulse items instantly, regardless of how many
  * infinite-scroll pages the user has loaded.
  */
-export function SnacksBreakdownModal({ visible, onClose }: SnacksBreakdownModalProps) {
+export function SnacksBreakdownModal({
+  visible,
+  onClose,
+  monthKey,
+}: SnacksBreakdownModalProps) {
   const currency = useSettingsStore((s) => s.currency);
   const { userId } = useSessionUser();
-  const monthKey = currentMonthKey();
 
   const itemsQuery = useQuery<ImpulseItem[]>({
     queryKey: queryKeys.monthlyImpulseItems(userId!, monthKey),
