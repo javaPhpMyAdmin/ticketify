@@ -90,9 +90,6 @@ export const queryKeys = {
     ['analytics', 'monthly-cache', userId] as const,
   /** The home feed (purchase list; all months, current-month derived). */
   homeFeed: (userId: string) => ['home', 'feed', userId] as const,
-  /** Paginated home feed — one page of recent receipts. */
-  homeFeedPage: (userId: string, page: number) =>
-    ['home', 'feed', userId, 'page', page] as const,
   /** Item search results for a month + normalized query (user-scoped). */
   itemSearch: (userId: string, monthKey: string, query: string) =>
     ['home', 'item-search', userId, monthKey, query] as const,

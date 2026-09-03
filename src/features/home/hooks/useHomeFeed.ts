@@ -3,7 +3,7 @@ import { useCallback, useMemo } from 'react';
 
 import type { IconName } from '@/components';
 import { useSessionUser } from '@/features/auth';
-import { readMonthlyPurchasesTotal, readMonthlyImpulseTotal } from '@/lib/supabase/feature-access';
+import { readMonthlyPurchasesTotal } from '@/lib/supabase/feature-access';
 import { formatYearMonth } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters';
@@ -691,20 +691,20 @@ export function mapPurchaseRowsToHomeFeed(
 }
 
 /**
- * Household + impulse (snacks) totals for a selected month, the only parts
- * the Home screen needs from the old `useHomeFeed`. Both are server-side
- * RPCs scoped to `monthKey`, so Home browsing ANY month (current or past)
- * gets the correct totals without firing the redundant month-agnostic
+ * Household total for a selected month. The only part the Home screen needs
+ * from the old `useHomeFeed` for the household card. A server-side RPC
+ * scoped to `monthKey`, so Home browsing ANY month (current or past) gets
+ * the correct total without firing the redundant month-agnostic
  * infinite-scroll feed or writing the receipts store.
  *
  * `isLoading` reflects the household-total read (what the household card
- * needs); `wantsSnacksTotal` is the impulse RPC total (the Home callout is
- * actually derived from the full-month rows, but this keeps the RPC parity
- * that `useHomeFeed` used to provide).
+ * needs). The snacks total is derived from the full-month rows
+ * (`mapPurchaseRowsToHomeFeed`) so the separate impulse RPC is no longer
+ * fetched here (it was a no-op consumer in Home).
  */
 export function useHouseholdMonthTotal(
   monthKey: string = currentMonthKey(),
-): { householdTotal: number | null; wantsSnacksTotal: number; isLoading: boolean } {
+): { householdTotal: number | null; isLoading: boolean } {
   const { userId } = useSessionUser();
   const householdId = useHouseholdStore((s) => s.household?.id);
 
@@ -724,22 +724,8 @@ export function useHouseholdMonthTotal(
       ? (householdTotalQuery.data[0]?.total ?? 0)
       : null;
 
-  // ── Impulse / snacks total (selected month, server-side RPC) ─────────
-  // The RPC sums purchase_items.total_price WHERE is_impulse = true across
-  // confirmed purchases for the month.
-  const impulseTotalQuery = useQuery<{ total: number }[]>({
-    queryKey: queryKeys.monthlyImpulseTotal(userId!, monthKey),
-    enabled: !!userId,
-    queryFn: async () => {
-      const result = await readMonthlyImpulseTotal(monthKey);
-      return toQueryData(result);
-    },
-  });
-  const wantsSnacksTotal = impulseTotalQuery.data?.[0]?.total ?? 0;
-
   return {
     householdTotal,
-    wantsSnacksTotal,
     isLoading: householdTotalQuery.isLoading,
   };
 }

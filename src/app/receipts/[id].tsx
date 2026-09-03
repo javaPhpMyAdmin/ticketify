@@ -9,16 +9,21 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
 
 import { Card, Divider, Icon, Pressable, Spinner, Text, View } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import { getExpenseCategory } from '@/features/home/categories';
+import { readPurchaseListByMonth } from '@/features/home/api';
+import { currentMonthKey, previousMonthKey } from '@/features/home/hooks/useHomeFeed';
 import {
   deleteReceipt,
   fetchPurchaseDetail,
   purchaseToDraft,
 } from '@/features/tickets';
 import { formatCurrency, formatShortDate } from '@/lib/format';
+import { queryKeys } from '@/lib/query-keys';
+import { toQueryData } from '@/lib/supabase/query-adapters';
 import {
   getSignedReceiptPhotoUrl,
   resolveReceiptPhotoPath,
@@ -43,8 +48,36 @@ import { ReceiptCategoryItemsModal } from './ReceiptCategoryItemsModal';
 export default function ReceiptDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { userId } = useSessionUser();
-  const list = useReceiptsStore((s) => s.list);
   const currency = useSettingsStore((s) => s.currency);
+
+  // ── Self-sufficient receipt data source ────────────────────────────────
+  // This page is deep-linkable (receipts/:id) and must work on cold start
+  // WITHOUT the Home feed having mounted first. Instead of reading from
+  // useReceiptsStore.list (which is no longer hydrated by a global feed
+  // effect), we fetch the current month's receipts via a scoped TanStack
+  // query — the same month-scoped read useMonthReceipts uses. If the
+  // receipt is not in the current month we fall back to the previous month
+  // (the most common deep-link case after month rollover). The query
+  // entries share the same monthReceipts cache the Home screen populates,
+  // so when Home IS mounted the data is already cached (zero extra reads).
+  const targetMonth = currentMonthKey();
+  const fallbackMonth = previousMonthKey(targetMonth);
+  const targetQuery = useQuery({
+    queryKey: queryKeys.monthReceipts(userId!, targetMonth),
+    enabled: !!userId,
+    queryFn: () => readPurchaseListByMonth(userId!, targetMonth).then(toQueryData),
+  });
+  const fallbackQuery = useQuery({
+    queryKey: queryKeys.monthReceipts(userId!, fallbackMonth),
+    enabled: !!userId && targetQuery.data !== undefined && !targetQuery.data.some((r) => r.id === id),
+    queryFn: () => readPurchaseListByMonth(userId!, fallbackMonth).then(toQueryData),
+  });
+  const allReceipts = [
+    ...(targetQuery.data ?? []),
+    ...(fallbackQuery.data ?? []),
+  ];
+  const receipt = allReceipts.find((r) => r.id === id);
+  const isLoading = targetQuery.isLoading || (fallbackQuery.isEnabled && fallbackQuery.isLoading);
   const [photoOpen, setPhotoOpen] = useState(false);
   // Slug of the category whose item sheet is open (`null` = closed).
   const [openCategory, setOpenCategory] = useState<string | null>(null);
@@ -84,7 +117,6 @@ export default function ReceiptDetailScreen() {
     });
     return () => sub.remove();
   }, [photoOpen]);
-  const receipt = list.find((r) => r.id === id);
 
   // Fullscreen photo zoom: pinch (scale) + double-tap (reset) + pan
   // (translate, clamped so the image edges stay inside the viewport).
@@ -296,6 +328,18 @@ export default function ReceiptDetailScreen() {
       <Text style={styles.title}>Detalle del recibo</Text>
     </View>
   );
+
+  if (isLoading && !receipt) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        {header}
+        <View style={styles.notFound}>
+          <Spinner size="sm" color={colors.textSecondary} />
+          <Text style={styles.notFoundText}>Cargando recibo…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!receipt) {
     return (
