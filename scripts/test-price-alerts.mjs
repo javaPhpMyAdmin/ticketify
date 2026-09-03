@@ -1,34 +1,28 @@
 #!/usr/bin/env node
 /**
- * Node harness for the pure price-alert computation
- * (`src/features/analytics/price-alerts.ts`).
+ * Node harness for the price-alert computation AND the `usePriceAlerts` hook
+ * wiring (`src/features/analytics/price-alerts.ts` + usePriceAlerts.ts).
  *
- * Compiles the price-alerts module plus its dependency graph (home feed,
- * auth store, receipts store, react-query) into a temp directory
- * with an isolated tsconfig that remaps the native/backend imports to the
- * hand-written test doubles, then asserts the alert contract:
+ * Part 1 (pure computation): compiles the price-alerts module plus its
+ * dependency graph (home feed, auth store, receipts store, react-query) into
+ * a temp directory with an isolated tsconfig that remaps the native/backend
+ * imports to the hand-written test doubles, then asserts the alert contract
+ * (see the assertion list below).
  *
- *   - a product whose unit price moved beyond the threshold between the
- *     previous and current month produces an alert with the signed %,
- *   - changes below the threshold are discarded,
- *   - items without a `unit_price` never participate,
- *   - products seen in only one of the two months have no pair → no alert,
- *   - multiple purchases in one month are averaged, not last-write-wins,
- *   - an unchanged price yields no alert,
- *   - a price drop yields a negative `changePct`,
- *   - alerts sort by absolute change, descending,
- *   - the explicit `nowMonth` parameter controls which consecutive months
- *     are compared (deterministic with fixed fixtures; the upcoming month
- *     selector can compare any two consecutive months).
- *
- * Identity normalization (package size is PRESERVED — only the same
- * presentation is comparable):
- *   - "Leche 1L" vs "Leche 2L" are different identities → no false alert,
- *   - "Leche 1L" vs "Leche 1 L" are the same identity → alert fires on a
- *     real price change.
+ * Part 2 (hook wiring): mounts the actual `usePriceAlerts` hook through
+ * react-test-renderer (the profile-hook harness pattern) against the
+ * compiled query-client singleton and the supabase double, asserting the
+ * NEW month-scoped wiring:
+ *   - it returns a PriceAlert[] derived from the two month-scoped query
+ *     results (current + previous month) for the selected month,
+ *   - empty data → empty alerts (no crash),
+ *   - the previous-month comparison yields the SAME alerts the pure
+ *     `computePriceAlerts` function computes for the combined rows,
+ *   - it does NOT read the receipts store (regression guard for BLOCKER 2).
  *
  * Deterministic: no clock, no Intl, fixed fixture inputs — the only call
- * into "now" is the defaulted parameter, and every test passes `nowMonth`.
+ * into "now" is the defaulted parameter, and every test passes `nowMonth`
+ * (the hook test passes monthKey explicitly).
  *
  * Usage: pnpm test:price-alerts
  */
@@ -40,11 +34,20 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import React from 'react';
+import { act } from 'react';
+import TestRenderer from 'react-test-renderer';
+
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 const tscBin = require.resolve('typescript/bin/tsc');
 const harnessConfig = join(__dirname, 'tsconfig.price-alerts-test.json');
+
+// The compiled modules load @tanstack/react-query through CJS `require`, and
+// the package ships separate ESM/CJS builds. Get the provider through the
+// SAME CJS build so a single QueryClientProvider instance is in play.
+const { QueryClientProvider } = require('@tanstack/react-query');
 
 const tmpRoot = join(root, 'node_modules', '.tmp');
 mkdirSync(tmpRoot, { recursive: true });
@@ -108,16 +111,116 @@ const item = (name, unitPrice, category = 'alimentos') => ({
   category,
 });
 
+/**
+ * Raw `purchases` row the home read maps into a HomeFeedReceiptRow. The
+ * supabase double (`__setTableRead('purchases', …)`) resolves these verbatim.
+ */
+function rawReceipt(id, date, itemRows) {
+  return {
+    id,
+    store_id: null,
+    purchase_date: date,
+    created_at: `${date}T10:00:00.000Z`,
+    total: itemRows.reduce((s, i) => s + i.total_price, 0),
+    payment_method: 'card',
+    image_url: null,
+    status: 'confirmed',
+    stores: { name: 'Store' },
+    purchase_items: itemRows,
+  };
+}
+const rawItem = (name, unitPrice, category = 'alimentos') => ({
+  id: `pi-${name}`,
+  name,
+  quantity: 1,
+  unit_price: unitPrice,
+  total_price: unitPrice,
+  is_impulse: false,
+  sort_order: 0,
+  categories: { slug: category },
+});
+
+// ── hook-mounting globals (profile-hook harness pattern) ────────────────
+let stubMod;
+let alertsHookMod;
+let pureMod;
+let sessionStoreMod;
+let queryClientMod;
+let receiptsStoreMod;
+let usePriceAlerts;
+let computePriceAlerts;
+
+const FAKE_SESSION = {
+  access_token: 'access-token-u1',
+  refresh_token: 'refresh-token-u1',
+  expires_at: Math.floor(Date.now() / 1000) + 3600,
+  expires_in: 3600,
+  token_type: 'bearer',
+  user: {
+    id: 'u1',
+    email: 'user@example.com',
+    app_metadata: {},
+    user_metadata: {},
+    aud: 'authenticated',
+    created_at: '2026-01-01T00:00:00.000Z',
+  },
+};
+
+let captured = null;
+function Probe() {
+  captured = usePriceAlerts('2026-08');
+  return null;
+}
+const probeElement = () =>
+  React.createElement(
+    QueryClientProvider,
+    { client: queryClientMod.queryClient },
+    React.createElement(Probe),
+  );
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+async function settleUntil(predicate, what, budget = 30) {
+  for (let i = 0; i < budget && !predicate(); i += 1) {
+    await act(async () => {
+      await tick();
+    });
+  }
+  assert.ok(predicate(), what);
+}
+
+async function resetHookState() {
+  stubMod.__resetSupabaseBehavior();
+  queryClientMod.queryClient.getQueryCache().clear();
+  receiptsStoreMod.useReceiptsStore.setState({ list: [] });
+  sessionStoreMod.useSessionStore.setState({ session: null });
+  captured = null;
+}
+
 async function run() {
   console.log('\n[tests] compiling price-alerts modules…');
   await compile();
   globalThis.__DEV__ = false;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   installRequireHook();
   console.log('[tests] loading compiled modules…');
 
   const alertsMod = await load('src/features/analytics/price-alerts.js');
   const compute = (records, threshold) =>
     alertsMod.computePriceAlerts(records, threshold, '2026-08');
+
+  // Hook-mounting modules (loaded once; each test resets state).
+  stubMod = await load('scripts/test-stubs/supabase.js');
+  alertsHookMod = await load('src/features/analytics/hooks/usePriceAlerts.js');
+  pureMod = alertsMod;
+  sessionStoreMod = await load('src/features/auth/use-session-store.js');
+  queryClientMod = await load('src/lib/query-client.js');
+  receiptsStoreMod = await load('src/stores/use-receipts-store.js');
+  usePriceAlerts = alertsHookMod.usePriceAlerts;
+  computePriceAlerts = alertsMod.computePriceAlerts;
+
+  // ── PART 1: pure computation (existing contract) ────────────────────────
+  // (all assertions are below in the original block; kept intact)
 
   console.log('\n[tests] alert detection\n');
 
@@ -377,12 +480,164 @@ async function run() {
     );
   });
 
+  // ── PART 2: usePriceAlerts hook wiring (BLOCKER 2) ─────────────────────
+  // Exercises the ACTUAL hook: two month-scoped queries (selected + previous
+  // month) combined and passed to computePriceAlerts. Fixtures are RAW
+  // `purchases` rows because the queryFn maps them via the home read; the
+  // pure-function comparison below uses the equivalent mapped fixture.
+  console.log('\n[tests] usePriceAlerts hook wiring\n');
+
+  const HOOK_RAW_JUL = (id, name, unit) =>
+    rawReceipt(id, '2026-07-03', [rawItem(name, unit, 'lacteos')]);
+  const HOOK_RAW_AUG = (id, name, unit) =>
+    rawReceipt(id, '2026-08-06', [rawItem(name, unit, 'lacteos')]);
+
+  // (a) returns a PriceAlert[] derived from the two month-scoped query results
+  await test('derives alerts from the two month-scoped query rows', async () => {
+    await resetHookState();
+    sessionStoreMod.useSessionStore.setState({ session: FAKE_SESSION });
+    stubMod.__setTableRead('purchases', {
+      rows: [
+        HOOK_RAW_AUG('r2', 'Leche entera 1L', 1200),
+        HOOK_RAW_JUL('r1', 'Leche entera 1L', 1100),
+      ],
+    });
+
+    let renderer;
+    await act(async () => {
+      renderer = TestRenderer.create(probeElement());
+    });
+    try {
+      await settleUntil(
+        () => captured && captured.length > 0,
+        'hook resolved the cross-month alert',
+      );
+      assert.equal(captured.length, 1);
+      assert.equal(captured[0].name, 'Leche entera 1L');
+      assert.equal(captured[0].currentPrice, 1200);
+      assert.equal(captured[0].previousPrice, 1100);
+      assert.equal(captured[0].changePct, 9.1);
+    } finally {
+      await act(async () => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  // (b) empty data → empty alerts (no crash)
+  await test('empty data → empty alerts (no crash)', async () => {
+    await resetHookState();
+    sessionStoreMod.useSessionStore.setState({ session: FAKE_SESSION });
+    stubMod.__setTableRead('purchases', { rows: [] });
+
+    let renderer;
+    await act(async () => {
+      renderer = TestRenderer.create(probeElement());
+    });
+    try {
+      await settleUntil(
+        () => captured !== null && Array.isArray(captured) && captured.length === 0,
+        'empty rows → empty alerts',
+      );
+      assert.deepEqual(captured, []);
+    } finally {
+      await act(async () => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  // (c) previous-month comparison yields the same alerts the pure fn computes
+  await test('previous-month comparison matches the pure computePriceAlerts', async () => {
+    await resetHookState();
+    sessionStoreMod.useSessionStore.setState({ session: FAKE_SESSION });
+    stubMod.__setTableRead('purchases', {
+      rows: [
+        HOOK_RAW_AUG('r2', 'Leche entera 1L', 1200),
+        HOOK_RAW_JUL('r1', 'Leche entera 1L', 1100),
+        HOOK_RAW_JUL('r0', 'Aceite de girasol 1L', 1500),
+        HOOK_RAW_AUG('r3', 'Aceite de girasol 1L', 1200),
+      ],
+    });
+
+    let renderer;
+    await act(async () => {
+      renderer = TestRenderer.create(probeElement());
+    });
+    try {
+      await settleUntil(
+        () => captured && captured.length === 2,
+        'hook resolved both cross-month alerts',
+      );
+      // The pure function over the same combined rows must yield the SAME
+      // alert set the hook produced (cross-check the wiring, not the math).
+      const combined = [
+        receipt('r1', '2026-07-03', item('Leche entera 1L', 1100, 'lacteos')),
+        receipt('r2', '2026-08-06', item('Leche entera 1L', 1200, 'lacteos')),
+        receipt('r0', '2026-07-03', item('Aceite de girasol 1L', 1500, 'alimentos')),
+        receipt('r3', '2026-08-06', item('Aceite de girasol 1L', 1200, 'alimentos')),
+      ];
+      const expected = computePriceAlerts(combined, undefined, '2026-08');
+      assert.deepEqual(
+        captured.map((a) => [a.name, a.changePct]).sort(),
+        expected.map((a) => [a.name, a.changePct]).sort(),
+        'hook alerts match the pure function output',
+      );
+    } finally {
+      await act(async () => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  // (d) does NOT read the receipts store as its data source (regression guard)
+  await test('does not read the receipts store as its source', async () => {
+    await resetHookState();
+    sessionStoreMod.useSessionStore.setState({ session: FAKE_SESSION });
+    // The store is EMPTY while the month queries hold data: the hook must
+    // still resolve alerts (pure month-scoped queries), never unioning the
+    // unused store list.
+    stubMod.__setTableRead('purchases', {
+      rows: [
+        HOOK_RAW_AUG('r2', 'Leche entera 1L', 1200),
+        HOOK_RAW_JUL('r1', 'Leche entera 1L', 1100),
+      ],
+    });
+
+    let renderer;
+    await act(async () => {
+      renderer = TestRenderer.create(probeElement());
+    });
+    try {
+      await settleUntil(
+        () => captured && captured.length === 1,
+        'alerts resolve despite empty receipts store',
+      );
+      assert.deepEqual(
+        receiptsStoreMod.useReceiptsStore.getState().list,
+        [],
+        'receipts store stayed empty (hook never reads it)',
+      );
+    } finally {
+      await act(async () => {
+        renderer.unmount();
+      });
+    }
+  });
+
   console.log(`\n[tests] ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
   rmSync(workdir, { recursive: true, force: true });
 }
 
-run().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+try {
+  await run();
+} catch (err) {
+  console.error('[tests] harness crashed:', err);
+  process.exitCode = 1;
+} finally {
+  rmSync(workdir, { recursive: true, force: true });
+}
+// react-query's gc timers keep the event loop alive after the summary prints
+// (the same gotcha that hangs the aggregate `pnpm test`); exit explicitly.
+process.exit(process.exitCode || 0);

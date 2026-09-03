@@ -61,13 +61,16 @@ export interface UseRenameItemResult {
  *     Postgres re-derives on every UPDATE — no trigger, no separate write.
  *
  * Cache invalidation (on success only):
- *   - `queryKeys.homeFeed(userId)` — the receipts store hydrates from this
- *     query, so invalidating it forces `useReceiptsStore.setState({ list })`
- *     to re-run on the next render and the renamed item shows up with the
- *     new name everywhere (drill-downs, recent items, History searches).
+ *   - `queryKeys.homeFeed(userId)` — the receipts store previously hydrated
+ *     from this query; the feed now lives in month-scoped TanStack queries
+ *     but the key is still invalidated for downstream consumers.
  *   - `queryKeys.itemSearchPrefix(userId)` — matches every month/query
  *     variant of the History item search; invalidating the prefix is the
  *     shared idiom across the codebase (same as `saveReceipt`).
+ *   - `queryKeys.monthReceiptsPrefix(userId)` — the month-scoped receipts
+ *     queries (useMonthReceipts, receipts/[id].tsx) read full-month rows;
+ *     a renamed item must refresh those so the detail screen shows the new
+ *     name on next render.
  *   - `queryKeys.profile` / `queryKeys.budget` — defensive: they don't
  *     read items, but a single invalidate call is cheap and shields any
  *     future surface that joins profile + items.
@@ -120,6 +123,9 @@ export function useRenameItem(): UseRenameItemResult {
           });
           void queryClient.invalidateQueries({
             queryKey: queryKeys.itemSearchPrefix(userId),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.monthReceiptsPrefix(userId),
           });
           void queryClient.invalidateQueries({
             queryKey: queryKeys.profile(userId),
