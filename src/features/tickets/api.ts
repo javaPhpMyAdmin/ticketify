@@ -162,8 +162,15 @@ const TIMEOUT_MESSAGE =
  */
 const MAX_IMAGE_BYTES = Math.floor((9 * 1024 * 1024 * 3) / 4);
 
-/** Abort the invoke after this long; Gemini flash is usually single-digit seconds. */
-const INVOKE_TIMEOUT_MS = 30_000;
+/**
+ * Abort the invoke after this long. Raised to 65s to match the edge's
+ * GEMINI_TIMEOUT_MS (60s) + a little slack: the 3.x reasoning models take
+ * ~47s COLD plus an edge-side provider retry, so the client must not abort
+ * before the edge finishes (the old 30s aborted first/cold scans, surfacing
+ * a false "Servicio no disponible"). The edge's retry adds ~1.1s of backoff;
+ * 65s keeps the client from cutting a cold-but-successful scan short.
+ */
+const INVOKE_TIMEOUT_MS = 65_000;
 
 const PAYMENT_METHODS: ReadonlySet<string> = new Set([
   'cash',

@@ -664,8 +664,13 @@ export default function ReviewReceiptScreen() {
             {/* SCAN mode (error banner in footer): the user is confirming a
                 parse result, and a mismatch there is a real error path.
                 Keep the existing footer banner with the green "Coincide"
-                badge and the helpful "Incluye descuento de $X" detail. */}
-            {!editingMode ? (
+                badge and the helpful "Incluye descuento de $X" detail.
+                The badge is rendered ONLY when a working draft exists: during
+                the save→clear→dismiss transition `draft` becomes null for a
+                single frame, and `matches` would otherwise evaluate to a
+                false "No coincide" — the guard shows nothing instead of a
+                misleading verdict on that transient frame. */}
+            {!editingMode && draft ? (
               <View style={styles.matchesRow}>
                 <Text
                   style={[
@@ -677,7 +682,7 @@ export default function ReviewReceiptScreen() {
                 </Text>
                 {!matches ? (
                   <Text style={styles.matchesDetail}>
-                    Declarado {formatCurrency(draft?.total ?? 0, currency)}
+                    Declarado {formatCurrency(draft.total, currency)}
                   </Text>
                 ) : itemsTotal > (draft?.total ?? 0) + 0.01 ? (
                   <Text style={styles.matchesDetail}>
