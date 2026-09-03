@@ -120,6 +120,13 @@ export const queryKeys = {
    */
   monthKeys: (userId: string) => ['home', 'month-keys', userId] as const,
 
+  /**
+   * Single-receipt detail (no month dependency). Used by the receipt detail
+   * page and edit flow so the page can show receipts from any month.
+   */
+  receiptDetail: (userId: string, purchaseId: string) =>
+    ['receipt-detail', userId, purchaseId] as const,
+
   /** Per-category budget limits for a month. */
   categoryBudgets: (userId: string, yearMonth: string) =>
     ['category-budgets', userId, yearMonth] as const,

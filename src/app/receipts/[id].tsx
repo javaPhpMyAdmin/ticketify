@@ -14,16 +14,14 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, Divider, Icon, Pressable, Spinner, Text, View } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import { getExpenseCategory } from '@/features/home/categories';
-import { readPurchaseListByMonth } from '@/features/home/api';
-import { currentMonthKey, previousMonthKey } from '@/features/home/hooks/useHomeFeed';
 import {
   deleteReceipt,
   fetchPurchaseDetail,
   purchaseToDraft,
 } from '@/features/tickets';
+import type { PurchaseWithItems } from '@/features/tickets';
 import { formatCurrency, formatShortDate } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
-import { toQueryData } from '@/lib/supabase/query-adapters';
 import {
   getSignedReceiptPhotoUrl,
   resolveReceiptPhotoPath,
@@ -45,39 +43,71 @@ import { ReceiptCategoryItemsModal } from './ReceiptCategoryItemsModal';
  * scan-flow review screen (`ticket/review/[id]`), which keeps working
  * untouched.
  */
+
+/**
+ * Maps `PurchaseWithItems` (from `fetchPurchaseDetail`) into the
+ * `HomeFeedReceiptRow` shape the UI renders. Category totals are
+ * derived by summing item amounts per category slug — the same
+ * aggregation `buildFeedRow` uses for the home feed.
+ */
+function purchaseToFeedRow(p: PurchaseWithItems) {
+  const items = (p.items ?? []).map((i) => ({
+    name: i.name,
+    amount: i.total_price,
+    quantity: i.quantity,
+    unit_price: i.unit_price,
+    category: i.category?.slug ?? 'otros',
+    is_impulse: i.is_impulse,
+  }));
+  const category_totals: Record<string, number> = {};
+  for (const item of items) {
+    category_totals[item.category] =
+      (category_totals[item.category] ?? 0) + item.amount;
+  }
+  return {
+    id: p.id,
+    store_name: p.store_name ?? '',
+    purchase_date: p.purchase_date,
+    scanned_at: null,
+    total: p.total,
+    image_url: p.image_url,
+    status: p.status,
+    payment_method: p.payment_method,
+    wants_snacks_total: items
+      .filter((i) => i.is_impulse)
+      .reduce((sum, i) => sum + i.amount, 0),
+    category_totals,
+    items,
+  };
+}
+
 export default function ReceiptDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { userId } = useSessionUser();
   const currency = useSettingsStore((s) => s.currency);
 
-  // ── Self-sufficient receipt data source ────────────────────────────────
+  // ── Primary data source: fetchPurchaseDetail by ID ────────────────────
   // This page is deep-linkable (receipts/:id) and must work on cold start
-  // WITHOUT the Home feed having mounted first. Instead of reading from
-  // useReceiptsStore.list (which is no longer hydrated by a global feed
-  // effect), we fetch the current month's receipts via a scoped TanStack
-  // query — the same month-scoped read useMonthReceipts uses. If the
-  // receipt is not in the current month we fall back to the previous month
-  // (the most common deep-link case after month rollover). The query
-  // entries share the same monthReceipts cache the Home screen populates,
-  // so when Home IS mounted the data is already cached (zero extra reads).
-  const targetMonth = currentMonthKey();
-  const fallbackMonth = previousMonthKey(targetMonth);
-  const targetQuery = useQuery({
-    queryKey: queryKeys.monthReceipts(userId!, targetMonth),
-    enabled: !!userId,
-    queryFn: () => readPurchaseListByMonth(userId!, targetMonth).then(toQueryData),
+  // WITHOUT the Home feed having mounted first. Instead of searching
+  // month-scoped list queries (which miss receipts older than last month),
+  // we fetch the receipt directly by its ID — no month dependency. The
+  // edit flow already calls `fetchPurchaseDetail` (below), so the cache
+  // is shared between the display and edit paths.
+  const detailQuery = useQuery({
+    queryKey: queryKeys.receiptDetail(userId!, id!),
+    enabled: !!userId && !!id,
+    queryFn: () => fetchPurchaseDetail(userId!, id!),
   });
-  const fallbackQuery = useQuery({
-    queryKey: queryKeys.monthReceipts(userId!, fallbackMonth),
-    enabled: !!userId && targetQuery.data !== undefined && !targetQuery.data.some((r) => r.id === id),
-    queryFn: () => readPurchaseListByMonth(userId!, fallbackMonth).then(toQueryData),
-  });
-  const allReceipts = [
-    ...(targetQuery.data ?? []),
-    ...(fallbackQuery.data ?? []),
-  ];
-  const receipt = allReceipts.find((r) => r.id === id);
-  const isLoading = targetQuery.isLoading || (fallbackQuery.isEnabled && fallbackQuery.isLoading);
+
+  // ── Derive receipt + category_totals from the fetched purchase ────────
+  const rawReceipt = detailQuery.data;
+  const receipt = rawReceipt
+    ? purchaseToFeedRow(rawReceipt)
+    : undefined;
+
+  // ── Loading gate: session bootstrap OR query in flight ────────────────
+  const isSessionLoading = !userId;
+  const isLoading = isSessionLoading || detailQuery.isLoading;
   const [photoOpen, setPhotoOpen] = useState(false);
   // Slug of the category whose item sheet is open (`null` = closed).
   const [openCategory, setOpenCategory] = useState<string | null>(null);
@@ -336,6 +366,28 @@ export default function ReceiptDetailScreen() {
         <View style={styles.notFound}>
           <Spinner size="sm" color={colors.textSecondary} />
           <Text style={styles.notFoundText}>Cargando recibo…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (detailQuery.isError && !receipt) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        {header}
+        <View style={styles.notFound}>
+          <Icon name="exclamationmark.triangle.fill" size={32} color={colors.danger} />
+          <Text style={styles.notFoundText}>
+            No se pudo cargar el recibo
+          </Text>
+          <Pressable
+            onPress={() => detailQuery.refetch()}
+            style={styles.retryButton}
+            accessibilityRole="button"
+            accessibilityLabel="Reintentar"
+          >
+            <Text style={styles.retryLabel}>Reintentar</Text>
+          </Pressable>
         </View>
       </SafeAreaView>
     );
@@ -709,6 +761,17 @@ const styles = StyleSheet.create({
   notFoundText: {
     ...typography.bodyMd,
     color: colors.textSecondary,
+  },
+  retryButton: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.full,
+    backgroundColor: colors.primary,
+  },
+  retryLabel: {
+    ...typography.headlineMd,
+    color: colors.textInverse,
   },
   footerWrap: {
     position: 'absolute',

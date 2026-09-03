@@ -214,6 +214,7 @@ function compile() {
       itemSearchPrefix: p('item-search'),
       monthReceiptsPrefix: p('month-receipts'),
       monthKeys: p('month-keys'),
+      receiptDetail: p('receipt-detail'),
     };
   `,
   );
