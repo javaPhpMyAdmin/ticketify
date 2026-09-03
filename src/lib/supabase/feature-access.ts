@@ -395,6 +395,25 @@ const CREATE_HOUSEHOLD_PRO_MESSAGE =
   'Necesitás una suscripción PRO (o un trial activo) para crear un hogar.';
 
 /**
+ * User-safe copy shown when the caller already belongs to a household (the
+ * create_household RPC raises 'already in a household', migration 0017 §1).
+ * Actionable: the user is blocked from creating a second household until they
+ * leave their current one — telling them why unblocks the confusion instead
+ * of the dead-end generic read-error copy.
+ */
+const ALREADY_IN_HOUSEHOLD_MESSAGE =
+  'Ya pertenecés a un hogar. Salí del hogar actual para poder crear uno nuevo.';
+
+/**
+ * User-safe catch-all copy for create_household failures. The raw PostgREST
+ * detail (constraint/RLS/table names from `raise exception`) is logged, never
+ * shown; this fixed message avoids leaking schema internals while still being
+ * more specific than the generic read-error copy.
+ */
+const CREATE_HOUSEHOLD_FALLBACK_MESSAGE =
+  'No se pudo crear el hogar. Revisá tu conexión e intentá de nuevo. Si persiste, salí de tu hogar actual y volvé a intentar.';
+
+/**
  * Create a new household. Calls the `create_household` RPC which inserts
  * the household row, adds the caller as owner, and sets `profiles.household_id`.
  * The RPC requires Pro (or an active trial); a free/expired user gets a
@@ -408,12 +427,31 @@ export async function createHousehold(
     p_name: name,
   });
   if (error) {
-    console.warn('[write] create household failed:', error.code, error.message);
+    // Log the FULL detail (code + message) for debugging — the RPC's
+    // `raise exception` surfaces code P0001 with the message text, which is
+    // what we key the known cases on below.
+    console.error(
+      '[write] create household failed:',
+      error.code,
+      error.message,
+    );
     const message = error.message ?? '';
     if (/pro subscription required/i.test(message)) {
       return { status: 'error', message: CREATE_HOUSEHOLD_PRO_MESSAGE };
     }
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    if (/already in a household/i.test(message)) {
+      return { status: 'error', message: ALREADY_IN_HOUSEHOLD_MESSAGE };
+    }
+    // Catch-all: return a FIXED user-safe message. The raw PostgREST
+    // error.message/code (table/constraint/RLS-policy names from `raise
+    // exception`) is NOT shown to the user — that would leak schema internals
+    // (review-risk MEDIUM). The full detail stays in the console.error above
+    // for debugging. The known actionable cases (Pro required / already in a
+    // household) are surfaced above; anything else gets this generic copy.
+    return {
+      status: 'error',
+      message: CREATE_HOUSEHOLD_FALLBACK_MESSAGE,
+    };
   }
   return { status: 'ok', data: (data as unknown as Household) };
 }

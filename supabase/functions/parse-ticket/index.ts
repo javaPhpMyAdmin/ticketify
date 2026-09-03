@@ -31,6 +31,7 @@ import {
   parseListJson,
   parseReceiptJson,
   ProviderOverloadedError,
+  withProviderRetry,
   type ParsedItem,
   type ParsedReceipt,
 } from './lib/parse.ts';
@@ -87,8 +88,15 @@ const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-3.1-flash-lite';
  */
 const INTERNAL_ERROR_MESSAGE = 'Se produjo un error al procesar el recibo.';
 
-/** Hard cap on a single Gemini call; a hanging upstream must not hold the worker. */
-const GEMINI_TIMEOUT_MS = 30_000;
+/**
+ * Hard cap on a single Gemini call; a hanging upstream must not hold the worker.
+ * Raised from 30s to 60s: the 3.x reasoning models take ~47s COLD on a receipt
+ * photo, and the old 30s abort cut off the first (cold) call — surfacing a
+ * false "Servicio no disponible" when a retry (now warm) succeeded instantly.
+ * 60s gives the cold first call room to finish; the client invoke timeout is
+ * raised to match (65s, see src/features/tickets/api.ts).
+ */
+const GEMINI_TIMEOUT_MS = 60_000;
 
 /** Client scoped to the calling user (respects RLS). */
 function userClient(jwt: string) {
@@ -620,7 +628,13 @@ Deno.serve(async (req: Request) => {
 
   let parsed: ParsedReceipt;
   try {
-    parsed = await callGemini(body.image_base64, mimeType);
+    // Bounded retry for transient Gemini saturation (HTTP 503 / provider 429):
+    // a cold or overloaded first call is retried a couple times inside the
+    // edge with a small backoff so a spurious provider blip does not surface
+    // as "Servicio no disponible". Auth/validation/LLM-content errors are NOT
+    // retried — only ProviderOverloadedError, and the call is idempotent
+    // (edge ↔ Gemini only, no side-effects), so a retry is always safe.
+    parsed = await withProviderRetry(() => callGemini(body.image_base64, mimeType));
   } catch (err) {
     // Gemini/validation failures are a client-fixable 422; anything else is
     // a server-side internal error. Auth/validation/pre-check paths above
@@ -633,7 +647,9 @@ Deno.serve(async (req: Request) => {
       // readable as a list either; return the original receipt-mode message
       // so the user gets a consistent failure explanation.
       try {
-        const list = await callGeminiListMode(body.image_base64, mimeType);
+        const list = await withProviderRetry(() =>
+          callGeminiListMode(body.image_base64, mimeType),
+        );
         parsed = listToReceipt(list);
       } catch (listErr) {
         if (listErr instanceof ProviderOverloadedError) {

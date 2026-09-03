@@ -102,7 +102,15 @@ async function run() {
   compile();
   console.log('[tests] loading compiled module…');
   const parseMod = await load('src/parse.js');
-  const { parseListJson, parseItem, parseReceiptJson, ParseError } = parseMod;
+  const {
+    parseListJson,
+    parseItem,
+    parseReceiptJson,
+    ParseError,
+    ProviderOverloadedError,
+    withProviderRetry,
+    PROVIDER_RETRY_DELAYS_MS,
+  } = parseMod;
 
   console.log('\n[tests] parseListJson\n');
 
@@ -262,6 +270,65 @@ async function run() {
       items: [item()],
     });
     assert.equal(result.payment_method, 'other');
+  });
+
+  console.log('\n[tests] withProviderRetry (transient provider overload backoff)\n');
+
+  await test('retries a ProviderOverloadedError and succeeds on the second attempt', async () => {
+    let calls = 0;
+    const result = await withProviderRetry(async () => {
+      calls += 1;
+      if (calls === 1) throw new ProviderOverloadedError('overloaded');
+      return 'ok';
+    });
+    assert.equal(result, 'ok');
+    assert.equal(calls, 2);
+  });
+
+  await test('retries a ProviderOverloadedError and succeeds on the last attempt', async () => {
+    let calls = 0;
+    const result = await withProviderRetry(async () => {
+      calls += 1;
+      if (calls <= PROVIDER_RETRY_DELAYS_MS.length) {
+        throw new ProviderOverloadedError('overloaded');
+      }
+      return 'ok';
+    });
+    assert.equal(result, 'ok');
+    assert.equal(calls, PROVIDER_RETRY_DELAYS_MS.length + 1);
+  });
+
+  await test('re-throws ProviderOverloadedError when retries are exhausted', async () => {
+    let calls = 0;
+    await assert.rejects(
+      withProviderRetry(async () => {
+        calls += 1;
+        throw new ProviderOverloadedError('overloaded');
+      }),
+      (err) => err instanceof ProviderOverloadedError && err.message === 'overloaded',
+    );
+    // One initial attempt + one retry per configured delay.
+    assert.equal(calls, PROVIDER_RETRY_DELAYS_MS.length + 1);
+  });
+
+  await test('does NOT retry a non-provider error (LLM-content/validation)', async () => {
+    let calls = 0;
+    await assert.rejects(
+      withProviderRetry(async () => {
+        calls += 1;
+        throw new ParseError('malformed json');
+      }),
+      (err) => err instanceof ParseError,
+    );
+    assert.equal(calls, 1);
+  });
+
+  await test('backoff delays are increasing and positive', () => {
+    assert.equal(PROVIDER_RETRY_DELAYS_MS.length, 2);
+    for (let i = 1; i < PROVIDER_RETRY_DELAYS_MS.length; i += 1) {
+      assert.ok(PROVIDER_RETRY_DELAYS_MS[i] > PROVIDER_RETRY_DELAYS_MS[i - 1]);
+      assert.ok(PROVIDER_RETRY_DELAYS_MS[i] > 0);
+    }
   });
 
   console.log('');

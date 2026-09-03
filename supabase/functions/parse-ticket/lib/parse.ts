@@ -45,6 +45,43 @@ export class ParseError extends Error {}
  */
 export class ProviderOverloadedError extends Error {}
 
+/**
+ * Backoff (ms) between bounded Gemini-provider retries: 300ms then 800ms.
+ * Only `ProviderOverloadedError` (transient saturation) is retried; the
+ * attempts are idempotent because the edge only calls Gemini and returns a
+ * result — a retried call never duplicates a side-effect.
+ */
+export const PROVIDER_RETRY_DELAYS_MS: readonly number[] = [300, 800];
+
+/**
+ * Runs `fn`, retrying it up to `PROVIDER_RETRY_DELAYS_MS.length` times (with
+ * the configured backoff) when it throws `ProviderOverloadedError` — the
+ * transient provider-saturation signal. Any other error (auth/validation/
+ * LLM-content) is re-thrown immediately: only resilient overload is retried,
+ * so the caller's semantics never change. The last `ProviderOverloadedError`
+ * propagates when retries are exhausted so the handler can answer with the
+ * existing provider_overloaded envelope.
+ */
+export async function withProviderRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= PROVIDER_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (!(err instanceof ProviderOverloadedError)) throw err;
+      const delay = PROVIDER_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) break; // retries exhausted
+      await sleep(delay);
+    }
+  }
+  throw lastErr;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export const PAYMENT_METHODS = new Set([
   'cash',
   'card',
