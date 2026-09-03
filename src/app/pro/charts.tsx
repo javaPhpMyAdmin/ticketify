@@ -70,6 +70,7 @@ import {
   monthKeyToLabel,
   previousMonthKey,
   useAvailableMonthKeys,
+  useMonthNavigation,
 } from '@/features/home/hooks/useHomeFeed';
 import { formatCurrency, MONTHS_SHORT_ES, todayLocalISO, yearLabel } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
@@ -471,21 +472,13 @@ function ChartsBody() {
   }, [monthList, period, spendTrend, weekStartISO]);
 
   // `monthKeys` is newest-first. The selected month may not be in it (e.g.
-  // the current month with no receipts yet): it is then newer than
-  // everything, so only "older" is enabled and it jumps to the newest
-  // month that has data.
-  const currentIndex = monthKeys.indexOf(monthKey);
-  const canGoNewer = currentIndex > 0;
-  const canGoOlder =
-    currentIndex === -1
-      ? monthKeys.length > 0
-      : currentIndex < monthKeys.length - 1;
-
-  const goOlder = () =>
-    setMonthKey(
-      currentIndex === -1 ? monthKeys[0] : monthKeys[currentIndex + 1],
-    );
-  const goNewer = () => setMonthKey(monthKeys[currentIndex - 1]);
+  // the current month with no receipts yet): `useMonthNavigation` synthesizes
+  // the current month at the front so it stays reachable via "newer".
+  const { canGoNewer, canGoOlder, goOlder, goNewer } = useMonthNavigation(
+    monthKeys,
+    monthKey,
+    setMonthKey,
+  );
 
   const previousMonthLabel = monthKeyToLabel(previousMonthKey(monthKey));
 
