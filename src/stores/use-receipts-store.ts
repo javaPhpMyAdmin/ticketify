@@ -19,10 +19,10 @@ export type ScanState =
 
 interface ReceiptsState {
   /**
-   * Receipts backing Home's feed and the History/drill-down screens. The
-   * Home feed query hydrates it from the `purchases` / `purchase_items`
-   * reads (all months), so every derived screen renders the same rows the
-   * feed does.
+   * Receipts backing History, the drill-down screens, and the edit reviewer
+   * preload. Month-scoped TanStack queries (`useMonthReceipts`) now populate
+   * the feed; this store list is limited to optimistic rows during the scan
+   * flow and manual edits (`upsertReceiptRow` / `removeReceiptRow`).
    */
   list: HomeFeedReceiptRow[];
   /** The receipt currently being captured / parsed / reviewed. */
@@ -70,8 +70,9 @@ const emptyDraft = (imageUrl: string): ReceiptDraft => ({
 });
 
 export const useReceiptsStore = create<ReceiptsState>((set) => ({
-  // Starts empty; the Home feed query hydrates it from the `purchases` /
-  // `purchase_items` reads once a signed-in user exists.
+  // Starts empty; the month-scoped monthReceipts queries (useMonthReceipts)
+  // own live feed data now. This list only holds scan-flow / edit-optimistic
+  // rows and is not hydrated by a global feed effect.
   list: [],
   draft: null,
   scanState: 'idle',

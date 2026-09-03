@@ -90,9 +90,6 @@ export const queryKeys = {
     ['analytics', 'monthly-cache', userId] as const,
   /** The home feed (purchase list; all months, current-month derived). */
   homeFeed: (userId: string) => ['home', 'feed', userId] as const,
-  /** Paginated home feed — one page of recent receipts. */
-  homeFeedPage: (userId: string, page: number) =>
-    ['home', 'feed', userId, 'page', page] as const,
   /** Item search results for a month + normalized query (user-scoped). */
   itemSearch: (userId: string, monthKey: string, query: string) =>
     ['home', 'item-search', userId, monthKey, query] as const,
@@ -122,6 +119,13 @@ export const queryKeys = {
    * always complete, even when the current month has no receipts.
    */
   monthKeys: (userId: string) => ['home', 'month-keys', userId] as const,
+
+  /**
+   * Single-receipt detail (no month dependency). Used by the receipt detail
+   * page and edit flow so the page can show receipts from any month.
+   */
+  receiptDetail: (userId: string, purchaseId: string) =>
+    ['receipt-detail', userId, purchaseId] as const,
 
   /** Per-category budget limits for a month. */
   categoryBudgets: (userId: string, yearMonth: string) =>

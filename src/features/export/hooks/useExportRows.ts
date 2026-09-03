@@ -9,9 +9,9 @@
  * `homeFeed(userId)` after every receipt save/edit/delete, which keeps the
  * export screen fresh with no extra wiring.
  *
- * Mirrors the sibling hooks (`useHomeFeed`, `useProfile`): TanStack Query
- * with the read seam adapted at the queryFn boundary (`toQueryData`), the
- * query disabled until a signed-in user exists, and the user-safe error via
+ * Mirrors the sibling hooks (`useProfile`): TanStack Query with the read
+ * seam adapted at the queryFn boundary (`toQueryData`), the query disabled
+ * until a signed-in user exists, and the user-safe error via
  * `toQueryErrorMessage` — never a crash, never a false "no data" message.
  */
 import { useQuery } from '@tanstack/react-query';
