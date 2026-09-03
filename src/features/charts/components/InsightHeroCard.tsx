@@ -122,19 +122,29 @@ export function InsightHeroCard({
   // occupies 75% of its 44dp slot, centered.
   const barWidth = DAY_SLOT_WIDTH * 0.75;
 
-  // Real x/y position of every day's bar, reported by victory-native's
-  // `points.total` (canvas coordinates == dp). The manual day labels are
-  // centered on these EXACT x values as a safety net: even if the canvas
-  // measures a slightly different width than the slots, the numbers follow
-  // the bars wherever they actually land. The y values anchor the tap
-  // legend just above the tapped bar.
-  const [barAnchors, setBarAnchors] = useState<
-    { x: number; y: number }[] | null
-  >(null);
-  const dayX = barAnchors ? barAnchors.map((anchor) => anchor.x) : null;
-  const hasDayX = dayX !== null && dayX.length > 0;
-  // Chart baseline (bottom of the bars), used to size each bar's tap target.
-  const [baselineY, setBaselineY] = useState<number | null>(null);
+  // ── Derived bar geometry (deterministic, no setState during render) ──
+  // Bar x/y positions are derived here instead of being captured with
+  // setState inside the CartesianChart render prop (React forbids setting
+  // state on THIS component while victory-native's internal child renders).
+  // The math is deterministic and equals what the chart draws:
+  //   - day N's bar is centered in its `DAY_SLOT_WIDTH` slot — the same slot
+  //     math the manual label row uses, so numbers stay under their bars.
+  //   - the y scale maps the [0, yMax] plot domain onto the canvas height
+  //     minus the top domain padding: y=0 → baseline, y=yMax → canvas top.
+  const barCenterX = useMemo(
+    () =>
+      Array.from(
+        { length: daysInMonth },
+        (_, index) => DAY_SLOT_WIDTH * (index + 0.5),
+      ),
+    [daysInMonth],
+  );
+  // Bottom edge of the plot area (the bars' baseline). Equal to
+  // `chartBounds.bottom` for the given `domainPadding.top = spacing.sm`.
+  const baselineY = chartHeight - spacing.sm;
+  // Pixel y of a bar whose plotted (cbrt-scaled) value is `scaledValue`.
+  const barTop = (scaledValue: number) =>
+    chartHeight - spacing.sm - (scaledValue / yMax) * (chartHeight - spacing.sm);
 
   // Day labels rendered manually below the chart — victory-native's own
   // axis labels proved unreliable here (they didn't render on device), so
@@ -210,60 +220,38 @@ export function InsightHeroCard({
                   top: spacing.sm,
                 }}
               >
-                {({ points, chartBounds }) => {
-                  // Capture the real per-day bar x/y positions once (and
-                  // whenever they change) so the labels can be pinned to
-                  // the bars. Setting the same values bails out, so this
-                  // does not loop.
-                  const anchors = points.total.map((point) => ({
-                    x: point.x,
-                    y: point.y ?? 0,
-                  }));
-                  if (
-                    !barAnchors ||
-                    anchors.length !== barAnchors.length ||
-                    anchors.some(
-                      (anchor, index) =>
-                        Math.abs(anchor.x - barAnchors[index].x) > 0.5 ||
-                        Math.abs(anchor.y - barAnchors[index].y) > 0.5,
-                    )
-                  ) {
-                    setBarAnchors(anchors);
-                  }
-                  if (baselineY === null || Math.abs(baselineY - chartBounds.bottom) > 0.5) {
-                    setBaselineY(chartBounds.bottom);
-                  }
-                  return (
-                    <Bar
-                      points={points.total}
-                      chartBounds={chartBounds}
-                      color={colors.heroLine}
-                      // Each day is its own bar so the height under a day
-                      // label is EXACTLY that day's scaled spend. A
-                      // connecting line made day 14 read as tall (it sat on
-                      // the descending slope from the day-13 spike) and day
-                      // 10 as a valley, even though $812 and $560 are
-                      // near-equal in cbrt space.
-                      roundedCorners={{ topLeft: 3, topRight: 3 }}
-                      innerPadding={0.25}
-                      animate={
-                        hasMounted
-                          ? undefined
-                          : { type: 'timing', duration: 600 }
-                      }
-                    />
-                  );
-                }}
+                {({ points, chartBounds }) => (
+                  <Bar
+                    points={points.total}
+                    chartBounds={chartBounds}
+                    color={colors.heroLine}
+                    // Each day is its own bar so the height under a day
+                    // label is EXACTLY that day's scaled spend. A
+                    // connecting line made day 14 read as tall (it sat on
+                    // the descending slope from the day-13 spike) and day
+                    // 10 as a valley, even though $812 and $560 are
+                    // near-equal in cbrt space.
+                    roundedCorners={{ topLeft: 3, topRight: 3 }}
+                    innerPadding={0.25}
+                    animate={
+                      hasMounted
+                        ? undefined
+                        : { type: 'timing', duration: 600 }
+                    }
+                  />
+                )}
               </CartesianChart>
               {/* Tap handling: one Pressable per non-zero bar that opens
                   the day detail modal via onDayPress. */}
-              {barAnchors && baselineY !== null && onDayPress
+              {onDayPress
                 ? dayTicks.map((day, index) => {
                     const total = dailyData[index]?.total ?? 0;
-                    const anchor = barAnchors[index];
-                    if (!anchor || total <= 0) return null;
-                    const barTop = anchor.y;
-                    const barHeight = baselineY - barTop;
+                    if (total <= 0) return null;
+                    // Use the plotted (cbrt-scaled) value so the derived
+                    // geometry matches the bar the chart actually drew.
+                    const scaledTotal = scaledData[index]?.total ?? 0;
+                    const barTopY = barTop(scaledTotal);
+                    const barHeight = baselineY - barTopY;
                     if (barHeight <= 0) return null;
                     return (
                       <Pressable
@@ -271,8 +259,8 @@ export function InsightHeroCard({
                         style={[
                           styles.tapBar,
                           {
-                            left: anchor.x - barWidth / 2,
-                            top: barTop,
+                            left: barCenterX[index] - barWidth / 2,
+                            top: barTopY,
                             width: barWidth,
                             height: barHeight,
                           },
@@ -285,12 +273,9 @@ export function InsightHeroCard({
             </View>
             <View style={styles.dayAxis}>
                 {dayTicks.map((day, index) => {
-                  // Prefer the bar's real anchor (`points.total`); fall back
-                  // to the slot center before the chart reports positions.
-                  const center =
-                    hasDayX && dayX[index] !== undefined
-                      ? dayX[index]
-                      : DAY_SLOT_WIDTH * (index + 0.5);
+                  // Center each label on its bar's slot — the same derived
+                  // x the bars use, so numbers stay under their bars.
+                  const center = barCenterX[index];
                   return (
                     <View
                       key={day}
