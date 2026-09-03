@@ -302,6 +302,78 @@ async function run() {
     assert.deepEqual(first, { lacteos: 2, panaderia: 1, servicios: 1 });
   });
 
+  console.log('\n[tests] resolveMonthNavigation (forward navigation)\n');
+
+    await test(
+    'current month absent from monthKeys is synthesized at the front (return-to-current fix)',
+    () => {
+      const current = homeMod.currentMonthKey();
+      const prev = homeMod.previousMonthKey(current);
+      const older = homeMod.previousMonthKey(prev);
+      // Bug case: the current month has NO receipts, so it is absent from
+      // the monthKeys list — the user could go older but never return.
+      // monthKeys is newest-first: [prev, older].
+      const nav = homeMod.resolveMonthNavigation([prev, older], prev);
+      assert.ok(
+        nav.months.includes(current),
+        'current month must be synthesized',
+      );
+      assert.equal(nav.months[0], current, 'current month is newest (front)');
+      assert.equal(nav.currentIndex, 1, 'selected (prev) month at index 1');
+      assert.equal(nav.canGoNewer, true, 'can navigate newer toward current');
+      assert.equal(nav.newerKey, current, 'goNewer returns to current month');
+      assert.equal(nav.canGoOlder, true);
+      assert.equal(nav.olderKey, older);
+    },
+  );
+
+  await test(
+    'current month already in monthKeys is left in place (newest, canGoNewer=false)',
+    () => {
+      const current = homeMod.currentMonthKey();
+      const prev = homeMod.previousMonthKey(current);
+      const nav = homeMod.resolveMonthNavigation([current, prev], current);
+      assert.deepEqual(
+        nav.months,
+        [current, prev],
+        'list unchanged — current already present',
+      );
+      assert.equal(nav.currentIndex, 0);
+      assert.equal(nav.canGoNewer, false, 'nothing newer than current');
+      assert.equal(nav.newerKey, null);
+      assert.equal(nav.canGoOlder, true);
+      assert.equal(nav.olderKey, prev);
+    },
+  );
+
+  await test(
+    'on a past month, goNewer walks toward newer including the current (empty) month',
+    () => {
+      const current = homeMod.currentMonthKey();
+      const older = homeMod.previousMonthKey(
+        homeMod.previousMonthKey(current),
+      );
+      // Only one past month has receipts; current is empty/absent.
+      const nav = homeMod.resolveMonthNavigation([older], older);
+      assert.deepEqual(nav.months, [current, older]);
+      assert.equal(nav.currentIndex, 1);
+      assert.equal(nav.canGoNewer, true, 'can step forward to current');
+      assert.equal(nav.newerKey, current);
+      assert.equal(nav.canGoOlder, false, 'nothing older in the list');
+      assert.equal(nav.olderKey, null);
+    },
+  );
+
+  await test('unknown out-of-list month degrades to newest (older-only, no crash)', () => {
+    const nav = homeMod.resolveMonthNavigation(
+      ['2020-01', '2020-02'],
+      '1999-12',
+    );
+    assert.equal(nav.currentIndex, 0, 'falls back to the newest position');
+    assert.equal(nav.canGoNewer, false);
+    assert.equal(nav.canGoOlder, true);
+  });
+
   console.log('');
   if (failed > 0) {
     console.error(`[tests] ${failed} failed, ${passed} passed`);

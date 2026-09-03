@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 
 import type { IconName } from '@/components';
 import { useSessionUser } from '@/features/auth';
@@ -204,6 +204,87 @@ export function monthKeyToLabel(monthKey: string): string {
 export function getAvailableMonthKeys(list: ReceiptSpendRecord[]): string[] {
   const keys = new Set(list.map((receipt) => getMonthKey(receipt.purchase_date)));
   return [...keys].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+}
+
+/**
+ * Resolves the month-navigation boundaries from the list of months with
+ * receipts plus the currently selected month.
+ *
+ * `monthKeys` is newest-first. If the CURRENT month is absent (it has no
+ * receipts yet), it is synthesized at the FRONT of the effective list, so
+ * the current (possibly empty) month is ALWAYS reachable via the "newer"
+ * chevron — the bug this fixes: without it a user could navigate older but
+ * never return to the current month once it had no receipts.
+ *
+ * Returns the effective month list, the selected month's index in it, the
+ * navigation booleans, and the explicit next/previous target keys (mallets
+ * for `goNewer`/`goOlder`). When the selected month is the current month
+ * (or is newer than everything in the list), `canGoNewer` is false.
+ *
+ * Pure and deterministic — no clock beyond `currentMonthKey`, no side
+ * effects — so it is directly unit-testable.
+ */
+export function resolveMonthNavigation(
+  monthKeys: string[],
+  monthKey: string,
+): {
+  months: string[];
+  currentIndex: number;
+  canGoNewer: boolean;
+  canGoOlder: boolean;
+  newerKey: string | null;
+  olderKey: string | null;
+} {
+  const current = currentMonthKey();
+  const keys = monthKeys ?? [];
+  const months = keys.includes(current) ? keys : [current, ...keys];
+  // The selected month is normally found (the initial selection is the
+  // current month, which is always synthesized when absent). Fall back to
+  // the newest position only for an unexpected out-of-list month, so the
+  // selector degrades to "older-only" instead of breaking.
+  const rawIndex = months.indexOf(monthKey);
+  const currentIndex = rawIndex === -1 ? 0 : rawIndex;
+  return {
+    months,
+    currentIndex,
+    canGoNewer: currentIndex > 0,
+    canGoOlder: currentIndex < months.length - 1,
+    newerKey: currentIndex > 0 ? months[currentIndex - 1] : null,
+    olderKey:
+      currentIndex < months.length - 1 ? months[currentIndex + 1] : null,
+  };
+}
+
+/**
+ * Hook wrapper over `resolveMonthNavigation` for the shared month-selector
+ * chevrons across Home / Analytics / History / Charts. `onNavigate` is
+ * invoked with the target month when a chevron is pressed (screens use it
+ * to also reset local UI state, e.g. a search query).
+ */
+export function useMonthNavigation(
+  monthKeys: string[],
+  monthKey: string,
+  onNavigate: (nextKey: string) => void,
+): {
+  months: string[];
+  currentIndex: number;
+  canGoNewer: boolean;
+  canGoOlder: boolean;
+  goNewer: () => void;
+  goOlder: () => void;
+} {
+  const { months, currentIndex, canGoNewer, canGoOlder, newerKey, olderKey } =
+    useMemo(
+      () => resolveMonthNavigation(monthKeys, monthKey),
+      [monthKeys, monthKey],
+    );
+  const goNewer = useCallback(() => {
+    if (newerKey) onNavigate(newerKey);
+  }, [newerKey, onNavigate]);
+  const goOlder = useCallback(() => {
+    if (olderKey) onNavigate(olderKey);
+  }, [olderKey, onNavigate]);
+  return { months, currentIndex, canGoNewer, canGoOlder, goNewer, goOlder };
 }
 
 /**
@@ -645,8 +726,14 @@ export function mapPurchaseRowsToHomeFeed(
  * snacks totals are computed from whatever pages have been loaded so far.
  * The receipts store is hydrated with all loaded rows so History/Analytics
  * render the same data.
+ *
+ * `monthKey` scopes the HOUSEHOLD total and the impulse (snacks) total to
+ * the selected month (both server-side RPCs). The infinite-scroll feed
+ * itself stays month-agnostic (newest-first across all months) — it serves
+ * the current-month path and hydrates the receipts store. Defaults to the
+ * current month for backwards compatibility.
  */
-export function useHomeFeed(): HomeFeedResult {
+export function useHomeFeed(monthKey: string = currentMonthKey()): HomeFeedResult {
   const { userId } = useSessionUser();
   const householdId = useHouseholdStore((s) => s.household?.id);
 
@@ -660,17 +747,14 @@ export function useHomeFeed(): HomeFeedResult {
       lastPage.length < PURCHASE_PAGE_SIZE ? undefined : allPages.length,
   });
 
-  // ── Household total (current month, when household is active) ──────────
+  // ── Household total (selected month, when household is active) ────────
   const householdTotalQuery = useQuery<{ total: number }[]>({
     queryKey: householdId
-      ? queryKeys.householdMonthlyPurchasesTotal(householdId, currentMonthKey())
+      ? queryKeys.householdMonthlyPurchasesTotal(householdId, monthKey)
       : ['household-purchases-total', 'disabled'],
     enabled: !!userId && !!householdId,
     queryFn: async () => {
-      const result = await readMonthlyPurchasesTotal(
-        currentMonthKey(),
-        householdId!,
-      );
+      const result = await readMonthlyPurchasesTotal(monthKey, householdId!);
       return toQueryData(result);
     },
   });
@@ -679,15 +763,15 @@ export function useHomeFeed(): HomeFeedResult {
       ? (householdTotalQuery.data[0]?.total ?? 0)
       : null;
 
-  // ── Impulse / snacks total (current month, server-side RPC) ──────────
+  // ── Impulse / snacks total (selected month, server-side RPC) ─────────
   // The RPC sums purchase_items.total_price WHERE is_impulse = true across
   // confirmed purchases for the month. This loads instantly instead of
   // growing page-by-page via infinite scroll.
   const impulseTotalQuery = useQuery<{ total: number }[]>({
-    queryKey: queryKeys.monthlyImpulseTotal(userId!, currentMonthKey()),
+    queryKey: queryKeys.monthlyImpulseTotal(userId!, monthKey),
     enabled: !!userId,
     queryFn: async () => {
-      const result = await readMonthlyImpulseTotal(currentMonthKey());
+      const result = await readMonthlyImpulseTotal(monthKey);
       return toQueryData(result);
     },
   });

@@ -56,7 +56,14 @@ export interface BudgetSnapshot {
 /** Neutral fallback while an authenticated read loads or fails — never fabricated. */
 const NEUTRAL_BUDGET: MonthlyBudget = { amount: 0, currency: 'USD' };
 
-export function useBudget(): BudgetSnapshot {
+/**
+ * The selected month the `spent` read is scoped to. Defaults to the local
+ * current month (the same value the analytics screen passes to
+ * `useMonthlyTotals`), so both surfaces agree on which month is "now". The
+ * budget LIMIT stays global (one `monthly_budget` profile value); only
+ * `spent` is per-month.
+ */
+export function useBudget(monthKey: string = currentMonthKey()): BudgetSnapshot {
   const { userId } = useSessionUser();
 
   const budgetQuery = useQuery({
@@ -65,9 +72,6 @@ export function useBudget(): BudgetSnapshot {
     queryFn: () => fetchMonthlyBudget(userId!).then(toQueryData),
   });
 
-  // The local current month — the same value the analytics screen passes to
-  // `useMonthlyTotals`, so both surfaces agree on which month is "now".
-  const monthKey = currentMonthKey();
   const spentQuery = useQuery({
     queryKey: queryKeys.monthlyPurchasesTotal(userId!, monthKey),
     enabled: !!userId,
