@@ -594,7 +594,7 @@ async function run() {
 
   console.log('\n[tests] aggregateDailyAverage\n');
 
-  await test('daily average = month total / days in month', () => {
+  await test('daily average = month total / distinct spend days', () => {
     const out = aggregateDailyAverage(
       [
         receipt({ id: 'r1', total: 310, purchase_date: '2026-08-05' }),
@@ -602,8 +602,20 @@ async function run() {
       ],
       '2026-08',
     );
-    // August 2026 has 31 days; total = 400 → 400 / 31
-    assert.equal(out, 400 / 31);
+    // total = 400 over 2 distinct spend days (5 and 12) → 400 / 2
+    assert.equal(out, 400 / 2);
+  });
+
+  await test('multiple receipts on the SAME day count as ONE spend day', () => {
+    const out = aggregateDailyAverage(
+      [
+        receipt({ id: 'r1', total: 310, purchase_date: '2026-08-05' }),
+        receipt({ id: 'r2', total: 90, purchase_date: '2026-08-05' }),
+      ],
+      '2026-08',
+    );
+    // total = 400 but both receipts land on day 5 → 1 spend day → 400 / 1
+    assert.equal(out, 400);
   });
 
   await test('receipts outside the requested month are ignored', () => {
@@ -614,7 +626,7 @@ async function run() {
       ],
       '2026-08',
     );
-    assert.equal(out, 100 / 31);
+    assert.equal(out, 100 / 1);
   });
 
   await test('empty month → daily average is 0', () => {
@@ -622,12 +634,12 @@ async function run() {
     assert.equal(out, 0);
   });
 
-  await test('February non-leap year has 28 days', () => {
+  await test('February single spend day (not divided by 28 days)', () => {
     const out = aggregateDailyAverage(
       [receipt({ id: 'r1', total: 280, purchase_date: '2026-02-10' })],
       '2026-02',
     );
-    assert.equal(out, 280 / 28);
+    assert.equal(out, 280 / 1);
   });
 
   await test('excluded categories are removed before averaging (servicios)', () => {
@@ -644,8 +656,32 @@ async function run() {
       '2026-08',
       ['servicios'],
     );
-    // (310 - 100) + 90 = 300 over August's 31 days.
-    assert.equal(out, 300 / 31);
+    // (310 - 100) + 90 = 300 over 2 still-positive spend days (5 and 12).
+    assert.equal(out, 300 / 2);
+  });
+
+  await test('a day whose spend is ALL excluded does not count as a spend day', () => {
+    const out = aggregateDailyAverage(
+      [
+        // Day 5 is purely servicios (80): effective 0, must NOT count.
+        receipt({
+          id: 'r1',
+          total: 80,
+          purchase_date: '2026-08-05',
+          category_totals: cats({ servicios: 80 }),
+        }),
+        receipt({
+          id: 'r2',
+          total: 90,
+          purchase_date: '2026-08-12',
+          category_totals: cats({ lacteos: 90 }),
+        }),
+      ],
+      '2026-08',
+      ['servicios'],
+    );
+    // numerator = 0 + 90 = 90; only day 12 counts → 90 / 1 = 90
+    assert.equal(out, 90);
   });
 
   await test('empty exclusion list keeps the exact previous output', () => {
@@ -660,7 +696,8 @@ async function run() {
       ],
       '2026-08',
     );
-    assert.equal(out, 310 / 31);
+    // only day 5 is a spend day → 310 / 1
+    assert.equal(out, 310);
   });
 
   console.log('\n[tests] aggregateDailySpend\n');
@@ -1144,20 +1181,21 @@ async function run() {
   console.log('\n[tests] buildDailyInsight\n');
 
   // Real August 2026 fixture (same shape as the hero curve tests): day 3
-  // is the $20,289.51 spike, Monday. Sum = 41,205.36 → avg ≈ $1,329.21 →
-  // 20,289.51 / 1,329.21 ≈ 15.26 → rounds to 15.
+  // is the $20,289.51 spike, Monday. Sum = 41,205.36 over 12 non-zero days
+  // (days 1-7 and 10-14) → avg ≈ $3,433.78 → 20,289.51 / 3,433.78 ≈ 5.91
+  // → rounds to 6.
   const AUGUST_2026 = [
     572.27, 762.77, 20289.51, 4820.72, 3367.32, 1973.37, 1276.71,
     0, 0, 560.45, 526.42, 381.58, 5862, 812.24,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   ].map((total, index) => ({ day: index + 1, total }));
 
-  await test('real august fixture: day 3 → Lunes, $20,289.51, ≈15x', () => {
+  await test('real august fixture: day 3 → Lunes, $20,289.51, ≈6x', () => {
     const insight = buildDailyInsight(AUGUST_2026, '2026-08');
     assert.equal(insight.day, 3);
     assert.equal(insight.weekday, 'Lunes');
     assert.equal(insight.amount, 20289.51);
-    assert.equal(insight.multiple, 15);
+    assert.equal(insight.multiple, 6);
   });
 
   await test('first max wins on ties (and weekday is monthKey-derived)', () => {
@@ -1174,7 +1212,7 @@ async function run() {
     assert.equal(insight.amount, 100);
   });
 
-  await test('single spend day → multiple equals days in month', () => {
+  await test('single spend day → multiple equals 1 (average is that day)', () => {
     const dailyData = Array.from({ length: 31 }, (_, i) => ({
       day: i + 1,
       total: i === 4 ? 310 : 0, // only day 5 has spend
@@ -1182,11 +1220,11 @@ async function run() {
     const insight = buildDailyInsight(dailyData, '2026-08');
     assert.equal(insight.day, 5);
     assert.equal(insight.amount, 310);
-    // 310 / (310 / 31) = 31 — a single-spend month is "31x your average".
-    assert.equal(insight.multiple, 31);
+    // 1 spend day → average = 310 / 1 = 310 → 310/310 = 1 → clamped to 1.
+    assert.equal(insight.multiple, 1);
   });
 
-  await test('single spend day in February 2026 (28 days) → multiple 28', () => {
+  await test('single spend day in February 2026 → multiple 1', () => {
     const dailyData = Array.from({ length: 28 }, (_, i) => ({
       day: i + 1,
       total: i === 4 ? 280 : 0, // only day 5 has spend
@@ -1194,11 +1232,11 @@ async function run() {
     const insight = buildDailyInsight(dailyData, '2026-02');
     assert.equal(insight.day, 5);
     assert.equal(insight.amount, 280);
-    // 280 / (280 / 28) = 28 — a single-spend February is "28x your average".
-    assert.equal(insight.multiple, 28);
+    // 1 spend day → average = 280 / 1 = 280 → multiple = 1.
+    assert.equal(insight.multiple, 1);
   });
 
-  await test('single spend day in leap February 2024 (29 days) → multiple 29', () => {
+  await test('single spend day in leap February 2024 → multiple 1', () => {
     const dailyData = Array.from({ length: 29 }, (_, i) => ({
       day: i + 1,
       total: i === 4 ? 290 : 0, // only day 5 has spend
@@ -1206,8 +1244,8 @@ async function run() {
     const insight = buildDailyInsight(dailyData, '2024-02');
     assert.equal(insight.day, 5);
     assert.equal(insight.amount, 290);
-    // 290 / (290 / 29) = 29 — a single-spend leap February is "29x".
-    assert.equal(insight.multiple, 29);
+    // 1 spend day → average = 290 / 1 = 290 → multiple = 1.
+    assert.equal(insight.multiple, 1);
   });
 
   await test('round + clamp: rounds to nearest integer, never emits 0 or negative (Math.max(1, ·))', () => {

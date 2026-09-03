@@ -303,14 +303,18 @@ export function aggregateYearlySpend(
 }
 
 /**
- * Average spend per calendar day for a given month. Computed as the month
- * total divided by the number of days in that month — "daily average" in
- * the summary cards means "if I spent the same amount every day of the
- * month, this would be the value".
+ * Average spend per day actually spent for a given month. Computed as the
+ * month total divided by the number of DISTINCT days with non-zero
+ * (services-excluded) spending — "daily average" in the summary cards means
+ * "the average of the days you actually spent", NOT the total spread across
+ * every calendar day of the month. A day whose only spend is excluded
+ * categories (e.g. a receipt that is purely "servicios") contributes 0 to
+ * the numerator, so it must not count in the denominator either (the two
+ * stay consistent).
  *
  * `excludeCategories` removes those categories' amounts from each receipt
  * before summing (see `effectiveReceiptTotal`) — used to keep utility
- * bills ("servicios") out of the daily average.
+ * bills ("servicios") out of the daily average. Guards `count === 0 → 0`.
  */
 export function aggregateDailyAverage(
   records: ReceiptSpendRecord[],
@@ -319,13 +323,17 @@ export function aggregateDailyAverage(
 ): number {
   const excluded = new Set(excludeCategories);
   let total = 0;
+  const spendDays = new Set<number>();
   for (const receipt of records) {
     if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
-    total += effectiveReceiptTotal(receipt, excluded);
+    const effective = effectiveReceiptTotal(receipt, excluded);
+    total += effective;
+    if (effective > 0) {
+      spendDays.add(Number(receipt.purchase_date.slice(8, 10)));
+    }
   }
-  const [year, month] = monthKey.split('-').map(Number);
-  const daysInMonth = new Date(year, month, 0).getDate();
-  return daysInMonth > 0 ? total / daysInMonth : 0;
+  const spendDayCount = spendDays.size;
+  return spendDayCount > 0 ? total / spendDayCount : 0;
 }
 
 export type DailySpendPoint = {
@@ -619,17 +627,17 @@ export interface DailyInsight {
   weekday: string;
   /** That day's total (servicios included — the hero bars' base). */
   amount: number;
-  /** `Math.max(1, Math.round(amount / (sum(dailyData) / dailyData.length)))`. */
+  /** `Math.max(1, Math.round(amount / (sum(dailyData) / spendDayCount)))`. */
   multiple: number;
 }
 
 /**
  * Pure insight for the hero card: which day cost the most in `monthKey`
  * and how many times that day exceeds the month's daily average. The
- * average derives from `dailyData` itself (sum ÷ length) — the card's
- * daily series is zero-filled by `aggregateDailySpend`, so this equals
- * total ÷ days-in-month and the function is a pure function of the card's
- * own props.
+ * average derives from `dailyData` itself (sum ÷ the count of days with
+ * any spend) — a zero day contributes 0 to the sum, so it must not weight
+ * the average (day-consistent with the numerator). The function is a pure
+ * function of the card's own props.
  *
  * Returns `null` when no day has spend (all-zero month — `pickMaxSpendIndex`
  * yields -1), which also covers an empty series. The math notes:
@@ -654,11 +662,17 @@ export function buildDailyInsight(
   const maxIndex = pickMaxSpendIndex(dailyData.map((point) => point.total));
   if (maxIndex === -1) return null;
   const maxPoint = dailyData[maxIndex];
-  // Services-INCLUDED monthly daily average (sum ÷ length) — NOT the
-  // services-excluded "Promedio diario" card base. Accepted product
-  // tradeoff (pro-trends-insights spec): the bases MUST NOT be unified.
+  // Services-INCLUDED daily average over the days with any spend (sum ÷
+  // spend-day count) — NOT the services-excluded "Promedio diario" card
+  // base. Day-consistent with the numerator (sum of `dailyData.total`): a
+  // zero day contributes 0 to the sum, so it must not weight the average.
+  // Guard: no spend days → average 0 (unreachable here because maxIndex
+  // !== -1 implies at least one non-zero day, but kept defensive).
+  const spendDayCount = dailyData.filter((point) => point.total > 0).length;
   const average =
-    dailyData.reduce((sum, point) => sum + point.total, 0) / dailyData.length;
+    spendDayCount > 0
+      ? dailyData.reduce((sum, point) => sum + point.total, 0) / spendDayCount
+      : 0;
   const multiple = Math.max(1, Math.round(maxPoint.total / average));
   return {
     day: maxPoint.day,
