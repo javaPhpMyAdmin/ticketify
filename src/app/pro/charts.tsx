@@ -309,8 +309,11 @@ function ChartsBody() {
       });
   }, [cacheRow, monthList, monthKey]);
 
-  // Daily average from cache total or list aggregation. Servicios are
-  // excluded in BOTH paths — only the hero card includes them.
+  // Daily average from cache total or list aggregation: the month's
+  // services-excluded total divided by the number of DISTINCT days actually
+  // spent (a day whose only spend is servicios contributes 0 to the
+  // numerator, so it must not count in the denominator — day-consistent).
+  // Servicios are excluded in BOTH paths — only the hero card includes them.
   const dailyAverage = useMemo(() => {
     if (cacheRow) {
       const [year, month] = monthKey.split('-').map(Number);
@@ -319,21 +322,36 @@ function ChartsBody() {
       // per-slug totals, so subtract servicios before averaging (same
       // exclusion as the list-fallback path below).
       const serviciosTotal = cacheRow.category_totals?.['servicios']?.total ?? 0;
-      return daysInMonth > 0 ? (cacheRow.total - serviciosTotal) / daysInMonth : 0;
+      // The cache has no PER-DAY category breakdown, so the spend-day count
+      // uses the closest available per-day signal: distinct days with a
+      // positive `daily_totals` entry (servicios included). Documented
+      // limitation of the cache path — the list fallback below counts the
+      // exact services-excluded spend days.
+      let spendDayCount = 0;
+      for (let i = 1; i <= daysInMonth; i += 1) {
+        const dd = String(i).padStart(2, '0');
+        if ((cacheRow.daily_totals[`${monthKey}-${dd}`] ?? 0) > 0) {
+          spendDayCount += 1;
+        }
+      }
+      return spendDayCount > 0 ? (cacheRow.total - serviciosTotal) / spendDayCount : 0;
     }
     let total = 0;
     const excluded = new Set(['servicios']);
+    const spendDays = new Set<number>();
     for (const receipt of monthList) {
       if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
       let excludedAmount = 0;
       for (const slug of excluded) {
         excludedAmount += receipt.category_totals?.[slug] ?? 0;
       }
-      total += Math.max(0, (receipt.total ?? 0) - excludedAmount);
+      const effective = Math.max(0, (receipt.total ?? 0) - excludedAmount);
+      total += effective;
+      if (effective > 0) {
+        spendDays.add(Number(receipt.purchase_date.slice(8, 10)));
+      }
     }
-    const [year, month] = monthKey.split('-').map(Number);
-    const daysInMonth = new Date(year, month, 0).getDate();
-    return daysInMonth > 0 ? total / daysInMonth : 0;
+    return spendDays.size > 0 ? total / spendDays.size : 0;
   }, [cacheRow, monthList, monthKey]);
 
   // Top category from cache `category_totals` or list aggregation.
