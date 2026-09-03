@@ -82,6 +82,19 @@ export default function AnalyticsScreen() {
   const monthKeys = useAvailableMonthKeys(userId);
   const alerts = usePriceAlerts(monthKey);
   const overview = useMonthlyOverview(monthKey);
+  // "TOTAL GASTADO" derives from the FULL month's receipts already loaded
+  // here (same as Home), not from the monthly cache — on a cache miss the
+  // cache-backed `overview.currentTotal` can read 0, so we override it with
+  // the real month total the moment the full-month rows resolve. This keeps
+  // the overview's badge (change %) cache-backed while the headline total is
+  // always the true sum of the month's receipts.
+  const overviewTotal = useMemo(
+    () =>
+      fullMonthList
+        .filter((r) => r.purchase_date.slice(0, 7) === monthKey)
+        .reduce((sum, r) => sum + (r.total ?? 0), 0),
+    [fullMonthList, monthKey],
+  );
   const { session } = useSessionStore();
   const fullName =
     session?.user?.user_metadata?.full_name ??
@@ -212,7 +225,7 @@ export default function AnalyticsScreen() {
         ]}
       >
         <MonthlyOverviewCard
-          overview={overview}
+          overview={{ ...overview, currentTotal: overviewTotal }}
           currency={currency}
           previousMonthLabel={previousMonthLabel}
         />
