@@ -59,7 +59,7 @@ export default function ExportScreen() {
         return;
       }
       if (selectedFormat === 'csv') {
-        const file = new File(Paths.cache, `ticketify-recibos-${todayISO()}.csv`);
+        const file = new File(Paths.cache, `ticketify-tickets-${todayISO()}.csv`);
         file.create({ overwrite: true });
         file.write(buildExportCsv(rows));
         await Sharing.shareAsync(file.uri, {
