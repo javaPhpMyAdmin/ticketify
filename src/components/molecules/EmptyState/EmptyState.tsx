@@ -1,13 +1,13 @@
 import { StyleSheet } from 'react-native';
 
 import {
-  Card,
   Icon,
   Pressable,
   Text,
   View,
   type IconName,
-} from '@/components';
+} from '@/components/atoms';
+import { Card } from '@/components/molecules/Card';
 import { colors, radii, spacing, typography } from '@/theme';
 
 export interface EmptyStateProps {

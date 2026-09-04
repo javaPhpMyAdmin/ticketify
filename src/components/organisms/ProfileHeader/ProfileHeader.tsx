@@ -2,7 +2,9 @@ import { Image } from 'expo-image';
 import { useEffect, useState } from 'react';
 import { StyleSheet } from 'react-native';
 
-import { Card, Chip, Text, View } from '@/components';
+import { Text, View } from '@/components/atoms';
+import { Card } from '@/components/molecules/Card';
+import { Chip } from '@/components/molecules/Chip';
 import { colors, spacing, typography } from '@/theme';
 
 export interface ProfileHeaderProps {

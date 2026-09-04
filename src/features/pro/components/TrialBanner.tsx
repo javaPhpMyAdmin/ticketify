@@ -9,7 +9,7 @@ import { router } from 'expo-router';
 import { StyleSheet, View as RNView } from 'react-native';
 
 import { Pressable, Text } from '@/components';
-import { useProEntitlement } from '@/features/pro';
+import { useProEntitlement } from '@/features/pro/hooks/useProEntitlement';
 import { colors, radii, spacing, typography } from '@/theme';
 
 export function TrialBanner() {

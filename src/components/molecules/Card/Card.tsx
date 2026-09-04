@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 
-import { View } from '@/components';
+import { View } from '@/components/atoms';
 import { colors, radii, spacing } from '@/theme';
 
 export interface CardProps {

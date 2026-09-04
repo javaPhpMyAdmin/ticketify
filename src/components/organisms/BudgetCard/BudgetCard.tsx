@@ -1,6 +1,9 @@
 import { StyleSheet } from 'react-native';
 
-import { AmountDisplay, Card, ProgressBar, Text, View } from '@/components';
+import { Text, View } from '@/components/atoms';
+import { AmountDisplay } from '@/components/molecules/AmountDisplay';
+import { Card } from '@/components/molecules/Card';
+import { ProgressBar } from '@/components/molecules/ProgressBar';
 import { colors, spacing } from '@/theme';
 import { formatCurrency } from '../../../lib/format';
 
