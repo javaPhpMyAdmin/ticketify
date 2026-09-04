@@ -125,6 +125,21 @@ export function formatYearMonth(
     : label;
 }
 
+/**
+ * Renders a 0-100 percent share as a compact Spanish label, keeping a
+ * significant digit for tiny slices so a small category never reads as a
+ * misleading "0%": "0%" (zero), "<0.1%" (sub-tenth), "0.2%" (exact one
+ * decimal below 1%), "12%" (integer otherwise). Callers append the
+ * " del gasto" phrase where it belongs (budget cards/rows); the analytics
+ * breakdown renders the token as-is.
+ */
+export function formatPercentLabel(value: number): string {
+  if (value <= 0) return '0%';
+  if (value < 0.1) return '<0.1%';
+  if (value < 1) return `${value.toFixed(1)}%`;
+  return `${value.toFixed(0)}%`;
+}
+
 export function formatTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;

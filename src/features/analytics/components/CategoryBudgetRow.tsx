@@ -1,7 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { Icon, Pressable, ProgressBar, Text, type IconName } from '@/components';
-import { formatCurrency } from '@/lib/format';
+import { formatCurrency, formatPercentLabel } from '@/lib/format';
 import { colors, spacing, typography } from '@/theme';
 import { getCategoryColor } from '@/features/home/categories';
 
@@ -65,14 +65,6 @@ export function CategoryBudgetRow({
 }: CategoryBudgetRowProps) {
   const color = getCategoryColor(categoryKey);
 
-  /**
-   * Renders the share-of-total label: sub-1% values keep one decimal so a
-   * tiny slice is never shown as a misleading "0%"; larger shares stay as
-   * the rounded integer (e.g. "0.2% del gasto" vs "12% del gasto").
-   */
-  const formatPercent = (value: number) =>
-    value > 0 && value < 1 ? value.toFixed(1) : String(Math.round(value));
-
   const rowContent = (
     <>
       <View
@@ -87,7 +79,7 @@ export function CategoryBudgetRow({
         <Text style={styles.name} numberOfLines={1}>
           {name}
         </Text>
-        <Text style={styles.percent}>{formatPercent(percent)}% del gasto</Text>
+        <Text style={styles.percent}>{formatPercentLabel(percent)} del gasto</Text>
         {typeof limit === 'number' ? (
           <>
             <Text style={styles.limit}>
