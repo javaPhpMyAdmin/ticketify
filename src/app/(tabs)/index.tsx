@@ -274,8 +274,13 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Tickets escaneados</Text>
+            {/* While the month query loads, `monthFeed` may still fall back
+                to store rows and flash a partial count — show a placeholder
+                that matches the section's loading skeletons instead. */}
             <Text style={styles.totalAmount}>
-              {monthFeed.receipts.length} este mes
+              {monthLoading
+                ? '…'
+                : `${monthFeed.receipts.length} este mes`}
             </Text>
           </View>
           {monthLoading ? (
