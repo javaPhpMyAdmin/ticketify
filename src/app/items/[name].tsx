@@ -115,11 +115,15 @@ export default function ItemDetailScreen() {
             </Text>
           ) : (
             purchases.map((purchase, idx) => (
+              {/* The label intentionally excludes the visible caption so VoiceOver
+                  doesn't double-announce "Toca para ver el ticket"
+                  (label + hint). */}
               <Pressable
                 key={`${purchase.receiptId}-${idx}`}
                 onPress={() => router.push(`/receipts/${purchase.receiptId}`)}
                 accessibilityRole="button"
                 accessibilityHint="Toca para ver el ticket"
+                accessibilityLabel={`${purchase.storeName}, ${formatShortDate(purchase.date)}`}
               >
                 {idx > 0 ? <Divider /> : null}
                 <View style={styles.purchaseRow}>

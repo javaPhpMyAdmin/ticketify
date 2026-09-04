@@ -145,10 +145,13 @@ export function ReceiptRow({
 
   if (onPress) {
     return (
+      {/* The label intentionally excludes the visible caption so VoiceOver
+          doesn't double-announce "Toca para ver el ticket" (label + hint). */}
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
         accessibilityHint="Toca para ver el ticket"
+        accessibilityLabel={`${name}, ${formatShortDate(date)}, ${formatCurrency(amount, currency)}`}
         style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       >
         {row}
