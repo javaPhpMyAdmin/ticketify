@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 
-import { Text, View } from '@/components';
+import { Text, View } from '@/components/atoms';
 import { colors, spacing, typography } from '@/theme';
 
 export interface FieldGroupProps {

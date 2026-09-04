@@ -1,7 +1,9 @@
 import { router } from 'expo-router';
 import { StyleSheet } from 'react-native';
 
-import { Card, Icon, Pressable, ProgressBar, Text, View } from '@/components';
+import { Icon, Pressable, Text, View } from '@/components/atoms';
+import { Card } from '@/components/molecules/Card';
+import { ProgressBar } from '@/components/molecules/ProgressBar';
 import { colors, spacing, typography } from '@/theme';
 import { computeQuotaState } from '@/features/home/quota';
 import { MONTHS_FULL_ES } from '@/lib/format';

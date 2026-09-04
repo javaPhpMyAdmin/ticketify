@@ -21,7 +21,7 @@ import { Text } from '@/components';
 import { formatCurrency } from '@/lib/format';
 import { colors, radii, spacing, typography } from '@/theme';
 
-import { CHART_PALETTE } from './CategoryDonut';
+import { CHART_PALETTE } from '../constants';
 
 export interface StoreBar {
   /** Stable identifier (lowercased store name fallback). */

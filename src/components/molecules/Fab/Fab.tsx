@@ -1,6 +1,6 @@
 import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 
-import { Icon, Pressable, Text, type IconName } from '@/components';
+import { Icon, Pressable, Text, type IconName } from '@/components/atoms';
 import { colors, radii, spacing, typography } from '@/theme';
 
 export interface FabProps {

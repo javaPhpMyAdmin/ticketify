@@ -1,6 +1,6 @@
 import { StyleSheet, type StyleProp, type TextStyle } from 'react-native';
 
-import { Text } from '@/components';
+import { Text } from '@/components/atoms';
 import { formatCurrency } from '@/lib/format';
 import { colors } from '@/theme';
 

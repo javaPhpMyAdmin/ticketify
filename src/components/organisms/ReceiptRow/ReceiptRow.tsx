@@ -8,7 +8,7 @@ import {
   Text,
   View,
   type IconName,
-} from '@/components';
+} from '@/components/atoms';
 import { formatCurrency, formatShortDate } from '@/lib/format';
 import {
   getSignedReceiptPhotoUrl,
