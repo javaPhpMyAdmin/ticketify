@@ -19,6 +19,8 @@ export {
   aggregateDayItems,
   aggregateDayTotal,
   aggregateYearlySpend,
+  availableYearsFromCache,
+  yearlyPointsFromCache,
   getMondayOfWeek,
   getTopCategory,
   pickMaxSpendIndex,

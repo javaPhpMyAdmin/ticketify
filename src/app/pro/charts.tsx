@@ -55,6 +55,8 @@ import {
   aggregateSpendTrend,
   aggregateWeeklySpend,
   aggregateYearlySpend,
+  availableYearsFromCache,
+  yearlyPointsFromCache,
   categoryDetailHref,
   getMondayOfWeek,
   pickMaxSpendIndex,
@@ -245,6 +247,23 @@ function ChartsBody() {
     }));
   }, [trendQuery.data, monthList, monthKeys6]);
 
+  // 3-year spend from the materialized cache (personal mode). The store
+  // list only holds optimistic scan-flow rows and is empty in practice,
+  // so the "Por año" hero chart and the annual card's year navigator must
+  // read the cache instead — mirroring `trendQuery` / `yearQuery`. The
+  // 36-month cache window is anchored to the CURRENT month (not the
+  // selected `monthKey`): `aggregateYearlySpend` always renders
+  // [currentYear-2 .. currentYear], so a window ending at an older
+  // selected month would slice the newest year's buckets to $0 while the
+  // annual card (keyed on `selectedYear`) still shows real totals.
+  const monthKeys36 = useMemo(() => lastNMonths(currentMonthKey(), 36), []);
+  const yearlyQuery = useQuery({
+    queryKey: queryKeys.monthlyCache(userId ?? '', `yearly:${monthKey}`),
+    enabled: !!userId,
+    queryFn: () =>
+      readMonthlyCacheRows(userId!, monthKeys36).then(toQueryData),
+  });
+
   // Daily spend curve for the hero line chart: read from cache
   // (`daily_totals` jsonb, servicios included) or fall back to list.
   const dailySpend = useMemo(() => {
@@ -420,11 +439,17 @@ function ChartsBody() {
   // ── Annual trend card ──────────────────────────────────────────────
   const currentYear = String(new Date().getFullYear());
   const [selectedYear, setSelectedYear] = useState(currentYear);
-  const availableYears = useMemo(
-    () =>
-      [...new Set(list.map((r) => r.purchase_date.slice(0, 4)))].sort(),
-    [list],
-  );
+  // Years present in the materialized cache (the 36-month window read by
+  // `yearlyQuery`), unioned with the current year so prev-year navigation
+  // stays enabled even before the cache has data for the current year.
+  // Falls back to the store list, which only holds optimistic scan-flow
+  // rows and is empty in practice.
+  const availableYears = useMemo(() => {
+    if (yearlyQuery.data) {
+      return availableYearsFromCache(yearlyQuery.data, currentYear);
+    }
+    return [...new Set(list.map((r) => r.purchase_date.slice(0, 4)))].sort();
+  }, [yearlyQuery.data, list, currentYear]);
   const monthsOfYear = useMemo(() => {
     const y = selectedYear;
     return Array.from({ length: 12 }, (_, i) =>
@@ -499,15 +524,22 @@ function ChartsBody() {
       };
     }
     const currentYear = String(new Date().getFullYear());
+    // Cache-backed path: monthly cache rows become minimal
+    // `ReceiptSpendRecord`-shaped points (first-of-month dates) so the
+    // same aggregator feeds both sources. Falls back to the store list,
+    // which only holds optimistic scan-flow rows and is empty in practice.
+    const yearlyPoints = yearlyQuery.data
+      ? yearlyPointsFromCache(yearlyQuery.data)
+      : list;
     return {
       title: 'Por año',
-      items: aggregateYearlySpend(list).map((point) => ({
+      items: aggregateYearlySpend(yearlyPoints).map((point) => ({
         label: point.year,
         value: point.total,
         highlight: point.year === currentYear,
       })),
     };
-  }, [monthList, period, spendTrend, weekStartISO]);
+  }, [monthList, period, spendTrend, weekStartISO, yearlyQuery.data, list]);
 
   // `monthKeys` is newest-first. The selected month may not be in it (e.g.
   // the current month with no receipts yet): `useMonthNavigation` synthesizes
