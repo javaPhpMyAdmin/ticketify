@@ -61,7 +61,7 @@ export function DayDetailModal({
     items.length > 0
       ? items
       : displayedTotal > 0
-        ? [{ name: 'Recibo', quantity: 1, amount: displayedTotal }]
+        ? [{ name: 'Ticket', quantity: 1, amount: displayedTotal }]
         : [];
 
   const renderItem: ListRenderItem<DayItemGroup> = ({ item, index }) => (

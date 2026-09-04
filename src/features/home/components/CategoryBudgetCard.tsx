@@ -8,7 +8,7 @@ import {
   View,
   type IconName,
 } from '@/components';
-import { formatCurrency } from '@/lib/format';
+import { formatCurrency, formatPercentLabel } from '@/lib/format';
 import { radii, spacing, typography } from '@/theme';
 
 import { getCategoryColor } from '../categories';
@@ -91,7 +91,7 @@ export function CategoryBudgetCard({
         </Text>
         <View style={styles.metaRow}>
           <Text style={[styles.percent, { color: color.foreground }]}>
-            {percent.toFixed(0)}% del gasto
+            {formatPercentLabel(percent)} del gasto
           </Text>
           {itemCount !== undefined && itemCount > 0 ? (
             <Text style={[styles.itemCount, { color: color.foreground }]}>

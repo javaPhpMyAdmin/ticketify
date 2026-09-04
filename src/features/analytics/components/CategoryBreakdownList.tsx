@@ -1,7 +1,7 @@
 import { StyleSheet } from 'react-native';
 
 import { Card, EmptyState, Text, View } from '@/components';
-import { formatCurrency } from '@/lib/format';
+import { formatCurrency, formatPercentLabel } from '@/lib/format';
 import { colors, spacing } from '@/theme';
 import type { CategoryMonthlyTotal } from '@/types';
 
@@ -36,7 +36,7 @@ export function CategoryBreakdownList({
               </View>
               <View style={styles.right}>
                 <Text style={styles.percent}>
-                  {Math.round(t.percent_of_total)}%
+                  {formatPercentLabel(t.percent_of_total)}
                 </Text>
                 <Text style={styles.items}>{t.item_count} artículos</Text>
               </View>

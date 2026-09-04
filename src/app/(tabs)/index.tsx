@@ -41,7 +41,6 @@ import {
 import { HouseholdCard, useHousehold } from '@/features/household';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
-import { formatCurrency } from '@/lib/format';
 import { useSessionStore } from '../../features/auth';
 import { useSessionUser } from '@/features/auth';
 
@@ -119,15 +118,6 @@ export default function HomeScreen() {
   const monthFeed = useMemo(
     () => mapPurchaseRowsToHomeFeed(monthList, householdTotal, monthKey),
     [monthList, householdTotal, monthKey],
-  );
-  // Full-month total for the selected month (arbitrary reprocessing of the
-  // same full-month rows — no store dependency).
-  const monthTotal = useMemo(
-    () =>
-      monthList
-        .filter((r) => r.purchase_date.slice(0, 7) === monthKey)
-        .reduce((sum, r) => sum + (r.total ?? 0), 0),
-    [monthList, monthKey],
   );
   // Percent base for the category cards: only the categories that appear.
   const categoryTotal = useMemo(
@@ -283,11 +273,14 @@ export default function HomeScreen() {
         {/* Total + receipt list — shown for ALL months. */}
         <View style={styles.section}>
           <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>
-              Total {monthKeyToLabel(monthKey)}
-            </Text>
+            <Text style={styles.totalLabel}>Tickets escaneados</Text>
+            {/* While the month query loads, `monthFeed` may still fall back
+                to store rows and flash a partial count — show a placeholder
+                that matches the section's loading skeletons instead. */}
             <Text style={styles.totalAmount}>
-              {formatCurrency(monthTotal, currency)}
+              {monthLoading
+                ? '…'
+                : `${monthFeed.receipts.length} este mes`}
             </Text>
           </View>
           {monthLoading ? (
@@ -300,7 +293,7 @@ export default function HomeScreen() {
             <EmptyState
               icon="doc.text"
               title="Sin tickets este mes."
-              body="Este mes no tiene recibos."
+              body="Este mes no tiene tickets."
             />
           ) : (
             <View style={styles.receiptList}>

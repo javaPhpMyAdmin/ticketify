@@ -127,21 +127,35 @@ export function ReceiptRow({
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            gap: spacing.sm,
           }}
         >
-          <Text style={styles.date}>{formatShortDate(date)}</Text>
+{/* The 60pt fixed envelope can't fit a third caption line, so the hint
+              rides the date line (" · " separator) and truncates before
+              it can collide with the amount. The caption only renders for
+              pressable rows — the component contract says the row becomes
+              a button only when `onPress` is set. */}
+          <Text style={styles.date} numberOfLines={1}>
+            {formatShortDate(date)}
+            {onPress ? (
+              <Text style={styles.caption}> · Toca para ver el ticket</Text>
+            ) : null}
+          </Text>
           <Text style={styles.amount}>{formatCurrency(amount, currency)}</Text>
         </View>
       </View>
     </>
   );
 
+  // The label intentionally excludes the visible caption so VoiceOver
+  // doesn't double-announce "Toca para ver el ticket" (label + hint).
   if (onPress) {
     return (
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
+        accessibilityHint="Toca para ver el ticket"
+        accessibilityLabel={`${name}, ${formatShortDate(date)}, ${formatCurrency(amount, currency)}`}
         style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       >
         {row}
@@ -198,6 +212,12 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 17,
     fontWeight: '800',
+    flex: 1,
+  },
+  caption: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '400',
   },
   amount: {
     color: '#606060',

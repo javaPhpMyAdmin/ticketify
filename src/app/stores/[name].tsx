@@ -82,6 +82,7 @@ export default function StoreDetailScreen() {
                 key={purchase.receiptId}
                 onPress={() => router.push(`/receipts/${purchase.receiptId}`)}
                 accessibilityRole="button"
+                accessibilityHint="Toca para ver el ticket"
                 accessibilityLabel={`Compra del ${formatShortDate(purchase.date)} por ${formatCurrency(purchase.amount, currency)}`}
               >
                 {idx > 0 ? <Divider /> : null}
@@ -92,8 +93,8 @@ export default function StoreDetailScreen() {
                     </Text>
                     <Text style={styles.purchaseDate}>
                       {purchase.receiptId
-                        ? 'Toca para ver el recibo'
-                        : 'Recibo sin id'}
+                        ? 'Toca para ver el ticket'
+                        : 'Ticket sin id'}
                     </Text>
                   </View>
                   <Text style={styles.purchaseAmount}>

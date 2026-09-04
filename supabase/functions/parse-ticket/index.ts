@@ -93,7 +93,7 @@ const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-3.1-flash-lite';
  * client — unlike the raw error detail, which is logged instead (see the
  * 500 path in the handler).
  */
-const INTERNAL_ERROR_MESSAGE = 'Se produjo un error al procesar el recibo.';
+const INTERNAL_ERROR_MESSAGE = 'Se produjo un error al procesar el ticket.';
 
 /**
  * Hard cap on a single Gemini call; a hanging upstream must not hold the worker.

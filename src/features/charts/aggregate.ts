@@ -561,7 +561,7 @@ export function aggregateDayItems(
         existing.amount += receipt.total!;
       } else {
         byKey.set(key, {
-          name: 'Recibo',
+          name: 'Ticket',
           quantity: 1,
           amount: receipt.total!,
           store: receipt.store_name,

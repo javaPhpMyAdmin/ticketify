@@ -115,11 +115,17 @@ export default function ItemDetailScreen() {
             </Text>
           ) : (
             purchases.map((purchase, idx) => (
-              <Pressable
-                key={`${purchase.receiptId}-${idx}`}
-                onPress={() => router.push(`/receipts/${purchase.receiptId}`)}
-                accessibilityRole="button"
-              >
+              <>
+                {/* The label intentionally excludes the visible caption so
+                    VoiceOver doesn't double-announce "Toca para ver el
+                    ticket" (label + hint). */}
+                <Pressable
+                  key={`${purchase.receiptId}-${idx}`}
+                  onPress={() => router.push(`/receipts/${purchase.receiptId}`)}
+                  accessibilityRole="button"
+                  accessibilityHint="Toca para ver el ticket"
+                  accessibilityLabel={`${purchase.storeName}, ${formatShortDate(purchase.date)}`}
+                >
                 {idx > 0 ? <Divider /> : null}
                 <View style={styles.purchaseRow}>
                   <View style={styles.purchaseBody}>
@@ -129,12 +135,16 @@ export default function ItemDetailScreen() {
                     <Text style={styles.purchaseDate}>
                       {formatShortDate(purchase.date)}
                     </Text>
+                    <Text style={styles.purchaseCaption} numberOfLines={1}>
+                      Toca para ver el ticket
+                    </Text>
                   </View>
                   <Text style={styles.purchaseAmount}>
                     {formatCurrency(purchase.amount, currency)}
                   </Text>
                 </View>
-              </Pressable>
+                </Pressable>
+              </>
             ))
           )}
         </View>
@@ -235,6 +245,11 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   purchaseDate: {
+    ...typography.bodyMd,
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  purchaseCaption: {
     ...typography.bodyMd,
     color: colors.textSecondary,
     fontSize: 12,

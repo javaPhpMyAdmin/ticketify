@@ -19,7 +19,7 @@ import { colors, radii, spacing, typography } from '@/theme';
 type ExportFormat = 'csv' | 'pdf';
 
 /** User-safe copy when the export/share step itself fails. */
-const EXPORT_ERROR_MESSAGE = 'No se pudieron exportar los recibos. Inténtalo de nuevo.';
+const EXPORT_ERROR_MESSAGE = 'No se pudieron exportar los tickets. Inténtalo de nuevo.';
 
 /** Local `YYYY-MM-DD` for the export filename ("today" for the user). */
 function todayISO(): string {
@@ -59,12 +59,12 @@ export default function ExportScreen() {
         return;
       }
       if (selectedFormat === 'csv') {
-        const file = new File(Paths.cache, `ticketify-recibos-${todayISO()}.csv`);
+        const file = new File(Paths.cache, `ticketify-tickets-${todayISO()}.csv`);
         file.create({ overwrite: true });
         file.write(buildExportCsv(rows));
         await Sharing.shareAsync(file.uri, {
           mimeType: 'text/csv',
-          dialogTitle: 'Exportar recibos',
+          dialogTitle: 'Exportar tickets',
         });
       } else {
         const uri = await buildExportPdf(buildExportHtml(rows));
@@ -115,15 +115,15 @@ export default function ExportScreen() {
           <View style={styles.emptySection}>
             <EmptyState
               icon="square.and.arrow.up"
-              title="Todavía no hay recibos para exportar"
-              body="Tus recibos confirmados van a aparecer acá."
+              title="Todavía no hay tickets para exportar"
+              body="Tus tickets confirmados van a aparecer acá."
               framed
             />
             <Pressable
               disabled
               style={styles.exportButton}
               accessibilityRole="button"
-              accessibilityLabel="Exportar recibos"
+              accessibilityLabel="Exportar tickets"
             >
               <Text style={styles.exportButtonText}>Exportar</Text>
             </Pressable>
@@ -133,7 +133,7 @@ export default function ExportScreen() {
             <Card>
               <Text style={styles.cardTitle}>Resumen</Text>
               <Text style={styles.summaryText}>
-                {rows.length} {pluralize(rows.length, 'recibo', 'recibos')} ·{' '}
+                {rows.length} {pluralize(rows.length, 'ticket', 'tickets')} ·{' '}
                 {itemCount} {pluralize(itemCount, 'artículo', 'artículos')}
               </Text>
             </Card>
@@ -192,7 +192,7 @@ export default function ExportScreen() {
               disabled={exporting}
               style={styles.exportButton}
               accessibilityRole="button"
-              accessibilityLabel="Exportar recibos"
+              accessibilityLabel="Exportar tickets"
             >
               {exporting ? (
                 <Spinner size="sm" color={colors.onPrimary} />
