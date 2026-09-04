@@ -610,6 +610,7 @@ function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
     <Pressable
       onPress={handlePress}
       accessibilityRole="button"
+      accessibilityHint="Toca para ver el ticket"
       accessibilityLabel={
         isPro
           ? 'Ver ticket de la alerta de precio'

@@ -119,6 +119,7 @@ export default function ItemDetailScreen() {
                 key={`${purchase.receiptId}-${idx}`}
                 onPress={() => router.push(`/receipts/${purchase.receiptId}`)}
                 accessibilityRole="button"
+                accessibilityHint="Toca para ver el ticket"
               >
                 {idx > 0 ? <Divider /> : null}
                 <View style={styles.purchaseRow}>
@@ -128,6 +129,9 @@ export default function ItemDetailScreen() {
                     </Text>
                     <Text style={styles.purchaseDate}>
                       {formatShortDate(purchase.date)}
+                    </Text>
+                    <Text style={styles.purchaseCaption} numberOfLines={1}>
+                      Toca para ver el ticket
                     </Text>
                   </View>
                   <Text style={styles.purchaseAmount}>
@@ -235,6 +239,11 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   purchaseDate: {
+    ...typography.bodyMd,
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  purchaseCaption: {
     ...typography.bodyMd,
     color: colors.textSecondary,
     fontSize: 12,
