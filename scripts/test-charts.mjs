@@ -44,6 +44,20 @@
  *     - a 28-day February (2026) yields exactly 28 entries,
  *     - receipts without a `total` are treated as 0.
  *
+ *   `yearlyPointsFromCache`:
+ *     - cache rows → first-of-month `ReceiptSpendRecord`s (total preserved),
+ *     - empty rows → empty array.
+ *
+ *   `availableYearsFromCache`:
+ *     - row years unioned with currentYear, sorted ascending, deduped,
+ *     - currentYear included even with no row for it (prev-nav stays enabled),
+ *     - empty rows → only currentYear.
+ *
+ *   Yearly cache → `aggregateYearlySpend` regression:
+ *     - a cache covering the current year yields a non-zero current-year
+ *       bucket ("year view must not be $0 when cache covers the current
+ *       year" contract), with the two previous years intact.
+ *
  *   `aggregateCategoriesByMonth` re-export parity:
  *     - reference equality: `charts/aggregate` re-export is the SAME
  *       function object as `home/hooks/useHomeFeed` — no shadow copy,
@@ -151,6 +165,8 @@ async function run() {
     aggregateDayItems,
     aggregateDayTotal,
     aggregateYearlySpend,
+    yearlyPointsFromCache,
+    availableYearsFromCache,
     getTopCategory,
     pickMaxSpendIndex,
     buildVisibleDailySeries,
@@ -590,6 +606,68 @@ async function run() {
       receipt({ id: 'r1', total: undefined, purchase_date: `${current}-01-01` }),
     ]);
     assert.equal(out.find((p) => p.year === String(current))?.total, 0);
+  });
+
+  console.log('\n[tests] yearlyPointsFromCache\n');
+
+  await test('monthly cache rows → first-of-month ReceiptSpendRecords, total preserved', () => {
+    const out = yearlyPointsFromCache([
+      { year_month: '2026-01', total: 100 },
+      { year_month: '2026-02', total: 250 },
+    ]);
+    assert.deepEqual(out, [
+      { purchase_date: '2026-01-01', total: 100 },
+      { purchase_date: '2026-02-01', total: 250 },
+    ]);
+  });
+
+  await test('empty cache rows → empty points array', () => {
+    assert.deepEqual(yearlyPointsFromCache([]), []);
+  });
+
+  console.log('\n[tests] availableYearsFromCache\n');
+
+  await test('row years unioned with currentYear, sorted ascending, deduped', () => {
+    const out = availableYearsFromCache(
+      [
+        { year_month: '2026-03' },
+        { year_month: '2024-11' },
+        { year_month: '2025-07' },
+        { year_month: '2026-01' }, // duplicate year
+      ],
+      '2026',
+    );
+    assert.deepEqual(out, ['2024', '2025', '2026']);
+  });
+
+  await test('currentYear included even when no row has it (prev-nav stays enabled)', () => {
+    const out = availableYearsFromCache(
+      [{ year_month: '2024-05' }, { year_month: '2025-08' }],
+      '2026',
+    );
+    assert.deepEqual(out, ['2024', '2025', '2026']);
+  });
+
+  await test('empty rows → only currentYear', () => {
+    assert.deepEqual(availableYearsFromCache([], '2026'), ['2026']);
+  });
+
+  console.log('\n[tests] yearly cache → aggregateYearlySpend regression\n');
+
+  await test('year view is not $0 when the cache covers the current year', () => {
+    const current = new Date().getFullYear();
+    const rows = [
+      { year_month: `${current - 2}-01`, total: 0 },
+      { year_month: `${current - 1}-06`, total: 0 },
+      { year_month: `${current - 1}-12`, total: 500 },
+      { year_month: `${current}-02`, total: 300 },
+      { year_month: `${current}-08`, total: 700 },
+    ];
+    const out = aggregateYearlySpend(yearlyPointsFromCache(rows));
+    const byYear = Object.fromEntries(out.map((p) => [p.year, p.total]));
+    assert.equal(byYear[String(current)], 1000, 'current-year bucket sums all cache months of that year');
+    assert.equal(byYear[String(current - 1)], 500, 'previous-year bucket untouched');
+    assert.equal(byYear[String(current - 2)], 0);
   });
 
   console.log('\n[tests] aggregateDailyAverage\n');

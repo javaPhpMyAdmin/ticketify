@@ -11,7 +11,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 
-import { Card, Divider, Icon, Pressable, Spinner, Text, View } from '@/components';
+import { Card, Divider, Icon, IconButton, Pressable, Spinner, Text, View } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import { getExpenseCategory } from '@/features/home/categories';
 import {
@@ -517,9 +517,16 @@ export default function ReceiptDetailScreen() {
               items.map((item, idx) => (
                 <View key={`${item.name}-${idx}`}>
                   <View style={styles.itemRow}>
-                    <Text style={styles.itemName} numberOfLines={1}>
-                      {item.name}
-                    </Text>
+                    <View style={styles.itemInfo}>
+                      <Text style={styles.itemName} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      {(item.quantity ?? 1) > 1 ? (
+                        <Text style={styles.itemQty}>
+                          Cant. {item.quantity}
+                        </Text>
+                      ) : null}
+                    </View>
                     <Text style={styles.itemAmount}>
                       {formatCurrency(item.amount, currency)}
                     </Text>
@@ -581,9 +588,24 @@ export default function ReceiptDetailScreen() {
             accessibilityRole="button"
             accessibilityLabel="Cerrar foto"
           />
-          <View style={styles.photoModalClose} pointerEvents="none">
-            <Icon name="xmark" size={24} color={colors.surface} />
-          </View>
+          {/* Visible close button: a real tappable `IconButton` (the
+              backdrop press below still closes at 1× / resets the zoom
+              while zoomed). Closing always resets the zoom first — same
+              contract as the backdrop and Android-back paths — so the
+              next open never renders pre-zoomed/panned. Positioned via
+              `photoModalClose` so it sits above the backdrop. */}
+          <IconButton
+            icon="xmark"
+            iconSize={22}
+            color={colors.textInverse}
+            backgroundColor="rgba(0,0,0,0.4)"
+            onPress={() => {
+              resetPhotoZoom();
+              setPhotoOpen(false);
+            }}
+            accessibilityLabel="Cerrar foto"
+            style={styles.photoModalClose}
+          />
           <Animated.View
             style={[styles.photoModalImageWrap, photoAnimatedStyle]}
             onLayout={(e) => {
@@ -740,10 +762,17 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingVertical: spacing.sm,
   },
+  itemInfo: {
+    flex: 1,
+    gap: 2,
+  },
   itemName: {
     ...typography.bodyMd,
     color: colors.textPrimary,
-    flex: 1,
+  },
+  itemQty: {
+    ...typography.labelSm,
+    color: colors.textSecondary,
   },
   itemAmount: {
     ...typography.headlineMd,

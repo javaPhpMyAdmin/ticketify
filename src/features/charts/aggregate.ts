@@ -303,6 +303,41 @@ export function aggregateYearlySpend(
 }
 
 /**
+ * Minimal `ReceiptSpendRecord`-shaped points from materialized monthly
+ * cache rows (`{ year_month, total }` — the shape `readMonthlyCacheRows`
+ * returns): each row becomes a first-of-month purchase date carrying the
+ * month's total, so `aggregateYearlySpend` feeds on cache rows with the
+ * exact same aggregator that consumes real receipts. The adapter keeps
+ * the chart derivation free of shape coupling to the cache.
+ */
+export function yearlyPointsFromCache(
+  rows: { year_month: string; total: number }[],
+): ReceiptSpendRecord[] {
+  return rows.map((row) => ({
+    purchase_date: `${row.year_month}-01`,
+    total: row.total,
+  }));
+}
+
+/**
+ * Calendar years covered by a set of monthly cache rows, unioned with
+ * `currentYear` and sorted ascending — the source for the annual card's
+ * prev-year navigation. Unioning the current year keeps navigation
+ * enabled even before the cache has rows for it.
+ */
+export function availableYearsFromCache(
+  rows: { year_month: string }[],
+  currentYear: string,
+): string[] {
+  return [
+    ...new Set([
+      ...rows.map((row) => row.year_month.slice(0, 4)),
+      currentYear,
+    ]),
+  ].sort();
+}
+
+/**
  * Average spend per day actually spent for a given month. Computed as the
  * month total divided by the number of DISTINCT days with non-zero
  * (services-excluded) spending — "daily average" in the summary cards means
