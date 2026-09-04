@@ -515,6 +515,27 @@ async function takeParsePermit(
 }
 
 // ---------------------------------------------------------------------------
+// Warmup throttle — bounds the warmup tap on the shared Gemini API key.
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimum delay between warmup calls on THIS function instance. Warmup is an
+ * ungated tap on the shared Gemini key (it deliberately takes no parse
+ * permit), so a buggy or spammy client could otherwise rattle Gemini's RPM
+ * limits and degrade real parses (`provider_overloaded`). Per-instance
+ * in-memory only: no DB write, no parse permit, zero side effects — a
+ * throttled warmup is a plain 200 the client ignores.
+ *
+ * Cold starts are irrelevant here: the FIRST warmup always passes (the
+ * initial gap is `now - 0`, always > the interval), and after that a real
+ * scan warms via its own call anyway.
+ */
+const WARMUP_MIN_INTERVAL_MS = 30_000;
+
+/** Epoch ms of the last warmup call on this instance; 0 = never warmed. */
+let lastWarmupAt = 0;
+
+// ---------------------------------------------------------------------------
 // HTTP handler
 // ---------------------------------------------------------------------------
 
@@ -555,7 +576,9 @@ Deno.serve(async (req: Request) => {
   // -----------------------------------------------------------------------
   // Warmup mode — cheap text-only Gemini call to pre-warm the model instance.
   // Fires when the camera screen mounts; the real parse follows ~30s later.
-  // Must NOT consume quota, take a rate-limit permit, or write to DB.
+  // Must NOT consume quota, take a rate-limit permit, or write to DB. Bounded
+  // by the in-memory WARMUP_MIN_INTERVAL_MS throttle (see above) so repeated
+  // warmups cannot hammer the shared Gemini key.
   // -----------------------------------------------------------------------
   if (body.mode === 'warmup') {
     if (!GEMINI_API_KEY) {
@@ -564,6 +587,18 @@ Deno.serve(async (req: Request) => {
         headers: { 'Content-Type': 'application/json' },
       });
     }
+    const now = Date.now();
+    if (now - lastWarmupAt < WARMUP_MIN_INTERVAL_MS) {
+      // Throttled: answer a 200 the client ignores (fire-and-forget stays
+      // silent) — no Gemini call is made, nothing is consumed.
+      return new Response(
+        JSON.stringify({ status: 'ok', warm: false, throttled: true }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    // Reserve the slot BEFORE the call so concurrent warmups in the same
+    // window are throttled too, not just back-to-back sequences.
+    lastWarmupAt = now;
     try {
       const url =
         `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent` +
@@ -578,10 +613,8 @@ Deno.serve(async (req: Request) => {
         signal: AbortSignal.timeout(12_000),
       });
       if (!res.ok) {
-        console.error(
-          '[parse-ticket]',
-          `warmup failed (HTTP ${res.status})`,
-        );
+        // Best-effort call: a warning, never an operator alarm.
+        console.warn('[parse-ticket]', `warmup failed (HTTP ${res.status})`);
         return new Response(JSON.stringify({ status: 'warmup-failed' }), {
           status: 202,
           headers: { 'Content-Type': 'application/json' },
