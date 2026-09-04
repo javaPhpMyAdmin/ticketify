@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon, IconButton, Pressable, Text, View } from '@/components';
 import { useReceiptDraftActions } from '@/features/tickets';
+import { warmUpParseTicket } from '@/features/tickets/api';
 import { pickBestPictureSize } from '@/features/tickets/lib/picture-size';
 import { tempId } from '@/lib/format';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -50,6 +51,15 @@ export default function CameraScreen() {
       cancelled = true;
     };
   }, [isCameraReady]);
+
+  // Pre-warm the Gemini model once per screen visit so the real parse call
+  // (~30s later) hits a warm instance instead of paying the ~47s cold-start.
+  const warmupFired = useRef(false);
+  useEffect(() => {
+    if (warmupFired.current) return;
+    warmupFired.current = true;
+    void warmUpParseTicket();
+  }, []);
 
   const handleCapture = async () => {
     if (busy || !isCameraReady) return;

@@ -29,10 +29,16 @@ export interface RpcResultState {
   error: StubError;
 }
 
-/** What `functions.invoke(fn)` resolves to (per function name). */
+/**
+ * What `functions.invoke(fn)` resolves to (per function name). When `reject`
+ * is set, the invoke REJECTS with that error instead — the seam models a
+ * transport/abort failure (the real supabase-js rejects on network errors and
+ * non-2xx HTTP), so callers that must swallow invoke failures can be pinned.
+ */
 export interface FunctionInvokeState {
   data: unknown;
   error: Error | null;
+  reject?: Error;
 }
 
 /** One entry in the double's call log (harness seam for write guards). */
@@ -513,6 +519,12 @@ const defaultBehavior = (): SupabaseBehavior => ({
     invoke: (fn: string, opts?: { body?: unknown; timeout?: number }) => {
       callLog.push({ kind: 'invoke', fn, opts: opts ?? null });
       const state = functionInvokes.get(fn) ?? { data: null, error: null };
+      if (state.reject) {
+        // Transport/abort failure: supabase-js rejects instead of resolving
+        // with { data, error }. Lets the harness pin callers that must
+        // swallow a REJECTED invoke (e.g. the warmup fire-and-forget ping).
+        return Promise.reject(state.reject);
+      }
       return Promise.resolve({ data: state.data, error: state.error });
     },
   },
@@ -664,12 +676,19 @@ export function __setRpcResult(fn: string, state: Partial<RpcResultState>): void
   rpcResults.set(fn, { rows: state.rows ?? null, error: state.error ?? null });
 }
 
-/** Arms the data (or the error) `functions.invoke(fn)` resolves to. */
+/**
+ * Arms the data (or the error) `functions.invoke(fn)` resolves to; set
+ * `reject` to make the invoke REJECT instead (transport/abort failures).
+ */
 export function __setFunctionInvoke(
   fn: string,
   state: Partial<FunctionInvokeState>,
 ): void {
-  functionInvokes.set(fn, { data: state.data ?? null, error: state.error ?? null });
+  functionInvokes.set(fn, {
+    data: state.data ?? null,
+    error: state.error ?? null,
+    reject: state.reject,
+  });
 }
 
 /** Snapshot of every backend interaction since the last reset. */

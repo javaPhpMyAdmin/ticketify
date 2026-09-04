@@ -2495,6 +2495,87 @@ async function run() {
     assert.equal(invokes.length, 0, 'no invoke when unconfigured');
   });
 
+  console.log('\n[tests] warmUpParseTicket client contract (gemini warmup)\n');
+
+  // The edge-side warmup branch (Deno handler + Gemini call + in-memory
+  // throttle) stays out of scope in this harness, per the declared convention
+  // in scripts/test-parse-ticket.mjs ("Network/Deno behavior ... out of
+  // scope"). These tests pin the CLIENT contract: the invoke shape, the
+  // never-throws promise, and the zero side effects (no quota, no RPC).
+
+  await test('warmUpParseTicket invokes parse-ticket with { mode: "warmup" } and a sane timeout', async () => {
+    resetAll();
+    await ticketsMod.warmUpParseTicket();
+    const invokes = stubMod.__getCallLog().filter((e) => e.kind === 'invoke');
+    assert.equal(invokes.length, 1, 'exactly one invoke');
+    assert.equal(invokes[0].fn, 'parse-ticket');
+    assert.deepEqual(invokes[0].opts.body, { mode: 'warmup' });
+    assert.equal(typeof invokes[0].opts.timeout, 'number');
+    assert.ok(invokes[0].opts.timeout > 0, 'timeout must be set');
+    assert.ok(
+      invokes[0].opts.timeout <= 30_000,
+      'warmup timeout must stay short (fire-and-forget)',
+    );
+  });
+
+  await test('warmUpParseTicket touches NO quota or RPC paths (zero side effects)', async () => {
+    resetAll();
+    await ticketsMod.warmUpParseTicket();
+    const log = stubMod.__getCallLog();
+    // The only backend interaction allowed is the invoke itself: no
+    // scan_usage read, no parse_try_take permit, no save RPC, no table query.
+    const nonInvoke = log.filter((e) => e.kind !== 'invoke');
+    assert.equal(nonInvoke.length, 0, 'warmup must not touch quota/RPC/table paths');
+    assert.equal(log.filter((e) => e.kind === 'rpc').length, 0);
+  });
+
+  await test('warmUpParseTicket swallows an edge error (FunctionsHttpError) and resolves', async () => {
+    resetAll();
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      error: new supabaseJs.FunctionsHttpError(
+        new Response(JSON.stringify({ error: 'x', code: 'internal' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    });
+    // Must resolve silently — the raw edge error never surfaces to the UI.
+    await ticketsMod.warmUpParseTicket();
+    assert.ok(true, 'warmup resolved despite the edge error');
+  });
+
+  await test('warmUpParseTicket swallows a REJECTING invoke (transport/timeout abort)', async () => {
+    resetAll();
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      reject: new supabaseJs.FunctionsFetchError(
+        new DOMException('The operation was aborted', 'AbortError'),
+      ),
+    });
+    // A transport/abort failure rejects the invoke promise; the helper must
+    // absorb it (no uncaught rejection, no throw from the await).
+    await ticketsMod.warmUpParseTicket();
+    assert.ok(true, 'warmup resolved despite the rejected invoke');
+  });
+
+  await test('warmUpParseTicket resolves silently when the edge throttles (200 warm:false)', async () => {
+    resetAll();
+    // The edge answers a throttled warmup with a 200 the client ignores; it
+    // must stay fire-and-forget — no throw even when data is not "ok".
+    stubMod.__setFunctionInvoke('parse-ticket', {
+      data: { status: 'ok', warm: false, throttled: true },
+    });
+    await ticketsMod.warmUpParseTicket();
+    assert.ok(true, 'warmup resolved on a throttled 200');
+  });
+
+  await test('warmUpParseTicket is a no-op when supabase is unconfigured (no invoke)', async () => {
+    resetAll();
+    stubMod.__setSupabaseConfigInputs(CONFIGURED_URL, PLACEHOLDER_ANON_KEY);
+    await ticketsMod.warmUpParseTicket();
+    const invokes = stubMod.__getCallLog().filter((e) => e.kind === 'invoke');
+    assert.equal(invokes.length, 0, 'unconfigured client must not invoke');
+  });
+
   await test('pickBestPictureSize prefers the largest size at or below the cap', async () => {
     assert.equal(
       pictureSizeMod.pickBestPictureSize(['3840x2160', '1920x1080', '1280x720']),

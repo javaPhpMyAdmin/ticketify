@@ -387,6 +387,26 @@ export async function parseTicket(imageUri: string): Promise<ParsedReceipt> {
 }
 
 /**
+ * Fire-and-forget warmup ping: sends a tiny text-only request to the
+ * `parse-ticket` edge function so the Gemini model instance is warm when the
+ * user actually scans a receipt. The client ignores the result — failures are
+ * silent (the real parse path has its own retries). Called once per camera
+ * screen visit.
+ */
+export async function warmUpParseTicket(): Promise<void> {
+  if (!isSupabaseConfigured) return;
+  try {
+    await supabase.functions.invoke('parse-ticket', {
+      body: { mode: 'warmup' },
+      timeout: 15_000,
+    });
+  } catch {
+    // Intentionally swallowed — warmup is best-effort.
+    console.debug('[warmup] gemini ping failed (non-fatal)');
+  }
+}
+
+/**
  * User-safe copy when the purchase write fails (real mode). Raw backend
  * text never reaches the user (same posture as the auth and read paths).
  */
