@@ -143,10 +143,10 @@ export function ReceiptRow({
     </>
   );
 
+  // The label intentionally excludes the visible caption so VoiceOver
+  // doesn't double-announce "Toca para ver el ticket" (label + hint).
   if (onPress) {
     return (
-      {/* The label intentionally excludes the visible caption so VoiceOver
-          doesn't double-announce "Toca para ver el ticket" (label + hint). */}
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
