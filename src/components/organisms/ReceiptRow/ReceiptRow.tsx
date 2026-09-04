@@ -130,12 +130,16 @@ export function ReceiptRow({
             gap: spacing.sm,
           }}
         >
-          {/* The 60pt fixed envelope can't fit a third caption line, so the
-              hint rides the date line (" · " separator) and truncates before
-              it can collide with the amount. */}
+{/* The 60pt fixed envelope can't fit a third caption line, so the hint
+              rides the date line (" · " separator) and truncates before
+              it can collide with the amount. The caption only renders for
+              pressable rows — the component contract says the row becomes
+              a button only when `onPress` is set. */}
           <Text style={styles.date} numberOfLines={1}>
             {formatShortDate(date)}
-            <Text style={styles.caption}> · Toca para ver el ticket</Text>
+            {onPress ? (
+              <Text style={styles.caption}> · Toca para ver el ticket</Text>
+            ) : null}
           </Text>
           <Text style={styles.amount}>{formatCurrency(amount, currency)}</Text>
         </View>
