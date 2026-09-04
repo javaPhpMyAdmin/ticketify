@@ -300,7 +300,7 @@ export default function HomeScreen() {
             <EmptyState
               icon="doc.text"
               title="Sin tickets este mes."
-              body="Este mes no tiene recibos."
+              body="Este mes no tiene tickets."
             />
           ) : (
             <View style={styles.receiptList}>

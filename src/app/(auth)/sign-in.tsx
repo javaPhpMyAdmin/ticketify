@@ -106,7 +106,7 @@ export default function SignInScreen() {
             <Text style={styles.kicker}>TICKETIFY</Text>
             <Text style={styles.title}>Iniciar sesión</Text>
             <Text style={styles.subtitle}>
-              Accede a tus recibos, presupuesto y analítica.
+              Accede a tus tickets, presupuesto y analítica.
             </Text>
           </View>
 

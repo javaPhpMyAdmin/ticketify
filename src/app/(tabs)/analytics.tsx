@@ -612,7 +612,7 @@ function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
       accessibilityRole="button"
       accessibilityLabel={
         isPro
-          ? 'Ver recibo de la alerta de precio'
+          ? 'Ver ticket de la alerta de precio'
           : 'Desbloquear Alerta de precio Pro'
       }
       style={({ pressed }) => [

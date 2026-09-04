@@ -91,7 +91,7 @@ export default function SignUpScreen() {
             <Text style={styles.kicker}>TICKETIFY</Text>
             <Text style={styles.title}>Crear cuenta</Text>
             <Text style={styles.subtitle}>
-              Regístrate con tu correo para empezar a registrar tus recibos.
+              Regístrate con tu correo para empezar a registrar tus tickets.
             </Text>
           </View>
 

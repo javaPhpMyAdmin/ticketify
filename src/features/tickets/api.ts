@@ -144,12 +144,12 @@ interface EdgeErrorBody {
 // User-facing copy (app copy style is neutral Spanish)
 // ---------------------------------------------------------------------------
 
-const READ_IMAGE_MESSAGE = 'No se pudo leer la imagen del recibo';
+const READ_IMAGE_MESSAGE = 'No se pudo leer la imagen del ticket';
 const CONNECTION_MESSAGE =
   'No se pudo conectar con el servicio de escaneo. Inténtalo de nuevo.';
 const UNAVAILABLE_MESSAGE =
   'El escaneo no está disponible en este momento. Inténtalo de nuevo.';
-const GENERIC_PARSE_MESSAGE = 'No se pudo procesar el recibo. Inténtalo de nuevo.';
+const GENERIC_PARSE_MESSAGE = 'No se pudo procesar el ticket. Inténtalo de nuevo.';
 const IMAGE_TOO_LARGE_MESSAGE =
   'La imagen es demasiado grande para procesarla. Usa una foto más liviana.';
 const TIMEOUT_MESSAGE =
@@ -194,15 +194,15 @@ function messageFromEdgeError(body: Partial<EdgeErrorBody>): string {
     case 'unauthenticated':
       return 'Tu sesión expiró. Inicia sesión nuevamente.';
     case 'bad_request':
-      return 'La imagen del recibo no es válida. Toma otra foto e inténtalo de nuevo.';
+      return 'La imagen del ticket no es válida. Toma otra foto e inténtalo de nuevo.';
     case 'parse_failed':
-      return 'No se pudo leer el recibo en la imagen. Toma una foto más clara e inténtalo de nuevo.';
+      return 'No se pudo leer el ticket en la imagen. Toma una foto más clara e inténtalo de nuevo.';
     case 'internal':
-      return 'Ocurrió un problema al procesar el recibo. Inténtalo de nuevo.';
+      return 'Ocurrió un problema al procesar el ticket. Inténtalo de nuevo.';
     case 'provider_overloaded':
       return 'El servicio de escaneo está saturado en este momento. Intentá de nuevo en unos segundos.';
     case 'rate_limited':
-      return 'Escaneaste demasiados recibos en la última hora. Intentá de nuevo más tarde.';
+      return 'Escaneaste demasiados tickets en la última hora. Intentá de nuevo más tarde.';
     default:
       return GENERIC_PARSE_MESSAGE;
   }
@@ -410,7 +410,7 @@ export async function warmUpParseTicket(): Promise<void> {
  * User-safe copy when the purchase write fails (real mode). Raw backend
  * text never reaches the user (same posture as the auth and read paths).
  */
-const SAVE_ERROR_MESSAGE = 'No se pudo guardar el recibo. Inténtalo de nuevo.';
+const SAVE_ERROR_MESSAGE = 'No se pudo guardar el ticket. Inténtalo de nuevo.';
 
 /**
  * User-safe copy shown when a free user has reached the monthly 15-scan cap:
@@ -434,10 +434,10 @@ export class QuotaExceededError extends Error {
 }
 
 /** User-safe copy when the purchase read for editing fails (same posture). */
-const LOAD_ERROR_MESSAGE = 'No se pudo cargar el recibo. Inténtalo de nuevo.';
+const LOAD_ERROR_MESSAGE = 'No se pudo cargar el ticket. Inténtalo de nuevo.';
 
 /** User-safe copy when the purchase delete fails (same posture). */
-const DELETE_ERROR_MESSAGE = 'No se pudo eliminar el recibo. Inténtalo de nuevo.';
+const DELETE_ERROR_MESSAGE = 'No se pudo eliminar el ticket. Inténtalo de nuevo.';
 
 /**
  * Resolves a store row for `name`: reuses an existing global or user-owned

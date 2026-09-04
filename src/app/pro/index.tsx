@@ -181,7 +181,7 @@ export default function PaywallScreen() {
           <Divider />
           <Benefit icon="chart.bar.fill" label="Estadísticas avanzadas" />
           <Divider />
-          <Benefit icon="square.and.arrow.up" label="Exportar recibos" />
+          <Benefit icon="square.and.arrow.up" label="Exportar tickets" />
           <Divider />
           <Benefit icon="bolt.fill" label="Alertas de precio" />
         </Card>

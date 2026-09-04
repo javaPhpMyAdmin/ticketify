@@ -394,13 +394,13 @@ async function run() {
       ],
       new Date('2026-08-11T00:00:00Z'),
     );
-    assert.ok(html.includes('2 recibos · Total 45.00'));
+    assert.ok(html.includes('2 tickets · Total 45.00'));
   });
 
   await test('empty rows render the empty-state message', () => {
     const html = buildExportHtml([], new Date('2026-08-11T00:00:00Z'));
-    assert.ok(html.includes('No hay recibos para exportar.'));
-    assert.ok(html.includes('0 recibos · Total 0.00'));
+    assert.ok(html.includes('No hay tickets para exportar.'));
+    assert.ok(html.includes('0 tickets · Total 0.00'));
   });
 
   await test('generation date is injectable and deterministic', () => {

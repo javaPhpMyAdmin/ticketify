@@ -95,7 +95,7 @@ export function ReceiptCategoryItemsModal({
             </Pressable>
           </View>
           <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total en este recibo</Text>
+            <Text style={styles.totalLabel}>Total en este ticket</Text>
             <Text style={styles.totalAmount}>
               {formatCurrency(total, currency)}
             </Text>
@@ -106,7 +106,7 @@ export function ReceiptCategoryItemsModal({
               <EmptyState
                 icon="doc.text"
                 title="Sin artículos en esta categoría."
-                body="Este recibo no tiene artículos detallados en esta categoría."
+                body="Este ticket no tiene artículos detallados en esta categoría."
               />
             </View>
           ) : (

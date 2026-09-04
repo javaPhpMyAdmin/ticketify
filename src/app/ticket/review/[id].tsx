@@ -415,7 +415,7 @@ export default function ReviewReceiptScreen() {
       useToastStore
         .getState()
         .show(
-          editingMode ? 'Cambios guardados.' : 'Recibo guardado.',
+          editingMode ? 'Cambios guardados.' : 'Ticket guardado.',
           'success',
         );
       router.dismiss();
@@ -490,7 +490,7 @@ export default function ReviewReceiptScreen() {
                     <Icon name="checkmark" size={40} color={colors.surface} />
                   </Animated.View>
                 </View>
-                <Text style={styles.parsingTitle}>Recibo listo</Text>
+                <Text style={styles.parsingTitle}>Ticket listo</Text>
               </View>
             ) : (
               <View style={styles.parsingWrap}>

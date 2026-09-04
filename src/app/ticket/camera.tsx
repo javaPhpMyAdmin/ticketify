@@ -73,7 +73,7 @@ export default function CameraScreen() {
       if (!photo) {
         // Camera produced no picture — stay on screen so the user can retry
         // instead of being kicked out.
-        setCaptureError('No se pudo capturar el recibo. Inténtalo de nuevo.');
+        setCaptureError('No se pudo capturar el ticket. Inténtalo de nuevo.');
         return;
       }
       startDraft(photo.uri);
@@ -98,8 +98,8 @@ export default function CameraScreen() {
         // explanation (the X button remains the exit). This path is reachable
         // from the camera-permission gate too, where backing out would strand
         // the user.
-        setError('Se necesita acceso a tus fotos para importar recibos.');
-        setCaptureError('Se necesita acceso a tus fotos para importar recibos.');
+        setError('Se necesita acceso a tus fotos para importar tickets.');
+        setCaptureError('Se necesita acceso a tus fotos para importar tickets.');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -148,7 +148,7 @@ export default function CameraScreen() {
           ]}
           onPress={handleCapture}
           disabled={busy || !isCameraReady}
-          accessibilityLabel="Capturar recibo"
+          accessibilityLabel="Capturar ticket"
         >
           <View style={styles.shutterInner} />
         </Pressable>
@@ -196,8 +196,8 @@ export default function CameraScreen() {
             <Icon name="camera.fill" size={44} color={colors.textSecondary} />
             <Text style={styles.permissionMessage}>
               {settingsRequired
-                ? 'Para escanear recibos, activa el acceso a la cámara desde los Ajustes.'
-                : 'Se necesita permiso de cámara para escanear recibos.'}
+                ? 'Para escanear tickets, activa el acceso a la cámara desde los Ajustes.'
+                : 'Se necesita permiso de cámara para escanear tickets.'}
             </Text>
             <Pressable
               style={styles.permissionButton}
