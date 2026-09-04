@@ -70,6 +70,7 @@ export default function CategoryDetailScreen() {
                 <View style={styles.itemRow}>
                   <Text style={styles.itemName} numberOfLines={1}>
                     {item.name.charAt(0).toUpperCase() + item.name.slice(1)}
+                    {(item.quantity ?? 1) > 1 ? ` ×${item.quantity}` : ''}
                   </Text>
                   <Text style={styles.itemAmount}>
                     {formatCurrency(item.amount, currency)}

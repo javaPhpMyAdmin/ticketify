@@ -18,6 +18,8 @@
  *     cmp(a, b) === -cmp(b, a) for unequal pairs (anti-symmetric).
  *   - aggregateCategoryItemCounts counts one per item ROW per month
  *     (NOT per quantity), scoped to the month, empty-safe, deterministic.
+ *   - aggregateItemsByCategory sums quantities across collapsed receipts
+ *     (missing quantity counts as 1 per row) alongside the amount.
  *
  * Deterministic: no clock, no Intl, fixed fixture inputs.
  *
@@ -167,6 +169,101 @@ async function run() {
       '2026-08',
     );
     assert.deepEqual(rows, [{ name: 'yerba', amount: 2400 }]);
+  });
+
+  console.log('\n[tests] aggregateItemsByCategory\n');
+
+  await test('aggregateItemsByCategory sums quantities across receipts', () => {
+    const out = homeMod.aggregateItemsByCategory(
+      [
+        {
+          id: 'r1',
+          store_name: 'Coto Hipermercado',
+          purchase_date: '2026-08-05',
+          items: [
+            {
+              name: 'Bolsa camiseta compo',
+              amount: 1950,
+              category: 'ferreteria',
+              quantity: 3,
+            },
+          ],
+        },
+        {
+          id: 'r2',
+          store_name: 'Almacén Barrio Norte',
+          purchase_date: '2026-08-06',
+          items: [
+            {
+              name: 'bolsa Camiseta COMPO',
+              amount: 2100,
+              category: 'ferreteria',
+              quantity: 2,
+            },
+          ],
+        },
+      ],
+      'ferreteria',
+      '2026-08',
+    );
+    // Same normalized name collapses both rows; quantities sum 3 + 2 → 5.
+    assert.deepEqual(out, [
+      { name: 'bolsa camiseta compo', amount: 4050, quantity: 5 },
+    ]);
+  });
+
+  await test('aggregateItemsByCategory treats missing quantity as 1 per row', () => {
+    const out = homeMod.aggregateItemsByCategory(
+      [
+        {
+          id: 'r1',
+          purchase_date: '2026-08-05',
+          items: [{ name: 'Yerba 1kg', amount: 1100, category: 'alimentos' }],
+        },
+        {
+          id: 'r2',
+          purchase_date: '2026-08-06',
+          items: [
+            {
+              name: 'Yerba 500g',
+              amount: 1300,
+              category: 'alimentos',
+              quantity: 2,
+            },
+          ],
+        },
+      ],
+      'alimentos',
+      '2026-08',
+    );
+    // r1 has no quantity → counted as 1; r2 contributes 2 → 3 total.
+    assert.deepEqual(out, [{ name: 'yerba', amount: 2400, quantity: 3 }]);
+  });
+
+  await test('aggregateItemsByCategory scopes to category and month', () => {
+    const out = homeMod.aggregateItemsByCategory(
+      [
+        {
+          id: 'r1',
+          purchase_date: '2026-08-05',
+          items: [
+            { name: 'leche', amount: 50, category: 'lacteos', quantity: 3 },
+            { name: 'pan', amount: 20, category: 'panaderia', quantity: 2 },
+          ],
+        },
+        {
+          id: 'r2',
+          purchase_date: '2026-07-05',
+          items: [
+            { name: 'yogur', amount: 30, category: 'lacteos', quantity: 6 },
+          ],
+        },
+      ],
+      'lacteos',
+      '2026-08',
+    );
+    // panaderia row excluded by category; July yogur excluded by month.
+    assert.deepEqual(out, [{ name: 'leche', amount: 50, quantity: 3 }]);
   });
 
   console.log('\n[tests] compareReceiptsByScan total order\n');
