@@ -1,6 +1,6 @@
 import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 
-import { Icon, Pressable, Text, View, type IconName } from '@/components';
+import { Icon, Pressable, Text, View, type IconName } from '@/components/atoms';
 import { formatCurrency } from '@/lib/format';
 import { colors, radii, spacing } from '@/theme';
 

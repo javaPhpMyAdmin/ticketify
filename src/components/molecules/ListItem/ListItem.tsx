@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 
-import { Icon, Text, View, type IconName } from '@/components';
+import { Icon, Text, View, type IconName } from '@/components/atoms';
 import { colors, spacing, typography } from '@/theme';
 
 export interface ListItemProps {

@@ -125,8 +125,8 @@ importers:
         specifier: ~0.8.0
         version: 0.8.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(react-native@0.81.0(patch_hash=q5mncyelsqh7nuwgdozhleea4a)(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       victory-native:
-        specifier: ^41.26.0
-        version: 41.26.0(wxcfkzjz5wjfplcyzz54awpkiq)
+        specifier: ^42.0.1
+        version: 42.0.1(wxcfkzjz5wjfplcyzz54awpkiq)
       zustand:
         specifier: ^5.0.14
         version: 5.0.14(@types/react@19.1.17)(react@19.1.0)(use-sync-external-store@1.6.0(react@19.1.0))
@@ -2564,6 +2564,7 @@ packages:
   eslint@9.39.5:
     resolution: {integrity: sha512-DgZS62aPLXKlnxILS/AYCoRvHaZeXceIzlXPkkGGzJWSow1aEk0lbTlxUSlyjC8jcaKxAdOnTDz+o1JFSBsyjw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -4867,14 +4868,14 @@ packages:
       react: ^16.8 || ^17.0 || ^18.0 || ^19.0.0 || ^19.0.0-rc
       react-dom: ^16.8 || ^17.0 || ^18.0 || ^19.0.0 || ^19.0.0-rc
 
-  victory-native@41.26.0:
-    resolution: {integrity: sha512-NCRPQKdK99cIREXvtefEnGlOf29gd3RBMb5qVQ49+weY+mG6UHbBu4Wru7TObDyZo0NgywPWZP4dno9K8bz+Cg==}
+  victory-native@42.0.1:
+    resolution: {integrity: sha512-W3dNBMeRtZ8AQGBkV1PrYYKLFSstTy6uulmlJJFch4hvPX/R1xH1VJXzZopK6GGbcq/ejcr8WwntWwhqTo0lzA==}
     peerDependencies:
-      '@shopify/react-native-skia': '>=1.2.3 <3.0.0'
+      '@shopify/react-native-skia': '>=2.6.0 <3.0.0'
       react: '*'
       react-native: '*'
       react-native-gesture-handler: '>=2.0.0'
-      react-native-reanimated: '>=3.0.0'
+      react-native-reanimated: '>=3.19.1'
 
   vlq@1.0.1:
     resolution: {integrity: sha512-gQpnTgkubC6hQgdIcRdYGDSDc+SaujOdyesZQMv6JlfQee/9Mp0Qhnys6WxDWvQnL5WZdT7o2Ul187aSt0Rq+w==}
@@ -10906,7 +10907,7 @@ snapshots:
       - '@types/react'
       - '@types/react-dom'
 
-  victory-native@41.26.0(wxcfkzjz5wjfplcyzz54awpkiq):
+  victory-native@42.0.1(wxcfkzjz5wjfplcyzz54awpkiq):
     dependencies:
       '@shopify/react-native-skia': 2.11.0(react-native-reanimated@4.1.7(react-native-worklets@0.8.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(react-native@0.81.0(patch_hash=q5mncyelsqh7nuwgdozhleea4a)(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.0(patch_hash=q5mncyelsqh7nuwgdozhleea4a)(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-worklets@0.8.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(react-native@0.81.0(patch_hash=q5mncyelsqh7nuwgdozhleea4a)(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.0(patch_hash=q5mncyelsqh7nuwgdozhleea4a)(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       d3-scale: 4.0.2

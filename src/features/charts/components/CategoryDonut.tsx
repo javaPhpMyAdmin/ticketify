@@ -14,7 +14,7 @@
  * output (`HomeCategory`) onto this shape and assigns colors by index.
  *
  * Tooltip v1 limitation (documented): the donut is a skia surface and
- * `Pie.Slice` in victory-native v41 does NOT expose per-slice `onPress`.
+ * `Pie.Slice` in victory-native v42 does NOT expose per-slice `onPress`.
  * We can't reliably hit-test a slice on tap without a custom skia hit-
  * test. The v1 simplification is: tapping anywhere on the donut canvas
  * shows the legend entry for the LARGEST slice — honest about the
@@ -34,27 +34,10 @@ import { Text } from '@/components';
 import { getCategoryColor } from '@/features/home/categories';
 import { colors, spacing } from '@/theme';
 
+import { CHART_PALETTE } from '../constants';
 import { ChartLegend, type ChartLegendItem } from './ChartLegend';
 import { ChartTooltip } from './ChartTooltip';
 import { useChartTooltip } from '../hooks/useChartTooltip';
-
-/**
- * Accessible 8-color palette ordered for visual differentiation (a single
- * hue ramps poorly on small screens). Each color passes a basic
- * light-background contrast check against `colors.textPrimary`.
- */
-export const CHART_PALETTE: readonly string[] = [
-  '#10B981', // emerald (primary)
-  '#3B82F6', // blue
-  '#F59E0B', // amber
-  '#EF4444', // coral (danger)
-  '#8B5CF6', // violet
-  '#EC4899', // pink
-  '#14B8A6', // teal
-  '#F97316', // orange
-  '#6366F1', // indigo
-  '#84CC16', // lime
-];
 
 export interface CategorySlice {
   /** Stable identifier (category key). */

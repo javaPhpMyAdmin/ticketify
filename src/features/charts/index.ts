@@ -56,11 +56,13 @@ export type { DayDetailModalProps } from './components/DayDetailModal';
 export { InsightHeroCard } from './components/InsightHeroCard';
 export type { InsightHeroCardProps } from './components/InsightHeroCard';
 
-export { CategoryDonut, CHART_PALETTE } from './components/CategoryDonut';
+export { CategoryDonut } from './components/CategoryDonut';
 export type {
   CategoryDonutProps,
   CategorySlice,
 } from './components/CategoryDonut';
+
+export { CHART_PALETTE } from './constants';
 
 export { StoreBars } from './components/StoreBars';
 export type { StoreBarsProps, StoreBar } from './components/StoreBars';

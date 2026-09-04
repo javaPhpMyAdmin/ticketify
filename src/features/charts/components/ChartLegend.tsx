@@ -20,7 +20,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from '@/components';
 import { colors, radii, spacing } from '@/theme';
 
-import { CHART_PALETTE } from './CategoryDonut';
+import { CHART_PALETTE } from '../constants';
 
 export interface ChartLegendItem {
   /** Stable identifier (matches the slice's index in the donut's data array). */

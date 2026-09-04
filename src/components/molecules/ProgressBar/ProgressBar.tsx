@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import { View } from '@/components';
+import { View } from '@/components/atoms';
 import { colors, radii } from '@/theme';
 
 export interface ProgressBarProps {
