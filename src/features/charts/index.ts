@@ -62,7 +62,7 @@ export type {
   CategorySlice,
 } from './components/CategoryDonut';
 
-export { CHART_PALETTE } from './components/constants';
+export { CHART_PALETTE } from './constants';
 
 export { StoreBars } from './components/StoreBars';
 export type { StoreBarsProps, StoreBar } from './components/StoreBars';
