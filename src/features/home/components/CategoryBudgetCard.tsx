@@ -52,6 +52,14 @@ export function CategoryBudgetCard({
 }: CategoryBudgetCardProps) {
   const color = getCategoryColor(categoryKey);
 
+  /**
+   * Renders the share-of-total label: sub-1% values keep one decimal so a
+   * tiny slice is never shown as a misleading "0%"; larger shares stay as
+   * the rounded integer (e.g. "0.2% del gasto" vs "12% del gasto").
+   */
+  const formatPercent = (value: number) =>
+    value > 0 && value < 1 ? value.toFixed(1) : value.toFixed(0);
+
   /** Color based on spend vs limit ratio. */
   const progressColor =
     typeof limit === 'number' && limit > 0
@@ -91,7 +99,7 @@ export function CategoryBudgetCard({
         </Text>
         <View style={styles.metaRow}>
           <Text style={[styles.percent, { color: color.foreground }]}>
-            {percent.toFixed(0)}% del gasto
+            {formatPercent(percent)}% del gasto
           </Text>
           {itemCount !== undefined && itemCount > 0 ? (
             <Text style={[styles.itemCount, { color: color.foreground }]}>
