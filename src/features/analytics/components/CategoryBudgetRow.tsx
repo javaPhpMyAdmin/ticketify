@@ -1,7 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { Icon, Pressable, ProgressBar, Text, type IconName } from '@/components';
-import { formatCurrency } from '@/lib/format';
+import { formatCurrency, formatPercentLabel } from '@/lib/format';
 import { colors, spacing, typography } from '@/theme';
 import { getCategoryColor } from '@/features/home/categories';
 
@@ -79,7 +79,7 @@ export function CategoryBudgetRow({
         <Text style={styles.name} numberOfLines={1}>
           {name}
         </Text>
-        <Text style={styles.percent}>{Math.round(percent)}% del gasto</Text>
+        <Text style={styles.percent}>{formatPercentLabel(percent)} del gasto</Text>
         {typeof limit === 'number' ? (
           <>
             <Text style={styles.limit}>

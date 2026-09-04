@@ -74,14 +74,14 @@ export function buildExportHtml(
 
   const tableRows =
     lines.length === 0
-      ? `<tr><td colspan="10" class="empty">No hay recibos para exportar.</td></tr>`
+      ? `<tr><td colspan="10" class="empty">No hay tickets para exportar.</td></tr>`
       : lines.map(lineToTableRow).join('\n');
 
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<title>Exportación de recibos</title>
+<title>Exportación de tickets</title>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111827; margin: 24px; }
   h1 { font-size: 22px; margin: 0 0 4px; }
@@ -95,7 +95,7 @@ export function buildExportHtml(
 </style>
 </head>
 <body>
-<h1>Exportación de recibos</h1>
+<h1>Exportación de tickets</h1>
 <p class="meta">Generado el ${formatGeneratedDate(generatedAt)}</p>
 <table>
 <thead>
@@ -116,7 +116,7 @@ export function buildExportHtml(
 ${tableRows}
 </tbody>
 </table>
-<p class="summary">${rows.length} ${pluralize(rows.length, 'recibo', 'recibos')} · Total ${formatTwoDecimals(totalSum)}</p>
+<p class="summary">${rows.length} ${pluralize(rows.length, 'ticket', 'tickets')} · Total ${formatTwoDecimals(totalSum)}</p>
 </body>
 </html>`;
 }

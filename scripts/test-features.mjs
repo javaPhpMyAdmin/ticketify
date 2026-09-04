@@ -1082,7 +1082,7 @@ async function run() {
       (err) => {
         assert.equal(
           err.message,
-          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+          'No se pudo guardar el ticket. Inténtalo de nuevo.',
         );
         return true;
       },
@@ -1105,7 +1105,7 @@ async function run() {
       (err) => {
         assert.equal(
           err.message,
-          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+          'No se pudo guardar el ticket. Inténtalo de nuevo.',
         );
         return true;
       },
@@ -1131,7 +1131,7 @@ async function run() {
       (err) => {
         assert.equal(
           err.message,
-          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+          'No se pudo guardar el ticket. Inténtalo de nuevo.',
         );
         return true;
       },
@@ -1234,7 +1234,7 @@ async function run() {
       (err) => {
         assert.equal(
           err.message,
-          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+          'No se pudo guardar el ticket. Inténtalo de nuevo.',
           'cleanup failure must not mask the original save error',
         );
         return true;
@@ -1503,7 +1503,7 @@ async function run() {
       (err) => {
         assert.equal(
           err.message,
-          'No se pudo cargar el recibo. Inténtalo de nuevo.',
+          'No se pudo cargar el ticket. Inténtalo de nuevo.',
         );
         return true;
       },
@@ -1676,7 +1676,7 @@ async function run() {
       (err) => {
         assert.equal(
           err.message,
-          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+          'No se pudo guardar el ticket. Inténtalo de nuevo.',
         );
         return true;
       },
@@ -1717,7 +1717,7 @@ async function run() {
       (err) => {
         assert.equal(
           err.message,
-          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+          'No se pudo guardar el ticket. Inténtalo de nuevo.',
         );
         return true;
       },
@@ -1742,7 +1742,7 @@ async function run() {
       (err) => {
         assert.equal(
           err.message,
-          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+          'No se pudo guardar el ticket. Inténtalo de nuevo.',
         );
         return true;
       },
@@ -1768,7 +1768,7 @@ async function run() {
       (err) => {
         assert.equal(
           err.message,
-          'No se pudo cargar el recibo. Inténtalo de nuevo.',
+          'No se pudo cargar el ticket. Inténtalo de nuevo.',
         );
         return true;
       },
@@ -1941,7 +1941,7 @@ async function run() {
       (err) => {
         assert.equal(
           err.message,
-          'No se pudo eliminar el recibo. Inténtalo de nuevo.',
+          'No se pudo eliminar el ticket. Inténtalo de nuevo.',
         );
         return true;
       },
@@ -1961,7 +1961,7 @@ async function run() {
       (err) => {
         assert.equal(
           err.message,
-          'No se pudo eliminar el recibo. Inténtalo de nuevo.',
+          'No se pudo eliminar el ticket. Inténtalo de nuevo.',
         );
         return true;
       },
@@ -2030,7 +2030,7 @@ async function run() {
       (err) => {
         assert.equal(
           err.message,
-          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+          'No se pudo guardar el ticket. Inténtalo de nuevo.',
         );
         return true;
       },
@@ -2045,7 +2045,7 @@ async function run() {
       (err) => {
         assert.equal(
           err.message,
-          'No se pudo guardar el recibo. Inténtalo de nuevo.',
+          'No se pudo guardar el ticket. Inténtalo de nuevo.',
         );
         return true;
       },
@@ -2428,7 +2428,7 @@ async function run() {
     });
     await assert.rejects(
       () => ticketsMod.parseTicket('file:///r2.jpg'),
-      /No se pudo leer el recibo en la imagen/,
+      /No se pudo leer el ticket en la imagen/,
     );
   });
 
@@ -2477,7 +2477,7 @@ async function run() {
     });
     await assert.rejects(
       () => ticketsMod.parseTicket('file:///empty.jpg'),
-      /No se pudo procesar el recibo/,
+      /No se pudo procesar el ticket/,
     );
   });
 

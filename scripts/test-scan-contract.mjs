@@ -497,7 +497,7 @@ async function run() {
     );
 
     await test(
-      'rate_limited message mentions "demasiados recibos" (Spanish upgrade copy)',
+      'rate_limited message mentions "demasiados tickets" (Spanish upgrade copy)',
       () => {
         // Extract the return string for the rate_limited case
         const rateLimitedBlock = apiSrc.slice(
@@ -509,8 +509,8 @@ async function run() {
         assert.ok(returnMatch, 'rate_limited case must have a return string');
         const msg = returnMatch[1];
         assert.ok(
-          msg.includes('demasiados recibos'),
-          `rate_limited message must include "demasiados recibos", got: ${msg}`,
+          msg.includes('demasiados tickets'),
+          `rate_limited message must include "demasiados tickets", got: ${msg}`,
         );
       },
     );

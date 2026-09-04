@@ -296,7 +296,7 @@ export default function ReceiptDetailScreen() {
     } catch (err) {
       if (mounted.current) {
         useDialogStore.getState().show({
-          title: 'No se pudo editar el recibo',
+          title: 'No se pudo editar el ticket',
           message: err instanceof Error ? err.message : undefined,
           primaryLabel: 'Aceptar',
         });
@@ -324,7 +324,7 @@ export default function ReceiptDetailScreen() {
     } catch (err) {
       setDeleting(false);
       useDialogStore.getState().show({
-        title: 'No se pudo eliminar el recibo',
+        title: 'No se pudo eliminar el ticket',
         message: err instanceof Error ? err.message : undefined,
         primaryLabel: 'Aceptar',
       });
@@ -334,9 +334,9 @@ export default function ReceiptDetailScreen() {
   const handleDeletePress = () => {
     if (deleting || loading) return;
     useDialogStore.getState().show({
-      title: 'Eliminar recibo',
+      title: 'Eliminar ticket',
       message:
-        'Se eliminará el recibo y su foto. Esta acción no se puede deshacer.',
+        'Se eliminará el ticket y su foto. Esta acción no se puede deshacer.',
       primaryLabel: 'Eliminar',
       tone: 'danger',
       secondaryLabel: 'Cancelar',
@@ -355,7 +355,7 @@ export default function ReceiptDetailScreen() {
       >
         <Icon name="arrow.left" size={24} color={colors.textPrimary} />
       </Pressable>
-      <Text style={styles.title}>Detalle del recibo</Text>
+      <Text style={styles.title}>Detalle del ticket</Text>
     </View>
   );
 
@@ -365,7 +365,7 @@ export default function ReceiptDetailScreen() {
         {header}
         <View style={styles.notFound}>
           <Spinner size="sm" color={colors.textSecondary} />
-          <Text style={styles.notFoundText}>Cargando recibo…</Text>
+          <Text style={styles.notFoundText}>Cargando ticket…</Text>
         </View>
       </SafeAreaView>
     );
@@ -378,7 +378,7 @@ export default function ReceiptDetailScreen() {
         <View style={styles.notFound}>
           <Icon name="exclamationmark.triangle.fill" size={32} color={colors.danger} />
           <Text style={styles.notFoundText}>
-            No se pudo cargar el recibo
+            No se pudo cargar el ticket
           </Text>
           <Pressable
             onPress={() => detailQuery.refetch()}
@@ -398,7 +398,7 @@ export default function ReceiptDetailScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         {header}
         <View style={styles.notFound}>
-          <Text style={styles.notFoundText}>Recibo no encontrado</Text>
+          <Text style={styles.notFoundText}>Ticket no encontrado</Text>
         </View>
       </SafeAreaView>
     );
@@ -443,7 +443,7 @@ export default function ReceiptDetailScreen() {
         ) : photoLoading || (receipt?.image_url && !photoFailed) ? (
           <View style={styles.photoPlaceholder}>
             <Spinner size="sm" color={colors.textSecondary} />
-            <Text style={styles.photoPlaceholderText}>Cargando recibo...</Text>
+            <Text style={styles.photoPlaceholderText}>Cargando ticket...</Text>
           </View>
         ) : (
           <View style={styles.photoPlaceholder}>
@@ -551,7 +551,7 @@ export default function ReceiptDetailScreen() {
             (loading || deleting) && styles.footerActionDisabled,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Editar recibo"
+          accessibilityLabel="Editar ticket"
         >
           <Text style={styles.footerActionLabel}>
             {loading ? 'Cargando…' : 'Editar'}
@@ -566,7 +566,7 @@ export default function ReceiptDetailScreen() {
             (loading || deleting) && styles.footerActionDisabled,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Eliminar recibo"
+          accessibilityLabel="Eliminar ticket"
         >
           <Text style={styles.footerActionLabel}>
             {deleting ? 'Eliminando…' : 'Eliminar'}
