@@ -309,35 +309,20 @@ function ChartsBody() {
       });
   }, [cacheRow, monthList, monthKey]);
 
-  // Daily average from cache total or list aggregation: the month's
+  // Daily average from list aggregation or cache fallback: the month's
   // services-excluded total divided by the number of DISTINCT days actually
   // spent (a day whose only spend is servicios contributes 0 to the
   // numerator, so it must not count in the denominator — day-consistent).
   // Servicios are excluded in BOTH paths — only the hero card includes them.
+  // The receipt-based list path is preferred because it can subtract
+  // servicios per receipt AND count only the exact services-excluded spend
+  // days; the cache has no per-day category breakdown, so it can only
+  // approximate that count and is used purely as a pre-load/cache-only
+  // fallback.
   const dailyAverage = useMemo(() => {
-    if (cacheRow) {
-      const [year, month] = monthKey.split('-').map(Number);
-      const daysInMonth = new Date(year, month, 0).getDate();
-      // The cache total includes servicios; category_totals carries the
-      // per-slug totals, so subtract servicios before averaging (same
-      // exclusion as the list-fallback path below).
-      const serviciosTotal = cacheRow.category_totals?.['servicios']?.total ?? 0;
-      // The cache has no PER-DAY category breakdown, so the spend-day count
-      // uses the closest available per-day signal: distinct days with a
-      // positive `daily_totals` entry (servicios included). Documented
-      // limitation of the cache path — the list fallback below counts the
-      // exact services-excluded spend days.
-      let spendDayCount = 0;
-      for (let i = 1; i <= daysInMonth; i += 1) {
-        const dd = String(i).padStart(2, '0');
-        if ((cacheRow.daily_totals[`${monthKey}-${dd}`] ?? 0) > 0) {
-          spendDayCount += 1;
-        }
-      }
-      return spendDayCount > 0 ? (cacheRow.total - serviciosTotal) / spendDayCount : 0;
-    }
-    let total = 0;
+    // Preferred path: aggregate the month's REAL receipts.
     const excluded = new Set(['servicios']);
+    let total = 0;
     const spendDays = new Set<number>();
     for (const receipt of monthList) {
       if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
@@ -351,7 +336,42 @@ function ChartsBody() {
         spendDays.add(Number(receipt.purchase_date.slice(8, 10)));
       }
     }
-    return spendDays.size > 0 ? total / spendDays.size : 0;
+    // Prefer the list result whenever there is at least one receipt for this
+    // month. A month whose spend is entirely servicios legitimately yields 0
+    // (still the correct list-derived value), so presence of receipts — not a
+    // positive result — decides whether the list is authoritative.
+    const monthHasReceipts = monthList.some(
+      (receipt) => getMonthKey(receipt.purchase_date) === monthKey,
+    );
+    if (monthHasReceipts) {
+      return spendDays.size > 0 ? total / spendDays.size : 0;
+    }
+    // Fallback path: no raw receipt for this month in `monthList` yet (the
+    // monthly query is still loading and the store is empty, or a cache-only
+    // imported month without raw receipts). Best effort from the cache.
+    if (cacheRow) {
+      const [year, month] = monthKey.split('-').map(Number);
+      const daysInMonth = new Date(year, month, 0).getDate();
+      // The cache total includes servicios; category_totals carries the
+      // per-slug totals, so subtract servicios before averaging (same
+      // exclusion as the primary list path).
+      const serviciosTotal = cacheRow.category_totals?.['servicios']?.total ?? 0;
+      // LIMITATION: the cache has no PER-DAY category breakdown, so the
+      // spend-day count uses the closest per-day signal — every distinct day
+      // with a positive `daily_totals` entry (servicios included). A day
+      // dominated by a one-off servicios billing can still count toward the
+      // denominator here. This is exactly why the receipt-based list path is
+      // preferred: it counts the precise services-excluded spend days.
+      let spendDayCount = 0;
+      for (let i = 1; i <= daysInMonth; i += 1) {
+        const dd = String(i).padStart(2, '0');
+        if ((cacheRow.daily_totals[`${monthKey}-${dd}`] ?? 0) > 0) {
+          spendDayCount += 1;
+        }
+      }
+      return spendDayCount > 0 ? (cacheRow.total - serviciosTotal) / spendDayCount : 0;
+    }
+    return 0;
   }, [cacheRow, monthList, monthKey]);
 
   // Top category from cache `category_totals` or list aggregation.
