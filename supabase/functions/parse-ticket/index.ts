@@ -45,6 +45,13 @@ interface ParseRequest {
   image_base64?: string;
   /** MIME type of the image (image/jpeg, image/png, …). Defaults to image/jpeg. */
   mime_type?: string;
+  /**
+   * When `'warmup'`, the function makes a cheap text-only Gemini call to
+   * pre-warm the model instance. No quota is consumed, no rate-limit permit
+   * is taken, and no image is parsed. The client fires this on camera open
+   * so the real parse call (which happens ~30s later) hits a warm model.
+   */
+  mode?: 'warmup';
 }
 
 interface ErrorResponse {
@@ -508,6 +515,27 @@ async function takeParsePermit(
 }
 
 // ---------------------------------------------------------------------------
+// Warmup throttle — bounds the warmup tap on the shared Gemini API key.
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimum delay between warmup calls on THIS function instance. Warmup is an
+ * ungated tap on the shared Gemini key (it deliberately takes no parse
+ * permit), so a buggy or spammy client could otherwise rattle Gemini's RPM
+ * limits and degrade real parses (`provider_overloaded`). Per-instance
+ * in-memory only: no DB write, no parse permit, zero side effects — a
+ * throttled warmup is a plain 200 the client ignores.
+ *
+ * Cold starts are irrelevant here: the FIRST warmup always passes (the
+ * initial gap is `now - 0`, always > the interval), and after that a real
+ * scan warms via its own call anyway.
+ */
+const WARMUP_MIN_INTERVAL_MS = 30_000;
+
+/** Epoch ms of the last warmup call on this instance; 0 = never warmed. */
+let lastWarmupAt = 0;
+
+// ---------------------------------------------------------------------------
 // HTTP handler
 // ---------------------------------------------------------------------------
 
@@ -544,6 +572,67 @@ Deno.serve(async (req: Request) => {
   } catch {
     return jsonError(400, 'bad_request', 'Body must be JSON');
   }
+
+  // -----------------------------------------------------------------------
+  // Warmup mode — cheap text-only Gemini call to pre-warm the model instance.
+  // Fires when the camera screen mounts; the real parse follows ~30s later.
+  // Must NOT consume quota, take a rate-limit permit, or write to DB. Bounded
+  // by the in-memory WARMUP_MIN_INTERVAL_MS throttle (see above) so repeated
+  // warmups cannot hammer the shared Gemini key.
+  // -----------------------------------------------------------------------
+  if (body.mode === 'warmup') {
+    if (!GEMINI_API_KEY) {
+      return new Response(JSON.stringify({ status: 'warmup-failed' }), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    const now = Date.now();
+    if (now - lastWarmupAt < WARMUP_MIN_INTERVAL_MS) {
+      // Throttled: answer a 200 the client ignores (fire-and-forget stays
+      // silent) — no Gemini call is made, nothing is consumed.
+      return new Response(
+        JSON.stringify({ status: 'ok', warm: false, throttled: true }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    // Reserve the slot BEFORE the call so concurrent warmups in the same
+    // window are throttled too, not just back-to-back sequences.
+    lastWarmupAt = now;
+    try {
+      const url =
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent` +
+        `?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'Reply with OK' }] }],
+          generationConfig: { maxOutputTokens: 1 },
+        }),
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!res.ok) {
+        // Best-effort call: a warning, never an operator alarm.
+        console.warn('[parse-ticket]', `warmup failed (HTTP ${res.status})`);
+        return new Response(JSON.stringify({ status: 'warmup-failed' }), {
+          status: 202,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ status: 'ok', warm: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch {
+      // AbortSignal.timeout or network error — fail fast, no retry.
+      return new Response(JSON.stringify({ status: 'warmup-failed' }), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  }
+
   if (typeof body.image_base64 !== 'string' || body.image_base64.length === 0) {
     return jsonError(400, 'bad_request', 'Provide image_base64');
   }
