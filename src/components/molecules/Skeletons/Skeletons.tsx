@@ -153,6 +153,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
     padding: spacing.lg,
+    // Match the ReceiptRow's real envelope (minHeight 78) so the
+    // loading skeleton doesn't jump shorter than the loaded row.
+    minHeight: 78,
   },
   receiptBody: {
     flex: 1,

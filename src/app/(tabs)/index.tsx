@@ -508,11 +508,11 @@ const styles = StyleSheet.create({
   },
   totalLabel: {
     ...typography.labelCaps,
-    color: colors.primary,
+    color: colors.textPrimary,
   },
   totalAmount: {
     ...typography.headlineMd,
-    color: colors.primary,
+    color: colors.textPrimary,
   },
   receiptList: {
     gap: spacing.md,

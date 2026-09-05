@@ -54,6 +54,14 @@ export interface HomeFeed {
 export interface CategoryItemSummary {
   name: string;
   amount: number;
+  /**
+   * Total units bought across the collapsed receipts — a missing quantity
+   * on a source row counts as 1 unit. Optional: only `aggregateItemsByCategory`
+   * populates it (category detail renders it when > 1); the analytics
+   * top-items, history search rows, and impulse aggregation consumers leave
+   * it undefined so their rendered behavior is unchanged.
+   */
+  quantity?: number;
 }
 
 /**
@@ -306,23 +314,29 @@ export function aggregateCategoryItemCounts(
  * Pure aggregation: line items tagged `categoryKey` within one month,
  * grouped by normalized name and sorted by amount desc — "cuánto gasté en
  * cada cosa". `total` for the category is the sum of the returned rows.
+ * Quantities are summed alongside amounts (missing quantity counts as 1
+ * per row) so the category detail can render " ×N" when an item was bought
+ * more than once.
  */
 export function aggregateItemsByCategory(
   list: ReceiptSpendRecord[],
   categoryKey: string,
   monthKey: string,
 ): CategoryItemSummary[] {
-  const totalsByItem = new Map<string, number>();
+  const totalsByItem = new Map<string, { amount: number; quantity: number }>();
   for (const receipt of list) {
     if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
     for (const item of receipt.items ?? []) {
       if (item.category !== categoryKey) continue;
       const key = normalizeItemName(item.name);
-      totalsByItem.set(key, (totalsByItem.get(key) ?? 0) + item.amount);
+      const current = totalsByItem.get(key) ?? { amount: 0, quantity: 0 };
+      current.amount += item.amount;
+      current.quantity += item.quantity ?? 1;
+      totalsByItem.set(key, current);
     }
   }
   return [...totalsByItem.entries()]
-    .map(([name, amount]) => ({ name, amount }))
+    .map(([name, { amount, quantity }]) => ({ name, amount, quantity }))
     .sort((a, b) => b.amount - a.amount);
 }
 
