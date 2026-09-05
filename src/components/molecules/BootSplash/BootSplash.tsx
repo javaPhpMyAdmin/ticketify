@@ -6,7 +6,10 @@ import { colors } from '@/theme';
 
 import { bootSplashState, type BootSplashState } from './boot-splash-state';
 
-const MIN_DISPLAY_MS = 900;
+// Minimum display time BEFORE the booted state is honored: long enough for
+// the branded animation to be appreciated (>2s on top of a fast restore).
+// The fade-out then runs on top (FADE_OUT_MS).
+const MIN_DISPLAY_MS = 2900;
 const FADE_OUT_MS = 250;
 
 /**
@@ -37,6 +40,7 @@ export function BootSplash({
 
   const logoOpacity = useRef(new Animated.Value(0)).current;
   const logoScale = useRef(new Animated.Value(1)).current;
+  const logoY = useRef(new Animated.Value(0)).current;
   const fade = useRef(new Animated.Value(1)).current;
   const barX = useRef(new Animated.Value(-80)).current;
 
@@ -132,6 +136,29 @@ export function BootSplash({
     }).start();
   }, [logoOpacity, state]);
 
+  // Gentle vertical float on the logo (translateY bob, no layout props).
+  useEffect(() => {
+    if (state === 'done') return;
+    const bob = Animated.loop(
+      Animated.sequence([
+        Animated.timing(logoY, {
+          toValue: -12,
+          duration: 700,
+          useNativeDriver: true,
+          isInteraction: false,
+        }),
+        Animated.timing(logoY, {
+          toValue: 0,
+          duration: 700,
+          useNativeDriver: true,
+          isInteraction: false,
+        }),
+      ]),
+    );
+    bob.start();
+    return () => bob.stop();
+  }, [logoY, state]);
+
   // Marching dots loop.
   useEffect(() => {
     if (state === 'done') return;
@@ -218,7 +245,7 @@ export function BootSplash({
       <Animated.View
         style={[
           styles.logoWrap,
-          { opacity: logoOpacity, transform: [{ scale: logoScale }] },
+          { opacity: logoOpacity, transform: [{ translateY: logoY }, { scale: logoScale }] },
         ]}
       >
         <Image
