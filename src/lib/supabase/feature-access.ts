@@ -457,8 +457,41 @@ export async function createHousehold(
 }
 
 /**
+ * User-safe copy shown when the household already has the maximum of 3
+ * unconsumed invite codes within 24h (the generate_invite_code RPC rate
+ * limit). Actionable: the user should reuse the code the modal already
+ * shows (the read-first flow surfaces it) or wait for the window to pass.
+ */
+const TOO_MANY_INVITE_CODES_MESSAGE =
+  'Ya hay 3 códigos activos. Usá el código vigente o esperá 24h.';
+
+/**
+ * User-safe copy shown when the caller's subscription cannot invite (the
+ * generate_invite_code RPC requires Pro, migration 0014 §5b).
+ */
+const INVITE_PRO_REQUIRED_MESSAGE =
+  'Necesitás Pro para invitar. Activá Pro desde tu perfil.';
+
+/**
+ * User-safe copy shown when a non-owner calls generate_invite_code (the RPC
+ * only lets the household owner create codes). A member reaching the invite
+ * flow gets told why instead of a dead-end generic error.
+ */
+const INVITE_OWNER_ONLY_MESSAGE =
+  'Solo el dueño del hogar puede generar códigos.';
+
+/**
+ * User-safe copy shown when the household is at capacity (max 5 members).
+ */
+const INVITE_HOUSEHOLD_FULL_MESSAGE =
+  'El hogar está completo (máximo 5 miembros).';
+
+/**
  * Generate an invite code for a household. Calls the `generate_invite_code`
  * RPC which rate-limits to 3 codes per 24h and returns the new code row.
+ * The known `raise exception` texts are mapped to actionable user-safe copy;
+ * anything else (including 'household not found') falls back to the generic
+ * read-error message. The raw PostgREST text stays in the console.warn.
  */
 export async function generateInviteCode(
   householdId: string,
@@ -468,7 +501,30 @@ export async function generateInviteCode(
     p_household_id: householdId,
   });
   if (error) {
+    // The RPC's `raise exception` surfaces code P0001 with the exception
+    // text in `error.message` (PostgREST embeds it there); `error.details`
+    // is checked defensively too in case a client version surfaces it under
+    // that field instead. Never matched on `error.code` — raise exception
+    // always yields P0001.
     console.warn('[write] generate invite code failed:', error.code, error.message);
+    // Real PostgrestError exposes `details` alongside `message`; the harness
+    // double types only `message/code`, so it is read through a cast.
+    const detail =
+      error.message ?? (error as { details?: string }).details ?? '';
+    if (/too many active invite codes \(max 3 per 24h\)/i.test(detail)) {
+      return { status: 'error', message: TOO_MANY_INVITE_CODES_MESSAGE };
+    }
+    if (/pro subscription required/i.test(detail)) {
+      return { status: 'error', message: INVITE_PRO_REQUIRED_MESSAGE };
+    }
+    if (/only the owner can generate invite codes/i.test(detail)) {
+      return { status: 'error', message: INVITE_OWNER_ONLY_MESSAGE };
+    }
+    if (/household is full \(max 5 members\)/i.test(detail)) {
+      return { status: 'error', message: INVITE_HOUSEHOLD_FULL_MESSAGE };
+    }
+    // 'household not found' and any unknown error keep the fixed
+    // user-safe fallback — the raw PostgREST text never reaches the UI.
     return { status: 'error', message: READ_ERROR_MESSAGE };
   }
   return { status: 'ok', data: (data as unknown as InviteCode) };

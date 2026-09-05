@@ -63,6 +63,8 @@ export type CallLogEntry =
 export type QueryOp =
   | { op: 'eq'; column: string; value: unknown }
   | { op: 'in'; column: string; values: unknown[] }
+  | { op: 'is'; column: string; value: unknown }
+  | { op: 'gt'; column: string; value: unknown }
   | { op: 'ilike'; column: string; pattern: string }
   | { op: 'gte'; column: string; value: unknown }
   | { op: 'lt'; column: string; value: unknown }
@@ -110,6 +112,8 @@ export interface RpcQueryBuilder extends PromiseLike<{ data: unknown[] | null; e
 export interface QueryBuilder extends PromiseLike<{ data: unknown; error: StubError }> {
   eq: (column: string, value: unknown) => QueryBuilder;
   in: (column: string, values: unknown[]) => QueryBuilder;
+  is: (column: string, value: unknown) => QueryBuilder;
+  gt: (column: string, value: unknown) => QueryBuilder;
   ilike: (column: string, pattern: string) => QueryBuilder;
   gte: (column: string, value: unknown) => QueryBuilder;
   lt: (column: string, value: unknown) => QueryBuilder;
@@ -290,6 +294,14 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
     },
     in: (column: string, values: unknown[]) => {
       ops.push({ op: 'in', column, values });
+      return builder;
+    },
+    is: (column: string, value: unknown) => {
+      ops.push({ op: 'is', column, value });
+      return builder;
+    },
+    gt: (column: string, value: unknown) => {
+      ops.push({ op: 'gt', column, value });
       return builder;
     },
     ilike: (column: string, pattern: string) => {
