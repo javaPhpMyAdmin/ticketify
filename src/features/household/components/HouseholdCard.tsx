@@ -6,14 +6,14 @@
  * Only rendered when the user has a household (household_sharing is on
  * and household_id is set on the profile).
  */
-import { StyleSheet } from 'react-native';
 import { router } from 'expo-router';
+import { StyleSheet } from 'react-native';
 
 import { Card, Icon, Pressable, Text, View } from '@/components';
+import { formatCurrency } from '@/lib/format';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
-import { formatCurrency } from '@/lib/format';
-import { colors, radii, spacing, typography } from '@/theme';
+import { colors, radii, spacing } from '@/theme';
 
 interface HouseholdCardProps {
   /** Total household spend for the current month, or null when loading. */
@@ -22,7 +22,10 @@ interface HouseholdCardProps {
   isLoading: boolean;
 }
 
-export function HouseholdCard({ householdTotal, isLoading }: HouseholdCardProps) {
+export function HouseholdCard({
+  householdTotal,
+  isLoading,
+}: HouseholdCardProps) {
   const household = useHouseholdStore((s) => s.household);
   const members = useHouseholdStore((s) => s.members);
   const currency = useSettingsStore((s) => s.currency);
@@ -36,8 +39,8 @@ export function HouseholdCard({ householdTotal, isLoading }: HouseholdCardProps)
     memberCount === 1
       ? '1 miembro'
       : memberCount > 0
-        ? `${memberCount} miembros`
-        : '';
+      ? `${memberCount} miembros`
+      : '';
 
   return (
     <Pressable
@@ -114,25 +117,33 @@ const styles = StyleSheet.create({
   info: {
     flex: 1,
     gap: 2,
+    backgroundColor: 'transparent',
   },
   label: {
-    ...typography.labelSm,
+    fontWeight: '700',
+    fontSize: 14,
     color: colors.textSecondary,
   },
   name: {
-    ...typography.bodyMd,
     color: colors.textPrimary,
-    fontWeight: '600',
+    fontWeight: '900',
   },
   amountContainer: {
     alignItems: 'flex-end',
+    backgroundColor: 'transparent',
   },
   amount: {
-    ...typography.headlineMd,
+    // ...typography.headlineMd,
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '800',
     color: colors.primary,
   },
   members: {
-    ...typography.labelSm,
+    // ...typography.labelSm,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '900',
     color: colors.textSecondary,
   },
 });
