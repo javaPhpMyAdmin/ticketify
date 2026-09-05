@@ -373,6 +373,7 @@ export default function HistoryScreen() {
                       )
                     }
                     accessibilityRole="button"
+                    accessibilityHint="Toca para ver el detalle del artículo"
                   >
                     <Text style={styles.searchResultName} numberOfLines={1}>
                       {item.name}

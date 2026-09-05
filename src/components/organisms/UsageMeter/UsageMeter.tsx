@@ -68,7 +68,10 @@ export function UsageMeter({
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Text style={styles.kicker}>LÍMITE DE USO</Text>
-            <Text style={styles.kicker}>{kicker}</Text>
+            {/* Pro header: "Ilimitado" replaces the free-tier kicker
+                ("Escaneos gratuitos mensuales") and sits right under
+                "LÍMITE DE USO", in primary for extra visual weight. */}
+            <Text style={[styles.kicker, styles.kickerStrong]}>Ilimitado</Text>
           </View>
           <Icon name="qrcode.viewfinder" size={33} color={colors.primary} />
         </View>
@@ -76,7 +79,6 @@ export function UsageMeter({
           <Text style={styles.used}>Escaneos usados</Text>
           <Text style={styles.usedValue}>{used}</Text>
         </View>
-        <Text style={styles.unlimitedLabel}>Ilimitado</Text>
       </Card>
     );
   }
@@ -134,6 +136,11 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: colors.textSecondary,
   },
+  // Pro header second line: primary color makes "Ilimitado" read
+  // stronger than the neutral kicker it replaces.
+  kickerStrong: {
+    color: colors.primary,
+  },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -163,11 +170,6 @@ const styles = StyleSheet.create({
     color: 'green',
     fontWeight: '800',
     marginTop: spacing.xs,
-  },
-  unlimitedLabel: {
-    ...typography.headlineMd,
-    color: colors.primary,
-    marginTop: spacing.sm,
   },
   cta: {
     marginTop: spacing.sm,

@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -115,12 +115,11 @@ export default function ItemDetailScreen() {
             </Text>
           ) : (
             purchases.map((purchase, idx) => (
-              <>
+              <Fragment key={`${purchase.receiptId}-${idx}`}>
                 {/* The label intentionally excludes the visible caption so
                     VoiceOver doesn't double-announce "Toca para ver el
                     ticket" (label + hint). */}
                 <Pressable
-                  key={`${purchase.receiptId}-${idx}`}
                   onPress={() => router.push(`/receipts/${purchase.receiptId}`)}
                   accessibilityRole="button"
                   accessibilityHint="Toca para ver el ticket"
@@ -144,7 +143,7 @@ export default function ItemDetailScreen() {
                   </Text>
                 </View>
                 </Pressable>
-              </>
+              </Fragment>
             ))
           )}
         </View>
