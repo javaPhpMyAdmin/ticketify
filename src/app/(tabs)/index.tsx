@@ -214,17 +214,11 @@ export default function HomeScreen() {
           </>
         )}
 
-        {/* Household summary card — only when the user has a household
-            AND more than one member. `members` INCLUDES the owner:
-            `create_household` inserts the caller as role 'owner' into
-            `household_members` (migration 0014 §5a) and
-            `readHouseholdMembers` reads every row with no role filter.
-            A solo household therefore reports 1 member — the card would
-            show "Gasto del hogar" for a single-person budget, which is
-            just the user's own spend. Gate on >= 2 real members so the
-            home flows straight from the budget card to "Tickets
-            escaneados" for solo users. */}
-        {household && householdMembers.length >= 2 ? (
+        {/* Household summary card — only when the user has a household.
+            Shown even for solo households: the user's visual styling on
+            this card should always stay visible (per user preference),
+            and the card disappears once no household exists. */}
+        {household ? (
           <HouseholdCard householdTotal={householdTotal} isLoading={feedLoading} />
         ) : null}
 
