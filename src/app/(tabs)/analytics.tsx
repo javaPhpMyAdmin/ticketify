@@ -16,12 +16,12 @@ import {
   useMonthlyTotals,
   usePriceAlerts,
 } from '@/features/analytics';
-import { getExpenseCategory } from '@/features/home/categories';
 import {
   useAvailableMonthKeys,
   useMonthNavigation,
   useMonthReceipts,
 } from '@/features/home';
+import { getExpenseCategory } from '@/features/home/categories';
 import {
   aggregateItemsByMonth,
   currentMonthKey,

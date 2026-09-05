@@ -104,9 +104,9 @@ const styles = StyleSheet.create({
   },
   percent: {
     // ...typography.labelSm,
-    fontSize: 16,
+    fontSize: 17,
     color: colors.primary,
-    fontWeight: '800',
+    fontWeight: '900',
   },
   progressWrap: {
     marginTop: spacing.lg,

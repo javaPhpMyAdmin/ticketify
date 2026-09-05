@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
   calloutAmount: {
     // ...typography.labelSm,
     color: colors.textSecondary,
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 17.6,
+    fontWeight: '900',
   },
 });
