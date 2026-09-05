@@ -8,6 +8,7 @@ import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { DialogHost, ToastHost } from '@/components';
+import { BootSplash } from '@/components/molecules/BootSplash';
 import { useSessionStore } from '@/features/auth';
 import { ProBootstrap } from '@/features/pro';
 import { decideSessionNavigation } from '@/lib/auth/session-nav';
@@ -91,15 +92,7 @@ export default function RootLayout() {
     if (!isBootstrapping) setBooted(true);
   }, [isBootstrapping]);
 
-  useEffect(() => {
-    // Hide the native splash once restore reconciled and the first frame
-    // has rendered; the gate then decides which routes are reachable.
-    if (booted) {
-      SplashScreen.hideAsync().catch(() => {
-        // safe to ignore — already hidden or interrupted by another call
-      });
-    }
-  }, [booted]);
+  const [bootSplashVisible, setBootSplashVisible] = useState(true);
 
   return (
     // GestureHandlerRootView must wrap the entire app: gesture-handler
@@ -167,6 +160,14 @@ export default function RootLayout() {
             toast host. Renders a centered overlay View (not Modal) above
             the Stack — see DialogHost for the layering tradeoff. */}
         <DialogHost />
+        {/* Branded splash overlay: hides the native splash on its first
+            frame and fades out once the session reconciled (`booted`). */}
+        {bootSplashVisible ? (
+          <BootSplash
+            booted={booted}
+            onFinish={() => setBootSplashVisible(false)}
+          />
+        ) : null}
       </QueryClientProvider>
     </GestureHandlerRootView>
   );

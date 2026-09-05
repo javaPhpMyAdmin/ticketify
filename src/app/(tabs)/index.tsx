@@ -23,16 +23,12 @@ import {
   SnacksBreakdownModal,
   useBudget,
 } from '@/features/budget';
-import { categoryDetailHref } from '@/features/charts';
 import { useFrozenGuard } from '@/features/pro';
 import { TrialBanner } from '@/features/pro/components/TrialBanner';
 import {
-  CategoryBudgetCard,
-  CategoryBudgetCardSkeleton,
   currentMonthKey,
   mapPurchaseRowsToHomeFeed,
   monthKeyToLabel,
-  SegmentedBudgetBar,
   useAvailableMonthKeys,
   useHouseholdMonthTotal,
   useMonthNavigation,
@@ -82,7 +78,7 @@ export default function HomeScreen() {
   const { guard } = useFrozenGuard();
   const insets = useSafeAreaInsets();
   const { session } = useSessionStore();
-  const { members: householdMembers } = useHousehold();
+  const { household, members: householdMembers } = useHousehold();
 
   // Reset to the current month whenever the Home tab re-focuses (REQ-11):
   // month navigation is deliberately NOT persisted across navigations.
@@ -118,11 +114,6 @@ export default function HomeScreen() {
   const monthFeed = useMemo(
     () => mapPurchaseRowsToHomeFeed(monthList, householdTotal, monthKey),
     [monthList, householdTotal, monthKey],
-  );
-  // Percent base for the category cards: only the categories that appear.
-  const categoryTotal = useMemo(
-    () => monthFeed.categories.reduce((sum, cat) => sum + cat.amount, 0),
-    [monthFeed.categories],
   );
 
   return (
@@ -223,61 +214,22 @@ export default function HomeScreen() {
           </>
         )}
 
-        {/* Category strip — shown for ALL months, from the month feed. */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Categorías de gastos</Text>
-          {monthLoading ? (
-            <View style={styles.categoryStack}>
-              {[0, 1, 2].map((i) => (
-                <CategoryBudgetCardSkeleton key={i} />
-              ))}
-            </View>
-          ) : monthFeed.categories.length === 0 ? (
-            <EmptyState
-              icon="chart.bar.fill"
-              title="Aún no hay categorías de gastos."
-              body="Tus gastos por categoría aparecerán cuando escanees tus primeros tickets."
-            />
-          ) : (
-            <View style={styles.categoryStack}>
-              <SegmentedBudgetBar categories={monthFeed.categories} />
-              {monthFeed.categories.map((cat) => {
-                const percent =
-                  categoryTotal === 0
-                    ? 0
-                    : (cat.amount / categoryTotal) * 100;
-                return (
-                  <CategoryBudgetCard
-                    key={cat.key}
-                    categoryKey={cat.key}
-                    name={cat.name}
-                    amount={cat.amount}
-                    percent={percent}
-                    currency={currency}
-                    icon={cat.icon}
-                    onPress={() =>
-                      router.push(
-                        categoryDetailHref(cat.key, monthKey, currentMonthKey()),
-                      )
-                    }
-                  />
-                );
-              })}
-            </View>
-          )}
-        </View>
-
-        {/* Household summary card — only visible when the user has a household */}
-        <HouseholdCard householdTotal={householdTotal} isLoading={feedLoading} />
+        {/* Household summary card — only when the user has a household.
+            Shown even for solo households: the user's visual styling on
+            this card should always stay visible (per user preference),
+            and the card disappears once no household exists. */}
+        {household ? (
+          <HouseholdCard householdTotal={householdTotal} isLoading={feedLoading} />
+        ) : null}
 
         {/* Total + receipt list — shown for ALL months. */}
         <View style={styles.section}>
           <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Tickets escaneados</Text>
+            <Text style={styles.sectionTitle}>Tickets escaneados</Text>
             {/* While the month query loads, `monthFeed` may still fall back
                 to store rows and flash a partial count — show a placeholder
                 that matches the section's loading skeletons instead. */}
-            <Text style={styles.totalAmount}>
+            <Text style={styles.sectionTitle}>
               {monthLoading
                 ? '…'
                 : `${monthFeed.receipts.length} este mes`}
@@ -481,9 +433,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
   },
-  categoryStack: {
-    gap: spacing.md,
-  },
   monthSelector: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -505,14 +454,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 10,
-  },
-  totalLabel: {
-    ...typography.labelCaps,
-    color: colors.textPrimary,
-  },
-  totalAmount: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
+    gap: spacing.sm,
   },
   receiptList: {
     gap: spacing.md,
