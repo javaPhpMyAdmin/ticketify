@@ -21,6 +21,7 @@ import { Card, EmptyState, Icon, Pressable, Spinner, Text, View } from '@/compon
 import { useSessionUser } from '@/features/auth';
 import { useHousehold } from '@/features/household';
 import { CreateHouseholdModal } from '@/features/household/components/CreateHouseholdModal';
+import { InviteCodeModal } from '@/features/household/components/InviteCodeModal';
 import { JoinHouseholdModal } from '@/features/household/components/JoinHouseholdModal';
 import { useFrozenGuard } from '@/features/pro';
 import {
@@ -41,6 +42,7 @@ const MAX_MEMBERS = 5;
 interface HouseholdScreenContentProps {
   onOpenJoin: () => void;
   onOpenCreate: () => void;
+  onOpenInvite: () => void;
 }
 
 /**
@@ -51,6 +53,7 @@ interface HouseholdScreenContentProps {
 function HouseholdScreenContent({
   onOpenJoin,
   onOpenCreate,
+  onOpenInvite,
 }: HouseholdScreenContentProps) {
   const { userId } = useSessionUser();
   const { household, members, role, isLoading } = useHousehold();
@@ -269,7 +272,7 @@ function HouseholdScreenContent({
         <View style={styles.section}>
           {isOwner && members.length < MAX_MEMBERS ? (
             <Pressable
-              onPress={() => guard(() => router.push('/settings/invite'))}
+              onPress={() => guard(() => onOpenInvite())}
               style={({ pressed }) => [
                 styles.actionRow,
                 pressed && styles.actionRowPressed,
@@ -347,12 +350,14 @@ function HouseholdScreenContent({
 export default function HouseholdScreen() {
   const [joinModalVisible, setJoinModalVisible] = useState(false);
   const [createModalVisible, setCreateModalVisible] = useState(false);
+  const [inviteModalVisible, setInviteModalVisible] = useState(false);
 
   return (
     <>
       <HouseholdScreenContent
         onOpenJoin={() => setJoinModalVisible(true)}
         onOpenCreate={() => setCreateModalVisible(true)}
+        onOpenInvite={() => setInviteModalVisible(true)}
       />
       <JoinHouseholdModal
         visible={joinModalVisible}
@@ -361,6 +366,10 @@ export default function HouseholdScreen() {
       <CreateHouseholdModal
         visible={createModalVisible}
         onClose={() => setCreateModalVisible(false)}
+      />
+      <InviteCodeModal
+        visible={inviteModalVisible}
+        onClose={() => setInviteModalVisible(false)}
       />
     </>
   );
