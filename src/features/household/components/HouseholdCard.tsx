@@ -13,7 +13,7 @@ import { Card, Icon, Pressable, Text, View } from '@/components';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { formatCurrency } from '@/lib/format';
-import { colors, spacing, typography } from '@/theme';
+import { colors, radii, spacing, typography } from '@/theme';
 
 interface HouseholdCardProps {
   /** Total household spend for the current month, or null when loading. */
@@ -47,6 +47,15 @@ export function HouseholdCard({ householdTotal, isLoading }: HouseholdCardProps)
       style={({ pressed }) => pressed && styles.pressed}
     >
       <Card style={styles.card}>
+        {/* Tinted brand background: raw `primaryContainer` (#6FFFBE light /
+            #00422B dark) is too saturated for a whole card, so it renders
+            as a translucent layer over the card's `surface`. Opacity on a
+            dedicated background View (not on a parent) keeps the content
+            fully opaque and the borderLeft accent readable in both themes. */}
+        <View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFillObject, styles.tint]}
+        />
         <View style={styles.iconCircle}>
           <Icon name="house.fill" size={22} color={colors.primaryDark} />
         </View>
@@ -85,6 +94,14 @@ const styles = StyleSheet.create({
   },
   pressed: {
     transform: [{ scale: 0.98 }],
+  },
+  // Translucent brand tint over the card's surface background. The layer
+  // is clipped to the card's own radius so the rounded corners stay clean.
+  tint: {
+    backgroundColor: colors.primaryContainer,
+    borderRadius: radii.lg,
+    overflow: 'hidden',
+    opacity: 0.3,
   },
   iconCircle: {
     width: 44,
