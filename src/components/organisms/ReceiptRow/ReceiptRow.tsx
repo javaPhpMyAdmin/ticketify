@@ -117,7 +117,7 @@ export function ReceiptRow({
           <Icon name={iconName} size={18} color={iconColor} />
         </View>
       )}
-      <View style={{ width: '80%', height: 60 }}>
+      <View style={{ width: '80%', minHeight: 78, justifyContent: 'center' }}>
         <View style={styles.middle}>
           <Text style={styles.name} numberOfLines={1}>
             {name}
@@ -130,19 +130,23 @@ export function ReceiptRow({
             gap: spacing.sm,
           }}
         >
-{/* The 60pt fixed envelope can't fit a third caption line, so the hint
-              rides the date line (" · " separator) and truncates before
-              it can collide with the amount. The caption only renders for
-              pressable rows — the component contract says the row becomes
-              a button only when `onPress` is set. */}
+          {/* The caption rides its own line BELOW date + amount. The old
+              60pt fixed envelope couldn't fit a third line, so the hint was
+              squeezed onto the date; now minHeight (not a fixed height)
+              lets the column flow while keeping the icon circle centered.
+              The caption only renders for pressable rows — the component
+              contract says the row becomes a button only when `onPress` is
+              set. */}
           <Text style={styles.date} numberOfLines={1}>
             {formatShortDate(date)}
-            {onPress ? (
-              <Text style={styles.caption}> · Toca para ver el ticket</Text>
-            ) : null}
           </Text>
           <Text style={styles.amount}>{formatCurrency(amount, currency)}</Text>
         </View>
+        {onPress ? (
+          <Text style={styles.caption} numberOfLines={1}>
+            Toca para ver el ticket
+          </Text>
+        ) : null}
       </View>
     </>
   );
