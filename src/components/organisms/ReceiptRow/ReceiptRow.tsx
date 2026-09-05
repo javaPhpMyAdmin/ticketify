@@ -144,7 +144,7 @@ export function ReceiptRow({
         </View>
         {onPress ? (
           <Text style={styles.caption} numberOfLines={1}>
-            Toca para ver el ticket
+            Toca para ver
           </Text>
         ) : null}
       </View>
@@ -159,7 +159,9 @@ export function ReceiptRow({
         onPress={onPress}
         accessibilityRole="button"
         accessibilityHint="Toca para ver el ticket"
-        accessibilityLabel={`${name}, ${formatShortDate(date)}, ${formatCurrency(amount, currency)}`}
+        accessibilityLabel={`${name}, ${formatShortDate(
+          date,
+        )}, ${formatCurrency(amount, currency)}`}
         style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       >
         {row}
@@ -219,8 +221,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   caption: {
+    top: 10,
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: '400',
   },
   amount: {
