@@ -1,6 +1,7 @@
 /**
- * Invite code modal — bottom sheet that generates a 6-char household
- * invite code on open, shows it prominently, and offers copy + share.
+ * Invite code modal — bottom sheet that shows the household's reusable
+ * invite code on open (read-first: reuses the most recent unconsumed code
+ * and only generates a new one when none exists), with copy + share.
  */
 import {
   Modal,
@@ -15,7 +16,11 @@ import { useEffect, useState } from 'react';
 
 import { Icon, Spinner, Text } from '@/components';
 import { useSessionUser } from '@/features/auth';
-import { generateInviteCode } from '@/lib/supabase/feature-access';
+import {
+  generateInviteCode,
+  READ_ERROR_MESSAGE,
+  readActiveInviteCode,
+} from '@/lib/supabase/feature-access';
 import { useDialogStore } from '@/stores/use-dialog-store';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -29,9 +34,12 @@ export interface InviteCodeModalProps {
 const DISMISS_ANIMATION_MS = 400;
 
 /**
- * Bottom-sheet modal that generates and displays a household invite code.
- * Calls `generateInviteCode` on open, shows the 6-char code with copy
- * and share buttons, and displays the expiry window ("Vence en 72h").
+ * Bottom-sheet modal that shows a household invite code. On open it READ-FIRST
+ * reuses the most recent unconsumed/unexpired code (readActiveInviteCode) and
+ * only calls `generateInviteCode` when no active code exists — the RPC
+ * rate-limits to 3 unconsumed codes per 24h, so generating on every open
+ * would eventually dead-end the user. Shows the 6-char code with copy and
+ * share buttons, and displays the expiry window ("Vence en 72h").
  */
 export function InviteCodeModal({ visible, onClose }: InviteCodeModalProps) {
   const { userId } = useSessionUser();
@@ -46,17 +54,37 @@ export function InviteCodeModal({ visible, onClose }: InviteCodeModalProps) {
     (async () => {
       setLoading(true);
       setError(null);
-      const result = await generateInviteCode(householdId);
+      // Read-first: reuse an existing unconsumed/unexpired code instead of
+      // generating a new one every time the sheet opens. The RPC rate-limits
+      // to 3 unconsumed codes per 24h, so blind generation on open would
+      // eventually dead-end the user with a rate-limit error.
+      const active = await readActiveInviteCode(householdId);
       if (cancelled) return;
-      if (result.status === 'ok') {
-        setCode(result.data.code);
-        useHouseholdStore.getState().setInviteCode(result.data);
+      if (active.status === 'ok' && active.data) {
+        setCode(active.data.code);
+        useHouseholdStore.getState().setInviteCode(active.data);
+      } else if (active.status === 'ok') {
+        // No reusable code — generate a fresh one (the common case on the
+        // first open; afterwards the read above reuses it).
+        const result = await generateInviteCode(householdId);
+        if (cancelled) return;
+        if (result.status === 'ok') {
+          setCode(result.data.code);
+          useHouseholdStore.getState().setInviteCode(result.data);
+        } else {
+          setError(
+            result.status === 'error'
+              ? result.message
+              : 'No se pudo generar el código.',
+          );
+        }
+      } else if (active.status === 'error') {
+        // A read failure is likely network — show the error, do NOT retry
+        // generation blindly (it would consume a rate-limit slot).
+        setError(active.message);
       } else {
-        setError(
-          result.status === 'error'
-            ? result.message
-            : 'No se pudo generar el código.',
-        );
+        // unconfigured client — reads are impossible; generic read copy.
+        setError(READ_ERROR_MESSAGE);
       }
       setLoading(false);
     })();
