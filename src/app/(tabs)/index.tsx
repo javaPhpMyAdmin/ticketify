@@ -264,15 +264,19 @@ export default function HomeScreen() {
                 outside this View, so the section gap is inert here). */}
             <View style={[styles.section, styles.sectionBottom]}>
               <View style={styles.totalRow}>
-                <Text style={styles.sectionTitle}>
-                  {monthLoading
-                    ? '…'
-                    : `${monthFeed.receipts.length}{' '}${
-                        monthFeed.receipts.length !== 1
-                          ? 'tickets escaneados'
-                          : 'ticket escaneado'
-                      }`}
-                </Text>
+                {monthFeed.receipts.length > 0 ? (
+                  <Text style={styles.sectionTitle}>
+                    {monthLoading
+                      ? '…'
+                      : `${monthFeed.receipts.length} ${
+                          monthFeed.receipts.length !== 1
+                            ? 'tickets escaneados'
+                            : 'ticket escaneado'
+                        }`}
+                  </Text>
+                ) : (
+                  ''
+                )}
               </View>
             </View>
           </View>
