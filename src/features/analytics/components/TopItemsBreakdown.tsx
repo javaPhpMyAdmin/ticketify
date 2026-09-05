@@ -51,7 +51,7 @@ export function TopItemsBreakdown({
                     <Text style={styles.amount}>
                       {formatCurrency(row.amount, currency)}
                     </Text>
-                    <Text style={styles.percent}>{Math.round(pct)}%</Text>
+                    <Text style={styles.percent}>{Math.round(pct)} %</Text>
                   </View>
                 </View>
                 <View style={styles.track}>
@@ -104,19 +104,17 @@ const styles = StyleSheet.create({
   rowMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   amount: {
     color: colors.textSecondary,
-    fontSize: 17,
-    fontWeight: '700',
-    right: 3,
+    fontSize: 15,
+    fontWeight: '900',
   },
   percent: {
     color: colors.primary,
     fontSize: 17,
-    fontWeight: '700',
-    right: 3,
+    fontWeight: '900',
   },
   track: {
     height: 8,

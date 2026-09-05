@@ -180,10 +180,11 @@ function ChartsBody() {
   const { userId } = useSessionUser();
 
   // ── Month-scoped full receipt list ────────────────────────────────
-  // The home feed paginates (10 at a time), so `list` may be incomplete.
-  // Charts detail views (day tap, category drill-down) need the full
-  // month's receipts. This query fetches all receipts for the selected
-  // month independently so detail aggregations are always accurate.
+  // Home no longer paginates: it renders from the same shared full-month
+  // `monthReceipts` query used here, so the store `list` is only a
+  // loading fallback. Charts detail views (day tap, category drill-down)
+  // still need the full month's receipts, fetched independently so
+  // detail aggregations are always accurate.
   const monthReceiptsQuery = useQuery({
     queryKey: queryKeys.monthReceipts(userId!, monthKey),
     enabled: !!userId,
