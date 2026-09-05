@@ -644,6 +644,141 @@ async function run() {
     );
   });
 
+  console.log('\n[tests] household invite codes (read-first reuse + RPC error mapping)\n');
+
+  await test('generateInviteCode maps the 24h rate-limit error to actionable copy', async () => {
+    resetAll();
+    // A `raise exception` surfaces as P0001 with the exception text in
+    // error.message — the seam must map it, never show the raw text.
+    stubMod.__setRpcResult('generate_invite_code', {
+      error: {
+        message: 'too many active invite codes (max 3 per 24h)',
+        code: 'P0001',
+      },
+    });
+    const result = await seamMod.generateInviteCode('h-1');
+    assert.equal(result.status, 'error');
+    assert.match(result.message, /3 códigos activos/);
+    assert.notEqual(result.message, 'too many active invite codes (max 3 per 24h)');
+    assert.deepEqual(stubMod.__lastRpcCall(), {
+      fn: 'generate_invite_code',
+      params: { p_household_id: 'h-1' },
+    });
+  });
+
+  await test('generateInviteCode maps the Pro-required error to actionable copy', async () => {
+    resetAll();
+    stubMod.__setRpcResult('generate_invite_code', {
+      error: { message: 'Pro subscription required', code: 'P0001' },
+    });
+    const result = await seamMod.generateInviteCode('h-1');
+    assert.equal(result.status, 'error');
+    assert.match(result.message, /Pro/);
+  });
+
+  await test('generateInviteCode maps the owner-only error to actionable copy', async () => {
+    resetAll();
+    stubMod.__setRpcResult('generate_invite_code', {
+      error: { message: 'only the owner can generate invite codes', code: 'P0001' },
+    });
+    const result = await seamMod.generateInviteCode('h-1');
+    assert.equal(result.status, 'error');
+    assert.match(result.message, /dueño del hogar/);
+  });
+
+  await test('generateInviteCode maps the household-full error to actionable copy', async () => {
+    resetAll();
+    stubMod.__setRpcResult('generate_invite_code', {
+      error: { message: 'household is full (max 5 members)', code: 'P0001' },
+    });
+    const result = await seamMod.generateInviteCode('h-1');
+    assert.equal(result.status, 'error');
+    assert.match(result.message, /máximo 5 miembros/);
+  });
+
+  await test('generateInviteCode keeps the fixed fallback for unknown RPC errors', async () => {
+    resetAll();
+    stubMod.__setRpcResult('generate_invite_code', {
+      error: { message: 'connection reset', code: 'PGRST300' },
+    });
+    const result = await seamMod.generateInviteCode('h-1');
+    assert.equal(result.status, 'error');
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+    assert.notEqual(result.message, 'connection reset');
+  });
+
+  await test('generateInviteCode keeps the fixed fallback for household-not-found', async () => {
+    resetAll();
+    stubMod.__setRpcResult('generate_invite_code', {
+      error: { message: 'household not found', code: 'P0001' },
+    });
+    const result = await seamMod.generateInviteCode('h-1');
+    assert.equal(result.status, 'error');
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+  });
+
+  await test('readActiveInviteCode returns the most recent unconsumed code row', async () => {
+    resetAll();
+    const codeRow = {
+      id: 'ic-1',
+      household_id: 'h-1',
+      code: 'ABC123',
+      created_by: 'u1',
+      expires_at: '2026-09-08T00:00:00.000Z',
+      consumed_by: null,
+      consumed_at: null,
+      created_at: '2026-09-05T00:00:00.000Z',
+    };
+    stubMod.__setTableRead('invite_codes', { rows: [codeRow] });
+    const result = await seamMod.readActiveInviteCode('h-1');
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(result.data, codeRow);
+    // The reuse query is scoped to the household, filters unconsumed +
+    // unexpired, and takes the most recent — the rate-limit-avoiding
+    // contract the modal's read-first flow relies on.
+    const ops = stubMod.__getQueryCalls('invite_codes');
+    assert.ok(
+      ops.some((o) => o.op === 'eq' && o.column === 'household_id' && o.value === 'h-1'),
+      'read is scoped to the household (eq filter)',
+    );
+    assert.ok(
+      ops.some((o) => o.op === 'is' && o.column === 'consumed_by' && o.value === null),
+      'unconsumed codes only (is null on consumed_by)',
+    );
+    assert.ok(
+      ops.some((o) => o.op === 'gt' && o.column === 'expires_at'),
+      'unexpired codes only (gt on expires_at)',
+    );
+    const orderOp = ops.find((o) => o.op === 'order');
+    assert.ok(
+      orderOp && orderOp.column === 'created_at' && orderOp.opts?.ascending === false,
+      'most recent first (order created_at desc)',
+    );
+    assert.ok(
+      ops.some((o) => o.op === 'limit' && o.count === 1),
+      'single code capped via limit(1)',
+    );
+  });
+
+  await test('readActiveInviteCode resolves ok/null when no active code exists', async () => {
+    resetAll();
+    stubMod.__setTableRead('invite_codes', { rows: [] });
+    const result = await seamMod.readActiveInviteCode('h-1');
+    assert.equal(result.status, 'ok');
+    assert.equal(result.data, null);
+  });
+
+  await test('readActiveInviteCode surfaces the user-safe message on read failure', async () => {
+    resetAll();
+    stubMod.__setTableRead('invite_codes', {
+      error: { message: 'permission denied for table invite_codes', code: '42501' },
+    });
+    const result = await seamMod.readActiveInviteCode('h-1');
+    assert.equal(result.status, 'error');
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+    assert.notEqual(result.message, 'permission denied for table invite_codes');
+  });
+
   console.log('\n[tests] pure query layer (keys + throwing adapters + config-status)\n');
 
   await test('utcYearMonth derives the shared UTC year-month with zero padding', async () => {
