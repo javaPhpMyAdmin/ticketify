@@ -1,17 +1,17 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Image, Platform, ScrollView, StyleSheet } from 'react-native';
+import { FlatList, Image, Platform, StyleSheet } from 'react-native';
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 
 import {
-  MonthlyBudgetCardSkeleton,
   EmptyState,
   Fab,
   Icon,
+  MonthlyBudgetCardSkeleton,
   Pressable,
   ReceiptRow,
   ReceiptRowSkeleton,
@@ -23,8 +23,6 @@ import {
   SnacksBreakdownModal,
   useBudget,
 } from '@/features/budget';
-import { useFrozenGuard } from '@/features/pro';
-import { TrialBanner } from '@/features/pro/components/TrialBanner';
 import {
   currentMonthKey,
   mapPurchaseRowsToHomeFeed,
@@ -34,11 +32,16 @@ import {
   useMonthNavigation,
   useMonthReceipts,
 } from '@/features/home';
-import { HouseholdCard, useHousehold } from '@/features/household';
+import {
+  HouseholdCard,
+  HouseholdCardSkeleton,
+  useHousehold,
+} from '@/features/household';
+import { useFrozenGuard } from '@/features/pro';
+import { TrialBanner } from '@/features/pro/components/TrialBanner';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
-import { useSessionStore } from '../../features/auth';
-import { useSessionUser } from '@/features/auth';
+import { useSessionStore, useSessionUser } from '../../features/auth';
 
 /**
  * NativeTabs (iOS) does not push screen content up: the first ScrollView
@@ -68,12 +71,14 @@ export default function HomeScreen() {
   // Kept only for the household card + its loading flag. The receipts list,
   // categories and snacks total come from `useMonthReceipts` below so every
   // month renders the SAME unified structure off the full-month rows.
-  const { householdTotal, isLoading: feedLoading } = useHouseholdMonthTotal(monthKey);
+  const { householdTotal, isLoading: feedLoading } =
+    useHouseholdMonthTotal(monthKey);
   // Full-month receipts for whichever month is selected. Powers the
   // receipts list, category strip and snacks total for ANY month, and never
   // writes the receipts store (REQ-10). isLoading is surfaced so the month
   // view never flashes an empty state as a false empty month.
-  const { data: monthList, isLoading: monthLoading } = useMonthReceipts(monthKey);
+  const { data: monthList, isLoading: monthLoading } =
+    useMonthReceipts(monthKey);
   const { userId } = useSessionUser();
   const { guard } = useFrozenGuard();
   const insets = useSafeAreaInsets();
@@ -118,152 +123,184 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.greeting}>
-          <View style={styles.greetingLeft}>
-            <Text style={styles.greetingText}>¡Hola {displayName}!</Text>
-            {householdMembers.length > 1 ? (
-              <HouseholdAvatars
-                members={householdMembers}
-                currentUserId={session?.user?.id}
-              />
-            ) : null}
-          </View>
-          <Pressable
-            onPress={() => router.push('/profile')}
-            accessibilityLabel="Abrir perfil"
-            accessibilityRole="button"
-          >
-            {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.avatar} />
+      <FlatList
+        // While the month read is in flight the list must render the
+        // loading skeletons (ListEmptyComponent), so `data` is gated on
+        // `monthLoading` — preserves the previous ScrollView ternary,
+        // where loading masked both stale store rows and a false empty
+        // month. The derivation itself (`mapPurchaseRowsToHomeFeed` +
+        // `useMonthReceipts`) is untouched.
+        data={monthLoading ? [] : monthFeed.receipts}
+        keyExtractor={(r) => r.id}
+        renderItem={({ item: r }) => (
+          <ReceiptRow
+            name={r.name}
+            date={r.date}
+            amount={r.amount}
+            currency={currency}
+            imageUrl={r.imageUrl}
+            onPress={() => router.push(`/receipts/${r.id}`)}
+          />
+        )}
+        ListHeaderComponent={
+          // Everything above the virtualized rows keeps the EXACT order
+          // and content of the previous ScrollView; only the receipts
+          // themselves became list items. `listHeader` carries the outer
+          // scroll rhythm (16pt between sections) that used to live on
+          // `scrollContent.gap`.
+          <View style={styles.listHeader}>
+            <View style={styles.greeting}>
+              <View style={styles.greetingLeft}>
+                <Text style={styles.greetingText}>¡Hola {displayName}!</Text>
+                {householdMembers.length > 1 ? (
+                  <HouseholdAvatars
+                    members={householdMembers}
+                    currentUserId={session?.user?.id}
+                  />
+                ) : null}
+              </View>
+              <Pressable
+                onPress={() => router.push('/profile')}
+                accessibilityLabel="Abrir perfil"
+                accessibilityRole="button"
+              >
+                {avatarUrl ? (
+                  <Image source={{ uri: avatarUrl }} style={styles.avatar} />
+                ) : (
+                  <View style={[styles.avatar, styles.avatarFallback]}>
+                    <Text style={styles.avatarInitial}>
+                      {displayName.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
+            </View>
+
+            <TrialBanner />
+
+            {/* Month selector — lets you browse any month. The current month is
+                always reachable via the "newer" chevron even when it has no
+                receipts (REQ-5 / forward-navigation fix). */}
+            <View style={styles.monthSelector}>
+              <Pressable
+                onPress={goOlder}
+                disabled={!canGoOlder}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Mes anterior"
+                accessibilityState={{ disabled: !canGoOlder }}
+              >
+                <Icon
+                  name="chevron.left"
+                  size={22}
+                  color={canGoOlder ? colors.textPrimary : colors.textSecondary}
+                />
+              </Pressable>
+              <Text style={styles.monthLabel}>{monthKeyToLabel(monthKey)}</Text>
+              <Pressable
+                onPress={goNewer}
+                disabled={!canGoNewer}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Mes siguiente"
+                accessibilityState={{ disabled: !canGoNewer }}
+              >
+                <Icon
+                  name="chevron.right"
+                  size={22}
+                  color={canGoNewer ? colors.textPrimary : colors.textSecondary}
+                />
+              </Pressable>
+            </View>
+
+            {/* Budget card + snacks callout — shown for ALL months, scoped to
+                the selected month's `spent`. */}
+            {budgetLoading ? (
+              <MonthlyBudgetCardSkeleton />
+            ) : budgetError && !budgetHasData ? (
+              // A failed budget read must never look like "Límite: $0" —
+              // surface the user-safe message instead of a card claiming a
+              // limit that was never read.
+              <Text style={styles.error}>{budgetError}</Text>
             ) : (
-              <View style={[styles.avatar, styles.avatarFallback]}>
-                <Text style={styles.avatarInitial}>
-                  {displayName.charAt(0).toUpperCase()}
+              <>
+                <MonthlyBudgetCard
+                  spent={spent}
+                  limit={budget.amount}
+                  currency={currency}
+                  showCallout
+                  wantsSnacksTotal={monthFeed.wantsSnacksTotal}
+                  onPressSnacks={() => setSnacksOpen(true)}
+                />
+                {/* Background refetch failed but the last good budget is on
+                    screen — keep the section, only show error when NOT refetching
+                    so transient failures after save don't flash red. */}
+                {budgetError && !budgetRefetching ? (
+                  <Text style={styles.error}>{budgetError}</Text>
+                ) : null}
+              </>
+            )}
+
+            {/* Household summary card — only when the user has a household.
+                Shown even for solo households: the user's visual styling on
+                this card should always stay visible (per user preference),
+                and the card disappears once no household exists. While the
+                household-total read is in flight a neutral skeleton keeps
+                the card's footprint so the layout doesn't jump. */}
+            {household ? (
+              feedLoading ? (
+                <HouseholdCardSkeleton />
+              ) : (
+                <HouseholdCard
+                  householdTotal={householdTotal}
+                  isLoading={feedLoading}
+                />
+              )
+            ) : null}
+
+            {/* Total + receipt list — shown for ALL months. `sectionBottom`
+                reproduces the old 12pt `section` rhythm between the title
+                and the first row / empty state below (the rows now live
+                outside this View, so the section gap is inert here). */}
+            <View style={[styles.section, styles.sectionBottom]}>
+              <View style={styles.totalRow}>
+                <Text style={styles.sectionTitle}>
+                  {monthLoading
+                    ? '…'
+                    : `${monthFeed.receipts.length}{' '}${
+                        monthFeed.receipts.length !== 1
+                          ? 'tickets escaneados'
+                          : 'ticket escaneado'
+                      }`}
                 </Text>
               </View>
-            )}
-          </Pressable>
-        </View>
-
-        <TrialBanner />
-
-        {/* Month selector — lets you browse any month. The current month is
-            always reachable via the "newer" chevron even when it has no
-            receipts (REQ-5 / forward-navigation fix). */}
-        <View style={styles.monthSelector}>
-          <Pressable
-            onPress={goOlder}
-            disabled={!canGoOlder}
-            hitSlop={12}
-            accessibilityRole="button"
-            accessibilityLabel="Mes anterior"
-            accessibilityState={{ disabled: !canGoOlder }}
-          >
-            <Icon
-              name="chevron.left"
-              size={22}
-              color={canGoOlder ? colors.textPrimary : colors.textSecondary}
-            />
-          </Pressable>
-          <Text style={styles.monthLabel}>{monthKeyToLabel(monthKey)}</Text>
-          <Pressable
-            onPress={goNewer}
-            disabled={!canGoNewer}
-            hitSlop={12}
-            accessibilityRole="button"
-            accessibilityLabel="Mes siguiente"
-            accessibilityState={{ disabled: !canGoNewer }}
-          >
-            <Icon
-              name="chevron.right"
-              size={22}
-              color={canGoNewer ? colors.textPrimary : colors.textSecondary}
-            />
-          </Pressable>
-        </View>
-
-        {/* Budget card + snacks callout — shown for ALL months, scoped to
-            the selected month's `spent`. */}
-        {budgetLoading ? (
-          <MonthlyBudgetCardSkeleton />
-        ) : budgetError && !budgetHasData ? (
-          // A failed budget read must never look like "Límite: $0" —
-          // surface the user-safe message instead of a card claiming a
-          // limit that was never read.
-          <Text style={styles.error}>{budgetError}</Text>
-        ) : (
-          <>
-            <MonthlyBudgetCard
-              spent={spent}
-              limit={budget.amount}
-              currency={currency}
-              showCallout
-              wantsSnacksTotal={monthFeed.wantsSnacksTotal}
-              onPressSnacks={() => setSnacksOpen(true)}
-            />
-            {/* Background refetch failed but the last good budget is on
-                screen — keep the section, only show error when NOT refetching
-                so transient failures after save don't flash red. */}
-            {budgetError && !budgetRefetching ? (
-              <Text style={styles.error}>{budgetError}</Text>
-            ) : null}
-          </>
-        )}
-
-        {/* Household summary card — only when the user has a household.
-            Shown even for solo households: the user's visual styling on
-            this card should always stay visible (per user preference),
-            and the card disappears once no household exists. */}
-        {household ? (
-          <HouseholdCard householdTotal={householdTotal} isLoading={feedLoading} />
-        ) : null}
-
-        {/* Total + receipt list — shown for ALL months. */}
-        <View style={styles.section}>
-          <View style={styles.totalRow}>
-            <Text style={styles.sectionTitle}>Tickets escaneados</Text>
-            {/* While the month query loads, `monthFeed` may still fall back
-                to store rows and flash a partial count — show a placeholder
-                that matches the section's loading skeletons instead. */}
-            <Text style={styles.sectionTitle}>
-              {monthLoading
-                ? '…'
-                : `${monthFeed.receipts.length} este mes`}
-            </Text>
+            </View>
           </View>
-          {monthLoading ? (
+        }
+        ListEmptyComponent={
+          // Loading wins over the empty state — exactly like the old
+          // ternary (`monthLoading` → skeletons, else empty month).
+          monthLoading ? (
             <View style={styles.receiptList}>
               {[0, 1, 2].map((i) => (
                 <ReceiptRowSkeleton key={i} />
               ))}
             </View>
-          ) : monthFeed.receipts.length === 0 ? (
+          ) : (
             <EmptyState
               icon="doc.text"
               title="Sin tickets este mes."
               body="Este mes no tiene tickets."
             />
-          ) : (
-            <View style={styles.receiptList}>
-              {monthFeed.receipts.map((r) => (
-                <ReceiptRow
-                  key={r.id}
-                  name={r.name}
-                  date={r.date}
-                  amount={r.amount}
-                  currency={currency}
-                  imageUrl={r.imageUrl}
-                  onPress={() => router.push(`/receipts/${r.id}`)}
-                />
-              ))}
-            </View>
-          )}
-        </View>
-      </ScrollView>
+          )
+        }
+        ItemSeparatorComponent={() => <View style={styles.rowSeparator} />}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+      />
 
       <View
         style={[
@@ -301,7 +338,7 @@ function HouseholdAvatars({
   members,
   currentUserId,
 }: {
-  members: Array<{ full_name?: string; avatar_url?: string; user_id: string }>;
+  members: { full_name?: string; avatar_url?: string; user_id: string }[];
   currentUserId?: string;
 }) {
   const otherMembers = members.filter((m) => m.user_id !== currentUserId);
@@ -408,7 +445,23 @@ const styles = StyleSheet.create({
     // tall, so its top edge lands ~159pt from the bottom. Content must
     // scroll past that, or the last card hides behind the button.
     paddingBottom: Platform.select({ ios: 184, android: 184, default: 184 }),
+  },
+  // Header wrapper above the virtualized rows: carries the 16pt section
+  // rhythm the removed `scrollContent.gap` used to provide (FlatList gaps
+  // would also space the ROWS, shifting the receipts zone 12→16pt, so the
+  // gap moved here instead — see `rowSeparator`/`sectionBottom`).
+  listHeader: {
     gap: spacing.lg,
+  },
+  // The receipts title is the header's LAST block; the 12pt below it
+  // reproduces the old `section.gap` between title and rows/empty state
+  // (the rows now live outside the section View, so its gap is inert).
+  sectionBottom: {
+    marginBottom: spacing.md,
+  },
+  // 12pt between virtualized rows — the old `receiptList.gap`.
+  rowSeparator: {
+    height: spacing.md,
   },
   greeting: {
     paddingTop: spacing.sm,

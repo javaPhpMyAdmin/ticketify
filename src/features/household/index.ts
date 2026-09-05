@@ -5,3 +5,4 @@
 export { useHousehold } from './hooks/useHousehold';
 export type { HouseholdData } from './hooks/useHousehold';
 export { HouseholdCard } from './components/HouseholdCard';
+export { HouseholdCardSkeleton } from './components/HouseholdCardSkeleton';
