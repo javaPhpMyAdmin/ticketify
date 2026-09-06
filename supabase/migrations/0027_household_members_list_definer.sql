@@ -68,7 +68,8 @@ begin
   where hm.household_id = p_household_id
   order by
     case hm.role when 'owner' then 0 else 1 end,
-    hm.joined_at;
+    hm.joined_at,
+    hm.user_id;
 end;
 $$;
 
