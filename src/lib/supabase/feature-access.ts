@@ -487,6 +487,24 @@ const INVITE_HOUSEHOLD_FULL_MESSAGE =
   'El hogar está completo (máximo 5 miembros).';
 
 /**
+ * User-safe copy shown when the caller already belongs to a household (the
+ * join_household RPC raises 'already in a household', migration 0017 §3).
+ * Actionable: the user cannot join a second household until they leave their
+ * current one — telling them why unblocks the confusion instead of the
+ * dead-end generic read-error copy.
+ */
+const JOIN_ALREADY_IN_HOUSEHOLD_MESSAGE =
+  'Ya pertenecés a un hogar. Para unirte a otro, primero tenés que salir del actual.';
+
+/**
+ * User-safe copy shown when an invite code is consumed, unknown, or expired
+ * (the join_household RPC raises 'invalid or expired invite code'). The code
+ * cannot be reused, so the user needs a fresh one from the household owner.
+ */
+const JOIN_INVALID_CODE_MESSAGE =
+  'El código es inválido o expiró. Pedile un código nuevo a quien creó el hogar.';
+
+/**
  * Generate an invite code for a household. Calls the `generate_invite_code`
  * RPC which rate-limits to 3 codes per 24h and returns the new code row.
  * The known `raise exception` texts are mapped to actionable user-safe copy;
@@ -533,20 +551,48 @@ export async function generateInviteCode(
 /**
  * Join a household via invite code. Calls the `join_household` RPC which
  * validates the code, adds the caller as member, and sets profiles.household_id.
- * Returns the household_id on success.
+ *
+ * The RPC is `returns uuid` (scalar), so on success `data` is the joined
+ * household id as a plain uuid string — NOT an object/row with a
+ * `household_id` key.
+ *
+ * The known `raise exception` texts (migration 0017 §3, unchanged in 0026)
+ * are mapped to actionable user-safe copy; anything else falls back to the
+ * generic read-error message. The raw PostgREST text stays in the
+ * console.warn.
  */
 export async function joinHousehold(
   code: string,
-): Promise<FeatureReadResult<{ household_id: string }>> {
+): Promise<FeatureReadResult<string>> {
   if (!isSupabaseConfigured) return { status: 'unconfigured' };
   const { data, error } = await supabase.rpc('join_household', {
     p_code: code,
   });
   if (error) {
+    // The RPC's `raise exception` surfaces code P0001 with the exception
+    // text in `error.message` (PostgREST embeds it there); `error.details`
+    // is checked defensively too in case a client version surfaces it under
+    // that field instead. Never matched on `error.code` — raise exception
+    // always yields P0001.
     console.warn('[write] join household failed:', error.code, error.message);
+    // Real PostgrestError exposes `details` alongside `message`; the harness
+    // double types only `message/code`, so it is read through a cast.
+    const detail =
+      error.message ?? (error as { details?: string }).details ?? '';
+    if (/already in a household/i.test(detail)) {
+      return { status: 'error', message: JOIN_ALREADY_IN_HOUSEHOLD_MESSAGE };
+    }
+    if (/invalid or expired invite code/i.test(detail)) {
+      return { status: 'error', message: JOIN_INVALID_CODE_MESSAGE };
+    }
+    if (/household is full/i.test(detail)) {
+      return { status: 'error', message: INVITE_HOUSEHOLD_FULL_MESSAGE };
+    }
+    // Anything else keeps the fixed user-safe fallback — the raw PostgREST
+    // text (e.g. RLS/constraint names) never reaches the UI.
     return { status: 'error', message: READ_ERROR_MESSAGE };
   }
-  return { status: 'ok', data: (data as unknown as { household_id: string }) };
+  return { status: 'ok', data: (data as unknown as string) };
 }
 
 /**

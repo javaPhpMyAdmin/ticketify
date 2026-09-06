@@ -779,6 +779,91 @@ async function run() {
     assert.notEqual(result.message, 'permission denied for table invite_codes');
   });
 
+  console.log('\n[tests] household join (join_household RPC error mapping)\n');
+
+  await test('joinHousehold maps the already-in-a-household error to actionable copy', async () => {
+    resetAll();
+    // A `raise exception` surfaces as P0001 with the exception text in
+    // error.message — the seam must map it, never show the raw text. The
+    // join copy is DIFFERENT from the create copy: the user is joining,
+    // not creating, so the guidance must say "leave to join another".
+    stubMod.__setRpcResult('join_household', {
+      error: { message: 'already in a household', code: 'P0001' },
+    });
+    const result = await seamMod.joinHousehold('ABC123');
+    assert.equal(result.status, 'error');
+    assert.match(result.message, /primero tenés que salir del actual/);
+    assert.doesNotMatch(result.message, /crear uno nuevo/);
+    assert.notEqual(result.message, 'already in a household');
+    assert.deepEqual(stubMod.__lastRpcCall(), {
+      fn: 'join_household',
+      params: { p_code: 'ABC123' },
+    });
+  });
+
+  await test('joinHousehold maps the invalid-or-expired-code error to actionable copy', async () => {
+    resetAll();
+    stubMod.__setRpcResult('join_household', {
+      error: { message: 'invalid or expired invite code', code: 'P0001' },
+    });
+    const result = await seamMod.joinHousehold('ABC123');
+    assert.equal(result.status, 'error');
+    assert.match(result.message, /El código es inválido o expiró/);
+    assert.match(result.message, /Pedile un código nuevo/);
+    assert.notEqual(result.message, 'invalid or expired invite code');
+  });
+
+  await test('joinHousehold maps the household-full error to actionable copy', async () => {
+    resetAll();
+    stubMod.__setRpcResult('join_household', {
+      error: { message: 'household is full', code: 'P0001' },
+    });
+    const result = await seamMod.joinHousehold('ABC123');
+    assert.equal(result.status, 'error');
+    assert.match(result.message, /máximo 5 miembros/);
+    assert.notEqual(result.message, 'household is full');
+  });
+
+  await test('joinHousehold keeps the fixed fallback for unknown RPC errors', async () => {
+    resetAll();
+    stubMod.__setRpcResult('join_household', {
+      error: { message: 'connection reset', code: 'PGRST300' },
+    });
+    const result = await seamMod.joinHousehold('ABC123');
+    assert.equal(result.status, 'error');
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+    assert.notEqual(result.message, 'connection reset');
+  });
+
+  await test('joinHousehold reads the error from details when message is missing', async () => {
+    resetAll();
+    // Defensive read: some PostgREST surfaces surface `raise exception`
+    // text under `details`; the seam must still map it.
+    stubMod.__setRpcResult('join_household', {
+      error: { code: 'P0001', details: 'invalid or expired invite code' },
+    });
+    const result = await seamMod.joinHousehold('ABC123');
+    assert.equal(result.status, 'error');
+    assert.match(result.message, /El código es inválido o expiró/);
+  });
+
+  await test('joinHousehold returns ok and calls the RPC with the code', async () => {
+    resetAll();
+    // The RPC is `returns uuid` (scalar): PostgREST resolves data as a bare
+    // uuid string, NOT a row array. The stub resolves row arrays, so the
+    // data payload shape here is meaningless — the success contract is
+    // status ok + the correct RPC call, never the data shape.
+    stubMod.__setRpcResult('join_household', {
+      rows: [{ household_id: 'h-1' }],
+    });
+    const result = await seamMod.joinHousehold('ABC123');
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(stubMod.__lastRpcCall(), {
+      fn: 'join_household',
+      params: { p_code: 'ABC123' },
+    });
+  });
+
   console.log('\n[tests] pure query layer (keys + throwing adapters + config-status)\n');
 
   await test('utcYearMonth derives the shared UTC year-month with zero padding', async () => {

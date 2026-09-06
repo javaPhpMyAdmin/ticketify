@@ -3,7 +3,9 @@
  * calls the `joinHousehold` RPC on submit.
  */
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   TextInput,
@@ -88,7 +90,10 @@ export function JoinHouseholdModal({ visible, onClose }: JoinHouseholdModalProps
       onRequestClose={handleClose}
       statusBarTranslucent
     >
-      <View style={styles.backdrop}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.backdrop}
+      >
         <Pressable style={styles.backdropTouch} onPress={handleClose} />
         <SafeAreaView style={styles.sheet} edges={['bottom']}>
           <View style={styles.handle} />
@@ -147,7 +152,7 @@ export function JoinHouseholdModal({ visible, onClose }: JoinHouseholdModalProps
             </Pressable>
           </View>
         </SafeAreaView>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
