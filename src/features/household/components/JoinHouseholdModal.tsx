@@ -16,6 +16,8 @@ import { useState } from 'react';
 
 import { Icon, Spinner, Text } from '@/components';
 import { useSessionUser } from '@/features/auth';
+import { invalidateHouseholdAfterJoin } from '@/features/household/household-invalidation';
+import { queryClient } from '@/lib/query-client';
 import { joinHousehold } from '@/lib/supabase/feature-access';
 import { useDialogStore } from '@/stores/use-dialog-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -59,6 +61,19 @@ export function JoinHouseholdModal({ visible, onClose }: JoinHouseholdModalProps
       setCode('');
       onClose();
       setTimeout(() => {
+        // The `joinHousehold` RPC already persisted `profiles.household_id`
+        // server-side; the client caches still hold the pre-join state
+        // (household null / profile without household_id, both fresh for
+        // 60s). Invalidate both so they refetch now:
+        // - household → `useHousehold` refetches and hydrates the store,
+        //   so Home renders the household card without a toggle dance.
+        // - profile → keeps `profiles.household_id` in sync, which drives
+        //   the household-sharing auto-enable (useProfile) and the toggle's
+        //   cached household_id (profile.tsx).
+        //
+        // This runs ONLY on the success branch: the error path below never
+        // calls the helper — there is nothing to invalidate on a failed join.
+        invalidateHouseholdAfterJoin(queryClient, userId);
         useDialogStore.getState().show({
           title: '¡Listo!',
           message: 'Te uniste al hogar.',
