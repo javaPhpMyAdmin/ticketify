@@ -4,6 +4,7 @@
     "moduleResolution": "node",
     "target": "es2020",
     "lib": ["es2020", "dom"],
+    "jsx": "react-jsx",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -13,7 +14,10 @@
       "@/components": ["./scripts/test-stubs/components.ts"],
       "@/lib/supabase": ["./scripts/test-stubs/supabase.ts"],
       "@/lib/supabase/storage-adapter": ["./scripts/test-stubs/storage-adapter.ts"],
+      "@/features/home": ["./scripts/test-stubs/features-home.ts"],
       "react-native": ["./scripts/test-stubs/react-native.ts"],
+      "react-native-safe-area-context": ["./scripts/test-stubs/safe-area-context.ts"],
+      "expo-router": ["./scripts/test-stubs/expo-router.ts"],
       "@/*": ["./src/*"]
     },
     "rootDir": ".."
@@ -40,6 +44,10 @@
     "../scripts/test-stubs/components.ts",
     "../scripts/test-stubs/supabase.ts",
     "../scripts/test-stubs/storage-adapter.ts",
-    "../scripts/test-stubs/react-native.ts"
+    "../scripts/test-stubs/react-native.ts",
+    "../scripts/test-stubs/expo-router.ts",
+    "../scripts/test-stubs/safe-area-context.ts",
+    "../scripts/test-stubs/features-home.ts",
+    "../scripts/render-drilldown-screen.ts"
   ]
 }

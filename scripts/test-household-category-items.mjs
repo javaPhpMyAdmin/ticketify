@@ -107,6 +107,21 @@ function installRequireHook() {
       // query-client.ts (imported by the auth store) touches AppState +
       // Platform.OS; the real package cannot load in plain node.
       request = join(outDir, 'scripts', 'test-stubs', 'react-native.js');
+    } else if (request === '@/components') {
+      // The drill-down SCREEN imports the atoms at RUNTIME (Text/View/Icon/
+      // Divider/EmptyState); the stub renders host elements with children
+      // pass-through so react-test-renderer can assert the visible tree.
+      request = join(outDir, 'scripts', 'test-stubs', 'components.js');
+    } else if (request === '@/features/home') {
+      // Barrel alias: the REAL barrel re-exports feature components
+      // (ScanQuotaCard…) that cannot load in plain node. The alias
+      // re-exports the real hook + monthKeyToLabel from the SAME compiled
+      // module instance the harness already loads.
+      request = join(outDir, 'scripts', 'test-stubs', 'features-home.js');
+    } else if (request === 'expo-router') {
+      request = join(outDir, 'scripts', 'test-stubs', 'expo-router.js');
+    } else if (request === 'react-native-safe-area-context') {
+      request = join(outDir, 'scripts', 'test-stubs', 'safe-area-context.js');
     } else if (request.startsWith('@/')) {
       request = join(outDir, 'src', request.slice(2));
     }
@@ -667,6 +682,241 @@ async function run() {
       const q = readHouseholdQuery();
       assert.ok(q, 'household query registered (scope key unchanged)');
       assert.equal(q.state.fetchStatus, 'idle');
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
+  console.log('\n[tests] CategoryDetailScreen (REAL render)\n');
+
+  const screenMod = await load('scripts/render-drilldown-screen.js');
+  const routerMod = await load('scripts/test-stubs/expo-router.js');
+  const { CategoryDetailScreen } = screenMod;
+
+  // react-test-renderer's toJSON() host tree: collect every string leaf so
+  // assertions read "what the user sees" as plain text.
+  const flattenStrings = (node, acc = []) => {
+    if (node == null) return acc;
+    if (typeof node === 'string') {
+      acc.push(node);
+      return acc;
+    }
+    if (Array.isArray(node)) {
+      for (const child of node) flattenStrings(child, acc);
+      return acc;
+    }
+    if (node.children) flattenStrings(node.children, acc);
+    return acc;
+  };
+  const renderText = (renderer) => flattenStrings(renderer.toJSON()).join('\n');
+
+  const renderScreen = async () => {
+    let renderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(
+          QueryClientProvider,
+          { client: queryClientMod.queryClient },
+          React.createElement(CategoryDetailScreen),
+        ),
+      );
+    });
+    return renderer;
+  };
+
+  const setRoute = (params) => routerMod.__setRouteParams(params);
+
+  // One confirmed `purchases` row for the personal-scope fixture: an
+  // "asado" line item under carnes within 2026-08 (the drill-down month).
+  const PURCHASE_ROW = {
+    id: 'p1',
+    store_id: 's1',
+    purchase_date: '2026-08-10',
+    created_at: '2026-08-10T12:00:00.000Z',
+    total: 500,
+    payment_method: 'card',
+    image_url: null,
+    status: 'confirmed',
+    stores: [{ name: 'Carnicería Central' }],
+    purchase_items: [
+      {
+        id: 'pi1',
+        name: 'asado',
+        quantity: 1,
+        unit_price: 500,
+        total_price: 500,
+        is_impulse: false,
+        sort_order: 0,
+        categories: [{ slug: 'carnes' }],
+      },
+    ],
+  };
+
+  await test('personal: byte-identical baseline (no month data → zero + empty message)', async () => {
+    resetAll();
+    signIn();
+    setRoute({ key: 'carnes', month: '2026-08' });
+    const renderer = await renderScreen();
+    try {
+      await settleUntil(
+        () => renderText(renderer).includes('Sin gastos en esta categoría este mes.'),
+        'personal empty state settles',
+      );
+      const text = renderText(renderer);
+      assert.ok(text.includes('TOTAL DEL MES'), 'total card header');
+      assert.ok(text.includes('$0.00'), 'zero total is legit in personal (no read pending)');
+      assert.ok(text.includes('Carnicería'), 'category label from the registry');
+      assert.ok(!text.includes('Cargando datos del hogar…'), 'no household placeholder');
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
+  await test('personal: item rows render with amounts (store-backed read)', async () => {
+    resetAll();
+    signIn();
+    setRoute({ key: 'carnes', month: '2026-08' });
+    stubMod.__setTableRead('purchases', { rows: [PURCHASE_ROW] });
+    const renderer = await renderScreen();
+    try {
+      await settleUntil(() => renderText(renderer).includes('Asado'), 'personal rows render');
+      const text = renderText(renderer);
+      assert.ok(text.includes('Asado'), 'item name capitalized');
+      assert.ok(text.includes('$500.00'), 'item amount formatted');
+      assert.ok(!text.includes('Sin gastos'), 'rows replace the empty message');
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
+  await test('household: loading (RPC in flight) → placeholder + dash total, NO false zero/empty', async () => {
+    resetAll();
+    signIn();
+    setHousehold('h1');
+    setRoute({ key: 'carnes', month: '2026-08', scope: 'household' });
+    // Deferred RPC gate (same trick as the hook loading test): the fetch
+    // CANNOT complete until the harness opens it, so the pending render is
+    // deterministic — no notify can fire while the gate is closed.
+    let openFetch;
+    const gate = new Promise((resolve) => {
+      openFetch = resolve;
+    });
+    stubMod.__setSupabaseBehavior({
+      rpc: () => ({
+        then: (onFulfilled) =>
+          gate.then(() => onFulfilled({ data: ROWS, error: null })),
+      }),
+    });
+    const renderer = await renderScreen();
+    try {
+      const loading = renderText(renderer);
+      assert.ok(loading.includes('Cargando datos del hogar…'), 'loading placeholder list');
+      assert.ok(loading.includes('—'), 'dash total while the read is pending');
+      assert.ok(!loading.includes('$0.00'), 'NO false zero total while loading');
+      assert.ok(!loading.includes('Sin gastos'), 'NO false "no spend" while loading');
+
+      openFetch();
+      await settleUntil(
+        () => renderText(renderer).includes('Menu'),
+        'rows render once the read resolves',
+      );
+      const ready = renderText(renderer);
+      assert.ok(ready.includes(' ×3'), 'quantity multiplier shows');
+      assert.ok(ready.includes('$180.00'), 'aggregated total');
+      assert.ok(!ready.includes('Cargando datos del hogar…'), 'placeholder gone');
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
+  await test('household: error → EmptyState + user-safe message + Reintentar; retry recovers through the UI', async () => {
+    resetAll();
+    signIn();
+    setHousehold('h1');
+    setRoute({ key: 'carnes', month: '2026-08', scope: 'household' });
+    stubMod.__setRpcResult('get_household_category_items', {
+      error: { message: 'boom', code: 'P0001' },
+    });
+    const renderer = await renderScreen();
+    try {
+      await settleUntil(
+        () => renderText(renderer).includes('Reintentar'),
+        'error EmptyState settles',
+      );
+      const errText = renderText(renderer);
+      assert.ok(errText.includes(READ_ERROR_MESSAGE), 'user-safe error message shown');
+      assert.ok(errText.includes('—'), 'dash total on error (never a false zero)');
+      assert.ok(!errText.includes('Sin gastos'), 'error is NOT rendered as "no spend"');
+
+      // Retry through the UI: re-arm the RPC and press "Reintentar".
+      stubMod.__setRpcResult('get_household_category_items', { rows: ROWS });
+      // Instance-tree text collector (host instances mix string leaves + child
+      // instances; composites are skipped via the string-type guard).
+      const flattenInstance = (inst, acc = []) => {
+        for (const child of inst.children) {
+          if (typeof child === 'string') acc.push(child);
+          else flattenInstance(child, acc);
+        }
+        return acc;
+      };
+      const retryNode = renderer.root
+        .findAll((n) => n.type === 'Pressable')
+        .filter((p) => flattenInstance(p).join('') === 'Reintentar');
+      assert.equal(retryNode.length, 1, 'exactly one Reintentar pressable');
+      await act(async () => {
+        retryNode[0].props.onPress();
+      });
+      await settleUntil(
+        () => renderText(renderer).includes('Menu'),
+        'retry recovers to rows',
+      );
+      const recovered = renderText(renderer);
+      assert.ok(recovered.includes('$180.00'), 'total after recovery');
+      assert.ok(!recovered.includes('Reintentar'), 'error state gone');
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
+  await test('household: ok-empty (RPC succeeded, zero rows) → true "Sin gastos" + zero total', async () => {
+    resetAll();
+    signIn();
+    setHousehold('h1');
+    setRoute({ key: 'carnes', month: '2026-08', scope: 'household' });
+    stubMod.__setRpcResult('get_household_category_items', { rows: [] });
+    const renderer = await renderScreen();
+    try {
+      await settleUntil(
+        () => renderText(renderer).includes('Sin gastos en esta categoría este mes.'),
+        'empty household month settles',
+      );
+      const text = renderText(renderer);
+      assert.ok(text.includes('$0.00'), 'post-success zero total is legit');
+      assert.ok(!text.includes('Cargando datos del hogar…'), 'loading placeholder gone');
+      assert.ok(!text.includes('Reintentar'), 'no error action');
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
+  await test('household + householdId null (store not hydrated) → renders as LOADING, never "Sin gastos"', async () => {
+    resetAll();
+    signIn();
+    // NO setHousehold: a cold start / deep link can land on the screen
+    // before the household row hydrates — the query sits disabled, and the
+    // screen must treat that as pending, never as a zero/empty read.
+    setRoute({ key: 'carnes', month: '2026-08', scope: 'household' });
+    const renderer = await renderScreen();
+    try {
+      await settleUntil(
+        () => renderText(renderer).includes('Cargando datos del hogar…'),
+        'unhydrated household renders as pending',
+      );
+      const text = renderText(renderer);
+      assert.ok(text.includes('—'), 'dash total (no data to read yet)');
+      assert.ok(!text.includes('$0.00'), 'no false zero before hydration');
+      assert.ok(!text.includes('Sin gastos'), 'no false "no spend" before hydration');
+      assert.equal(stubMod.__lastRpcCall(), null, 'no RPC fired without a householdId');
     } finally {
       await unmountProbe(renderer);
     }
