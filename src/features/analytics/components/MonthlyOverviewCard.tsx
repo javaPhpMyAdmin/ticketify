@@ -10,6 +10,13 @@ export interface MonthlyOverviewCardProps {
   currency: string;
   /** Label of the comparison month, e.g. "Julio 2026" — shown in the badge. */
   previousMonthLabel: string;
+  /**
+   * When true, renders a neutral placeholder ("—") instead of the numeric
+   * total. Used when the headline scope's data has not resolved yet (e.g.
+   * the household RPC still loading/errored), so the card never states a
+   * false "$0.00".
+   */
+  placeholder?: boolean;
 }
 
 /**
@@ -23,6 +30,7 @@ export function MonthlyOverviewCard({
   overview,
   currency,
   previousMonthLabel,
+  placeholder = false,
 }: MonthlyOverviewCardProps) {
   const { currentTotal, changePct } = overview;
   const hasChange = changePct !== null;
@@ -34,7 +42,9 @@ export function MonthlyOverviewCard({
       <View style={[styles.content, hasChange && styles.contentWithBadge]}>
         <Text style={styles.kicker}>TOTAL GASTADO</Text>
         <Text style={styles.total}>
-          {formatCurrency(currentTotal, currency)}
+          {placeholder
+            ? '—'
+            : formatCurrency(currentTotal, currency)}
         </Text>
       </View>
       {hasChange ? (

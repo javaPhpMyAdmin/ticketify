@@ -113,11 +113,14 @@ export default function AnalyticsScreen() {
   // personal receipt sum — a personal figure next to the household category
   // list below would contradict it. The change-% badge is personal-scoped
   // (useMonthlyOverview reads the personal `monthly_user_totals` cache), so it
-  // is dropped in household mode.
+  // is dropped in household mode. When the household RPC has not resolved
+  // (loading/error) the headline is a neutral placeholder — never a false
+  // "$0.00" — mirroring the body's loading/error branch.
   const headline = buildOverviewHeadline(viewMode, {
     householdMonthTotal,
     overviewTotal,
     personalChangePct: overview.changePct,
+    hasHouseholdData: householdTotalsHasData,
   });
 
   // Full month item list feeds the bar denominator (percent of the whole
@@ -243,9 +246,10 @@ export default function AnalyticsScreen() {
         <MonthlyOverviewCard
           overview={{
             ...overview,
-            currentTotal: headline.headlineTotal,
+            currentTotal: headline.headlineTotal ?? 0,
             changePct: headline.headlineChangePct,
           }}
+          placeholder={headline.headlineTotal === null}
           currency={currency}
           previousMonthLabel={previousMonthLabel}
         />

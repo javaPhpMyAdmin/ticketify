@@ -8,9 +8,11 @@
  *
  *   - personal mode → caller's own receipts total + personal change badge
  *     (byte-identical regression guard for the original behavior),
- *   - household mode → the real household total + NO personal change badge
- *     (scope mix would mislead),
- *   - zero/empty household totals stay numbers (0, never NaN).
+ *   - household mode with resolved data → the real household total + NO
+ *     personal change badge (scope mix would mislead),
+ *   - household mode WITHOUT resolved data (loading/error) → a placeholder
+ *     (null total), NEVER a false "$0.00" from an unresolved RPC,
+ *   - zero/empty household totals stay numbers: 0, never NaN.
  *
  * Deterministic: the function takes primitives only, no clock, no hooks.
  *
@@ -79,6 +81,7 @@ async function run() {
         householdMonthTotal: 999999,
         overviewTotal: 12345,
         personalChangePct: 12.5,
+        hasHouseholdData: false,
       });
       assert.deepEqual(result, {
         headlineTotal: 12345,
@@ -88,11 +91,12 @@ async function run() {
   );
 
   await test('personal mode keeps a null personal changePct (no badge)', () => {
-    const result = build('personal', {
-      householdMonthTotal: 999999,
-      overviewTotal: 0,
-      personalChangePct: null,
-    });
+const result = build('personal', {
+        householdMonthTotal: 999999,
+        overviewTotal: 0,
+        personalChangePct: null,
+        hasHouseholdData: false,
+      });
     assert.deepEqual(result, { headlineTotal: 0, headlineChangePct: null });
   });
 
@@ -105,6 +109,7 @@ async function run() {
         householdMonthTotal: 54321,
         overviewTotal: 999999,
         personalChangePct: 12.5,
+        hasHouseholdData: true,
       });
       assert.deepEqual(result, {
         headlineTotal: 54321,
@@ -120,9 +125,70 @@ async function run() {
         householdMonthTotal: 0,
         overviewTotal: 999999,
         personalChangePct: 12.5,
+        hasHouseholdData: true,
       });
       assert.equal(result.headlineTotal, 0);
       assert.equal(Number.isNaN(result.headlineTotal), false);
+    },
+  );
+
+  await test(
+    'household mode: a NaN aggregate is coerced to 0, never prints NaN',
+    () => {
+      const result = build('household', {
+        householdMonthTotal: NaN,
+        overviewTotal: 999999,
+        personalChangePct: 12.5,
+        hasHouseholdData: true,
+      });
+      assert.equal(result.headlineTotal, 0);
+    },
+  );
+
+  console.log('\n[tests] household mode without resolved data\n');
+
+  await test(
+    'household mode WITHOUT data returns placeholder (null total), never $0',
+    () => {
+      const result = build('household', {
+        householdMonthTotal: 0,
+        overviewTotal: 999999,
+        personalChangePct: 12.5,
+        hasHouseholdData: false,
+      });
+      assert.deepEqual(result, {
+        headlineTotal: null,
+        headlineChangePct: null,
+      });
+    },
+  );
+
+  await test(
+    'household mode while loading (data not yet resolved) → placeholder',
+    () => {
+      // During the RPC flight `monthTotal` is already 0 (derived from an
+      // empty `data ?? []`); hasHouseholdData false must gate it to null.
+      const result = build('household', {
+        householdMonthTotal: 0,
+        overviewTotal: 777,
+        personalChangePct: -5,
+        hasHouseholdData: false,
+      });
+      assert.deepEqual(result, { headlineTotal: null, headlineChangePct: null });
+    },
+  );
+
+  await test(
+    'household mode while errored (hasData false) → placeholder',
+    () => {
+      // On RPC error the data never resolves: same gate, no $0.00.
+      const result = build('household', {
+        householdMonthTotal: 0,
+        overviewTotal: 777,
+        personalChangePct: null,
+        hasHouseholdData: false,
+      });
+      assert.deepEqual(result, { headlineTotal: null, headlineChangePct: null });
     },
   );
 
