@@ -71,9 +71,12 @@ export default function AnalyticsScreen() {
   const { data: fullMonthList } = useMonthReceipts(monthKey);
   const { userId } = useSessionUser();
 
-  // Household-scoped category totals (when in household mode).
+  // Household-scoped category totals (when in household mode). The hook
+  // also derives `monthTotal` (sum of the household totals) — that is the
+  // headline value for household mode.
   const {
     totals: householdTotals,
+    monthTotal: householdMonthTotal,
     isLoading: householdTotalsLoading,
     error: householdTotalsError,
     hasData: householdTotalsHasData,
@@ -103,6 +106,20 @@ export default function AnalyticsScreen() {
   const firstName = fullName.trim().split(' ')[0];
   const displayName = firstName || 'Usuario';
   const avatarUrl = session?.user?.user_metadata?.avatar_url;
+
+  // Headline scope follows the view toggle: in household mode "TOTAL
+  // GASTADO" is the HOUSEHOLD total (sum of the RPC category totals), not
+  // the caller's personal receipt sum — the personal figure next to the
+  // household category list below would contradict it. The change-% badge
+  // stays personal-scoped (useMonthlyOverview reads the personal
+  // `monthly_user_totals` cache), so it is hidden in household mode:
+  // `MonthlyOverviewCard` omits the badge when changePct is null, and a
+  // personal change % next to a household total would mix scopes.
+  const isHouseholdView = viewMode === 'household';
+  const headlineTotal = isHouseholdView
+    ? householdMonthTotal
+    : overviewTotal;
+  const headlineChangePct = isHouseholdView ? null : overview.changePct;
 
   // Full month item list feeds the bar denominator (percent of the whole
   // month, not of the top-N slice); only the top 5 rows render. Utility
@@ -225,7 +242,11 @@ export default function AnalyticsScreen() {
         ]}
       >
         <MonthlyOverviewCard
-          overview={{ ...overview, currentTotal: overviewTotal }}
+          overview={{
+            ...overview,
+            currentTotal: headlineTotal,
+            changePct: headlineChangePct,
+          }}
           currency={currency}
           previousMonthLabel={previousMonthLabel}
         />
