@@ -18,6 +18,17 @@
 -- `category_totals` (a `{slug: total}` jsonb per purchase) — Level B, no
 -- individual line items. The drill-down needs actual `purchase_items` rows.
 --
+-- Data surface / trust boundary: this RPC exposes Level-A item detail —
+-- individual line items with store and member names for EVERY household
+-- member's purchases in the category, not just the Level-B totals
+-- `get_household_feed`/`monthly_category_totals` expose. That is safe only
+-- because the household is the trust boundary: membership is enforced
+-- (is_household_member) inside the body BEFORE any row is produced, and
+-- every member already sees the household's full receipt list in
+-- History/Analytics. `quantity` passes through as numeric (no integer
+-- coercion): the column is numeric(10,3) and fractional quantities (e.g.
+-- 2.5 kg) must survive the round trip to the drill-down's item rows.
+--
 -- Fix: a SECURITY DEFINER RPC that returns raw line items for one
 -- category across all household members. The client aggregates them
 -- client-side with `normalizeItemName` (accent-insensitive grouping
@@ -38,7 +49,7 @@ returns table (
   id uuid,
   name text,
   amount numeric,
-  quantity integer,
+  quantity numeric,
   purchase_date date,
   store_name text,
   member_name text
@@ -61,7 +72,7 @@ begin
     pi.id,
     pi.name,
     pi.total_price,
-    pi.quantity::integer,
+    pi.quantity,
     p.purchase_date,
     s.name AS store_name,
     pr.full_name AS member_name

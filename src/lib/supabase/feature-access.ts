@@ -26,8 +26,8 @@ import type {
 /**
  * One raw line item from the `get_household_category_items` RPC (migration
  * 0028). Matches the function's `returns table` columns exactly — `amount`
- * maps to `pi.total_price`, `quantity` is coerced to integer, dates stay
- * strings.
+ * maps to `pi.total_price`, `quantity` passes through as numeric (no
+ * integer coercion, so fractional quantities survive), dates stay strings.
  */
 export interface HouseholdCategoryItem {
   id: string;
