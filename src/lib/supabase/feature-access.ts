@@ -551,7 +551,10 @@ export async function generateInviteCode(
 /**
  * Join a household via invite code. Calls the `join_household` RPC which
  * validates the code, adds the caller as member, and sets profiles.household_id.
- * Returns the household_id on success.
+ *
+ * The RPC is `returns uuid` (scalar), so on success `data` is the joined
+ * household id as a plain uuid string — NOT an object/row with a
+ * `household_id` key.
  *
  * The known `raise exception` texts (migration 0017 §3, unchanged in 0026)
  * are mapped to actionable user-safe copy; anything else falls back to the
@@ -560,7 +563,7 @@ export async function generateInviteCode(
  */
 export async function joinHousehold(
   code: string,
-): Promise<FeatureReadResult<{ household_id: string }>> {
+): Promise<FeatureReadResult<string>> {
   if (!isSupabaseConfigured) return { status: 'unconfigured' };
   const { data, error } = await supabase.rpc('join_household', {
     p_code: code,
@@ -589,7 +592,7 @@ export async function joinHousehold(
     // text (e.g. RLS/constraint names) never reaches the UI.
     return { status: 'error', message: READ_ERROR_MESSAGE };
   }
-  return { status: 'ok', data: (data as unknown as { household_id: string }) };
+  return { status: 'ok', data: (data as unknown as string) };
 }
 
 /**

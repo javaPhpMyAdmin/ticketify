@@ -847,17 +847,17 @@ async function run() {
     assert.match(result.message, /El código es inválido o expiró/);
   });
 
-  await test('joinHousehold returns ok + household_id on success', async () => {
+  await test('joinHousehold returns ok and calls the RPC with the code', async () => {
     resetAll();
+    // The RPC is `returns uuid` (scalar): PostgREST resolves data as a bare
+    // uuid string, NOT a row array. The stub resolves row arrays, so the
+    // data payload shape here is meaningless — the success contract is
+    // status ok + the correct RPC call, never the data shape.
     stubMod.__setRpcResult('join_household', {
       rows: [{ household_id: 'h-1' }],
     });
     const result = await seamMod.joinHousehold('ABC123');
     assert.equal(result.status, 'ok');
-    // Awaited rpc resolves the row array (same convention as the
-    // readMonthlyPurchasesTotal tests): the member row carries household_id.
-    assert.equal(result.data.length, 1);
-    assert.equal(result.data[0].household_id, 'h-1');
     assert.deepEqual(stubMod.__lastRpcCall(), {
       fn: 'join_household',
       params: { p_code: 'ABC123' },
