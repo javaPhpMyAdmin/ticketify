@@ -22,3 +22,9 @@ export { computePriceAlerts } from './price-alerts';
 export type { PriceAlert } from './price-alerts';
 export { computeMonthOverview } from './monthly-overview';
 export type { MonthOverview } from './monthly-overview';
+export { buildOverviewHeadline } from './analytics-headline';
+export type {
+  OverviewHeadline,
+  OverviewHeadlineInput,
+  OverviewViewMode,
+} from './analytics-headline';
