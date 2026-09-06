@@ -15,16 +15,25 @@ import { colors, radii, spacing, typography } from '@/theme';
  * grouped and summed so repeated purchases collapse into one row. The
  * optional `month` search param (`YYYY-MM`, from the History tab) scopes
  * the aggregation; without it the current month is used (Home cards). The
- * header shows the month label for past months so the drill-down stays
- * anchored.
+ * optional `scope` search param (`household` from History/Analytics in
+ * household mode) switches the data source from personal store reads to
+ * the `get_household_category_items` RPC (migration 0028) so all household
+ * members' items are shown. The header shows the month label for past
+ * months so the drill-down stays anchored.
  */
 export default function CategoryDetailScreen() {
-  const { key, month } = useLocalSearchParams<{
+  const { key, month, scope } = useLocalSearchParams<{
     key: string;
     month?: string;
+    scope?: string;
   }>();
   const currency = useSettingsStore((s) => s.currency);
-  const { category, total, items } = useCategoryDetail(key ?? 'otros', month);
+  const householdScope = scope === 'household' ? 'household' : 'personal';
+  const { category, total, items } = useCategoryDetail(
+    key ?? 'otros',
+    month,
+    householdScope,
+  );
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>

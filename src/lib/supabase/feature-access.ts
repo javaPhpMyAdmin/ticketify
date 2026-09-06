@@ -24,6 +24,22 @@ import type {
 } from '@/types';
 
 /**
+ * One raw line item from the `get_household_category_items` RPC (migration
+ * 0028). Matches the function's `returns table` columns exactly — `amount`
+ * maps to `pi.total_price`, `quantity` is coerced to integer, dates stay
+ * strings.
+ */
+export interface HouseholdCategoryItem {
+  id: string;
+  name: string;
+  amount: number;
+  quantity: number;
+  purchase_date: string;
+  store_name: string | null;
+  member_name: string | null;
+}
+
+/**
  * User-safe copy shown when an authenticated read fails. Raw PostgREST text
  * must never reach the UI (same posture as the auth screens).
  */
@@ -652,6 +668,30 @@ export async function readHouseholdFeed(
     return { status: 'error', message: READ_ERROR_MESSAGE };
   }
   return { status: 'ok', data: (data ?? []) as HouseholdFeedItem[] };
+}
+
+/**
+ * Read raw purchase_items rows for one category across the household
+ * (migration 0028 — `get_household_category_items`). Returns Level A
+ * item-level detail so the client can aggregate with `normalizeItemName`
+ * for the category drill-down screen. Optional `yearMonth` filters by
+ * month; `categorySlug` defaults to 'otros'.
+ */
+export async function readHouseholdCategoryItems(
+  householdId: string,
+  yearMonth?: string | null,
+  categorySlug?: string,
+): Promise<FeatureReadResult<HouseholdCategoryItem[]>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const params: Record<string, string> = { p_household_id: householdId };
+  if (yearMonth) params.p_year_month = yearMonth;
+  if (categorySlug) params.p_category_slug = categorySlug;
+  const { data, error } = await supabase.rpc('get_household_category_items', params);
+  if (error) {
+    console.warn('[read] household category items failed:', error.code, error.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: (data ?? []) as HouseholdCategoryItem[] };
 }
 
 // ---------------------------------------------------------------------------

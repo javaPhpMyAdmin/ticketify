@@ -22,6 +22,7 @@ export {
   aggregateCategoryItemCounts,
   aggregateItemsByCategory,
   aggregateItemsByMonth,
+  aggregateHouseholdCategoryItems,
 } from './hooks/useHomeFeed';
 export { useScanQuota } from './hooks/useScanQuota';
 export type { ScanQuotaResult } from './hooks/useScanQuota';

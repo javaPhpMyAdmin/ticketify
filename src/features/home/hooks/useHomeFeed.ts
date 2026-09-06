@@ -3,7 +3,7 @@ import { useCallback, useMemo } from 'react';
 
 import type { IconName } from '@/components';
 import { useSessionUser } from '@/features/auth';
-import { readMonthlyPurchasesTotal } from '@/lib/supabase/feature-access';
+import { readHouseholdCategoryItems, readMonthlyPurchasesTotal } from '@/lib/supabase/feature-access';
 import { formatYearMonth } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters';
@@ -341,6 +341,32 @@ export function aggregateItemsByCategory(
 }
 
 /**
+ * Pure aggregation: household RPC rows for a single category, grouped by
+ * normalized name and sorted by amount desc — the household counterpart
+ * to `aggregateItemsByCategory`. Takes raw `HouseholdCategoryItem[]` rows
+ * (from `readHouseholdCategoryItems`) and collapses them by normalized name
+ * so the same product from different household members merges into one row.
+ *
+ * Deliberately keeps `normalizeItemName` client-side: the NFD/regex is not
+ * worth replicating in SQL (see 0028 header comment).
+ */
+export function aggregateHouseholdCategoryItems(
+  rows: { name: string; amount: number; quantity?: number }[],
+): CategoryItemSummary[] {
+  const totalsByItem = new Map<string, { amount: number; quantity: number }>();
+  for (const row of rows) {
+    const key = normalizeItemName(row.name);
+    const current = totalsByItem.get(key) ?? { amount: 0, quantity: 0 };
+    current.amount += row.amount;
+    current.quantity += row.quantity ?? 1;
+    totalsByItem.set(key, current);
+  }
+  return [...totalsByItem.entries()]
+    .map(([name, { amount, quantity }]) => ({ name, amount, quantity }))
+    .sort((a, b) => b.amount - a.amount);
+}
+
+/**
  * Pure aggregation: every line item within one month, grouped by normalized
  * name across ALL categories and stores — "cuánto gasté en menú del día este
  * mes", wherever it was bought. This is the item-level lens (identity) that
@@ -456,21 +482,40 @@ export function useAvailableMonthKeys(
  * (defaults to the current month), grouped by normalized name, sorted by
  * amount desc. `total` is the sum of those items — the category's monthly
  * spend for the selected month.
+ *
+ * When `scope` is `'household'`, reads the `get_household_category_items`
+ * RPC (migration 0028) instead of the personal store, so the drill-down
+ * shows all household members' items for that category.
  */
-export function useCategoryDetail(categoryKey: string, monthKey = currentMonthKey()) {
+export function useCategoryDetail(
+  categoryKey: string,
+  monthKey = currentMonthKey(),
+  scope: 'personal' | 'household' = 'personal',
+) {
   const list = useReceiptsStore((s) => s.list);
   const { userId } = useSessionUser();
+  const householdId = useHouseholdStore((s) => s.household?.id);
 
-  // Fetch full month receipts for accurate category breakdown.
+  // Household path: RPC-backed raw items for the category.
+  const householdQuery = useQuery({
+    queryKey: queryKeys.householdCategoryItems(householdId!, monthKey, categoryKey),
+    enabled: scope === 'household' && !!householdId,
+    queryFn: () =>
+      readHouseholdCategoryItems(householdId!, monthKey, categoryKey).then(toQueryData),
+  });
+
+  // Personal path: full month receipts for accurate category breakdown.
   const monthQuery = useQuery({
     queryKey: queryKeys.monthReceipts(userId!, monthKey),
-    enabled: !!userId,
+    enabled: scope === 'personal' && !!userId,
     queryFn: () => readPurchaseListByMonth(userId!, monthKey).then(toQueryData),
   });
   const monthList = monthQuery.data ?? list;
 
   const category = getExpenseCategory(categoryKey);
-  const items = aggregateItemsByCategory(monthList, categoryKey, monthKey);
+  const items = scope === 'household'
+    ? aggregateHouseholdCategoryItems(householdQuery.data ?? [])
+    : aggregateItemsByCategory(monthList, categoryKey, monthKey);
   const total = items.reduce((sum, item) => sum + item.amount, 0);
 
   return { category, total, items };
