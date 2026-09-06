@@ -864,6 +864,106 @@ async function run() {
     });
   });
 
+  console.log('\n[tests] household members list (get_household_members RPC contract)\n');
+
+  await test('readHouseholdMembers maps the RPC rows to flattened member objects (no nested profiles)', async () => {
+    resetAll();
+    // The `get_household_members` SECURITY DEFINER RPC (migration 0027)
+    // returns each member row with the profile fields FLATTENED at top
+    // level. The old direct query used `profiles!inner(...)`, but the
+    // `profiles_select_own` RLS policy (auth.uid() = id) made every OTHER
+    // member's profile invisible to the caller, so PostgREST dropped those
+    // rows and the list only held the caller. This test pins the new
+    // flattened wire shape the accessor maps into HouseholdMember.
+    stubMod.__setRpcResult('get_household_members', {
+      rows: [
+        {
+          household_id: 'h-1',
+          user_id: 'u-owner',
+          role: 'owner',
+          joined_at: '2026-09-01T00:00:00.000Z',
+          full_name: 'Ana',
+          avatar_url: 'https://example.com/ana.jpg',
+        },
+        {
+          household_id: 'h-1',
+          user_id: 'u-2',
+          role: 'member',
+          joined_at: '2026-09-02T00:00:00.000Z',
+          full_name: 'Bruno',
+          avatar_url: 'https://example.com/bruno.jpg',
+        },
+      ],
+    });
+    const result = await seamMod.readHouseholdMembers('h-1');
+    assert.equal(result.status, 'ok');
+    assert.equal(result.data.length, 2);
+    assert.deepEqual(result.data[0], {
+      household_id: 'h-1',
+      user_id: 'u-owner',
+      role: 'owner',
+      joined_at: '2026-09-01T00:00:00.000Z',
+      full_name: 'Ana',
+      avatar_url: 'https://example.com/ana.jpg',
+    });
+    // The accessor flattens the RPC columns at top level — it must never
+    // resurrect the old `profiles` nested-embed shape the direct query
+    // returned.
+    assert.ok(
+      !Object.prototype.hasOwnProperty.call(result.data[0], 'profiles'),
+      'member rows carry no nested profiles embed',
+    );
+    // The RPC is the only data path: called with the household id arg.
+    assert.deepEqual(stubMod.__lastRpcCall(), {
+      fn: 'get_household_members',
+      params: { p_household_id: 'h-1' },
+    });
+  });
+
+  await test('readHouseholdMembers maps null profile fields to undefined', async () => {
+    resetAll();
+    // A member whose profile row has no avatar/full name (the denormalized
+    // fields are nullable on the wire): the accessor must surface the
+    // optional-member shape consumers expect (undefined, never null).
+    stubMod.__setRpcResult('get_household_members', {
+      rows: [
+        {
+          household_id: 'h-1',
+          user_id: 'u-3',
+          role: 'member',
+          joined_at: '2026-09-03T00:00:00.000Z',
+          full_name: null,
+          avatar_url: null,
+        },
+      ],
+    });
+    const result = await seamMod.readHouseholdMembers('h-1');
+    assert.equal(result.status, 'ok');
+    assert.equal(result.data.length, 1);
+    assert.equal(result.data[0].full_name, undefined);
+    assert.equal(result.data[0].avatar_url, undefined);
+  });
+
+  await test('readHouseholdMembers fails safe on a not-deployed RPC (user-safe message)', async () => {
+    resetAll();
+    // The RPC is new (migration 0027): if it has not been deployed yet,
+    // PostgREST answers PGRST202 — the read must surface the generic
+    // user-safe message, never the raw function-name text.
+    stubMod.__setRpcResult('get_household_members', {
+      error: {
+        message: 'function get_household_members(uuid) does not exist',
+        code: 'PGRST202',
+      },
+    });
+    const result = await seamMod.readHouseholdMembers('h-1');
+    assert.equal(result.status, 'error');
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+    assert.notEqual(
+      result.message,
+      'function get_household_members(uuid) does not exist',
+    );
+  });
+
   console.log('\n[tests] pure query layer (keys + throwing adapters + config-status)\n');
 
   await test('utcYearMonth derives the shared UTC year-month with zero padding', async () => {
