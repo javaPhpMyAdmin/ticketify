@@ -161,4 +161,15 @@ export const queryKeys = {
     householdId: string,
     yearMonth: string,
   ) => ['analytics', 'household-totals', householdId, yearMonth] as const,
+  /**
+   * Raw purchase_items rows for one category across the household
+   * (migration 0028 — `get_household_category_items`). Distinct from the
+   * user-scoped month-receipts key so personal and household drill-downs
+   * never mix.
+   */
+  householdCategoryItems: (
+    householdId: string,
+    monthKey: string,
+    categorySlug: string,
+  ) => ['household', householdId, 'category-items', monthKey, categorySlug] as const,
 };

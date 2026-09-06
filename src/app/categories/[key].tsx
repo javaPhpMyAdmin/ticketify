@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Divider, Icon, Text, View } from '@/components';
+import { Divider, EmptyState, Icon, Text, View } from '@/components';
 import { monthKeyToLabel, useCategoryDetail } from '@/features/home';
 import { formatCurrency } from '@/lib/format';
 import { useSettingsStore } from '@/stores/use-settings-store';
@@ -15,16 +15,56 @@ import { colors, radii, spacing, typography } from '@/theme';
  * grouped and summed so repeated purchases collapse into one row. The
  * optional `month` search param (`YYYY-MM`, from the History tab) scopes
  * the aggregation; without it the current month is used (Home cards). The
- * header shows the month label for past months so the drill-down stays
- * anchored.
+ * optional `scope` search param (`household` from History/Analytics in
+ * household mode) switches the data source from personal store reads to
+ * the `get_household_category_items` RPC (migration 0028) so all household
+ * members' items are shown. The header shows the month label for past
+ * months so the drill-down stays anchored.
+ *
+ * The household read tri-states: while the read has NOT produced a result
+ * — the RPC is in flight, OR the household store has not hydrated yet (a
+ * cold start/deep link can land here with scope=household before the
+ * household row loads, which disables the query) — a "Cargando datos del
+ * hogar…" placeholder replaces the list and a dash replaces the total (a
+ * zero here would be a false read). When the read FAILED with no rows an
+ * error EmptyState with a Retry action replaces the list. The empty
+ * message ("Sin gastos…") is only ever shown after a read SUCCEEDED with
+ * zero rows: the household RPC resolved (an empty month is a valid
+ * household state), or the personal store/query resolved with no spend.
+ * Personal scope renders exactly as before.
  */
 export default function CategoryDetailScreen() {
-  const { key, month } = useLocalSearchParams<{
+  const { key, month, scope } = useLocalSearchParams<{
     key: string;
     month?: string;
+    scope?: string;
   }>();
   const currency = useSettingsStore((s) => s.currency);
-  const { category, total, items } = useCategoryDetail(key ?? 'otros', month);
+  const householdScope = scope === 'household' ? 'household' : 'personal';
+  const {
+    category,
+    total,
+    items,
+    isLoading,
+    isError,
+    errorMessage,
+    retry,
+    householdId,
+  } = useCategoryDetail(
+    key ?? 'otros',
+    month,
+    householdScope,
+  );
+  const household = householdScope === 'household';
+  // Pending = the household read has NOT produced a result yet: the RPC is
+  // in flight, or the household store has not hydrated (cold start / deep
+  // link before the row loads — the query sits disabled). Either way the
+  // list must not render a false "no spend" and the total must not render
+  // a false zero — the dash/loading placeholder says "not ready" instead.
+  const pending = household && (isLoading || !householdId);
+  // isError only ever fires on the household path (personal resolves from
+  // the receipts store and never fails — see useCategoryDetail).
+  const totalPlaceholder = pending || isError;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -55,12 +95,21 @@ export default function CategoryDetailScreen() {
           </View>
           <Text style={styles.totalLabel}>TOTAL DEL MES</Text>
           <Text style={styles.totalAmount}>
-            {formatCurrency(total, currency)}
+            {totalPlaceholder ? '—' : formatCurrency(total, currency)}
           </Text>
         </View>
 
         <View style={styles.itemsCard}>
-          {items.length === 0 ? (
+          {pending ? (
+            <Text style={styles.empty}>Cargando datos del hogar…</Text>
+          ) : household && isError ? (
+            <EmptyState
+              icon="exclamationmark.triangle.fill"
+              title={errorMessage}
+              actionLabel="Reintentar"
+              onAction={retry}
+            />
+          ) : items.length === 0 ? (
             <Text style={styles.empty}>
               Sin gastos en esta categoría este mes.
             </Text>
