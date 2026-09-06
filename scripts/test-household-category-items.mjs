@@ -465,7 +465,9 @@ async function run() {
 
   const probeCacheKey = () =>
     queryKeysMod.queryKeys.householdCategoryItems(
-      householdStoreMod.useHouseholdStore.getState().household?.id,
+      // Mirrors the hook's `?? ''` sentinel: a null/undefined household id
+      // resolves to the SAME plain-string key the query is registered under.
+      householdStoreMod.useHouseholdStore.getState().household?.id ?? '',
       probeArgs[1],
       probeArgs[0],
     );

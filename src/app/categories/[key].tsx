@@ -21,12 +21,17 @@ import { colors, radii, spacing, typography } from '@/theme';
  * members' items are shown. The header shows the month label for past
  * months so the drill-down stays anchored.
  *
- * The household read tri-states: while the RPC is pending a "Cargando
- * datos del hogar…" placeholder replaces the list (and a dash replaces the
- * total — a zero here would be a false read); when it failed with no rows
- * an error EmptyState with a Retry action replaces the list; the empty
- * message ("Sin gastos…") is only ever shown after the RPC SUCCEEDED with
- * zero rows. Personal scope renders exactly as before.
+ * The household read tri-states: while the read has NOT produced a result
+ * — the RPC is in flight, OR the household store has not hydrated yet (a
+ * cold start/deep link can land here with scope=household before the
+ * household row loads, which disables the query) — a "Cargando datos del
+ * hogar…" placeholder replaces the list and a dash replaces the total (a
+ * zero here would be a false read). When the read FAILED with no rows an
+ * error EmptyState with a Retry action replaces the list. The empty
+ * message ("Sin gastos…") is only ever shown after a read SUCCEEDED with
+ * zero rows: the household RPC resolved (an empty month is a valid
+ * household state), or the personal store/query resolved with no spend.
+ * Personal scope renders exactly as before.
  */
 export default function CategoryDetailScreen() {
   const { key, month, scope } = useLocalSearchParams<{
@@ -44,15 +49,22 @@ export default function CategoryDetailScreen() {
     isError,
     errorMessage,
     retry,
+    householdId,
   } = useCategoryDetail(
     key ?? 'otros',
     month,
     householdScope,
   );
   const household = householdScope === 'household';
-  // Pending/failed household read: never render a zero total as if it were
-  // real spend — the dash says "not ready" instead.
-  const totalPlaceholder = household && (isLoading || isError);
+  // Pending = the household read has NOT produced a result yet: the RPC is
+  // in flight, or the household store has not hydrated (cold start / deep
+  // link before the row loads — the query sits disabled). Either way the
+  // list must not render a false "no spend" and the total must not render
+  // a false zero — the dash/loading placeholder says "not ready" instead.
+  const pending = household && (isLoading || !householdId);
+  // isError only ever fires on the household path (personal resolves from
+  // the receipts store and never fails — see useCategoryDetail).
+  const totalPlaceholder = pending || isError;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -88,7 +100,7 @@ export default function CategoryDetailScreen() {
         </View>
 
         <View style={styles.itemsCard}>
-          {household && isLoading ? (
+          {pending ? (
             <Text style={styles.empty}>Cargando datos del hogar…</Text>
           ) : household && isError ? (
             <EmptyState

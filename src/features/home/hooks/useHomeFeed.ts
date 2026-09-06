@@ -492,6 +492,13 @@ export function useAvailableMonthKeys(
  * rows on screen), `errorMessage` (user-safe copy for the error state) and
  * `retry` (re-runs the household read). Personal scope stays
  * `false`/undefined — it resolves from the receipt store and never fails.
+ *
+ * A disabled household query (no `householdId` yet — a cold start/deep
+ * link can reach the screen before the household row hydrates) is NOT
+ * `isLoading` at the hook level: the hook only reports an in-flight fetch.
+ * The screen composes `isLoading || !householdId` (via the exposed
+ * `householdId`) so an unhydrated household renders as pending — never as
+ * a false zero total or a false "no spend".
  */
 export function useCategoryDetail(
   categoryKey: string,
@@ -503,8 +510,16 @@ export function useCategoryDetail(
   const householdId = useHouseholdStore((s) => s.household?.id);
 
   // Household path: RPC-backed raw items for the category.
+  // `householdId ?? ''` keeps the key a plain string even before the
+  // household row hydrates (mirrors the `?? ''` sentinel in
+  // useMonthlyCache.ts); `enabled` below still guarantees the RPC never
+  // fires without an id.
   const householdQuery = useQuery({
-    queryKey: queryKeys.householdCategoryItems(householdId!, monthKey, categoryKey),
+    queryKey: queryKeys.householdCategoryItems(
+      householdId ?? '',
+      monthKey,
+      categoryKey,
+    ),
     enabled: scope === 'household' && !!householdId,
     queryFn: () =>
       readHouseholdCategoryItems(householdId!, monthKey, categoryKey).then(toQueryData),
@@ -547,7 +562,19 @@ export function useCategoryDetail(
       }
     : undefined;
 
-  return { category, total, items, isLoading, isError, errorMessage, retry };
+  return {
+    category,
+    total,
+    items,
+    isLoading,
+    isError,
+    errorMessage,
+    retry,
+    // Normalized: null until the store hydrates a household (and null in
+    // personal scope, where the screen never composes it). The screen uses
+    // `household && (isLoading || !householdId)` as its pending predicate.
+    householdId: household ? (householdId ?? null) : null,
+  };
 }
 
 /**
