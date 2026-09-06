@@ -9,6 +9,7 @@ import {
 import { Card, EmptyState, Icon, Pressable, Text } from '@/components';
 import type { PriceAlert } from '@/features/analytics';
 import {
+  buildOverviewHeadline,
   CategoryBudgetRow,
   MonthlyOverviewCard,
   TopItemsBreakdown,
@@ -107,19 +108,17 @@ export default function AnalyticsScreen() {
   const displayName = firstName || 'Usuario';
   const avatarUrl = session?.user?.user_metadata?.avatar_url;
 
-  // Headline scope follows the view toggle: in household mode "TOTAL
-  // GASTADO" is the HOUSEHOLD total (sum of the RPC category totals), not
-  // the caller's personal receipt sum — the personal figure next to the
-  // household category list below would contradict it. The change-% badge
-  // stays personal-scoped (useMonthlyOverview reads the personal
-  // `monthly_user_totals` cache), so it is hidden in household mode:
-  // `MonthlyOverviewCard` omits the badge when changePct is null, and a
-  // personal change % next to a household total would mix scopes.
-  const isHouseholdView = viewMode === 'household';
-  const headlineTotal = isHouseholdView
-    ? householdMonthTotal
-    : overviewTotal;
-  const headlineChangePct = isHouseholdView ? null : overview.changePct;
+  // Headline scope follows the view toggle. In household mode "TOTAL GASTADO"
+  // is the HOUSEHOLD total (sum of the RPC category totals), not the caller's
+  // personal receipt sum — a personal figure next to the household category
+  // list below would contradict it. The change-% badge is personal-scoped
+  // (useMonthlyOverview reads the personal `monthly_user_totals` cache), so it
+  // is dropped in household mode.
+  const headline = buildOverviewHeadline(viewMode, {
+    householdMonthTotal,
+    overviewTotal,
+    personalChangePct: overview.changePct,
+  });
 
   // Full month item list feeds the bar denominator (percent of the whole
   // month, not of the top-N slice); only the top 5 rows render. Utility
@@ -244,8 +243,8 @@ export default function AnalyticsScreen() {
         <MonthlyOverviewCard
           overview={{
             ...overview,
-            currentTotal: headlineTotal,
-            changePct: headlineChangePct,
+            currentTotal: headline.headlineTotal,
+            changePct: headline.headlineChangePct,
           }}
           currency={currency}
           previousMonthLabel={previousMonthLabel}
