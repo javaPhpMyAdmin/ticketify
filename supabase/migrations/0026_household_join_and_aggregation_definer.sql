@@ -31,6 +31,10 @@
 --   • monthly_purchases_total / monthly_category_totals: still gate the
 --     household branch on is_household_member(auth.uid(), p_household_id).
 --
+-- §5 pins the definer owner (postgres) and restricts execution to the
+-- authenticated role (least privilege): anon gets no execution path, so the
+-- definer RPC surface cannot be used as an unauthenticated oracle.
+--
 -- All functions keep `set search_path = public` (avoiding search_path
 -- hijacking) and refer to tables with qualified names.
 -- ---------------------------------------------------------------------------
@@ -285,3 +289,28 @@ comment on function public.monthly_category_totals(text, uuid) is
 
 comment on function public.get_household_feed(uuid, text) is
   'Level B household receipt feed: totals + category breakdown + store names, no individual items. Optional p_year_month filters by month. SECURITY DEFINER: membership checked inside; SELECT bypasses purchases_select_own for household members.';
+
+-- ---------------------------------------------------------------------------
+-- §5. Definer owner + least-privilege execution
+-- ---------------------------------------------------------------------------
+
+-- SECURITY DEFINER runs as the function owner; pin all four to postgres so a
+-- non-postgres migration runner cannot leave them owned by a lesser role
+-- (which would re-apply RLS and silently reintroduce the bug).
+alter function public.join_household(text) owner to postgres;
+alter function public.monthly_purchases_total(text, uuid) owner to postgres;
+alter function public.monthly_category_totals(text, uuid) owner to postgres;
+alter function public.get_household_feed(uuid, text) owner to postgres;
+
+-- Least privilege: these are definer RPCs — anon must not execute them.
+-- Without this, an unauthenticated caller could call join_household as
+-- postgres and get a code-validity oracle + internal schema error text.
+revoke all on function public.join_household(text) from public, anon;
+revoke all on function public.monthly_purchases_total(text, uuid) from public, anon;
+revoke all on function public.monthly_category_totals(text, uuid) from public, anon;
+revoke all on function public.get_household_feed(uuid, text) from public, anon;
+
+grant execute on function public.join_household(text) to authenticated;
+grant execute on function public.monthly_purchases_total(text, uuid) to authenticated;
+grant execute on function public.monthly_category_totals(text, uuid) to authenticated;
+grant execute on function public.get_household_feed(uuid, text) to authenticated;
