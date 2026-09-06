@@ -435,6 +435,7 @@ export default function HistoryScreen() {
                           t.category_slug,
                           monthKey,
                           currentMonthKey(),
+                          'household',
                         ),
                       )
                     }

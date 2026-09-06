@@ -17,6 +17,7 @@ import {
   useMonthlyTotals,
   usePriceAlerts,
 } from '@/features/analytics';
+import { categoryDetailHref } from '@/features/charts';
 import {
   useAvailableMonthKeys,
   useMonthNavigation,
@@ -289,6 +290,16 @@ export default function AnalyticsScreen() {
                       icon={category.icon}
                       limit={t.budget_limit ?? undefined}
                       currency={currency}
+                      onPress={() =>
+                        router.push(
+                          categoryDetailHref(
+                            t.category_slug,
+                            monthKey,
+                            currentMonthKey(),
+                            'household',
+                          ),
+                        )
+                      }
                     />
                   );
                 })}

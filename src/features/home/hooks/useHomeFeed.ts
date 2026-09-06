@@ -3,7 +3,7 @@ import { useCallback, useMemo } from 'react';
 
 import type { IconName } from '@/components';
 import { useSessionUser } from '@/features/auth';
-import { readMonthlyPurchasesTotal } from '@/lib/supabase/feature-access';
+import { readHouseholdCategoryItems, readMonthlyPurchasesTotal } from '@/lib/supabase/feature-access';
 import { formatYearMonth } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters';
@@ -341,6 +341,32 @@ export function aggregateItemsByCategory(
 }
 
 /**
+ * Pure aggregation: household RPC rows for a single category, grouped by
+ * normalized name and sorted by amount desc — the household counterpart
+ * to `aggregateItemsByCategory`. Takes raw `HouseholdCategoryItem[]` rows
+ * (from `readHouseholdCategoryItems`) and collapses them by normalized name
+ * so the same product from different household members merges into one row.
+ *
+ * Deliberately keeps `normalizeItemName` client-side: the NFD/regex is not
+ * worth replicating in SQL (see 0028 header comment).
+ */
+export function aggregateHouseholdCategoryItems(
+  rows: { name: string; amount: number; quantity?: number }[],
+): CategoryItemSummary[] {
+  const totalsByItem = new Map<string, { amount: number; quantity: number }>();
+  for (const row of rows) {
+    const key = normalizeItemName(row.name);
+    const current = totalsByItem.get(key) ?? { amount: 0, quantity: 0 };
+    current.amount += row.amount;
+    current.quantity += row.quantity ?? 1;
+    totalsByItem.set(key, current);
+  }
+  return [...totalsByItem.entries()]
+    .map(([name, { amount, quantity }]) => ({ name, amount, quantity }))
+    .sort((a, b) => b.amount - a.amount);
+}
+
+/**
  * Pure aggregation: every line item within one month, grouped by normalized
  * name across ALL categories and stores — "cuánto gasté en menú del día este
  * mes", wherever it was bought. This is the item-level lens (identity) that
@@ -456,24 +482,99 @@ export function useAvailableMonthKeys(
  * (defaults to the current month), grouped by normalized name, sorted by
  * amount desc. `total` is the sum of those items — the category's monthly
  * spend for the selected month.
+ *
+ * When `scope` is `'household'`, reads the `get_household_category_items`
+ * RPC (migration 0028) instead of the personal store, so the drill-down
+ * shows all household members' items for that category. The household read
+ * surfaces a tri-state so the screen never presents a false "no spend":
+ * `isLoading` (first fetch in flight), `isError` (a fetch rejected AND no
+ * rows are available — a background refetch failure keeps the last good
+ * rows on screen), `errorMessage` (user-safe copy for the error state) and
+ * `retry` (re-runs the household read). Personal scope stays
+ * `false`/undefined — it resolves from the receipt store and never fails.
+ *
+ * A disabled household query (no `householdId` yet — a cold start/deep
+ * link can reach the screen before the household row hydrates) is NOT
+ * `isLoading` at the hook level: the hook only reports an in-flight fetch.
+ * The screen composes `isLoading || !householdId` (via the exposed
+ * `householdId`) so an unhydrated household renders as pending — never as
+ * a false zero total or a false "no spend".
  */
-export function useCategoryDetail(categoryKey: string, monthKey = currentMonthKey()) {
+export function useCategoryDetail(
+  categoryKey: string,
+  monthKey = currentMonthKey(),
+  scope: 'personal' | 'household' = 'personal',
+) {
   const list = useReceiptsStore((s) => s.list);
   const { userId } = useSessionUser();
+  const householdId = useHouseholdStore((s) => s.household?.id);
 
-  // Fetch full month receipts for accurate category breakdown.
+  // Household path: RPC-backed raw items for the category.
+  // `householdId ?? ''` keeps the key a plain string even before the
+  // household row hydrates (mirrors the `?? ''` sentinel in
+  // useMonthlyCache.ts); `enabled` below still guarantees the RPC never
+  // fires without an id.
+  const householdQuery = useQuery({
+    queryKey: queryKeys.householdCategoryItems(
+      householdId ?? '',
+      monthKey,
+      categoryKey,
+    ),
+    enabled: scope === 'household' && !!householdId,
+    queryFn: () =>
+      readHouseholdCategoryItems(householdId!, monthKey, categoryKey).then(toQueryData),
+  });
+
+  // Personal path: full month receipts for accurate category breakdown.
   const monthQuery = useQuery({
     queryKey: queryKeys.monthReceipts(userId!, monthKey),
-    enabled: !!userId,
+    enabled: scope === 'personal' && !!userId,
     queryFn: () => readPurchaseListByMonth(userId!, monthKey).then(toQueryData),
   });
   const monthList = monthQuery.data ?? list;
 
+  const household = scope === 'household';
   const category = getExpenseCategory(categoryKey);
-  const items = aggregateItemsByCategory(monthList, categoryKey, monthKey);
+  const items = household
+    ? aggregateHouseholdCategoryItems(householdQuery.data ?? [])
+    : aggregateItemsByCategory(monthList, categoryKey, monthKey);
   const total = items.reduce((sum, item) => sum + item.amount, 0);
 
-  return { category, total, items };
+  // Household tri-state: `isPending` alone is NOT "loading" — a disabled
+  // query (no householdId yet) is pending with fetchStatus idle, so gate on
+  // the first fetch actually being in flight (`isPending && isFetching`).
+  // `isError` requires NO rows to show: a rejected background refetch keeps
+  // the last good data on screen instead of flashing an error over it.
+  const isLoading = household
+    ? householdQuery.isPending && householdQuery.isFetching
+    : false;
+  const isError = household
+    ? householdQuery.isError && !householdQuery.data
+    : false;
+  const errorMessage =
+    household && isError ? toQueryErrorMessage(householdQuery.error) : '';
+  const retry = household
+    ? () => {
+        // `refetch` rejects on a disabled query (no householdId — an edge
+        // only reachable via a stale deep link); swallow so an impossible
+        // retry can never surface an unhandled rejection.
+        void householdQuery.refetch().catch(() => {});
+      }
+    : undefined;
+
+  return {
+    category,
+    total,
+    items,
+    isLoading,
+    isError,
+    errorMessage,
+    retry,
+    // Normalized: null until the store hydrates a household (and null in
+    // personal scope, where the screen never composes it). The screen uses
+    // `household && (isLoading || !householdId)` as its pending predicate.
+    householdId: household ? (householdId ?? null) : null,
+  };
 }
 
 /**
