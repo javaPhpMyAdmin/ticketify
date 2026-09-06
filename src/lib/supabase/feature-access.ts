@@ -328,30 +328,37 @@ export async function readHouseholdRole(
 }
 
 /**
- * Read all members of a household, joined with profile denorm fields
+ * Read all members of a household, including denormalized profile fields
  * (full_name, avatar_url) for display.
+ *
+ * Calls the `get_household_members` SECURITY DEFINER RPC (migration 0027).
+ * The previous implementation used a `profiles!inner` join, but the
+ * `profiles_select_own` RLS policy (auth.uid() = id) made every OTHER
+ * member's profile invisible to the caller, so PostgREST dropped those
+ * member rows and the list only contained the caller ("1 miembro"). The RPC
+ * bypasses that policy at the function level while verifying membership
+ * (is_household_member) inside the body, so the complete list is returned
+ * for household members only.
  */
 export async function readHouseholdMembers(
   householdId: string,
 ): Promise<FeatureReadResult<HouseholdMember[]>> {
   if (!isSupabaseConfigured) return { status: 'unconfigured' };
-  const { data, error } = await supabase
-    .from('household_members')
-    .select('household_id, user_id, role, joined_at, profiles!inner(full_name, avatar_url)')
-    .eq('household_id', householdId);
+  const { data, error } = await supabase.rpc('get_household_members', {
+    p_household_id: householdId,
+  });
   if (error) {
     console.warn('[read] household members failed:', error.code, error.message);
     return { status: 'error', message: READ_ERROR_MESSAGE };
   }
   const members = ((data as unknown as Array<Record<string, unknown>>) ?? []).map((row) => {
-    const profile = row.profiles as Record<string, unknown> | null;
     return {
       household_id: row.household_id as string,
       user_id: row.user_id as string,
       role: row.role as HouseholdMember['role'],
       joined_at: row.joined_at as string,
-      full_name: (profile?.full_name as string | null) ?? undefined,
-      avatar_url: (profile?.avatar_url as string | null) ?? undefined,
+      full_name: (row.full_name as string | null) ?? undefined,
+      avatar_url: (row.avatar_url as string | null) ?? undefined,
     } satisfies HouseholdMember;
   });
   return { status: 'ok', data: members };
