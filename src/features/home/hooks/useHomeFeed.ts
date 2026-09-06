@@ -485,7 +485,13 @@ export function useAvailableMonthKeys(
  *
  * When `scope` is `'household'`, reads the `get_household_category_items`
  * RPC (migration 0028) instead of the personal store, so the drill-down
- * shows all household members' items for that category.
+ * shows all household members' items for that category. The household read
+ * surfaces a tri-state so the screen never presents a false "no spend":
+ * `isLoading` (first fetch in flight), `isError` (a fetch rejected AND no
+ * rows are available — a background refetch failure keeps the last good
+ * rows on screen), `errorMessage` (user-safe copy for the error state) and
+ * `retry` (re-runs the household read). Personal scope stays
+ * `false`/undefined — it resolves from the receipt store and never fails.
  */
 export function useCategoryDetail(
   categoryKey: string,
@@ -512,13 +518,36 @@ export function useCategoryDetail(
   });
   const monthList = monthQuery.data ?? list;
 
+  const household = scope === 'household';
   const category = getExpenseCategory(categoryKey);
-  const items = scope === 'household'
+  const items = household
     ? aggregateHouseholdCategoryItems(householdQuery.data ?? [])
     : aggregateItemsByCategory(monthList, categoryKey, monthKey);
   const total = items.reduce((sum, item) => sum + item.amount, 0);
 
-  return { category, total, items };
+  // Household tri-state: `isPending` alone is NOT "loading" — a disabled
+  // query (no householdId yet) is pending with fetchStatus idle, so gate on
+  // the first fetch actually being in flight (`isPending && isFetching`).
+  // `isError` requires NO rows to show: a rejected background refetch keeps
+  // the last good data on screen instead of flashing an error over it.
+  const isLoading = household
+    ? householdQuery.isPending && householdQuery.isFetching
+    : false;
+  const isError = household
+    ? householdQuery.isError && !householdQuery.data
+    : false;
+  const errorMessage =
+    household && isError ? toQueryErrorMessage(householdQuery.error) : '';
+  const retry = household
+    ? () => {
+        // `refetch` rejects on a disabled query (no householdId — an edge
+        // only reachable via a stale deep link); swallow so an impossible
+        // retry can never surface an unhandled rejection.
+        void householdQuery.refetch().catch(() => {});
+      }
+    : undefined;
+
+  return { category, total, items, isLoading, isError, errorMessage, retry };
 }
 
 /**

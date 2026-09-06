@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Divider, Icon, Text, View } from '@/components';
+import { Divider, EmptyState, Icon, Text, View } from '@/components';
 import { monthKeyToLabel, useCategoryDetail } from '@/features/home';
 import { formatCurrency } from '@/lib/format';
 import { useSettingsStore } from '@/stores/use-settings-store';
@@ -20,6 +20,13 @@ import { colors, radii, spacing, typography } from '@/theme';
  * the `get_household_category_items` RPC (migration 0028) so all household
  * members' items are shown. The header shows the month label for past
  * months so the drill-down stays anchored.
+ *
+ * The household read tri-states: while the RPC is pending a "Cargando
+ * datos del hogar…" placeholder replaces the list (and a dash replaces the
+ * total — a zero here would be a false read); when it failed with no rows
+ * an error EmptyState with a Retry action replaces the list; the empty
+ * message ("Sin gastos…") is only ever shown after the RPC SUCCEEDED with
+ * zero rows. Personal scope renders exactly as before.
  */
 export default function CategoryDetailScreen() {
   const { key, month, scope } = useLocalSearchParams<{
@@ -29,11 +36,23 @@ export default function CategoryDetailScreen() {
   }>();
   const currency = useSettingsStore((s) => s.currency);
   const householdScope = scope === 'household' ? 'household' : 'personal';
-  const { category, total, items } = useCategoryDetail(
+  const {
+    category,
+    total,
+    items,
+    isLoading,
+    isError,
+    errorMessage,
+    retry,
+  } = useCategoryDetail(
     key ?? 'otros',
     month,
     householdScope,
   );
+  const household = householdScope === 'household';
+  // Pending/failed household read: never render a zero total as if it were
+  // real spend — the dash says "not ready" instead.
+  const totalPlaceholder = household && (isLoading || isError);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -64,12 +83,21 @@ export default function CategoryDetailScreen() {
           </View>
           <Text style={styles.totalLabel}>TOTAL DEL MES</Text>
           <Text style={styles.totalAmount}>
-            {formatCurrency(total, currency)}
+            {totalPlaceholder ? '—' : formatCurrency(total, currency)}
           </Text>
         </View>
 
         <View style={styles.itemsCard}>
-          {items.length === 0 ? (
+          {household && isLoading ? (
+            <Text style={styles.empty}>Cargando datos del hogar…</Text>
+          ) : household && isError ? (
+            <EmptyState
+              icon="exclamationmark.triangle.fill"
+              title={errorMessage}
+              actionLabel="Reintentar"
+              onAction={retry}
+            />
+          ) : items.length === 0 ? (
             <Text style={styles.empty}>
               Sin gastos en esta categoría este mes.
             </Text>
