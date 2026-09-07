@@ -12,6 +12,8 @@ export {
   uploadToStorage,
   parseTicket,
   saveReceipt,
+  saveManualReceipt,
+  buildSaveReceiptArgs,
   fetchPurchaseDetail,
   purchaseToDraft,
   updateReceipt,
@@ -19,7 +21,23 @@ export {
   QuotaExceededError,
   QUOTA_ERROR_MESSAGE,
 } from './api';
-export type { UploadResult, ParsedReceipt, PurchaseWithItems } from './api';
+export type {
+  UploadResult,
+  ParsedReceipt,
+  PurchaseWithItems,
+  SaveReceiptRpcArgs,
+  SaveReceiptSeamResult,
+} from './api';
+// Pure manual-entry payload builders (node-loadable, no RN imports): the
+// manual screen composes the draft through the same pure logic the node
+// harness tests (scripts/test-manual-receipt.mjs).
+export {
+  buildManualDraft,
+  validateManualForm,
+  buildItemRows,
+  MANUAL_FORM_ERROR,
+} from './manual-receipt';
+export type { PurchaseItemInput } from './manual-receipt';
 // The shared feed-row builder (home-feature pure module): the review flow
 // aggregates the edited draft through the same helpers the home reads use.
 export { buildFeedRow, reviewItemsToFeedItems } from '../home/feed-row';

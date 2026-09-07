@@ -507,22 +507,101 @@ async function fetchCategoryIdsBySlug(): Promise<Record<string, string>> {
  * The SECURITY DEFINER function bypasses RLS on purchases, purchase_items,
  * and scan_usage (no FORCE ROW LEVEL SECURITY anywhere).
  *
- * The ticket photo upload runs HERE, on confirm (product decision
- * 2026-08-09): when the draft still carries a LOCAL image uri (the scan
- * preview), it is uploaded to the private `receipts` bucket first and the
- * OBJECT PATH is persisted as `image_url`; readers resolve a signed URL at
- * render time (receipt-photo.ts). Already-remote values (seed/demo picsum
- * URLs, or a storage path on a re-save) pass through unchanged. Uploading
- * on confirm means a cancelled scan never leaves an orphaned object.
+ * The ticket photo upload runs on confirm (product decision 2026-08-09):
+ * when the draft still carries a LOCAL image uri (the scan preview), it is
+ * uploaded to the private `receipts` bucket first and the OBJECT PATH is
+ * persisted as `image_url`; readers resolve a signed URL at render time
+ * (receipt-photo.ts). Already-remote values (seed/demo picsum URLs, or a
+ * storage path on a re-save) pass through unchanged. Uploading on confirm
+ * means a cancelled scan never leaves an orphaned object.
  *
  * After a successful save, the new receipt feeds (home feed, budget, scan
  * usage, analytics totals) are cached, so they are invalidated
  * (server-state-caching spec).
+ *
+ * Arg building (store resolution, photo upload, category uuid mapping) and
+ * the RPC call + invalidation tail are shared with `saveManualReceipt` via
+ * `buildSaveReceiptArgs` and `persistReceipt`.
  */
 export async function saveReceipt(
   userId: string,
   draft: ReceiptDraft,
 ): Promise<{ id: string }> {
+  const { args, uploadedPath } = await buildSaveReceiptArgs(userId, draft);
+  return persistReceipt(userId, args, uploadedPath);
+}
+
+/**
+ * Saves a manually-entered purchase (no photo) through the SAME pipeline as
+ * `saveReceipt`: `buildSaveReceiptArgs` + `persistReceipt`. The manual draft
+ * carries image_url '' (persisted as null) and its card fields are display-only
+ * (decision #1137) — they never reach the RPC, whose payment surface is just
+ * p_payment_method. Returns the same `{ id }` shape as `saveReceipt`, throws
+ * the same errors (`QuotaExceededError` on ok=false, user-safe Error on
+ * failure), and invalidates the same caches.
+ *
+ * No extra quota deduction: `save_receipt` (migration 0023) is the ONLY
+ * writer of scan_usage — it increments the slot atomically inside its
+ * transaction, and a manual save consumes one scan exactly like a scan save.
+ */
+export async function saveManualReceipt(
+  userId: string,
+  draft: ReceiptDraft,
+): Promise<{ id: string }> {
+  const { args, uploadedPath } = await buildSaveReceiptArgs(userId, draft);
+  return persistReceipt(userId, args, uploadedPath);
+}
+
+/** Argument payload for the `save_receipt` RPC (migration 0023). */
+export interface SaveReceiptRpcArgs {
+  p_store_id: string | null;
+  p_purchase_date: string;
+  p_total: number;
+  p_payment_method: PaymentMethod;
+  /** Storage object path (or remote URL) — null when the draft has no photo. */
+  p_image_url: string | null;
+  /** RPC `purchase_item_input` rows; `category_id` is a uuid FK here. */
+  p_items: {
+    name: string;
+    quantity: number;
+    unit_price: number;
+    total_price: number;
+    category_id: string | null;
+    is_impulse: boolean;
+    sort_order: number;
+  }[];
+}
+
+/** Result of the shared arg-building seam: RPC args + upload cleanup path. */
+export interface SaveReceiptSeamResult {
+  args: SaveReceiptRpcArgs;
+  /**
+   * Storage object path uploaded moments ago, or null when no upload ran.
+   * Callers best-effort remove it on save failure (no orphaned objects).
+   */
+  uploadedPath: string | null;
+}
+
+/**
+ * Shared seam: builds the full `save_receipt` RPC argument payload from a
+ * receipt draft — p_store_id (via `resolveStoreId`), p_image_url (uploading
+ * a LOCAL photo on confirm, exactly like the scan flow — http(s) seed rows
+ * and already-persisted storage paths pass through unchanged), and p_items
+ * (category slugs resolved to DB uuid FKs via `fetchCategoryIdsBySlug`).
+ * The trackable upload path is returned alongside the args so callers can
+ * clean up an orphaned object on failure.
+ *
+ * Used by BOTH `saveReceipt` (scan flow) and `saveManualReceipt` (manual
+ * entry). `resolveStoreId` and `fetchCategoryIdsBySlug` stay module-private —
+ * this is the only surface that reaches them.
+ *
+ * Throws the generic save error when a NON-empty store name fails to
+ * resolve (the blank-name list-mode case saves `store_id: null`).
+ */
+export async function buildSaveReceiptArgs(
+  userId: string,
+  draft: ReceiptDraft,
+): Promise<SaveReceiptSeamResult> {
   // A whitespace-only store name is invalid — the draft must carry either a
   // real name or an empty string (list-mode scans use empty to mean "no store").
   if (draft.store_name.trim() === '' && draft.store_name !== '') {
@@ -580,25 +659,51 @@ export async function saveReceipt(
     sort_order: index,
   }));
 
-  // Single transactional RPC: atomically checks the monthly scan cap,
-  // inserts the purchases row + purchase_items rows, and increments the
-  // scan slot — all in one guarded DB transaction. If ANY step fails
-  // (including after the slot increment), PL/pgSQL's implicit transaction
-  // rolls back everything, so there is no window where the slot is consumed
-  // but the write fails. ok=false means the free-tier cap is reached; the
-  // review screen surfaces this as an upgrade dialog via QuotaExceededError.
-  // save_receipt uses RETURNS TABLE, which PostgREST returns as a JSON array
-  // (even for a single row). .single() unwraps the one-row result so the
-  // ok / purchase_id fields below are read correctly — without it, ok is
-  // undefined (cap check never fires) and purchase_id is always undefined.
-  // save_receipt uses RETURNS TABLE, which PostgREST returns as a JSON array
-  // (even for a single row). .single() unwraps the one-row result so the
-  // ok / purchase_id fields below are read correctly — without it, ok is
-  // undefined (cap check never fires) and purchase_id is always undefined.
-  //
-  // The client is untyped (no generated `Database` type), so supabase-js'
-  // generic `.rpc<T>` treats T as the function name, not its return shape.
-  // We therefore cast the .single() result to the RPC's return contract.
+  return {
+    args: {
+      p_store_id: storeId,
+      p_purchase_date: draft.purchase_date,
+      p_total: draft.total,
+      p_payment_method: draft.payment_method,
+      p_image_url: imageUrl,
+      p_items: itemRows.map(({ purchase_id: _, ...rest }) => rest),
+    },
+    uploadedPath,
+  };
+}
+
+/**
+ * Shared tail that runs the `save_receipt` RPC with pre-built args and
+ * handles the success/invalidation contract for BOTH save paths (`saveReceipt`
+ * and `saveManualReceipt`).
+ *
+ * Single transactional RPC: atomically checks the monthly scan cap, inserts
+ * the purchases row + purchase_items rows, and increments the scan slot —
+ * all in one guarded DB transaction. If ANY step fails (including after the
+ * slot increment), PL/pgSQL's implicit transaction rolls back everything, so
+ * there is no window where the slot is consumed but the write fails. ok=false
+ * means the free-tier cap is reached; the review screen surfaces this as an
+ * upgrade dialog via QuotaExceededError.
+ *
+ * save_receipt uses RETURNS TABLE, which PostgREST returns as a JSON array
+ * (even for a single row). .single() unwraps the one-row result so the
+ * ok / purchase_id fields are read correctly — without it, ok is undefined
+ * (cap check never fires) and purchase_id is always undefined. The client is
+ * untyped (no generated `Database` type), so supabase-js' generic `.rpc<T>`
+ * treats T as the function name, not its return shape. We therefore cast the
+ * .single() result to the RPC's return contract.
+ *
+ * After a successful save the cached feeds (home feed, budget, scan usage,
+ * analytics totals) are invalidated (server-state-caching spec, D5): a new
+ * receipt changes every cached feed read, and scan usage is invalidated here
+ * too — only a SAVE consumes a scan, and the slot was already incremented
+ * atomically inside the RPC, so the refetch reflects the new count.
+ */
+async function persistReceipt(
+  userId: string,
+  args: SaveReceiptRpcArgs,
+  uploadedPath: string | null,
+): Promise<{ id: string }> {
   type SaveReceiptResult = {
     ok: boolean;
     purchase_id: string | null;
@@ -606,14 +711,7 @@ export async function saveReceipt(
     scans_limit: number | null;
   };
   const { data, error } = (await supabase
-    .rpc('save_receipt', {
-      p_store_id: storeId,
-      p_purchase_date: draft.purchase_date,
-      p_total: draft.total,
-      p_payment_method: draft.payment_method,
-      p_image_url: imageUrl,
-      p_items: itemRows.map(({ purchase_id: _, ...rest }) => rest),
-    })
+    .rpc('save_receipt', { ...args })
     .single()) as {
     data: SaveReceiptResult | null;
     error: { message: string } | null;
