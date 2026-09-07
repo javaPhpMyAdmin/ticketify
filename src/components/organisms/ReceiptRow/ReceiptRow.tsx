@@ -180,6 +180,10 @@ const styles = StyleSheet.create({
     borderWidth: 2.5,
     borderColor: '#d8d7d7',
     gap: spacing.md,
+    // Matches the Card base elevation so rows/table cards read as one
+    // family of floating surfaces on Home. Light from top-left, so the
+    // shadow falls bottom-right only, tight enough to stay subtle.
+    boxShadow: '1px 2px 6px rgba(0, 0, 0, 0.3)',
   },
   // Same active state as the History screen's cards (DESIGN.md).
   pressed: {

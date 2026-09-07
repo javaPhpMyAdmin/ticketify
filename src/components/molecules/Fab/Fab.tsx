@@ -58,6 +58,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     borderRadius: radii.full,
     minHeight: 48,
+    // Cross-platform elevation (RN 0.76+ boxShadow): the scan FAB floats
+    // over the feed, so a soft drop shadow separates it from the flat
+    // cards and makes the primary action pop on the camera viewport.
+    // Same 30% black as the card shadows so the family reads together.
+    boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.3)',
   },
   label: {
     ...typography.headlineMd,

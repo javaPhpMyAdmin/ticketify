@@ -37,5 +37,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radii.lg,
     borderWidth: 1,
+    // Cross-platform soft elevation (RN 0.76+ boxShadow works on both
+    // iOS and Android without platform-specific shadow props).
+    // Light from top-left, so the shadow falls bottom-right only.
+    // Small offsets + tight blur keep it subtle; alpha 0.3 reads as a
+    // real shadow instead of a gray smudge.
+    boxShadow: '1px 2px 6px rgba(0, 0, 0, 0.3)',
   },
 });
