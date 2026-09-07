@@ -14,6 +14,8 @@ export {
   formatManualErrors,
   autoTotal,
   buildEditorReviewItem,
+  parseQuantity,
+  emptyManualDraft,
   MANUAL_ERROR_MESSAGES,
 } from './manual-form';
 export {
