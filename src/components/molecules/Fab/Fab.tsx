@@ -11,6 +11,8 @@ export interface FabProps {
   /** Override the emerald background (e.g. for a disabled state). */
   backgroundColor?: string;
   disabled?: boolean;
+  /** Screen-reader label when `label` is omitted (icon-only FAB). */
+  accessibilityLabel?: string;
 }
 
 /**
@@ -29,6 +31,7 @@ export function Fab({
   style,
   backgroundColor,
   disabled = false,
+  accessibilityLabel,
 }: FabProps) {
   const bg = backgroundColor ?? colors.primary;
   return (
@@ -41,6 +44,7 @@ export function Fab({
         style,
       ]}
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
     >
       {icon ? <Icon name={icon} size={20} color={colors.textInverse} /> : null}
       {label ? <Text style={styles.label}>{label}</Text> : null}
