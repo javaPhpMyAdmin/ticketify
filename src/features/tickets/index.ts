@@ -8,6 +8,16 @@ export { CategoryPickerModal } from './components/CategoryPickerModal';
 export type { CategoryPickerModalProps } from './components/CategoryPickerModal';
 export { ReviewItemRow } from './components/ReviewItemRow';
 export type { ReviewItemRowProps } from './components/ReviewItemRow';
+export { ItemEditorModal } from './components/ItemEditorModal';
+export type { ItemEditorModalProps } from './components/ItemEditorModal';
+export {
+  formatManualErrors,
+  autoTotal,
+  buildEditorReviewItem,
+  parseQuantity,
+  emptyManualDraft,
+  MANUAL_ERROR_MESSAGES,
+} from './manual-form';
 export {
   uploadToStorage,
   parseTicket,
