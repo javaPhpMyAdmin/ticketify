@@ -6,7 +6,8 @@
  *       monthGrid, daysInMonth, isoFromParts, partsFromISO, isFutureISO,
  *       formatDateES, fullMonthES, pad2, weekdayLabels
  *   - Manual-form helpers   (src/features/tickets/manual-form.ts)
- *       autoTotal, formatManualErrors, buildEditorReviewItem
+ *       autoTotal, formatManualErrors, buildEditorReviewItem,
+ *       parseQuantity, emptyManualDraft
  *
  * calendar.ts is 100% pure (no imports). manual-form.ts imports tempId from
  * @/lib/format (stubbed) and MANUAL_FORM_ERROR from manual-receipt.ts
@@ -321,7 +322,13 @@ function item(overrides = {}) {
 }
 
 async function manualFormTests(form) {
-  const { autoTotal, formatManualErrors, buildEditorReviewItem } = form;
+  const {
+    autoTotal,
+    formatManualErrors,
+    buildEditorReviewItem,
+    parseQuantity,
+    emptyManualDraft,
+  } = form;
 
   await test('autoTotal: 0 for empty list', () => {
     assert.equal(autoTotal([]), 0);
@@ -397,6 +404,29 @@ async function manualFormTests(form) {
       unit_price: 0,
     });
     assert.equal(built.name, 'Sin nombre');
+  });
+
+  await test('parseQuantity: rejects non-integers, empty and garbage', () => {
+    // parseInt('2.5') would silently coerce → 2; the helper must reject it.
+    assert.equal(parseQuantity('2.5'), null);
+    assert.equal(parseQuantity('1.2.3'), null);
+    assert.equal(parseQuantity(''), null);
+    assert.equal(parseQuantity('abc'), null);
+    assert.equal(parseQuantity('0'), null); // "entero mayor a cero"
+  });
+
+  await test('parseQuantity: accepts integers with trim', () => {
+    assert.equal(parseQuantity('2'), 2);
+    assert.equal(parseQuantity('10'), 10);
+    assert.equal(parseQuantity(' 3 '), 3);
+    assert.equal(parseQuantity('007'), 7);
+  });
+
+  await test('emptyManualDraft: REQ-002 default payment is other, no card type', () => {
+    assert.deepEqual(emptyManualDraft(), {
+      payment_method: 'other',
+      card_type: null,
+    });
   });
 }
 

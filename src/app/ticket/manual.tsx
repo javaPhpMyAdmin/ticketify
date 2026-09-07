@@ -14,9 +14,11 @@ import {
   View,
 } from '@/components';
 import { useSessionUser } from '@/features/auth';
+import { getExpenseCategory } from '@/features/home/categories';
 import {
   buildEditorReviewItem,
   autoTotal,
+  emptyManualDraft,
   formatManualErrors,
   CategoryPickerModal,
   ItemEditorModal,
@@ -83,10 +85,17 @@ export default function ManualEntryScreen() {
   // Display-only card type (never persisted).
   const [cardType, setCardType] = useState<CardType | null>(null);
 
-  // REQ-002: fresh draft on entry (no photo, empty items, total 0, today).
+  // REQ-002: fresh draft on entry (no photo, empty items, total 0, today)
+  // with the spec's payment default. The shared scan seed defaults the
+  // draft to 'card' (correct for the camera flow); the manual screen must
+  // NOT inherit it, so it overrides with the REQ-002 payment defaults
+  // ('other', no card type — decision #1137 keeps card_type display-only).
   useEffect(() => {
     startDraft('');
-  }, [startDraft]);
+    const init = emptyManualDraft();
+    setPayment(init.payment_method);
+    setCardType(init.card_type);
+  }, [startDraft, setPayment]);
 
   // ── Date picker ───────────────────────────────────────────────────────
   const [datePickerOpen, setDatePickerOpen] = useState(false);
@@ -94,15 +103,12 @@ export default function ManualEntryScreen() {
   // ── Item editor ───────────────────────────────────────────────────────
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorTarget, setEditorTarget] = useState<ReviewItem | null>(null);
-  const [editorError, setEditorError] = useState<string | null>(null);
 
   const openAddItem = () => {
-    setEditorError(null);
     setEditorTarget(null);
     setEditorOpen(true);
   };
   const openEditItem = (item: ReviewItem) => {
-    setEditorError(null);
     setEditorTarget(item);
     setEditorOpen(true);
   };
@@ -305,55 +311,61 @@ export default function ManualEntryScreen() {
             </View>
             {draft?.items?.length ? (
               <Card padding={spacing.sm}>
-                {draft.items.map((item, idx) => (
-                  <View key={item.temp_id}>
-                    {idx > 0 ? <View style={styles.rowDivider} /> : null}
-                    <View style={styles.itemRow}>
-                      <View style={styles.itemMain}>
-                        <Text style={styles.itemName} numberOfLines={1}>
-                          {item.name}
+                {draft.items.map((item, idx) => {
+                  // Resolve the chip label through the expense-category
+                  // registry (same as ReviewItemRow): slug → label ('lacteos'
+                  // → 'Lácteos'). Unknown slugs bucket into 'otros' → 'Otros'.
+                  const effectiveCategoryId =
+                    item.category_id ?? item.ai_suggested_category_id;
+                  const categoryLabel = getExpenseCategory(
+                    effectiveCategoryId ?? 'otros',
+                  ).label;
+                  return (
+                    <View key={item.temp_id}>
+                      {idx > 0 ? <View style={styles.rowDivider} /> : null}
+                      <View style={styles.itemRow}>
+                        <View style={styles.itemMain}>
+                          <Text style={styles.itemName} numberOfLines={1}>
+                            {item.name}
+                          </Text>
+                          <Text style={styles.itemSub}>
+                            {item.quantity} × {formatCurrency(item.unit_price, currency)}
+                          </Text>
+                        </View>
+                        <Text style={styles.itemTotal}>
+                          {formatCurrency(item.total_price, currency)}
                         </Text>
-                        <Text style={styles.itemSub}>
-                          {item.quantity} × {formatCurrency(item.unit_price, currency)}
-                        </Text>
+                        <Pressable
+                          onPress={() => openEditItem(item)}
+                          hitSlop={8}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Editar ${item.name}`}
+                          style={styles.itemAction}
+                        >
+                          <Icon name="pencil" size={18} color={colors.textSecondary} />
+                        </Pressable>
+                        <Pressable
+                          onPress={() => removeItem(item.temp_id)}
+                          hitSlop={8}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Eliminar ${item.name}`}
+                          style={styles.itemAction}
+                        >
+                          <Icon name="trash" size={18} color={colors.danger} />
+                        </Pressable>
                       </View>
-                      <Text style={styles.itemTotal}>
-                        {formatCurrency(item.total_price, currency)}
-                      </Text>
-                      <Pressable
-                        onPress={() => openEditItem(item)}
-                        hitSlop={8}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Editar ${item.name}`}
-                        style={styles.itemAction}
-                      >
-                        <Icon name="pencil" size={18} color={colors.textSecondary} />
-                      </Pressable>
-                      <Pressable
-                        onPress={() => removeItem(item.temp_id)}
-                        hitSlop={8}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Eliminar ${item.name}`}
-                        style={styles.itemAction}
-                      >
-                        <Icon name="trash" size={18} color={colors.danger} />
-                      </Pressable>
+                      <View style={styles.itemCategoryRow}>
+                        <Pressable
+                          onPress={() => setCategoryTarget(item)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Categoría de ${item.name}`}
+                        >
+                          <Chip label={categoryLabel} />
+                        </Pressable>
+                      </View>
                     </View>
-                    <View style={styles.itemCategoryRow}>
-                      <Pressable
-                        onPress={() => setCategoryTarget(item)}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Categoría de ${item.name}`}
-                      >
-                        <Chip
-                          label={
-                            item.category_id ?? item.ai_suggested_category_id ?? 'Otros'
-                          }
-                        />
-                      </Pressable>
-                    </View>
-                  </View>
-                ))}
+                  );
+                })}
               </Card>
             ) : (
               <Text style={styles.noItems}>Todavía no hay artículos.</Text>
@@ -412,8 +424,6 @@ export default function ManualEntryScreen() {
           setEditorOpen(false);
           setEditorTarget(null);
         }}
-        errorMessage={editorError}
-        onClearError={() => setEditorError(null)}
       />
 
       <CategoryPickerModal
