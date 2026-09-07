@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Divider, FieldGroup, Icon, Text } from '@/components';
+import { parseQuantity } from '@/features/tickets/manual-form';
 import { colors, radii, spacing, typography } from '@/theme';
 
 export interface ItemEditorModalProps {
@@ -26,10 +27,6 @@ export interface ItemEditorModalProps {
   onSave: (values: { name: string; quantity: number; unit_price: number }) => void;
   /** Called when the user dismisses without saving. */
   onClose: () => void;
-  /** Optional error message surfaced in the name field. */
-  errorMessage?: string | null;
-  /** Reset the error when user changes values. */
-  onClearError?: () => void;
 }
 
 /**
@@ -53,8 +50,6 @@ export function ItemEditorModal({
   initialValues,
   onSave,
   onClose,
-  errorMessage,
-  onClearError,
 }: ItemEditorModalProps) {
   const [name, setName] = useState(initialValues?.name ?? '');
   const [quantityStr, setQuantityStr] = useState(
@@ -64,7 +59,16 @@ export function ItemEditorModal({
     initialValues != null ? String(initialValues.unit_price) : '',
   );
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const priceRef = useRef<TextInput>(null);
+
+  // Latch the latest initialValues into a ref so the seed effect can depend
+  // ONLY on `visible`. The parent passes an inline object for initialValues,
+  // which changes identity on every parent render — depending on it directly
+  // would re-seed (wiping user input) on any re-render while the sheet is
+  // open (4R reliability fix).
+  const initialRef = useRef(initialValues);
+  useEffect(() => {
+    initialRef.current = initialValues;
+  });
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', (e) => {
@@ -79,27 +83,27 @@ export function ItemEditorModal({
     };
   }, []);
 
-  // Re-seed internal buffers when the modal opens (same as RenameItemModal).
+  // Re-seed the internal buffers only when the sheet opens (visible flips
+  // false → true), never on a parent re-render while it stays open.
   useEffect(() => {
     if (!visible) return;
-    setName(initialValues?.name ?? '');
-    setQuantityStr(initialValues != null ? String(initialValues.quantity) : '1');
-    setPriceStr(initialValues != null ? String(initialValues.unit_price) : '');
-    onClearError?.();
-  }, [visible, initialValues, onClearError]);
+    const initial = initialRef.current;
+    setName(initial?.name ?? '');
+    setQuantityStr(initial != null ? String(initial.quantity) : '1');
+    setPriceStr(initial != null ? String(initial.unit_price) : '');
+  }, [visible]);
 
   const trimmed = name.trim();
-  const quantity = parseInt(quantityStr, 10);
+  const quantity = parseQuantity(quantityStr);
   const unit_price = parseFloat(priceStr);
   const canSave =
     trimmed.length > 0 &&
-    Number.isInteger(quantity) &&
-    quantity > 0 &&
+    quantity !== null &&
     Number.isFinite(unit_price) &&
     unit_price >= 0;
 
   const handleSave = () => {
-    if (!canSave) return;
+    if (!canSave || quantity === null) return;
     onSave({ name: trimmed, quantity, unit_price });
   };
 
@@ -146,13 +150,10 @@ export function ItemEditorModal({
             ]}
             keyboardShouldPersistTaps="handled"
           >
-            <FieldGroup label="Nombre del producto" error={errorMessage ?? undefined}>
+            <FieldGroup label="Nombre del producto">
               <TextInput
                 value={name}
-                onChangeText={(next) => {
-                  setName(next);
-                  onClearError?.();
-                }}
+                onChangeText={setName}
                 style={styles.input}
                 placeholder="Ej. Café con leche"
                 placeholderTextColor={colors.textSecondary}
@@ -166,10 +167,7 @@ export function ItemEditorModal({
               <FieldGroup label="Cantidad" style={{ flex: 1 }}>
                 <TextInput
                   value={quantityStr}
-                  onChangeText={(next) => {
-                    setQuantityStr(next);
-                    onClearError?.();
-                  }}
+                  onChangeText={setQuantityStr}
                   style={styles.input}
                   placeholder="1"
                   placeholderTextColor={colors.textSecondary}
@@ -180,12 +178,8 @@ export function ItemEditorModal({
               <View style={{ width: spacing.md }} />
               <FieldGroup label="Precio unitario" style={{ flex: 1 }}>
                 <TextInput
-                  ref={priceRef}
                   value={priceStr}
-                  onChangeText={(next) => {
-                    setPriceStr(next);
-                    onClearError?.();
-                  }}
+                  onChangeText={setPriceStr}
                   style={styles.input}
                   placeholder="0.00"
                   placeholderTextColor={colors.textSecondary}

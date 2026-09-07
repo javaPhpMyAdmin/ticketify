@@ -9,7 +9,7 @@
 
 import { tempId } from '@/lib/format';
 import { MANUAL_FORM_ERROR } from '@/features/tickets/manual-receipt';
-import type { ReviewItem } from '@/types';
+import type { CardType, PaymentMethod, ReviewItem } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Stable error code → user-friendly es-AR message
@@ -50,6 +50,46 @@ export function formatManualErrors(codes: string[]): string[] {
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Quantity parsing (integer-only, rejects silent coercion)
+// ---------------------------------------------------------------------------
+
+const POSITIVE_INTEGER_RE = /^\d+$/;
+
+/**
+ * Parses a quantity string into a positive integer, or null when the input
+ * is not an integer (e.g. '2.5'), empty, or non-numeric.  `parseInt`
+ * silently truncates '2.5' → 2, so the editor must reject non-integer
+ * strings instead of coercing them (4R reliability fix).  '0' is rejected
+ * too — the domain contract is "entero mayor a cero".
+ */
+export function parseQuantity(input: string): number | null {
+  const trimmed = input.trim();
+  if (!POSITIVE_INTEGER_RE.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+// ---------------------------------------------------------------------------
+// Manual-entry initial state (REQ-002 payment default)
+// ---------------------------------------------------------------------------
+
+export interface ManualDraftPaymentDefaults {
+  payment_method: PaymentMethod;
+  card_type: CardType | null;
+}
+
+/**
+ * Spec-correct initial payment state for the manual entry screen (REQ-002:
+ * default payment method is 'other', no card type).  The shared scan seed
+ * (`use-receipts-store` `emptyDraft`) defaults the draft to 'card' — correct
+ * for the camera flow — so the manual screen applies these defaults right
+ * after seeding instead of inheriting the scan default.
+ */
+export function emptyManualDraft(): ManualDraftPaymentDefaults {
+  return { payment_method: 'other', card_type: null };
 }
 
 // ---------------------------------------------------------------------------
