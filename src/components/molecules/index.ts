@@ -22,6 +22,9 @@ export type { AmountDisplayProps } from './AmountDisplay';
 export { EmptyState } from './EmptyState';
 export type { EmptyStateProps } from './EmptyState';
 
+export { DatePickerField } from './DatePickerField';
+export type { DatePickerFieldProps } from './DatePickerField';
+
 export {
   MonthlyBudgetCardSkeleton,
   BreakdownRowSkeleton,
