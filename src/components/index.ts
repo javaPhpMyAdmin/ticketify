@@ -34,6 +34,7 @@ export {
   Fab,
   AmountDisplay,
   EmptyState,
+  DatePickerField,
   MonthlyBudgetCardSkeleton,
   BreakdownRowSkeleton,
   CategoryCardSkeleton,
@@ -49,6 +50,7 @@ export type {
   FabProps,
   AmountDisplayProps,
   EmptyStateProps,
+  DatePickerFieldProps,
 } from './molecules';
 
 // Organisms

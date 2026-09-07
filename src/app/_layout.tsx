@@ -122,6 +122,13 @@ export default function RootLayout() {
               name="ticket/review/[id]"
               options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
             />
+            {/* Manual entry: a modal form (like the review) reached from the
+                home "Cargar compra" FAB. Lives behind the session gate — it
+                writes the user's draft and calls save_receipt. */}
+            <Stack.Screen
+              name="ticket/manual"
+              options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+            />
             <Stack.Screen name="categories/[key]" />
             {/* The drill-downs render store data and are reached from the
                 Home/History drill-downs, so they must sit behind the same

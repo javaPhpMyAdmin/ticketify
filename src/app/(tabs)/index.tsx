@@ -1,5 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { router, type Href } from 'expo-router';
+import { router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { FlatList, Image, Platform, StyleSheet } from 'react-native';
 import {
@@ -316,10 +316,9 @@ export default function HomeScreen() {
           icon="plus"
           onPress={() =>
             guard(() =>
-              // `/ticket/manual` is the manual-entry screen registered in
-              // PR3 (task T-307); typed routes reject paths not yet on disk,
-              // so the cast stays forward-navigation-valid until it lands.
-              router.push('/ticket/manual' as Href),
+              // `/ticket/manual` is now registered on disk (ticket/manual.tsx),
+              // so typed routes resolve it without a cast.
+              router.push('/ticket/manual'),
             )
           }
           accessibilityLabel="Cargar compra"
