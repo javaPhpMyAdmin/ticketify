@@ -1,5 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { FlatList, Image, Platform, StyleSheet } from 'react-native';
 import {
@@ -312,6 +312,26 @@ export default function HomeScreen() {
           icon="camera.fill"
           onPress={() => guard(() => router.push('/ticket/camera'))}
         />
+        <Fab
+          icon="plus"
+          onPress={() =>
+            guard(() =>
+              // `/ticket/manual` is the manual-entry screen registered in
+              // PR3 (task T-307); typed routes reject paths not yet on disk,
+              // so the cast stays forward-navigation-valid until it lands.
+              router.push('/ticket/manual' as Href),
+            )
+          }
+          accessibilityLabel="Cargar compra"
+          style={{
+            // Icon-only FAB: force the base pill into a circle (56 x 56;
+            // radii.full on the base already rounds it). 56 is not a theme
+            // token, so it's hard-coded here.
+            width: 56,
+            height: 56,
+            alignSelf: 'center',
+          }}
+        />
       </View>
 
       <SnacksBreakdownModal
@@ -331,11 +351,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
-    // Clear the floating scan FAB: it sits at
-    // insets.bottom + TAB_BAR_HEIGHT + spacing.xl (~103pt) and is ~56pt
-    // tall, so its top edge lands ~159pt from the bottom. Content must
-    // scroll past that, or the last card hides behind the button.
-    paddingBottom: Platform.select({ ios: 184, android: 184, default: 184 }),
+    // Clear the floating FAB stack: it sits right-aligned at
+    // insets.bottom + TAB_BAR_HEIGHT + spacing.xl and now holds two
+    // FABs (scan pill + circular "Cargar compra"), so content must scroll
+    // past the taller stack or the last card hides behind it.
+    paddingBottom: Platform.select({ ios: 260, android: 260, default: 260 }),
   },
   // Header wrapper above the virtualized rows: carries the 16pt section
   // rhythm the removed `scrollContent.gap` used to provide (FlatList gaps
@@ -410,7 +430,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    alignItems: 'center',
+    alignItems: 'flex-end',
+    paddingRight: spacing.xl,
+    gap: spacing.md,
     backgroundColor: 'transparent',
   },
   avatar: {
