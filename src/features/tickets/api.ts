@@ -536,9 +536,12 @@ export async function saveReceipt(
  * `saveReceipt`: `buildSaveReceiptArgs` + `persistReceipt`. The manual draft
  * carries image_url '' (persisted as null) and its card fields are display-only
  * (decision #1137) — they never reach the RPC, whose payment surface is just
- * p_payment_method. Returns the same `{ id }` shape as `saveReceipt`, throws
- * the same errors (`QuotaExceededError` on ok=false, user-safe Error on
- * failure), and invalidates the same caches.
+ * p_payment_method. Origin travels in the draft: `buildManualDraft` sets
+ * `is_manual: true`, and the shared seam emits `p_is_manual: true` for this
+ * flow (scanned drafts emit false — migration 0029). Returns the same
+ * `{ id }` shape as `saveReceipt`, throws the same errors
+ * (`QuotaExceededError` on ok=false, user-safe Error on failure), and
+ * invalidates the same caches.
  *
  * No extra quota deduction: `save_receipt` (migration 0023) is the ONLY
  * writer of scan_usage — it increments the slot atomically inside its
@@ -552,7 +555,7 @@ export async function saveManualReceipt(
   return persistReceipt(userId, args, uploadedPath);
 }
 
-/** Argument payload for the `save_receipt` RPC (migration 0023). */
+/** Argument payload for the `save_receipt` RPC (migration 0023 / 0029). */
 export interface SaveReceiptRpcArgs {
   p_store_id: string | null;
   p_purchase_date: string;
@@ -560,6 +563,13 @@ export interface SaveReceiptRpcArgs {
   p_payment_method: PaymentMethod;
   /** Storage object path (or remote URL) — null when the draft has no photo. */
   p_image_url: string | null;
+  /**
+   * Ticket origin (migration 0029): true = manual entry, false = scanned.
+   * Derived from the draft (`draft.is_manual ?? false`) — the SAME seam
+   * serves both flows, so origin travels in the draft body
+   * (`buildManualDraft` sets it true; scan drafts never set it).
+   */
+  p_is_manual: boolean;
   /** RPC `purchase_item_input` rows; `category_id` is a uuid FK here. */
   p_items: {
     name: string;
@@ -666,6 +676,11 @@ export async function buildSaveReceiptArgs(
       p_total: draft.total,
       p_payment_method: draft.payment_method,
       p_image_url: imageUrl,
+      // Origin (migration 0029): absent from the draft = scanned (false).
+      // buildManualDraft (manual-receipt.ts) sets is_manual: true, so this
+      // single seam serves BOTH flows — the RPC is always called with 7
+      // params and the server persists origin at INSERT time only.
+      p_is_manual: draft.is_manual ?? false,
       p_items: itemRows.map(({ purchase_id: _, ...rest }) => rest),
     },
     uploadedPath,
@@ -970,6 +985,10 @@ export function purchaseToDraft(purchase: PurchaseWithItems): ReceiptDraft {
     total: purchase.total,
     payment_method: purchase.payment_method,
     image_url: purchase.image_url ?? '',
+    // Origin (is_manual) is deliberately NOT mapped (migration 0029, D1):
+    // origin is immutable and the edit flow (updateReceipt) never writes
+    // it, so carrying it in the round-trip draft would only suggest the
+    // opposite. A manual ticket stays manual across edits.
     items,
   };
 }
@@ -989,6 +1008,10 @@ async function restorePurchase(
   original: PurchaseWithItems,
   restoreItems: boolean,
 ): Promise<void> {
+  // Origin (is_manual) is restored by NOT touching it — origin is immutable
+  // (migration 0029, D1) and no edit path ever writes it, so the in-place
+  // update could not have changed it; re-setting it here would be both
+  // redundant and a second writer of origin.
   const { error: rowError } = await supabase
     .from('purchases')
     .update({
@@ -1087,6 +1110,9 @@ export async function updateReceipt(
   // `.select('id')` returns the updated row: a 0-row result (an RLS miss or
   // a row deleted mid-edit) fails closed instead of silently "succeeding" —
   // same fail-closed pattern deleteReceipt uses.
+  // `is_manual` is deliberately NOT in this update: origin is immutable
+  // (migration 0029, D1) — an edit may replace the photo but never the
+  // manual-or-scanned origin of the ticket.
   const { data: updatedRow, error: purchaseError } = (await supabase
     .from('purchases')
     .update({

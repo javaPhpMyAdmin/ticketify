@@ -79,6 +79,10 @@ export const MANUAL_FORM_ERROR = {
  *
  * `image_url` is always `''` — manual entries carry no photo.  The RPC
  * persists `null` (the seam converts `''` via `draft.image_url || null`).
+ * `is_manual` is always `true` — the draft body IS the origin carrier: the
+ * shared seam (`buildSaveReceiptArgs`) emits `p_is_manual: draft.is_manual
+ * ?? false`, so the manual flow reaches the RPC as manual while scan drafts
+ * (which never set the field) stay scanned (migration 0029).
  * Card fields are optional display metadata; the seam and RPC never send
  * them (decision #1137: manual entries share scans_used/scans_limit;
  * `card_brand`/`card_type` are draft-only display).
@@ -97,6 +101,7 @@ export function buildManualDraft(
     purchase_date: purchaseDate || todayLocalISO(),
     total,
     payment_method: paymentMethod,
+    is_manual: true,
     image_url: '',
     card_type: cardType ?? null,
     items,
