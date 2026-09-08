@@ -139,6 +139,7 @@ function compile() {
       purchase_date: string;
       total: number;
       payment_method: PaymentMethod;
+      is_manual?: boolean;
       image_url: string;
       card_brand?: string | null;
       card_type?: CardType | null;

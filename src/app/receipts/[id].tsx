@@ -11,7 +11,17 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 
-import { Card, Divider, Icon, IconButton, Pressable, Spinner, Text, View } from '@/components';
+import {
+  Card,
+  Chip,
+  Divider,
+  Icon,
+  IconButton,
+  Pressable,
+  Spinner,
+  Text,
+  View,
+} from '@/components';
 import { useSessionUser } from '@/features/auth';
 import { getExpenseCategory } from '@/features/home/categories';
 import {
@@ -71,6 +81,9 @@ function purchaseToFeedRow(p: PurchaseWithItems) {
     scanned_at: null,
     total: p.total,
     image_url: p.image_url,
+    // Origin (migration 0029): surfaces the "Ingreso manual" chip on the
+    // detail header. REQUIRED on PurchaseWithItems, so it is always known.
+    is_manual: p.is_manual,
     status: p.status,
     payment_method: p.payment_method,
     wants_snacks_total: items
@@ -453,6 +466,11 @@ export default function ReceiptDetailScreen() {
         )}
 
         <Card>
+          {receipt.is_manual ? (
+            <View style={styles.originRow}>
+              <Chip label="Ingreso manual" />
+            </View>
+          ) : null}
           <View style={styles.metaRow}>
             <View style={styles.metaCol}>
               <Text style={styles.kicker}>TIENDA</Text>
@@ -739,6 +757,10 @@ const styles = StyleSheet.create({
   metaRow: {
     flexDirection: 'row',
     gap: spacing.lg,
+  },
+  originRow: {
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
   },
   metaCol: {
     flex: 1,
