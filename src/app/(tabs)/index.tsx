@@ -308,12 +308,15 @@ export default function HomeScreen() {
         pointerEvents="box-none"
       >
         <Fab
-          label="Escanear ticket"
           icon="camera.fill"
+          iconSize={32}
           onPress={() => guard(() => router.push('/ticket/camera'))}
+          accessibilityLabel="Escanear ticket"
+          style={styles.fabCircle}
         />
         <Fab
           icon="plus"
+          iconSize={32}
           onPress={() =>
             guard(() =>
               // `/ticket/manual` is now registered on disk (ticket/manual.tsx),
@@ -322,14 +325,7 @@ export default function HomeScreen() {
             )
           }
           accessibilityLabel="Cargar compra"
-          style={{
-            // Icon-only FAB: force the base pill into a circle (56 x 56;
-            // radii.full on the base already rounds it). 56 is not a theme
-            // token, so it's hard-coded here.
-            width: 56,
-            height: 56,
-            alignSelf: 'center',
-          }}
+          style={styles.fabCircle}
         />
       </View>
 
@@ -433,6 +429,16 @@ const styles = StyleSheet.create({
     paddingRight: spacing.xl,
     gap: spacing.md,
     backgroundColor: 'transparent',
+  },
+  // Icon-only FABs: force the base pill into a circle (56 x 56; radii.full
+  // on the base already rounds it). 56 is not a theme token, so it's
+  // hard-coded here. The base pill's horizontal padding (spacing.xl) would
+  // squeeze a 20px icon into ~16px and clip it, so icon-only circles must
+  // zero the horizontal padding and rely on centering instead.
+  fabCircle: {
+    width: 56,
+    height: 56,
+    paddingHorizontal: 0,
   },
   avatar: {
     width: 50,
