@@ -258,6 +258,10 @@ async function run() {
         total: draft.total,
         image_url: draft.image_url || null,
         status: 'confirmed',
+        // Mirrors review/[id]'s optimistic row: origin is immutable, the
+        // edit draft never carries it (purchaseToDraft), so the row keeps
+        // the store row's origin — `?? false` when unknown (migration 0029).
+        is_manual: false,
       },
       reviewItemsToFeedItems(draft.items),
     );
@@ -272,6 +276,7 @@ async function run() {
       // The review flow does not supply the (optional) payment method, so
       // the built row carries it as undefined — the key is always present.
       payment_method: undefined,
+      is_manual: false,
       wants_snacks_total: 4,
       category_totals: { lacteos: 7, snacks: 4, otros: 3 },
       items: [

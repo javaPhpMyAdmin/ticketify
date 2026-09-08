@@ -121,6 +121,21 @@ export default function HomeScreen() {
     [monthList, householdTotal, monthKey],
   );
 
+  // Section-title counter with the origin breakdown (migration 0029):
+  // "N tickets" while the month has no manual entries — the exact previous
+  // copy — and "N tickets escaneados · M manual" (per-segment plural) once
+  // a manual ticket exists. Derived from the feed's required isManual flag.
+  const totalCount = monthFeed.receipts.length;
+  const manualCount = monthFeed.receipts.filter((r) => r.isManual).length;
+  const counterCopy =
+    manualCount === 0
+      ? `${totalCount} ${totalCount === 1 ? 'ticket' : 'tickets'}`
+      : `${totalCount - manualCount} ${
+          totalCount - manualCount === 1
+            ? 'ticket escaneado'
+            : 'tickets escaneados'
+        } · ${manualCount} ${manualCount === 1 ? 'manual' : 'manuales'}`;
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <FlatList
@@ -139,6 +154,7 @@ export default function HomeScreen() {
             amount={r.amount}
             currency={currency}
             imageUrl={r.imageUrl}
+            isManual={r.isManual}
             onPress={() => router.push(`/receipts/${r.id}`)}
           />
         )}
@@ -260,13 +276,7 @@ export default function HomeScreen() {
               <View style={styles.totalRow}>
                 {monthFeed.receipts.length > 0 ? (
                   <Text style={styles.sectionTitle}>
-                    {monthLoading
-                      ? '…'
-                      : `${monthFeed.receipts.length} ${
-                          monthFeed.receipts.length !== 1
-                            ? 'tickets'
-                            : 'ticket'
-                        }`}
+                    {monthLoading ? '…' : counterCopy}
                   </Text>
                 ) : (
                   ''

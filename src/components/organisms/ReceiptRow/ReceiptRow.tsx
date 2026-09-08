@@ -9,6 +9,7 @@ import {
   View,
   type IconName,
 } from '@/components/atoms';
+import { Chip } from '@/components/molecules/Chip';
 import { formatCurrency, formatShortDate } from '@/lib/format';
 import {
   getSignedReceiptPhotoUrl,
@@ -28,6 +29,12 @@ export interface ReceiptRowProps {
   onPress?: () => void;
   /** Ticket photo URL; when truthy it replaces the icon circle with a thumbnail. */
   imageUrl?: string | null;
+  /**
+   * Ticket origin (migration 0029): true renders a label-only "Manual" chip
+   * next to the name and prefixes the accessibility label. Optional — rows
+   * that do not carry the origin flag render exactly as before.
+   */
+  isManual?: boolean;
 }
 
 export function ReceiptRow({
@@ -40,6 +47,7 @@ export function ReceiptRow({
   iconBg = colors.chipBg,
   onPress,
   imageUrl,
+  isManual = false,
 }: ReceiptRowProps) {
   // The stored photo reference may be a ready http(s) URL (seed/demo rows)
   // or an object path in the private `receipts` bucket — resolve the path
@@ -119,9 +127,14 @@ export function ReceiptRow({
       )}
       <View style={{ width: '80%', minHeight: 78, justifyContent: 'center' }}>
         <View style={styles.middle}>
-          <Text style={styles.name} numberOfLines={1}>
-            {name}
-          </Text>
+          {/* Name + origin chip on one line: the name truncates (flex) and
+              the label-only "Manual" chip (migration 0029) stays visible. */}
+          <View style={styles.nameRow}>
+            <Text style={styles.name} numberOfLines={1}>
+              {name}
+            </Text>
+            {isManual ? <Chip label="Manual" /> : null}
+          </View>
         </View>
         <View
           style={{
@@ -153,13 +166,15 @@ export function ReceiptRow({
 
   // The label intentionally excludes the visible caption so VoiceOver
   // doesn't double-announce "Toca para ver el ticket" (label + hint).
+  // A manual ticket announces its origin FIRST so the breakdown never
+  // depends on spotting the visual chip.
   if (onPress) {
     return (
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
         accessibilityHint="Toca para ver el ticket"
-        accessibilityLabel={`${name}, ${formatShortDate(
+        accessibilityLabel={`${isManual ? 'Manual, ' : ''}${name}, ${formatShortDate(
           date,
         )}, ${formatCurrency(amount, currency)}`}
         style={({ pressed }) => [styles.row, pressed && styles.pressed]}
@@ -213,10 +228,16 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
   name: {
     fontWeight: '600',
     fontSize: 20,
     color: colors.textSecondary,
+    flex: 1,
   },
   date: {
     color: colors.textSecondary,
