@@ -123,6 +123,7 @@ export function InviteCodeModal({ visible, onClose }: InviteCodeModalProps) {
       visible={visible}
       onClose={handleClose}
       title="Invitar a mi hogar"
+      headerCentered
     >
       <View style={styles.body}>
         {loading ? (

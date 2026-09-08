@@ -50,6 +50,19 @@ export interface BottomSheetProps {
   backdropLabel?: string;
   /** Accessibility label for the close button. Default `'Cerrar'`. */
   closeLabel?: string;
+  /**
+   * Vertically center the header row (title/kicker column + close button).
+   * Default `false` (`flex-start`, matching Snacks/DayDetail/Rename/
+   * ItemEditor/DatePicker). Only the household sheets (Create/Join/Invite)
+   * center their single-line title, kept from their pre-BottomSheet chrome.
+   */
+  headerCentered?: boolean;
+  /**
+   * Extra style merged over the sheet's handle bar. Lets a divergent
+   * consumer restore its pre-BottomSheet handle (e.g. the category picker's
+   * `width: 36` / `colors.divider` vs the shared `40` / `colors.border`).
+   */
+  handleStyle?: StyleProp<ViewStyle>;
 
   /** Max height of the sheet. Default `'80%'`. */
   maxHeight?: DimensionValue;
@@ -59,6 +72,15 @@ export interface BottomSheetProps {
   surface?: boolean;
   /** Top corner radius token. Default `'lg'`. */
   radius?: 'lg' | 'xl';
+  /** Sheet top padding (below the handle). Default `spacing.sm`. */
+  sheetPaddingTop?: number;
+  /**
+   * Apply the bottom safe-area inset to the sheet. Default `true`; set
+   * `false` for sheets whose pre-BottomSheet chrome had no bottom inset and
+   * relied on body padding alone (e.g. the category picker, so the sheet
+   * does not grow ~34px on home-indicator devices).
+   */
+  includeBottomInset?: boolean;
 
   /**
    * Android keyboard strategy. A transparent `Modal` NEVER receives
@@ -123,6 +145,10 @@ export function BottomSheet({
   backdropColor = 'rgba(0,0,0,0.45)',
   surface = false,
   radius = 'lg',
+  sheetPaddingTop,
+  includeBottomInset = true,
+  headerCentered = false,
+  handleStyle,
   keyboardMode = 'none',
   scrollable = false,
   contentContainerStyle,
@@ -172,12 +198,20 @@ export function BottomSheet({
       borderTopLeftRadius: radius === 'xl' ? radii.xl : radii.lg,
       borderTopRightRadius: radius === 'xl' ? radii.xl : radii.lg,
       maxHeight,
+      // `sheetPaddingTop` restores a divergent consumer's pre-BottomSheet
+      // top padding (e.g. CategoryPicker's `spacing.md` vs the shared sm).
+      paddingTop: sheetPaddingTop ?? styles.sheet.paddingTop,
     },
   ];
 
   const header =
     kicker || title || showCloseButton ? (
-      <View style={[styles.header, kicker && !title && styles.headerCentered]}>
+      <View
+        style={[
+          styles.header,
+          (kicker && !title) || headerCentered ? styles.headerCentered : null,
+        ]}
+      >
         {kicker || title ? (
           <View style={styles.headerText}>
             {kicker ? <Text style={styles.kicker}>{kicker}</Text> : null}
@@ -224,8 +258,11 @@ export function BottomSheet({
   };
 
   const shell = (
-    <SafeAreaView style={sheetStyle} edges={['bottom']}>
-      <View style={styles.handle} />
+    <SafeAreaView
+      style={sheetStyle}
+      edges={includeBottomInset ? ['bottom'] : []}
+    >
+      <View style={[styles.handle, handleStyle]} />
       {header}
       {divider ? <Divider /> : null}
       {body}

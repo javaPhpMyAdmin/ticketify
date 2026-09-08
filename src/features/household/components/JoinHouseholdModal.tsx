@@ -94,6 +94,7 @@ export function JoinHouseholdModal({ visible, onClose }: JoinHouseholdModalProps
       onClose={handleClose}
       title="Unirse a un hogar"
       keyboardMode="avoidingView"
+      headerCentered
     >
       <View style={styles.body}>
         <Text style={styles.helper}>
