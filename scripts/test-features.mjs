@@ -1883,6 +1883,10 @@ async function run() {
     assert.equal(updated.total, 9.5);
     assert.equal(updated.payment_method, 'cash');
     assert.equal(updated.status, 'confirmed');
+    assert.ok(
+      !('is_manual' in updated),
+      'the UPDATE payload never writes the origin flag (D1, migration 0029)',
+    );
     assert.equal(
       updated.image_url,
       `${USER_ID}/p-1.jpg`,
@@ -2022,6 +2026,10 @@ async function run() {
     assert.equal(restored.payment_method, 'card');
     assert.equal(restored.image_url, `${USER_ID}/p-1.jpg`);
     assert.equal(restored.status, 'confirmed');
+    assert.ok(
+      !('is_manual' in restored),
+      'the restore UPDATE never writes the origin flag either (D1, migration 0029)',
+    );
     // The original items are re-inserted with their ORIGINAL values (the
     // wholesale delete had already removed them).
     const restoredItems = stubMod.__getInserted('purchase_items');
