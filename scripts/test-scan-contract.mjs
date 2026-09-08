@@ -304,13 +304,17 @@ async function run() {
   const { computeQuotaState, FREE_DEFAULT_LIMIT } = quotaMod;
 
   // api.ts may throw on import if @supabase/supabase-js resolution fails in
-  // the stub context; guard with try/catch so the quota tests still run.
+  // the stub context. A failed import MUST fail the suite: sections B-D hold
+  // the save-pipeline regression assertions, and a green CI that never ran
+  // them is worse than a red one that did. (Anti-pattern fixed: before, this
+  // printed a warning and exited 0.)
   let apiMod = null;
   try {
     apiMod = await load('src/api.js');
   } catch (err) {
-    console.warn(
-      '[tests] WARNING: api.ts import failed, skipping api tests:',
+    failed += 1;
+    console.error(
+      '\n[tests] FATAL: api tests could not run because api.ts failed to import (exit 1):',
       err instanceof Error ? err.message : err,
     );
   }
@@ -774,7 +778,7 @@ async function run() {
     );
   } else {
     console.log(
-      '\n[tests] B-D SKIPPED: api.ts failed to import (see warning above)\n',
+      '\n[tests] B-D SKIPPED: api.ts failed to import (see FATAL warning above)\n',
     );
   }
 
