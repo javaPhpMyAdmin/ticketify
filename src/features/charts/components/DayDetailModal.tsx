@@ -1,9 +1,8 @@
-import { FlatList, Modal, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { FlatList, StyleSheet, View, type ListRenderItem } from 'react-native';
 
-import { Divider, EmptyState, Icon, Text } from '@/components';
+import { BottomSheet, Divider, EmptyState, Text } from '@/components';
 import { formatCurrency, formatCurrencyWhole } from '@/lib/format';
-import { colors, radii, spacing, typography } from '@/theme';
+import { colors, spacing, typography } from '@/theme';
 
 import type { DayItemGroup } from '../aggregate';
 
@@ -32,9 +31,9 @@ export interface DayDetailModalProps {
  * Bottom-sheet modal with the per-item breakdown of a single day, opened by
  * tapping a bar in the weekly capsule chart.
  *
- * Same shell as `SnacksBreakdownModal`: transparent backdrop so the chart
- * stays visible, slides up via `animationType="slide"`, dismisses on
- * backdrop tap or the close button. The rows come pre-aggregated from
+ * Shares the `BottomSheet` shell (transparent backdrop so the chart stays
+ * visible, slides up via `animationType="slide"`, dismisses on backdrop tap
+ * or the close button). The rows come pre-aggregated from
  * `aggregateDayItems` (pure, testable) — this component only renders them:
  * display name with ` ×quantity` when the day bought more than one unit,
  * amount on the right, and the day total pinned under the header. The
@@ -87,119 +86,44 @@ export function DayDetailModal({
   );
 
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-      statusBarTranslucent
+      onClose={onClose}
+      kicker={dayLabel}
+      title="Detalle del día"
+      backdropLabel="Cerrar detalle del día"
     >
-      <View style={styles.backdrop}>
-        <Pressable
-          style={styles.backdropTouch}
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel="Cerrar detalle del día"
-        />
-        <SafeAreaView style={styles.sheet} edges={['bottom']}>
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <View style={styles.headerText}>
-              <Text style={styles.kicker}>{dayLabel}</Text>
-              <Text style={styles.title}>Detalle del día</Text>
-            </View>
-            <Pressable
-              onPress={onClose}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar"
-              style={styles.closeButton}
-            >
-              <Icon name="xmark" size={22} color={colors.textPrimary} />
-            </Pressable>
-          </View>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total del día</Text>
-            <Text style={styles.totalAmount}>
-              {/* Whole currency to match the bar the user tapped — the
-                  chart shows "$812", so the modal must not add cents. */}
-              {formatCurrencyWhole(displayedTotal, currency)}
-            </Text>
-          </View>
-          <Divider />
-          {displayItems.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <EmptyState
-                icon="doc.text"
-                title="Sin gastos este día."
-                body="Escaneá un ticket con gastos este día para ver el detalle acá."
-              />
-            </View>
-          ) : (
-            <FlatList
-              data={displayItems}
-              keyExtractor={(item) => item.name}
-              renderItem={renderItem}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-            />
-          )}
-        </SafeAreaView>
+      <View style={styles.totalRow}>
+        <Text style={styles.totalLabel}>Total del día</Text>
+        <Text style={styles.totalAmount}>
+          {/* Whole currency to match the bar the user tapped — the
+              chart shows "$812", so the modal must not add cents. */}
+          {formatCurrencyWhole(displayedTotal, currency)}
+        </Text>
       </View>
-    </Modal>
+      <Divider />
+      {displayItems.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <EmptyState
+            icon="doc.text"
+            title="Sin gastos este día."
+            body="Escaneá un ticket con gastos este día para ver el detalle acá."
+          />
+        </View>
+      ) : (
+        <FlatList
+          data={displayItems}
+          keyExtractor={(item) => item.name}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  // Pressable layer that catches taps outside the sheet — sits behind the
-  // sheet visually but covers the rest of the screen so `onPress` closes
-  // the modal even on the dimmed area.
-  backdropTouch: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  sheet: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
-    paddingTop: spacing.sm,
-    maxHeight: '80%',
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-    alignSelf: 'center',
-    marginBottom: spacing.md,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.md,
-    gap: spacing.md,
-  },
-  headerText: {
-    flex: 1,
-    gap: 2,
-  },
-  kicker: {
-    ...typography.labelCaps,
-    color: colors.textSecondary,
-  },
-  title: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
-  },
-  closeButton: {
-    padding: spacing.xs,
-  },
   totalRow: {
     flexDirection: 'row',
     alignItems: 'center',

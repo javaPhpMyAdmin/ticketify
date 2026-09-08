@@ -1,16 +1,7 @@
 import { useEffect, useState } from 'react';
-import {
-  Keyboard,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { Divider, FieldGroup, Icon, Text } from '@/components';
+import { BottomSheet, FieldGroup, Text } from '@/components';
 import { colors, radii, spacing, typography } from '@/theme';
 
 export interface RenameItemModalProps {
@@ -48,9 +39,12 @@ export interface RenameItemModalProps {
  * provides the chrome and a "save" / "cancel" decision. This keeps the
  * same UI available from both flows without duplicating logic.
  *
- * Visual chrome matches `SnacksBreakdownModal`: slide-from-bottom modal,
- * `transparent`, backdrop tap-to-close, handle bar, header with kicker
- * + title + close button, body padded to the safe-area bottom.
+ * Shares the `BottomSheet` shell: slide-from-bottom modal, `transparent`,
+ * backdrop tap-to-close, handle bar, header with kicker + title + close
+ * button, body padded to the safe-area bottom. The Android keyboard is
+ * handled by the sheet in `listeners` mode (a transparent `Modal` never
+ * receives `adjustResize`), leaving the input-focused logic (autoFocus,
+ * buffer reseed on open) here.
  */
 export function RenameItemModal({
   visible,
@@ -67,32 +61,10 @@ export function RenameItemModal({
   // parent can pass the same `currentName` on every render without
   // fighting the user's in-progress edits.
   const [draft, setDraft] = useState(currentName);
-  // Height of the software keyboard while the sheet is open. A transparent
-  // RN `Modal` on Android never receives `windowSoftInputMode="adjustResize"`,
-  // so `KeyboardAvoidingView` cannot reliably lift the input there. Instead
-  // the sheet offsets its content by the ACTUAL keyboard height, driven by
-  // `Keyboard` events — this works on both platforms without `Platform` hacks.
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-  useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', (e) => {
-      setKeyboardHeight(e.endCoordinates.height);
-    });
-    const hide = Keyboard.addListener('keyboardDidHide', () => {
-      setKeyboardHeight(0);
-    });
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
 
   useEffect(() => {
     if (visible) {
       setDraft(currentName);
-      // Drop any stale height from a previous session before the keyboard
-      // re-fires `keyboardDidShow` (autoFocus opens it right after mount).
-      setKeyboardHeight(0);
     }
   }, [visible, currentName]);
 
@@ -100,164 +72,75 @@ export function RenameItemModal({
   const canSave = trimmed.length > 0 && !isLoading;
 
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onCancel}
-      statusBarTranslucent
+      onClose={onCancel}
+      kicker="EDITAR"
+      title="Editar nombre del producto"
+      backdropColor="rgba(0, 0, 0, 0.5)"
+      keyboardMode="listeners"
+      scrollable
+      divider
+      contentContainerStyle={styles.body}
     >
-      <View style={styles.backdrop}>
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={onCancel}
-          accessibilityRole="button"
-          accessibilityLabel="Cerrar"
+      <FieldGroup label="Nombre del producto" error={errorMessage ?? undefined}>
+        <TextInput
+          value={draft}
+          onChangeText={(next) => {
+            setDraft(next);
+            onChange(next);
+          }}
+          style={styles.input}
+          placeholder="Ej. Café con leche"
+          placeholderTextColor={colors.textSecondary}
+          keyboardType="default"
+          autoFocus
+          maxLength={120}
+          editable={!isLoading}
+          accessibilityLabel="Nombre del producto"
         />
-        <SafeAreaView style={styles.sheet} edges={['bottom']}>
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <View style={styles.headerText}>
-              <Text style={styles.kicker}>EDITAR</Text>
-              <Text style={styles.title}>Editar nombre del producto</Text>
-            </View>
-            <Pressable
-              onPress={onCancel}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar"
-              style={styles.closeButton}
-            >
-              <Icon name="xmark" size={22} color={colors.textPrimary} />
-            </Pressable>
-          </View>
-          <Divider />
-          {/* The transparent `Modal` on Android never gets
-              `windowSoftInputMode="adjustResize"`, so the sheet pads its
-              content by the real keyboard height instead of relying on
-              `KeyboardAvoidingView` (which only pads reliably on iOS). The
-              sheet's `maxHeight` + `flexShrink: 1` here lets the content
-              compress instead of overflowing. */}
-          <ScrollView
-            style={styles.scrollBody}
-            contentContainerStyle={[
-              styles.body,
-              { paddingBottom: keyboardHeight + spacing.lg },
-            ]}
-            keyboardShouldPersistTaps="handled"
-          >
-            <FieldGroup label="Nombre del producto" error={errorMessage ?? undefined}>
-              <TextInput
-                value={draft}
-                onChangeText={(next) => {
-                  setDraft(next);
-                  onChange(next);
-                }}
-                style={styles.input}
-                placeholder="Ej. Café con leche"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="default"
-                autoFocus
-                maxLength={120}
-                editable={!isLoading}
-                accessibilityLabel="Nombre del producto"
-              />
-            </FieldGroup>
-            <Text style={styles.helper}>
-              El buscador ignora acentos.
-            </Text>
-            <View style={styles.actions}>
-              <Pressable
-                onPress={onCancel}
-                disabled={isLoading}
-                style={({ pressed }) => [
-                  styles.actionButton,
-                  styles.cancelButton,
-                  pressed && styles.actionPressed,
-                  isLoading && styles.actionDisabled,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Cancelar"
-              >
-                <Text style={styles.cancelLabel}>Cancelar</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => onSave(trimmed)}
-                disabled={!canSave}
-                style={({ pressed }) => [
-                  styles.actionButton,
-                  styles.saveButton,
-                  pressed && styles.actionPressed,
-                  !canSave && styles.actionDisabled,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Guardar"
-                accessibilityState={{ disabled: !canSave }}
-              >
-                <Text style={styles.saveLabel}>
-                  {isLoading ? 'Guardando…' : 'Guardar'}
-                </Text>
-              </Pressable>
-            </View>
-          </ScrollView>
-        </SafeAreaView>
+      </FieldGroup>
+      <Text style={styles.helper}>
+        El buscador ignora acentos.
+      </Text>
+      <View style={styles.actions}>
+        <Pressable
+          onPress={onCancel}
+          disabled={isLoading}
+          style={({ pressed }) => [
+            styles.actionButton,
+            styles.cancelButton,
+            pressed && styles.actionPressed,
+            isLoading && styles.actionDisabled,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Cancelar"
+        >
+          <Text style={styles.cancelLabel}>Cancelar</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => onSave(trimmed)}
+          disabled={!canSave}
+          style={({ pressed }) => [
+            styles.actionButton,
+            styles.saveButton,
+            pressed && styles.actionPressed,
+            !canSave && styles.actionDisabled,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Guardar"
+          accessibilityState={{ disabled: !canSave }}
+        >
+          <Text style={styles.saveLabel}>
+            {isLoading ? 'Guardando…' : 'Guardar'}
+          </Text>
+        </Pressable>
       </View>
-    </Modal>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  // The scroll container must NOT stretch (`flex: 1` / `flexBasis: 0`): the
-  // sheet sizes itself by content (only `maxHeight` is set), so a zero-basis
-  // flex child collapses to 0 height and hides the body. `flexShrink: 1`
-  // keeps content height but lets the sheet compress on small screens or
-  // when the keyboard padding makes the body exceed `maxHeight`.
-  scrollBody: {
-    flexShrink: 1,
-  },
-  sheet: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
-    paddingTop: spacing.sm,
-    maxHeight: '80%',
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-    alignSelf: 'center',
-    marginBottom: spacing.md,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.md,
-    gap: spacing.md,
-  },
-  headerText: {
-    flex: 1,
-    gap: 2,
-  },
-  kicker: {
-    ...typography.labelCaps,
-    color: colors.textSecondary,
-  },
-  title: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
-  },
-  closeButton: {
-    padding: spacing.xs,
-  },
   body: {
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,

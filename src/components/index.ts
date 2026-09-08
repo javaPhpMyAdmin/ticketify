@@ -35,6 +35,7 @@ export {
   AmountDisplay,
   EmptyState,
   DatePickerField,
+  BottomSheet,
   MonthlyBudgetCardSkeleton,
   BreakdownRowSkeleton,
   CategoryCardSkeleton,
@@ -51,6 +52,9 @@ export type {
   AmountDisplayProps,
   EmptyStateProps,
   DatePickerFieldProps,
+  BottomSheetProps,
+  BottomSheetCloseIcon,
+  BottomSheetKeyboardMode,
 } from './molecules';
 
 // Organisms

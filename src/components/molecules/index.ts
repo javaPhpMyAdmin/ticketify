@@ -25,6 +25,13 @@ export type { EmptyStateProps } from './EmptyState';
 export { DatePickerField } from './DatePickerField';
 export type { DatePickerFieldProps } from './DatePickerField';
 
+export { BottomSheet } from './BottomSheet';
+export type {
+  BottomSheetProps,
+  BottomSheetCloseIcon,
+  BottomSheetKeyboardMode,
+} from './BottomSheet';
+
 export {
   MonthlyBudgetCardSkeleton,
   BreakdownRowSkeleton,
