@@ -20,6 +20,9 @@
  *     (NOT per quantity), scoped to the month, empty-safe, deterministic.
  *   - aggregateItemsByCategory sums quantities across collapsed receipts
  *     (missing quantity counts as 1 per row) alongside the amount.
+ *   - mapPurchaseRowsToHomeFeed surfaces the ticket origin on each
+ *     ReceiptSummary (isManual from the row's is_manual, `?? false` for
+ *     producers that omit the field — REQ-007).
  *
  * Deterministic: no clock, no Intl, fixed fixture inputs.
  *
@@ -469,6 +472,101 @@ async function run() {
     assert.equal(nav.currentIndex, 0, 'falls back to the newest position');
     assert.equal(nav.canGoNewer, false);
     assert.equal(nav.canGoOlder, true);
+  });
+
+  console.log('\n[tests] mapPurchaseRowsToHomeFeed (origin propagation, REQ-007)\n');
+
+  await test('mapPurchaseRowsToHomeFeed surfaces isManual from the raw row', () => {
+    const feed = homeMod.mapPurchaseRowsToHomeFeed(
+      [
+        {
+          id: 'p-scanned',
+          store_name: 'Coto Hipermercado',
+          purchase_date: '2026-08-06',
+          scanned_at: '2026-08-06T10:00:00.000Z',
+          total: 55.5,
+          image_url: null,
+          status: 'confirmed',
+          payment_method: 'card',
+          is_manual: false,
+          wants_snacks_total: 0,
+          category_totals: { lacteos: 55.5 },
+          items: [],
+        },
+        {
+          id: 'p-manual',
+          store_name: 'Almacén Barrio Norte',
+          purchase_date: '2026-08-05',
+          scanned_at: '2026-08-05T14:30:00.000Z',
+          total: 120,
+          image_url: null,
+          status: 'confirmed',
+          payment_method: 'cash',
+          is_manual: true,
+          wants_snacks_total: 0,
+          category_totals: { alimentos: 120 },
+          items: [],
+        },
+      ],
+      null,
+      '2026-08',
+    );
+    // Recent receipts order by scan (newer first), so the scanned row leads
+    // the manual one; each summary carries the origin of its raw row.
+    assert.deepEqual(feed.receipts, [
+      {
+        id: 'p-scanned',
+        name: 'Coto Hipermercado',
+        date: '2026-08-06',
+        amount: 55.5,
+        imageUrl: null,
+        isManual: false,
+      },
+      {
+        id: 'p-manual',
+        name: 'Almacén Barrio Norte',
+        date: '2026-08-05',
+        amount: 120,
+        imageUrl: null,
+        isManual: true,
+      },
+    ]);
+    assert.equal(
+      feed.receipts[1].isManual,
+      true,
+      'manual-origin receipt → isManual true',
+    );
+    assert.equal(
+      feed.receipts[0].isManual,
+      false,
+      'scanned receipt → isManual false',
+    );
+  });
+
+  await test('a row without the origin flag defaults to scanned (isManual false)', () => {
+    // Producers that do not emit `is_manual` (the optimistic review row)
+    // must read as scanned until proven manual — never undefined.
+    const feed = homeMod.mapPurchaseRowsToHomeFeed(
+      [
+        {
+          id: 'p-no-flag',
+          store_name: 'Desconocido',
+          purchase_date: '2026-08-05',
+          scanned_at: null,
+          total: 10,
+          image_url: null,
+          status: 'confirmed',
+          payment_method: 'cash',
+          wants_snacks_total: 0,
+          category_totals: {},
+          items: [],
+        },
+      ],
+      null,
+      '2026-08',
+    );
+    assert.equal(feed.receipts.length, 1);
+    assert.equal(feed.receipts[0].isManual, false);
   });
 
   console.log('');
