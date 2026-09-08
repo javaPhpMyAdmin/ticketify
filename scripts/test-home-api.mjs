@@ -111,6 +111,8 @@ const P1 = {
   payment_method: 'card',
   image_url: null,
   status: 'confirmed',
+  // Manual-origin receipt: the feed must surface the origin (is_manual=true).
+  is_manual: true,
   stores: { name: 'Coto Hipermercado' },
   purchase_items: [
     // Out of sort_order on purpose: the mapper must order them.
@@ -147,6 +149,7 @@ const P2 = {
   payment_method: 'cash',
   image_url: null,
   status: 'confirmed',
+  is_manual: false,
   stores: [{ name: 'Almacén Barrio Norte' }],
   purchase_items: [
     {
@@ -172,6 +175,7 @@ const P3 = {
   payment_method: 'cash',
   image_url: null,
   status: 'confirmed',
+  is_manual: false,
   stores: null,
   purchase_items: [
     {
@@ -205,6 +209,7 @@ const SEARCH_ROW = {
     payment_method: 'card',
     image_url: null,
     status: 'confirmed',
+    is_manual: false,
     stores: { name: 'Coto Hipermercado' },
   },
 };
@@ -266,6 +271,7 @@ async function run() {
     assert.equal(first.scanned_at, '2026-08-05T14:30:00.000Z');
     assert.equal(first.total, 120);
     assert.equal(first.status, 'confirmed');
+    assert.equal(first.is_manual, true, 'manual-origin receipt keeps its flag');
     // Items ordered by sort_order ascending, not arrival order.
     assert.deepEqual(
       first.items.map((i) => i.name),
@@ -290,6 +296,7 @@ async function run() {
     assert.equal(second.items[0].category, 'limpieza');
     assert.deepEqual(second.category_totals, { limpieza: 55.5 });
     assert.equal(second.wants_snacks_total, 0);
+    assert.equal(second.is_manual, false, 'scanned receipt keeps its flag');
   });
 
   await test('readPurchaseList falls back to Desconocido/otros for missing store/category', async () => {
@@ -300,6 +307,7 @@ async function run() {
     const [row] = result.data;
     assert.equal(row.store_name, 'Desconocido');
     assert.equal(row.image_url, null);
+    assert.equal(row.is_manual, false, 'missing flag falls back to scanned (?? false)');
     assert.equal(row.items[0].category, 'otros');
     assert.deepEqual(row.category_totals, { otros: 12 });
     assert.equal(row.wants_snacks_total, 0);
@@ -377,6 +385,7 @@ async function run() {
     assert.equal(row.purchase_date, '2026-08-05');
     assert.equal(row.scanned_at, '2026-08-05T14:30:00.000Z');
     assert.equal(row.status, 'confirmed');
+    assert.equal(row.is_manual, false, 'search picks the flag from the owning purchase');
     // One item per row so the pure month aggregators re-use the shape.
     assert.deepEqual(row.items, [
       {

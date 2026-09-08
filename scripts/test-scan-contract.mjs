@@ -702,7 +702,7 @@ async function run() {
 
     // saveReceipt only — QuotaExceededError is already destructured earlier
     // in this same apiMod scope (section B).
-    const { saveReceipt } = apiMod;
+    const { saveReceipt, buildSaveReceiptArgs } = apiMod;
 
     const minDraft = {
       store_name: '', // empty → no resolveStoreId call
@@ -755,6 +755,21 @@ async function run() {
         };
         const res = await saveReceipt('user-uuid', minDraft);
         assert.deepEqual(res, { id: 'purchase-123' });
+      },
+    );
+
+    await test(
+      'scan flow persists origin false: seam emits p_is_manual=false for a scanned draft',
+      async () => {
+        // The scanned draft NEVER sets is_manual (migration 0029, D4) — the
+        // shared seam must emit p_is_manual=false so the RPC persists the
+        // ticket as scanned. Manual entries only reach the RPC via
+        // buildManualDraft (is_manual: true), asserted in test-manual-receipt.
+        const res = await buildSaveReceiptArgs('user-uuid', minDraft);
+        assert.equal(res.args.p_is_manual, false);
+        // The arg is emitted even when the draft omits the field (always the
+        // 7-param RPC call — the overload resolves by explicit named arg).
+        assert.ok('p_is_manual' in res.args);
       },
     );
   } else {

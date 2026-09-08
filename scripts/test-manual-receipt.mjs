@@ -165,7 +165,12 @@ function compile() {
       get(_t, prop) {
         if (prop === Symbol.toPrimitive) return function () { return '[SupabaseStub]'; };
         if (prop === 'rpc') {
-          return function () {
+          // Records every .rpc(name, args) call (globalThis.__rpcCalls) so
+          // tests can assert the EXACT payload that reached the RPC — e.g.
+          // p_is_manual on the manual save (migration 0029 origin).
+          return function (fnName: string, rpcArgs?: unknown) {
+            if (!Array.isArray(globalObj.__rpcCalls)) globalObj.__rpcCalls = [];
+            globalObj.__rpcCalls.push({ fn: fnName, args: rpcArgs });
             return new Proxy(function () { return rpcResult(); }, {
               get(_t2, prop2) {
                 if (prop2 === Symbol.toPrimitive) return function () { return '[RpcBuilder]'; };
@@ -226,6 +231,7 @@ function compile() {
       globalObj.__invalidateCalls = [];
       globalObj.__storageUploads = [];
       globalObj.__storageRemovals = [];
+      globalObj.__rpcCalls = [];
     }
     export const isSupabaseConfigured = true;
   `,
@@ -421,6 +427,9 @@ async function run() {
     assert.equal(d.purchase_date, '2026-09-01');
     assert.equal(d.total, 500);
     assert.equal(d.payment_method, 'cash');
+    // Origin (migration 0029): the manual draft body always carries
+    // is_manual=true — the shared seam emits p_is_manual from it.
+    assert.equal(d.is_manual, true);
     assert.deepEqual(d.items, [item()]);
   });
 
@@ -588,6 +597,9 @@ async function run() {
       assert.equal(res.args.p_total, 500);
       assert.equal(res.args.p_payment_method, 'cash');
       assert.equal(res.args.p_image_url, null, 'empty image_url persists null');
+      // Origin (migration 0029): a draft that never sets the flag is a scan →
+      // false. Only buildManualDraft (is_manual: true) flips the seam arg.
+      assert.equal(res.args.p_is_manual, false);
       assert.equal(res.args.p_items.length, 1);
       assert.deepEqual(res.args.p_items[0], {
         name: 'Café',
@@ -635,6 +647,11 @@ async function run() {
       assert.equal(res.args.p_payment_method, 'card');
     });
 
+    await test('origin true when the draft is flagged manual (seam D4)', async () => {
+      const res = await buildSaveReceiptArgs('user-1', draft({ is_manual: true }));
+      assert.equal(res.args.p_is_manual, true);
+    });
+
     // ------------------------------------------------------------------
     // E. saveManualReceipt — runtime save behavior (REQ-008..010)
     // ------------------------------------------------------------------
@@ -677,6 +694,26 @@ async function run() {
       };
       const res = await saveReceipt('user-1', draft());
       assert.deepEqual(res, { id: 'purchase-456' });
+    });
+
+    await test('manual save reaches the RPC with p_is_manual=true (migration 0029)', async () => {
+      globalThis.__rpcResult = {
+        data: { ok: true, purchase_id: 'purchase-789', scans_used: 1, scans_limit: 15 },
+        error: null,
+      };
+      globalThis.__rpcCalls = [];
+      await saveManualReceipt('user-1', draft({ is_manual: true }));
+      const saveCalls = globalThis.__rpcCalls.filter((c) => c.fn === 'save_receipt');
+      assert.equal(
+        saveCalls.length,
+        1,
+        'manual save performs exactly one save_receipt RPC call',
+      );
+      assert.equal(
+        saveCalls[0].args.p_is_manual,
+        true,
+        'RPC payload carries the manual origin (is_manual=true)',
+      );
     });
 
     await test('parity: saveReceipt ok=false still throws QuotaExceededError', async () => {
