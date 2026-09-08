@@ -1,18 +1,10 @@
 import { useMemo } from 'react';
-import {
-  FlatList,
-  Modal,
-  Pressable,
-  StyleSheet,
-  View,
-  type ListRenderItem,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { FlatList, StyleSheet, View, type ListRenderItem } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 
-import { Divider, EmptyState, Icon, Spinner, Text } from '@/components';
+import { BottomSheet, Divider, EmptyState, Spinner, Text } from '@/components';
 import { useSettingsStore } from '@/stores/use-settings-store';
-import { colors, radii, spacing, typography } from '@/theme';
+import { colors, spacing, typography } from '@/theme';
 import { formatCurrency } from '@/lib/format';
 import { readMonthlyImpulseItems } from '@/lib/supabase/feature-access';
 import { toQueryData } from '@/lib/supabase/query-adapters';
@@ -77,70 +69,44 @@ export function SnacksBreakdownModal({
   );
 
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-      statusBarTranslucent
+      onClose={onClose}
+      kicker="Antojos/Snacks"
+      title="Desglose del mes"
+      backdropLabel="Cerrar desglose"
     >
-      <View style={styles.backdrop}>
-        <Pressable
-          style={styles.backdropTouch}
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel="Cerrar desglose"
-        />
-        <SafeAreaView style={styles.sheet} edges={['bottom']}>
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <View style={styles.headerText}>
-              <Text style={styles.kicker}>Antojos/Snacks</Text>
-              <Text style={styles.title}>Desglose del mes</Text>
-            </View>
-            <Pressable
-              onPress={onClose}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar"
-              style={styles.closeButton}
-            >
-              <Icon name="xmark" size={22} color={colors.textPrimary} />
-            </Pressable>
-          </View>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total del mes</Text>
-            <Text style={styles.totalAmount}>
-              {formatCurrency(total, currency)}
-            </Text>
-          </View>
-          <Divider />
-          {itemsQuery.isPending ? (
-            // RPC in flight: spinner instead of a false "Sin antojos" empty
-            // state + $0 flash. The total row above stays $0 while loading.
-            <View style={styles.loadingWrap}>
-              <Spinner />
-            </View>
-          ) : rows.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <EmptyState
-                icon="bag.fill"
-                title="Sin antojos este mes."
-                body="Marcá un item como impulso al escanear un ticket para verlo acá."
-              />
-            </View>
-          ) : (
-            <FlatList
-              data={rows}
-              keyExtractor={(item) => item.name}
-              renderItem={renderItem}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-            />
-          )}
-        </SafeAreaView>
+      <View style={styles.totalRow}>
+        <Text style={styles.totalLabel}>Total del mes</Text>
+        <Text style={styles.totalAmount}>
+          {formatCurrency(total, currency)}
+        </Text>
       </View>
-    </Modal>
+      <Divider />
+      {itemsQuery.isPending ? (
+        // RPC in flight: spinner instead of a false "Sin antojos" empty
+        // state + $0 flash. The total row above stays $0 while loading.
+        <View style={styles.loadingWrap}>
+          <Spinner />
+        </View>
+      ) : rows.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <EmptyState
+            icon="bag.fill"
+            title="Sin antojos este mes."
+            body="Marcá un item como impulso al escanear un ticket para verlo acá."
+          />
+        </View>
+      ) : (
+        <FlatList
+          data={rows}
+          keyExtractor={(item) => item.name}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+    </BottomSheet>
   );
 }
 
@@ -151,55 +117,6 @@ function capitalize(s: string): string {
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  // Pressable layer that catches taps outside the sheet — sits behind the
-  // sheet visually but covers the rest of the screen so `onPress` closes
-  // the modal even on the dimmed area.
-  backdropTouch: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  sheet: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
-    paddingTop: spacing.sm,
-    maxHeight: '80%',
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-    alignSelf: 'center',
-    marginBottom: spacing.md,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.md,
-    gap: spacing.md,
-  },
-  headerText: {
-    flex: 1,
-    gap: 2,
-  },
-  kicker: {
-    ...typography.labelCaps,
-    color: colors.textSecondary,
-  },
-  title: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
-  },
-  closeButton: {
-    padding: spacing.xs,
-  },
   totalRow: {
     flexDirection: 'row',
     alignItems: 'center',
