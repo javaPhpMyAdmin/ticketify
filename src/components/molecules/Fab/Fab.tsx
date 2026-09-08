@@ -7,6 +7,8 @@ export interface FabProps {
   onPress: () => void;
   label?: string;
   icon?: IconName;
+  /** Icon size in points (default 20). Icon-only circles bump it up. */
+  iconSize?: number;
   style?: StyleProp<ViewStyle>;
   /** Override the emerald background (e.g. for a disabled state). */
   backgroundColor?: string;
@@ -28,6 +30,7 @@ export function Fab({
   onPress,
   label,
   icon = 'plus',
+  iconSize = 20,
   style,
   backgroundColor,
   disabled = false,
@@ -46,7 +49,7 @@ export function Fab({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
     >
-      {icon ? <Icon name={icon} size={20} color={colors.textInverse} /> : null}
+      {icon ? <Icon name={icon} size={iconSize} color={colors.textInverse} /> : null}
       {label ? <Text style={styles.label}>{label}</Text> : null}
     </Pressable>
   );
