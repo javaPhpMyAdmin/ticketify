@@ -235,7 +235,7 @@ function compile() {
     export type CardType = 'debit' | 'credit';
     export type PurchaseStatus = 'pending' | 'parsed' | 'confirmed' | 'failed';
     export interface Category { id: string; slug: string; name: string; kind: string; icon: string; color: string; sort_order: number; }
-    export interface ReceiptDraft { store_name: string; purchase_date: string; total: number; payment_method: PaymentMethod; image_url: string; items: ReviewItem[]; }
+    export interface ReceiptDraft { store_name: string; purchase_date: string; total: number; payment_method: PaymentMethod; is_manual?: boolean; image_url: string; items: ReviewItem[]; }
     export interface ReviewItem { temp_id: string; name: string; quantity: number; unit_price: number; total_price: number; category_id: string | null; is_impulse: boolean; ai_suggested_category_id: string | null; }
   `,
   );
