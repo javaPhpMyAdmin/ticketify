@@ -30,34 +30,16 @@ import {
   useReceiptDraftActions,
   useReceiptDraftDraft,
   buildManualDraft,
+  cardTypeLabels,
+  cardTypeOptions,
+  paymentMethods,
 } from '@/features/tickets';
 import { formatDateES } from '@/components/molecules/DatePickerField/calendar';
 import { formatCurrency, todayLocalISO } from '@/lib/format';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { useToastStore } from '@/stores/use-toast-store';
 import { colors, radii, spacing, typography } from '@/theme';
-import type { CardType, PaymentMethod, ReviewItem } from '@/types';
-import { PAYMENT_METHOD_LABELS } from '@/types';
-
-// Picker order mirrors the scan review: card first, then the rest.
-const paymentMethods: { key: PaymentMethod; label: string }[] = (
-  ['card', 'cash', 'apple_pay', 'google_pay', 'transfer', 'other'] as const
-).map((key) => ({ key, label: PAYMENT_METHOD_LABELS[key] }));
-
-const cardTypeOptions: { key: CardType; label: string }[] = [
-  { key: 'debit', label: 'Débito' },
-  { key: 'credit', label: 'Crédito' },
-];
-
-/**
- * Read-only card-kind detail appended to the "Tarjeta" chip, e.g.
- * "Tarjeta · Débito" (mirrors the scan review's `cardInfo` composition —
- * REQ-007: "the chip renders 'Tarjeta · Débito/Crédito' as in review").
- */
-const cardTypeLabels: Record<CardType, string> = {
-  debit: 'Débito',
-  credit: 'Crédito',
-};
+import type { CardType, ReviewItem } from '@/types';
 
 /**
  * Home to the manual purchase entry (REQ-002..008). Builds a draft with a
