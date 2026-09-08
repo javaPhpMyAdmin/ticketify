@@ -1,6 +1,6 @@
-import { Modal, ScrollView, StyleSheet } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 
-import { Icon, Pressable, Text, View } from '@/components';
+import { BottomSheet, Icon, Pressable, Text, View } from '@/components';
 import { EXPENSE_CATEGORIES } from '@/features/home/categories';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -25,11 +25,21 @@ export interface CategoryPickerModalProps {
  * user's choice is written to `category_id`, and the save path prefers
  * the user's choice.
  *
- * Renders inside react-native's `Modal` so it is a true overlay: it never
- * shares layout with the review screen (a plain `flex: 1` sibling would
- * push the receipt total and confirm button off the footer). The backdrop
- * is a separate absolute-fill Pressable so tapping the sheet's own area
- * never closes it.
+ * Renders inside the shared `BottomSheet` shell (transparent slide-up
+ * `Modal`) so it is a true overlay: it never shares layout with the review
+ * screen (a plain `flex: 1` sibling would push the receipt total and
+ * confirm button off the footer). The backdrop is a separate absolute-fill
+ * Pressable so tapping the sheet's own area never closes it.
+ *
+ * Chrome parity notes (kept from the pre-BottomSheet version):
+ *   - `surface` fill, `radius="xl"` corners, `maxHeight="70%"`, darker
+ *     backdrop — all custom props on the shared shell.
+ *   - NO close button and NO header row (`showCloseButton={false}` without
+ *     `kicker`/`title`): this sheet dismisses only on backdrop tap or
+ *     category selection, exactly like before.
+ *   - The title + item name + grid live in the BODY (the old sheet applied
+ *     `paddingHorizontal` at the sheet level); the grid keeps its own
+ *     ScrollView so only the category grid scrolls, never the heading.
  */
 export function CategoryPickerModal({
   visible,
@@ -40,92 +50,70 @@ export function CategoryPickerModal({
 }: CategoryPickerModalProps) {
   const categories = Object.values(EXPENSE_CATEGORIES);
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-      statusBarTranslucent
+      onClose={onClose}
+      backdropLabel="Cerrar categorías"
+      backdropColor="rgba(0, 0, 0, 0.5)"
+      surface
+      radius="xl"
+      maxHeight="70%"
+      showCloseButton={false}
     >
-      <View style={styles.backdrop}>
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel="Cerrar categorías"
-        />
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
-          <Text style={styles.title}>Categoría</Text>
-          <Text style={styles.itemName} numberOfLines={1}>
-            {itemName}
-          </Text>
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={styles.grid}
-            showsVerticalScrollIndicator={false}
-          >
-            {categories.map((category) => {
-              const selected = category.key === selectedKey;
-              return (
-                <Pressable
-                  key={category.key}
-                  onPress={() => onSelect(category.key)}
-                  style={({ pressed }) => [
-                    styles.cell,
-                    selected && styles.cellSelected,
-                    pressed && styles.cellPressed,
+      <View style={styles.body}>
+        <Text style={styles.title}>Categoría</Text>
+        <Text style={styles.itemName} numberOfLines={1}>
+          {itemName}
+        </Text>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.grid}
+          showsVerticalScrollIndicator={false}
+        >
+          {categories.map((category) => {
+            const selected = category.key === selectedKey;
+            return (
+              <Pressable
+                key={category.key}
+                onPress={() => onSelect(category.key)}
+                style={({ pressed }) => [
+                  styles.cell,
+                  selected && styles.cellSelected,
+                  pressed && styles.cellPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                accessibilityLabel={category.label}
+              >
+                <Icon
+                  name={category.icon}
+                  size={20}
+                  color={selected ? colors.primary : colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.cellLabel,
+                    selected && styles.cellLabelSelected,
                   ]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  accessibilityLabel={category.label}
+                  numberOfLines={1}
                 >
-                  <Icon
-                    name={category.icon}
-                    size={20}
-                    color={selected ? colors.primary : colors.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      styles.cellLabel,
-                      selected && styles.cellLabelSelected,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {category.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
+                  {category.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </View>
-    </Modal>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
+  // Body carries the sheet-level padding the old version applied to the
+  // whole sheet: horizontal inset + bottom padding under the grid.
+  body: {
     paddingHorizontal: spacing.xl,
-    paddingTop: spacing.md,
     paddingBottom: spacing.xl,
-    maxHeight: '70%',
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.divider,
-    marginBottom: spacing.md,
   },
   title: {
     ...typography.headlineMd,

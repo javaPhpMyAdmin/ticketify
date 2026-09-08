@@ -38,6 +38,14 @@ export interface BottomSheetProps {
   title?: string;
   /** Close affordance look. Default `'xmark'`; `'text'` renders a `✕`. */
   closeIcon?: BottomSheetCloseIcon;
+  /**
+   * Render the close button in the header. Set `false` for sheets with no
+   * close affordance at all (e.g. the category picker, which dismisses on
+   * backdrop tap or selection only). When set to `false` AND no
+   * `kicker`/`title` is given, the header row is skipped entirely.
+   * Default `true`.
+   */
+  showCloseButton?: boolean;
   /** Accessibility label for the backdrop pressable. Default `'Cerrar'`. */
   backdropLabel?: string;
   /** Accessibility label for the close button. Default `'Cerrar'`. */
@@ -110,6 +118,7 @@ export function BottomSheet({
   closeIcon = 'xmark',
   backdropLabel = 'Cerrar',
   closeLabel = 'Cerrar',
+  showCloseButton = true,
   maxHeight = '80%',
   backdropColor = 'rgba(0,0,0,0.45)',
   surface = false,
@@ -166,29 +175,32 @@ export function BottomSheet({
     },
   ];
 
-  const header = (
-    <View style={[styles.header, kicker && !title && styles.headerCentered]}>
-      {kicker || title ? (
-        <View style={styles.headerText}>
-          {kicker ? <Text style={styles.kicker}>{kicker}</Text> : null}
-          {title ? <Text style={styles.title}>{title}</Text> : null}
-        </View>
-      ) : null}
-      <Pressable
-        onPress={requestClose}
-        hitSlop={12}
-        accessibilityRole="button"
-        accessibilityLabel={closeLabel}
-        style={styles.closeButton}
-      >
-        {closeIcon === 'text' ? (
-          <Text style={styles.closeX}>✕</Text>
-        ) : (
-          <Icon name="xmark" size={22} color={colors.textPrimary} />
-        )}
-      </Pressable>
-    </View>
-  );
+  const header =
+    kicker || title || showCloseButton ? (
+      <View style={[styles.header, kicker && !title && styles.headerCentered]}>
+        {kicker || title ? (
+          <View style={styles.headerText}>
+            {kicker ? <Text style={styles.kicker}>{kicker}</Text> : null}
+            {title ? <Text style={styles.title}>{title}</Text> : null}
+          </View>
+        ) : null}
+        {showCloseButton ? (
+          <Pressable
+            onPress={requestClose}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel={closeLabel}
+            style={styles.closeButton}
+          >
+            {closeIcon === 'text' ? (
+              <Text style={styles.closeX}>✕</Text>
+            ) : (
+              <Icon name="xmark" size={22} color={colors.textPrimary} />
+            )}
+          </Pressable>
+        ) : null}
+      </View>
+    ) : null;
 
   const body = scrollable ? (
     <ScrollView

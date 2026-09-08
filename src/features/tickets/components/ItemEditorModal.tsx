@@ -1,16 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  Keyboard,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { Divider, FieldGroup, Icon, Text } from '@/components';
+import { BottomSheet, FieldGroup, Text } from '@/components';
 import { parseQuantity } from '@/features/tickets/manual-form';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -31,9 +22,8 @@ export interface ItemEditorModalProps {
 
 /**
  * Bottom-sheet modal for adding or editing a line item in the manual
- * entry screen.  Follows the RenameItemModal / CategoryPickerModal
- * pattern: transparent RN `Modal`, slide-from-bottom, handle bar,
- * safe-area body.
+ * entry screen.  Shares the `BottomSheet` shell (transparent slide-up
+ * `Modal`, handle bar, header with kicker/title + close, safe-area body).
  *
  * Three inputs: name (TextInput, autoFocus), quantity (number input),
  * unit_price (number input).  The save button is disabled when the
@@ -44,6 +34,13 @@ export interface ItemEditorModalProps {
  * internal text buffers so user input never gets yanked during an
  * async handler (even though the parent saves synchronously, the
  * pattern stays consistent with RenameItemModal).
+ *
+ * Keyboard: `keyboardMode="listeners"` on the sheet measures the REAL
+ * keyboard height (a transparent Modal never receives `adjustResize`)
+ * and pads the scrollable body with `keyboardHeight + spacing.lg` — the
+ * exact formula the pre-BottomSheet version applied manually, now owned
+ * by the shell.  The buffer reseed below still runs ONLY on the `visible`
+ * flip, never on a parent re-render.
  */
 export function ItemEditorModal({
   visible,
@@ -58,7 +55,6 @@ export function ItemEditorModal({
   const [priceStr, setPriceStr] = useState(
     initialValues != null ? String(initialValues.unit_price) : '',
   );
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   // Latch the latest initialValues into a ref so the seed effect can depend
   // ONLY on `visible`. The parent passes an inline object for initialValues,
@@ -69,19 +65,6 @@ export function ItemEditorModal({
   useEffect(() => {
     initialRef.current = initialValues;
   });
-
-  useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', (e) => {
-      setKeyboardHeight(e.endCoordinates.height);
-    });
-    const hide = Keyboard.addListener('keyboardDidHide', () => {
-      setKeyboardHeight(0);
-    });
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
 
   // Re-seed the internal buffers only when the sheet opens (visible flips
   // false → true), never on a parent re-render while it stays open.
@@ -108,172 +91,92 @@ export function ItemEditorModal({
   };
 
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-      statusBarTranslucent
+      onClose={onClose}
+      kicker="AGREGAR ARTÍCULO"
+      title={initialValues ? 'Editar artículo' : 'Nuevo artículo'}
+      backdropColor="rgba(0, 0, 0, 0.5)"
+      keyboardMode="listeners"
+      scrollable
+      divider
+      contentContainerStyle={styles.body}
     >
-      <View style={styles.backdrop}>
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel="Cerrar"
+      <FieldGroup label="Nombre del producto">
+        <TextInput
+          value={name}
+          onChangeText={setName}
+          style={styles.input}
+          placeholder="Ej. Café con leche"
+          placeholderTextColor={colors.textSecondary}
+          keyboardType="default"
+          autoFocus
+          maxLength={120}
+          accessibilityLabel="Nombre del producto"
         />
-        <SafeAreaView style={styles.sheet} edges={['bottom']}>
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <View style={styles.headerText}>
-              <Text style={styles.kicker}>AGREGAR ARTÍCULO</Text>
-              <Text style={styles.title}>
-                {initialValues ? 'Editar artículo' : 'Nuevo artículo'}
-              </Text>
-            </View>
-            <Pressable
-              onPress={onClose}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar"
-              style={styles.closeButton}
-            >
-              <Icon name="xmark" size={22} color={colors.textPrimary} />
-            </Pressable>
-          </View>
-          <Divider />
-          <ScrollView
-            style={styles.scrollBody}
-            contentContainerStyle={[
-              styles.body,
-              { paddingBottom: keyboardHeight + spacing.lg },
-            ]}
-            keyboardShouldPersistTaps="handled"
-          >
-            <FieldGroup label="Nombre del producto">
-              <TextInput
-                value={name}
-                onChangeText={setName}
-                style={styles.input}
-                placeholder="Ej. Café con leche"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="default"
-                autoFocus
-                maxLength={120}
-                accessibilityLabel="Nombre del producto"
-              />
-            </FieldGroup>
-            <View style={styles.row}>
-              <FieldGroup label="Cantidad" style={{ flex: 1 }}>
-                <TextInput
-                  value={quantityStr}
-                  onChangeText={setQuantityStr}
-                  style={styles.input}
-                  placeholder="1"
-                  placeholderTextColor={colors.textSecondary}
-                  keyboardType="number-pad"
-                  accessibilityLabel="Cantidad"
-                />
-              </FieldGroup>
-              <View style={{ width: spacing.md }} />
-              <FieldGroup label="Precio unitario" style={{ flex: 1 }}>
-                <TextInput
-                  value={priceStr}
-                  onChangeText={setPriceStr}
-                  style={styles.input}
-                  placeholder="0.00"
-                  placeholderTextColor={colors.textSecondary}
-                  keyboardType="decimal-pad"
-                  accessibilityLabel="Precio unitario"
-                />
-              </FieldGroup>
-            </View>
-            <Text style={styles.helper}>
-              El precio se calcula como cantidad × precio unitario
-            </Text>
-            <View style={styles.actions}>
-              <Pressable
-                onPress={onClose}
-                style={({ pressed }) => [
-                  styles.actionButton,
-                  styles.cancelButton,
-                  pressed && styles.actionPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Cancelar"
-              >
-                <Text style={styles.cancelLabel}>Cancelar</Text>
-              </Pressable>
-              <Pressable
-                onPress={handleSave}
-                disabled={!canSave}
-                style={({ pressed }) => [
-                  styles.actionButton,
-                  styles.saveButton,
-                  pressed && styles.actionPressed,
-                  !canSave && styles.actionDisabled,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Guardar"
-                accessibilityState={{ disabled: !canSave }}
-              >
-                <Text style={styles.saveLabel}>Agregar</Text>
-              </Pressable>
-            </View>
-          </ScrollView>
-        </SafeAreaView>
+      </FieldGroup>
+      <View style={styles.row}>
+        <FieldGroup label="Cantidad" style={{ flex: 1 }}>
+          <TextInput
+            value={quantityStr}
+            onChangeText={setQuantityStr}
+            style={styles.input}
+            placeholder="1"
+            placeholderTextColor={colors.textSecondary}
+            keyboardType="number-pad"
+            accessibilityLabel="Cantidad"
+          />
+        </FieldGroup>
+        <View style={{ width: spacing.md }} />
+        <FieldGroup label="Precio unitario" style={{ flex: 1 }}>
+          <TextInput
+            value={priceStr}
+            onChangeText={setPriceStr}
+            style={styles.input}
+            placeholder="0.00"
+            placeholderTextColor={colors.textSecondary}
+            keyboardType="decimal-pad"
+            accessibilityLabel="Precio unitario"
+          />
+        </FieldGroup>
       </View>
-    </Modal>
+      <Text style={styles.helper}>
+        El precio se calcula como cantidad × precio unitario
+      </Text>
+      <View style={styles.actions}>
+        <Pressable
+          onPress={onClose}
+          style={({ pressed }) => [
+            styles.actionButton,
+            styles.cancelButton,
+            pressed && styles.actionPressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Cancelar"
+        >
+          <Text style={styles.cancelLabel}>Cancelar</Text>
+        </Pressable>
+        <Pressable
+          onPress={handleSave}
+          disabled={!canSave}
+          style={({ pressed }) => [
+            styles.actionButton,
+            styles.saveButton,
+            pressed && styles.actionPressed,
+            !canSave && styles.actionDisabled,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Guardar"
+          accessibilityState={{ disabled: !canSave }}
+        >
+          <Text style={styles.saveLabel}>Agregar</Text>
+        </Pressable>
+      </View>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  scrollBody: {
-    flexShrink: 1,
-  },
-  sheet: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
-    paddingTop: spacing.sm,
-    maxHeight: '80%',
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-    alignSelf: 'center',
-    marginBottom: spacing.md,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.md,
-    gap: spacing.md,
-  },
-  headerText: {
-    flex: 1,
-    gap: 2,
-  },
-  kicker: {
-    ...typography.labelCaps,
-    color: colors.textSecondary,
-  },
-  title: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
-  },
-  closeButton: {
-    padding: spacing.xs,
-  },
   body: {
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
