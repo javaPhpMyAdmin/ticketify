@@ -1643,6 +1643,7 @@ async function run() {
           payment_method: 'card',
           image_url: 'u1/p-1.jpg',
           status: 'confirmed',
+          is_manual: false,
           // PostgREST returns to-one embeds (single FK: purchases.store_id,
           // purchase_items.category_id) as JSON OBJECTS — not arrays.
           stores: { name: 'Whole Foods Market' },
@@ -1689,6 +1690,7 @@ async function run() {
     assert.equal(purchase.items[1].category, null);
     assert.equal(purchase.status, 'confirmed');
     assert.equal(purchase.image_url, 'u1/p-1.jpg');
+    assert.equal(purchase.is_manual, false, 'scanned origin survives the detail read');
     assert.equal(purchase.items[0].sort_order, 0);
     assert.equal(purchase.items[1].sort_order, 1);
     // The detail read is scoped to the edited purchase AND the session user
@@ -1721,6 +1723,7 @@ async function run() {
           payment_method: 'cash',
           image_url: null,
           status: 'confirmed',
+          is_manual: true,
           // Some selects deliver the to-one embed as a ONE-ELEMENT ARRAY —
           // both shapes must map to the same object (firstOrSelf).
           stores: [{ name: 'Feria Vecinal' }],
@@ -1753,6 +1756,7 @@ async function run() {
     const purchase = await ticketsMod.fetchPurchaseDetail('u1', 'p-2');
     assert.equal(purchase.store_name, 'Feria Vecinal');
     assert.equal(purchase.items[0].category?.slug, 'verduras');
+    assert.equal(purchase.is_manual, true, 'manual origin survives the detail read');
   });
 
   await test('purchaseToDraft preserves the purchase fields and maps category uuids to slugs', async () => {
@@ -1811,6 +1815,9 @@ async function run() {
     assert.equal(draft.items[0].is_impulse, false);
     assert.equal(draft.items[1].category_id, null);
     assert.equal(draft.items[1].is_impulse, true);
+    // Origin is SEALED to the insert path (migration 0029, D4): re-saving an
+    // existing ticket must never flip its origin via purchaseToDraft.
+    assert.ok(!('is_manual' in draft), 'purchaseToDraft never maps the origin flag (D4)');
     assert.equal(draft.items[0].name, 'Leche', 'line order is preserved');
     assert.equal(draft.items[1].name, 'Galletas', 'line order is preserved');
     assert.ok(draft.items[0].temp_id && draft.items[1].temp_id, 'fresh temp ids for the review list keys');
