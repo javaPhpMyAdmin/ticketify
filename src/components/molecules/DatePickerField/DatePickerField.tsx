@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Divider, Icon, Text } from '@/components/atoms';
+import { Icon, Text } from '@/components/atoms';
+import { BottomSheet } from '@/components/molecules/BottomSheet';
 import { colors, radii, spacing, typography } from '@/theme';
 
 import { todayLocalISO } from '@/lib/format';
@@ -101,201 +101,138 @@ export function DatePickerField({
     (year === new Date(today).getFullYear() && month < new Date(today).getMonth());
 
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-      statusBarTranslucent
+      onClose={onClose}
+      kicker="FECHA DE COMPRA"
+      // Header title mirrors the selected date; updates as the user navigates
+      // months (the base re-renders it from this prop on every render).
+      title={`${pad2(month + 1)} · ${fullMonthES(month)} · ${year}`}
+      backdropColor="rgba(0, 0, 0, 0.5)"
+      maxHeight="82%"
+      divider
     >
-      <View style={styles.backdrop}>
+      <View style={styles.monthNav}>
         <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={onClose}
+          onPress={prevMonth}
+          hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Cerrar fecha"
-        />
-        <SafeAreaView style={styles.sheet} edges={['bottom']}>
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <View style={styles.headerText}>
-              <Text style={styles.kicker}>FECHA DE COMPRA</Text>
-              <Text style={styles.title}>
-                {pad2(month + 1)} · {fullMonthES(month)} · {year}
-              </Text>
-            </View>
-            <Pressable
-              onPress={onClose}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar"
-              style={styles.closeButton}
-            >
-              <Icon name="xmark" size={22} color={colors.textPrimary} />
-            </Pressable>
-          </View>
-          <Divider />
-          <View style={styles.monthNav}>
-            <Pressable
-              onPress={prevMonth}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Mes anterior"
-              style={styles.navButton}
-            >
-              <Icon name="chevron.left" size={20} color={colors.textPrimary} />
-            </Pressable>
-            <Text style={styles.monthLabel}>
-              {fullMonthES(month)}{' '}
-              <Text style={styles.yearInline}>{year}</Text>
-            </Text>
-            <Pressable
-              onPress={nextMonth}
-              disabled={!canGoNext}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Mes siguiente"
-              style={styles.navButton}
-            >
-              <Icon
-                name="chevron.right"
-                size={20}
-                color={canGoNext ? colors.textPrimary : colors.textSecondary}
-              />
-            </Pressable>
-          </View>
-          <ScrollView
-            style={styles.scrollBody}
-            contentContainerStyle={styles.calendar}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.headRow}>
-              {weekdayLabels(true).map((label, i) => (
-                <View key={i} style={styles.cell}>
-                  <Text style={styles.weekday}>{label}</Text>
-                </View>
-              ))}
-            </View>
-            <View style={styles.grid}>
-              {grid.map((d, i) => {
-                const iso = d != null ? isoFromParts({ year, month: month + 1, day: d }) : null;
-                const isFutureCell = iso !== null && isFutureISO(iso, today);
-                const isSelected = d != null && d === day && !isFuture;
-                return (
-                  <View key={i} style={styles.cell}>
-                    {d != null ? (
-                      <Pressable
-                        onPress={() => selectDay(d)}
-                        disabled={isFutureCell}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Día ${d}`}
-                        style={({ pressed }) => [
-                          styles.dayCell,
-                          isSelected && styles.dayCellSelected,
-                          pressed && !isFutureCell && styles.dayCellPressed,
-                          isFutureCell && styles.dayCellDisabled,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.dayText,
-                            isSelected && styles.dayTextSelected,
-                            isFutureCell && styles.dayTextDisabled,
-                          ]}
-                        >
-                          {d}
-                        </Text>
-                      </Pressable>
-                    ) : (
-                      <View style={styles.dayCell} />
-                    )}
-                  </View>
-                );
-              })}
-            </View>
-            <Text style={styles.helper}>
-              {isFuture ? 'No podés elegir una fecha futura' : `Máx. hoy (${today})`}
-            </Text>
-          </ScrollView>
-          <View style={styles.actions}>
-            <Pressable
-              onPress={onClose}
-              style={({ pressed }) => [
-                styles.actionButton,
-                styles.cancelButton,
-                pressed && styles.actionPressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Cancelar"
-            >
-              <Text style={styles.cancelLabel}>Cancelar</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => selectedISO !== null && !isFuture && onPick(selectedISO)}
-              disabled={selectedISO === null || isFuture}
-              style={({ pressed }) => [
-                styles.actionButton,
-                styles.saveButton,
-                pressed && styles.actionPressed,
-                (selectedISO === null || isFuture) && styles.actionDisabled,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Guardar fecha"
-              accessibilityState={{ disabled: selectedISO === null || isFuture }}
-            >
-              <Text style={styles.saveLabel}>Guardar</Text>
-            </Pressable>
-          </View>
-        </SafeAreaView>
+          accessibilityLabel="Mes anterior"
+          style={styles.navButton}
+        >
+          <Icon name="chevron.left" size={20} color={colors.textPrimary} />
+        </Pressable>
+        <Text style={styles.monthLabel}>
+          {fullMonthES(month)}{' '}
+          <Text style={styles.yearInline}>{year}</Text>
+        </Text>
+        <Pressable
+          onPress={nextMonth}
+          disabled={!canGoNext}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Mes siguiente"
+          style={styles.navButton}
+        >
+          <Icon
+            name="chevron.right"
+            size={20}
+            color={canGoNext ? colors.textPrimary : colors.textSecondary}
+          />
+        </Pressable>
       </View>
-    </Modal>
+      {/* Own ScrollView instead of the sheet's `scrollable`: the calendar
+          grid scrolls while the month nav and the Cancelar/Guardar actions
+          stay PINNED under the 82% max-height — the sheet's `scrollable`
+          would wrap every child (actions included) and let the buttons
+          scroll off on small screens. */}
+      <ScrollView
+        style={styles.scrollBody}
+        contentContainerStyle={styles.calendar}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.headRow}>
+          {weekdayLabels(true).map((label, i) => (
+            <View key={i} style={styles.cell}>
+              <Text style={styles.weekday}>{label}</Text>
+            </View>
+          ))}
+        </View>
+        <View style={styles.grid}>
+          {grid.map((d, i) => {
+            const iso = d != null ? isoFromParts({ year, month: month + 1, day: d }) : null;
+            const isFutureCell = iso !== null && isFutureISO(iso, today);
+            const isSelected = d != null && d === day && !isFuture;
+            return (
+              <View key={i} style={styles.cell}>
+                {d != null ? (
+                  <Pressable
+                    onPress={() => selectDay(d)}
+                    disabled={isFutureCell}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Día ${d}`}
+                    style={({ pressed }) => [
+                      styles.dayCell,
+                      isSelected && styles.dayCellSelected,
+                      pressed && !isFutureCell && styles.dayCellPressed,
+                      isFutureCell && styles.dayCellDisabled,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.dayText,
+                        isSelected && styles.dayTextSelected,
+                        isFutureCell && styles.dayTextDisabled,
+                      ]}
+                    >
+                      {d}
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <View style={styles.dayCell} />
+                )}
+              </View>
+            );
+          })}
+        </View>
+        <Text style={styles.helper}>
+          {isFuture ? 'No podés elegir una fecha futura' : `Máx. hoy (${today})`}
+        </Text>
+      </ScrollView>
+      <View style={styles.actions}>
+        <Pressable
+          onPress={onClose}
+          style={({ pressed }) => [
+            styles.actionButton,
+            styles.cancelButton,
+            pressed && styles.actionPressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Cancelar"
+        >
+          <Text style={styles.cancelLabel}>Cancelar</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => selectedISO !== null && !isFuture && onPick(selectedISO)}
+          disabled={selectedISO === null || isFuture}
+          style={({ pressed }) => [
+            styles.actionButton,
+            styles.saveButton,
+            pressed && styles.actionPressed,
+            (selectedISO === null || isFuture) && styles.actionDisabled,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Guardar fecha"
+          accessibilityState={{ disabled: selectedISO === null || isFuture }}
+        >
+          <Text style={styles.saveLabel}>Guardar</Text>
+        </Pressable>
+      </View>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
-    paddingTop: spacing.sm,
-    maxHeight: '82%',
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-    alignSelf: 'center',
-    marginBottom: spacing.md,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.md,
-    gap: spacing.md,
-  },
-  headerText: {
-    flex: 1,
-    gap: 2,
-  },
-  kicker: {
-    ...typography.labelCaps,
-    color: colors.textSecondary,
-  },
-  title: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
-  },
-  closeButton: {
-    padding: spacing.xs,
-  },
   monthNav: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -313,6 +250,11 @@ const styles = StyleSheet.create({
   yearInline: {
     color: colors.textSecondary,
   },
+  // The scroll container must NOT stretch (`flex: 1` / `flexBasis: 0`):
+  // the sheet sizes itself by content (only `maxHeight` is set), so a
+  // zero-basis flex child collapses to 0 height and hides the body.
+  // `flexShrink: 1` keeps content height but lets the sheet compress on
+  // small screens.
   scrollBody: {
     flexShrink: 1,
   },
