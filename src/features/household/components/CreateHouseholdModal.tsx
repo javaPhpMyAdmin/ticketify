@@ -100,6 +100,7 @@ export function CreateHouseholdModal({
       title="Crear hogar"
       closeIcon="text"
       keyboardMode="avoidingView"
+      headerCentered
     >
       <View style={styles.body}>
         <Text style={styles.helper}>

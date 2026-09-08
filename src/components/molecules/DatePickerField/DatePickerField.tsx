@@ -108,6 +108,7 @@ export function DatePickerField({
       // Header title mirrors the selected date; updates as the user navigates
       // months (the base re-renders it from this prop on every render).
       title={`${pad2(month + 1)} · ${fullMonthES(month)} · ${year}`}
+      backdropLabel="Cerrar fecha"
       backdropColor="rgba(0, 0, 0, 0.5)"
       maxHeight="82%"
       divider

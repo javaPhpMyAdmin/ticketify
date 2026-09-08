@@ -34,6 +34,12 @@ export interface CategoryPickerModalProps {
  * Chrome parity notes (kept from the pre-BottomSheet version):
  *   - `surface` fill, `radius="xl"` corners, `maxHeight="70%"`, darker
  *     backdrop — all custom props on the shared shell.
+ *   - `handleStyle` restores the old 36/`colors.divider` handle (the shell's
+ *     default is 40/`colors.border`), `sheetPaddingTop` restores the old
+ *     `spacing.md` top gap (the shell's default is `spacing.sm`), and
+ *     `includeBottomInset={false}` keeps the sheet flush with the screen
+ *     bottom (the old sheet had NO bottom SafeArea; its `spacing.xl` bottom
+ *     padding covered the home-indicator area).
  *   - NO close button and NO header row (`showCloseButton={false}` without
  *     `kicker`/`title`): this sheet dismisses only on backdrop tap or
  *     category selection, exactly like before.
@@ -59,6 +65,9 @@ export function CategoryPickerModal({
       radius="xl"
       maxHeight="70%"
       showCloseButton={false}
+      handleStyle={styles.handle}
+      sheetPaddingTop={spacing.md}
+      includeBottomInset={false}
     >
       <View style={styles.body}>
         <Text style={styles.title}>Categoría</Text>
@@ -109,6 +118,12 @@ export function CategoryPickerModal({
 }
 
 const styles = StyleSheet.create({
+  // Pre-BottomSheet handle parity: the shell defaults to 40/`colors.border`;
+  // this picker's handle has always been 36/`colors.divider`.
+  handle: {
+    width: 36,
+    backgroundColor: colors.divider,
+  },
   // Body carries the sheet-level padding the old version applied to the
   // whole sheet: horizontal inset + bottom padding under the grid.
   body: {
