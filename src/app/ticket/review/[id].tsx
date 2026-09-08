@@ -36,6 +36,7 @@ import {
   QuotaExceededError,
   ReceiptItemsList,
   reviewItemsToFeedItems,
+  SAVE_ERROR_MESSAGE,
   saveReceipt,
   updateReceipt,
   useReceiptDraftActions,
@@ -54,14 +55,6 @@ import { useToastStore } from '@/stores/use-toast-store';
 import { colors, radii, spacing, typography } from '@/theme';
 import type { CardType, PaymentMethod, ReviewItem } from '@/types';
 import { PAYMENT_METHOD_LABELS } from '@/types';
-
-/**
- * User-safe copy for save failures. Same posture as the profile/budget
- * `WRITE_ERROR_MESSAGE`: never leak raw PostgREST text to the user.
- * Lives inline here (review is its own feature concern) — mirrors the
- * `RENAME_ITEM_ERROR_MESSAGE` constant pattern in `useRenameItem`.
- */
-const SAVE_ERROR_MESSAGE = 'No se pudo guardar. Inténtalo de nuevo.';
 
 // Picker order: card first (the most common scan result), then the rest.
 // Labels come from the shared `PAYMENT_METHOD_LABELS` map (types/index.ts),

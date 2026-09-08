@@ -30,6 +30,7 @@ export {
   deleteReceipt,
   QuotaExceededError,
   QUOTA_ERROR_MESSAGE,
+  SAVE_ERROR_MESSAGE,
 } from './api';
 export type {
   UploadResult,

@@ -410,7 +410,7 @@ export async function warmUpParseTicket(): Promise<void> {
  * User-safe copy when the purchase write fails (real mode). Raw backend
  * text never reaches the user (same posture as the auth and read paths).
  */
-const SAVE_ERROR_MESSAGE = 'No se pudo guardar el ticket. Inténtalo de nuevo.';
+export const SAVE_ERROR_MESSAGE = 'No se pudo guardar el ticket. Inténtalo de nuevo.';
 
 /**
  * User-safe copy shown when a free user has reached the monthly 15-scan cap:
