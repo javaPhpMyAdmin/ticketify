@@ -398,6 +398,10 @@ export default function ReviewReceiptScreen() {
               total: draft.total,
               image_url: draft.image_url || null,
               status: 'confirmed',
+              // Origin is immutable (migration 0029): the edit draft never
+              // carries it (purchaseToDraft), so the optimistic row keeps
+              // the store row's origin — a manual ticket stays manual.
+              is_manual: existing?.is_manual ?? false,
             },
             reviewItemsToFeedItems(draft.items),
           );

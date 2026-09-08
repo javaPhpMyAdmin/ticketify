@@ -29,6 +29,13 @@ export interface FeedRowMeta {
   status: HomeFeedReceiptRow['status'];
   /** Payment method when the caller's source provides it (optional). */
   payment_method?: PaymentMethod;
+  /**
+   * Ticket origin (migration 0029): true = manual entry, false = scanned.
+   * REQUIRED — the compiler forces every call site (home read,
+   * item-search read, edit-review optimistic row) to state it, so no
+   * surface can silently default an origin it does know.
+   */
+  is_manual: boolean;
 }
 
 /**
@@ -78,7 +85,9 @@ export function buildFeedRow(
   // NOTE for whole-object deepEqual fixtures: `payment_method` is ALWAYS
   // emitted here (undefined when the caller's meta omits it), so a fixture
   // that omits the field entirely fails deep equality — include
-  // `payment_method: undefined`.
+  // `payment_method: undefined`. Same for `is_manual` (REQUIRED meta — every
+  // caller always supplies it, so it is always present in the row): a
+  // fixture that omits it fails deep equality.
   return {
     id: meta.id,
     store_name: meta.store_name,
@@ -88,6 +97,7 @@ export function buildFeedRow(
     image_url: meta.image_url,
     status: meta.status,
     payment_method: meta.payment_method,
+    is_manual: meta.is_manual,
     wants_snacks_total: items
       .filter((item) => item.is_impulse)
       .reduce((sum, item) => sum + item.amount, 0),
