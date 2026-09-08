@@ -264,8 +264,8 @@ export default function HomeScreen() {
                       ? '…'
                       : `${monthFeed.receipts.length} ${
                           monthFeed.receipts.length !== 1
-                            ? 'tickets escaneados'
-                            : 'ticket escaneado'
+                            ? 'tickets'
+                            : 'ticket'
                         }`}
                   </Text>
                 ) : (
