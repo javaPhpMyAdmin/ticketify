@@ -1,9 +1,8 @@
-import { FlatList, Modal, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { FlatList, StyleSheet, View, type ListRenderItem } from 'react-native';
 
-import { Divider, EmptyState, Icon, Text } from '@/components';
+import { BottomSheet, Divider, EmptyState, Text } from '@/components';
 import { formatCurrency } from '@/lib/format';
-import { colors, radii, spacing, typography } from '@/theme';
+import { colors, spacing, typography } from '@/theme';
 
 /** One line item of THIS receipt inside the tapped category. */
 export interface ReceiptCategoryItem {
@@ -28,11 +27,12 @@ export interface ReceiptCategoryItemsModalProps {
 /**
  * Bottom-sheet modal listing ONLY the tapped receipt's items in one
  * category, opened by tapping a row in the receipt detail "Categorías"
- * card. Same shell as `DayDetailModal`: transparent backdrop so the
- * receipt stays visible, slides up via `animationType="slide"`, dismisses
- * on backdrop tap or the close button. The header pins the category label
- * and this receipt's category total; each row shows the item name (with
- * " ×qty" when the receipt bought more than one unit) and its amount.
+ * card. Shares the `BottomSheet` shell (same as `DayDetailModal`):
+ * transparent backdrop so the receipt stays visible, slides up via
+ * `animationType="slide"`, dismisses on backdrop tap or the close button.
+ * The header pins the category label and this receipt's category total;
+ * each row shows the item name (with " ×qty" when the receipt bought more
+ * than one unit) and its amount.
  *
  * The pinned "Total en este recibo" comes from `category_totals[slug]` (the
  * final discounted amount), while each row shows `item.amount` — the
@@ -63,117 +63,42 @@ export function ReceiptCategoryItemsModal({
   );
 
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-      statusBarTranslucent
+      onClose={onClose}
+      kicker={categoryLabel}
+      title="Artículos de la categoría"
+      backdropLabel="Cerrar artículos de la categoría"
     >
-      <View style={styles.backdrop}>
-        <Pressable
-          style={styles.backdropTouch}
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel="Cerrar artículos de la categoría"
-        />
-        <SafeAreaView style={styles.sheet} edges={['bottom']}>
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <View style={styles.headerText}>
-              <Text style={styles.kicker}>{categoryLabel}</Text>
-              <Text style={styles.title}>Artículos de la categoría</Text>
-            </View>
-            <Pressable
-              onPress={onClose}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar"
-              style={styles.closeButton}
-            >
-              <Icon name="xmark" size={22} color={colors.textPrimary} />
-            </Pressable>
-          </View>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total en este ticket</Text>
-            <Text style={styles.totalAmount}>
-              {formatCurrency(total, currency)}
-            </Text>
-          </View>
-          <Divider />
-          {items.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <EmptyState
-                icon="doc.text"
-                title="Sin artículos en esta categoría."
-                body="Este ticket no tiene artículos detallados en esta categoría."
-              />
-            </View>
-          ) : (
-            <FlatList
-              data={items}
-              keyExtractor={(item, index) => `${item.name}-${index}`}
-              renderItem={renderItem}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-            />
-          )}
-        </SafeAreaView>
+      <View style={styles.totalRow}>
+        <Text style={styles.totalLabel}>Total en este ticket</Text>
+        <Text style={styles.totalAmount}>
+          {formatCurrency(total, currency)}
+        </Text>
       </View>
-    </Modal>
+      <Divider />
+      {items.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <EmptyState
+            icon="doc.text"
+            title="Sin artículos en esta categoría."
+            body="Este ticket no tiene artículos detallados en esta categoría."
+          />
+        </View>
+      ) : (
+        <FlatList
+          data={items}
+          keyExtractor={(item, index) => `${item.name}-${index}`}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  // Pressable layer that catches taps outside the sheet — sits behind the
-  // sheet visually but covers the rest of the screen so `onPress` closes
-  // the modal even on the dimmed area.
-  backdropTouch: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  sheet: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
-    paddingTop: spacing.sm,
-    maxHeight: '80%',
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-    alignSelf: 'center',
-    marginBottom: spacing.md,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.md,
-    gap: spacing.md,
-  },
-  headerText: {
-    flex: 1,
-    gap: 2,
-  },
-  kicker: {
-    ...typography.labelCaps,
-    color: colors.textSecondary,
-  },
-  title: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
-  },
-  closeButton: {
-    padding: spacing.xs,
-  },
   totalRow: {
     flexDirection: 'row',
     alignItems: 'center',
