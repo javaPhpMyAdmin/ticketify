@@ -24,6 +24,7 @@ import {
   ItemEditorModal,
   QUOTA_ERROR_MESSAGE,
   QuotaExceededError,
+  SAVE_ERROR_MESSAGE,
   saveManualReceipt,
   validateManualForm,
   useReceiptDraftActions,
@@ -37,12 +38,6 @@ import { useToastStore } from '@/stores/use-toast-store';
 import { colors, radii, spacing, typography } from '@/theme';
 import type { CardType, PaymentMethod, ReviewItem } from '@/types';
 import { PAYMENT_METHOD_LABELS } from '@/types';
-
-/**
- * User-safe copy for save failures (same posture as the review screen and
- * the api module — never leak raw PostgREST text to the user).
- */
-const SAVE_ERROR_MESSAGE = 'No se pudo guardar el ticket. Inténtalo de nuevo.';
 
 // Picker order mirrors the scan review: card first, then the rest.
 const paymentMethods: { key: PaymentMethod; label: string }[] = (
