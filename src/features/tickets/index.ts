@@ -52,3 +52,9 @@ export type { PurchaseItemInput } from './manual-receipt';
 // The shared feed-row builder (home-feature pure module): the review flow
 // aggregates the edited draft through the same helpers the home reads use.
 export { buildFeedRow, reviewItemsToFeedItems } from '../home/feed-row';
+// Shared payment picker options for the ticket entry screens (review + manual).
+export {
+  paymentMethods,
+  cardTypeLabels,
+  cardTypeOptions,
+} from './payment-options';
