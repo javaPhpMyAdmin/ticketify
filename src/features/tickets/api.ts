@@ -842,6 +842,8 @@ export interface PurchaseWithItems {
   purchase_date: string;
   total: number;
   payment_method: PaymentMethod;
+  /** Ticket origin (migration 0029); armed by `fetchPurchaseDetail`. */
+  is_manual: boolean;
   image_url: string | null;
   status: PurchaseStatus;
   items: PurchaseItemDetail[];
@@ -892,7 +894,7 @@ export async function fetchPurchaseDetail(
   const { data: purchase, error } = await supabase
     .from('purchases')
     .select(
-      `id, store_id, total, purchase_date, payment_method, image_url, status,
+      `id, store_id, total, purchase_date, payment_method, is_manual, image_url, status,
        stores ( name ),
        purchase_items ( id, name, quantity, unit_price, total_price, category_id, is_impulse, sort_order, categories ( id, slug, name, kind, icon, color, sort_order ) )`,
     )
@@ -914,6 +916,7 @@ export async function fetchPurchaseDetail(
     total: number;
     purchase_date: string;
     payment_method: PaymentMethod;
+    is_manual: boolean;
     image_url: string | null;
     status: PurchaseStatus;
     stores: { name: string | null } | { name: string | null }[] | null;
@@ -954,6 +957,7 @@ export async function fetchPurchaseDetail(
     purchase_date: row.purchase_date,
     total: row.total,
     payment_method: row.payment_method,
+    is_manual: row.is_manual,
     image_url: row.image_url,
     status: row.status,
     items,

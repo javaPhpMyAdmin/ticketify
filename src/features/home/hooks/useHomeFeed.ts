@@ -25,6 +25,12 @@ export interface ReceiptSummary {
   amount: number;
   /** Ticket photo URL (null when the receipt has no stored photo). */
   imageUrl: string | null;
+  /**
+   * Ticket origin (migration 0029): true = manual entry, false = scanned.
+   * REQUIRED — the Home counter needs it to render the
+   * "N escaneados · M manual" breakdown.
+   */
+  isManual: boolean;
 }
 
 /**
@@ -794,6 +800,10 @@ export function mapPurchaseRowsToHomeFeed(
       date: item.purchase_date,
       amount: item.total,
       imageUrl: item.image_url ?? null,
+      // Origin surfaces from the read (`is_manual`); rows from producers
+      // without the field (optimistic review row) default to false —
+      // a just-scanned ticket is scanned until proven manual.
+      isManual: item.is_manual ?? false,
     }));
 
   const categories = aggregateCategoriesByMonth(rows, monthKey);

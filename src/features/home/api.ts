@@ -38,6 +38,8 @@ interface RawPurchaseRow {
   created_at: string | null;
   total: number;
   payment_method: string;
+  /** Ticket origin (migration 0029): true = manual entry, false = scanned. */
+  is_manual: boolean;
   image_url: string | null;
   status: string;
   stores: { name: string } | { name: string }[] | null;
@@ -99,6 +101,7 @@ function mapPurchaseRow(row: RawPurchaseRow): HomeFeedReceiptRow {
       image_url: row.image_url,
       status: row.status as HomeFeedReceiptRow['status'],
       payment_method: row.payment_method as PaymentMethod,
+      is_manual: row.is_manual,
     },
     items,
   );
@@ -116,7 +119,7 @@ export async function readPurchaseList(
   const { data, error } = await supabase
     .from('purchases')
     .select(
-      `id, store_id, purchase_date, created_at, total, payment_method, image_url, status,
+      `id, store_id, purchase_date, created_at, total, payment_method, is_manual, image_url, status,
        stores ( name ),
        purchase_items ( id, name, quantity, unit_price, total_price, is_impulse, sort_order, categories ( slug ) )`,
     )
@@ -158,7 +161,7 @@ export async function readPurchaseListByMonth(
   const { data, error } = await supabase
     .from('purchases')
     .select(
-      `id, store_id, purchase_date, created_at, total, payment_method, image_url, status,
+      `id, store_id, purchase_date, created_at, total, payment_method, is_manual, image_url, status,
        stores ( name ),
        purchase_items ( id, name, quantity, unit_price, total_price, is_impulse, sort_order, categories ( slug ) )`,
     )
@@ -268,6 +271,9 @@ function mapSearchItemRow(row: RawSearchItemRow): HomeFeedReceiptRow {
       // covers a defensive null purchase (the query filters on it, so the
       // method is normally always present).
       payment_method: purchase?.payment_method as PaymentMethod | undefined,
+      // Origin from the owning purchase (required meta — the query filters
+      // on the purchase, so it is always present; the fallback is defensive).
+      is_manual: purchase?.is_manual ?? false,
     },
     items,
   );
@@ -317,7 +323,7 @@ export async function searchPurchaseItems(
     .select(
       `id, name, quantity, unit_price, total_price, is_impulse, sort_order,
        categories ( slug ),
-       purchases ( id, purchase_date, created_at, total, payment_method, image_url, status, stores ( name ) )`,
+       purchases ( id, purchase_date, created_at, total, payment_method, is_manual, image_url, status, stores ( name ) )`,
     )
     .eq('purchases.user_id', userId)
     // User-typed wildcards are escaped so `%`, `_` and `\` match literally;
