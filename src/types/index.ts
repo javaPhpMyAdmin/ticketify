@@ -116,6 +116,13 @@ export interface Purchase {
   total: number;
   payment_method: PaymentMethod;
   image_url: string | null; // Supabase Storage URL
+  /**
+   * Ticket origin (migration 0029): true when the purchase was entered
+   * manually (no photo), false when created from a camera scan.
+   * Set ONLY at INSERT inside save_receipt (p_is_manual); immutable —
+   * edit paths (updateReceipt / restorePurchase) never write it.
+   */
+  is_manual: boolean;
   status: PurchaseStatus;
   ai_confidence: number | null; // 0..1
   raw_ocr: unknown | null; // jsonb
@@ -202,6 +209,13 @@ export interface HomeFeedReceiptRow {
   scanned_at: string | null;
   total: number;
   image_url: string | null;
+  /**
+   * Ticket origin (migration 0029), present when the read provides it
+   * (`features/home/api` surfaces it from `purchases.is_manual`);
+   * producers that do not carry it (e.g. the review flow's optimistic
+   * row) can omit it.
+   */
+  is_manual?: boolean;
   status: PurchaseStatus;
   /**
    * Payment method, present when the read provides it (`features/home/api`
@@ -225,6 +239,12 @@ export interface ReceiptDraft {
   purchase_date: string;
   total: number;
   payment_method: PaymentMethod;
+  /**
+   * Ticket origin: absent = scanned (the camera-scan flow never sets it);
+   * true = manual (set by `buildManualDraft`). `buildSaveReceiptArgs`
+   * derives the RPC `p_is_manual` from it (`?? false`).
+   */
+  is_manual?: boolean;
   image_url: string;
   /**
    * Card network detected on the receipt (Visa, OCA, …). Optional so drafts
