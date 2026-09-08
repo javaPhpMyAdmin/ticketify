@@ -2,19 +2,10 @@
  * Join household modal — bottom sheet with a 6-char code input that
  * calls the `joinHousehold` RPC on submit.
  */
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  TextInput,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useState } from 'react';
 
-import { Icon, Spinner, Text } from '@/components';
+import { BottomSheet, Spinner, Text } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import { invalidateHouseholdAfterJoin } from '@/features/household/household-invalidation';
 import { queryClient } from '@/lib/query-client';
@@ -98,117 +89,58 @@ export function JoinHouseholdModal({ visible, onClose }: JoinHouseholdModalProps
   const isValid = code.trim().length === 6;
 
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={handleClose}
-      statusBarTranslucent
+      onClose={handleClose}
+      title="Unirse a un hogar"
+      keyboardMode="avoidingView"
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.backdrop}
-      >
-        <Pressable style={styles.backdropTouch} onPress={handleClose} />
-        <SafeAreaView style={styles.sheet} edges={['bottom']}>
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <Text style={styles.kicker}>Unirse a un hogar</Text>
-            <Pressable
-              onPress={handleClose}
-              hitSlop={12}
-              style={styles.closeButton}
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar"
-            >
-              <Icon name="xmark" size={22} color={colors.textPrimary} />
-            </Pressable>
-          </View>
+      <View style={styles.body}>
+        <Text style={styles.helper}>
+          Pedile el código de 6 caracteres a quien creó el hogar.
+        </Text>
 
-          <View style={styles.body}>
-            <Text style={styles.helper}>
-              Pedile el código de 6 caracteres a quien creó el hogar.
-            </Text>
+        <TextInput
+          value={code}
+          onChangeText={(v) => {
+            setCode(v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6));
+            setError(null);
+          }}
+          placeholder="ABC123"
+          placeholderTextColor={colors.textSecondary}
+          maxLength={6}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          editable={!loading}
+          style={styles.input}
+          accessibilityLabel="Código de invitación"
+        />
 
-            <TextInput
-              value={code}
-              onChangeText={(v) => {
-                setCode(v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6));
-                setError(null);
-              }}
-              placeholder="ABC123"
-              placeholderTextColor={colors.textSecondary}
-              maxLength={6}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              editable={!loading}
-              style={styles.input}
-              accessibilityLabel="Código de invitación"
-            />
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-
-            <Pressable
-              onPress={handleJoin}
-              disabled={!isValid || loading}
-              style={({ pressed }) => [
-                styles.joinButton,
-                (!isValid || loading) && styles.joinButtonDisabled,
-                pressed && styles.joinButtonPressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Unirse al hogar"
-            >
-              {loading ? (
-                <Spinner size="sm" color={colors.onPrimary} />
-              ) : (
-                <Text style={styles.joinButtonText}>Unirse</Text>
-              )}
-            </Pressable>
-          </View>
-        </SafeAreaView>
-      </KeyboardAvoidingView>
-    </Modal>
+        <Pressable
+          onPress={handleJoin}
+          disabled={!isValid || loading}
+          style={({ pressed }) => [
+            styles.joinButton,
+            (!isValid || loading) && styles.joinButtonDisabled,
+            pressed && styles.joinButtonPressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Unirse al hogar"
+        >
+          {loading ? (
+            <Spinner size="sm" color={colors.onPrimary} />
+          ) : (
+            <Text style={styles.joinButtonText}>Unirse</Text>
+          )}
+        </Pressable>
+      </View>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  backdropTouch: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  sheet: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
-    paddingTop: spacing.sm,
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-    alignSelf: 'center',
-    marginBottom: spacing.md,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.md,
-  },
-  kicker: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
-  },
-  closeButton: {
-    padding: spacing.xs,
-  },
   body: {
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xxl,

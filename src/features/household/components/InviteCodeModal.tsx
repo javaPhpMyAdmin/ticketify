@@ -3,18 +3,11 @@
  * invite code on open (read-first: reuses the most recent unconsumed code
  * and only generates a new one when none exists), with copy + share.
  */
-import {
-  Modal,
-  Pressable,
-  Share,
-  StyleSheet,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Pressable, Share, StyleSheet, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useEffect, useState } from 'react';
 
-import { Icon, Spinner, Text } from '@/components';
+import { BottomSheet, Icon, Spinner, Text } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import {
   generateInviteCode,
@@ -126,124 +119,67 @@ export function InviteCodeModal({ visible, onClose }: InviteCodeModalProps) {
   };
 
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={handleClose}
-      statusBarTranslucent
+      onClose={handleClose}
+      title="Invitar a mi hogar"
     >
-      <View style={styles.backdrop}>
-        <Pressable style={styles.backdropTouch} onPress={handleClose} />
-        <SafeAreaView style={styles.sheet} edges={['bottom']}>
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <Text style={styles.kicker}>Invitar a mi hogar</Text>
-            <Pressable
-              onPress={handleClose}
-              hitSlop={12}
-              style={styles.closeButton}
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar"
-            >
-              <Icon name="xmark" size={22} color={colors.textPrimary} />
-            </Pressable>
+      <View style={styles.body}>
+        {loading ? (
+          <View style={styles.loadingWrap}>
+            <Spinner size="sm" color={colors.primary} />
+            <Text style={styles.loadingText}>Generando código...</Text>
           </View>
+        ) : error ? (
+          <Text style={styles.error}>{error}</Text>
+        ) : code ? (
+          <>
+            <Text style={styles.code}>{code}</Text>
+            <Text style={styles.expiry}>Vence en 72h</Text>
 
-          <View style={styles.body}>
-            {loading ? (
-              <View style={styles.loadingWrap}>
-                <Spinner size="sm" color={colors.primary} />
-                <Text style={styles.loadingText}>Generando código...</Text>
-              </View>
-            ) : error ? (
-              <Text style={styles.error}>{error}</Text>
-            ) : code ? (
-              <>
-                <Text style={styles.code}>{code}</Text>
-                <Text style={styles.expiry}>Vence en 72h</Text>
+            <View style={styles.actions}>
+              <Pressable
+                onPress={copyCode}
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  pressed && styles.primaryButtonPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Copiar código"
+              >
+                <Icon
+                  name="doc.on.doc"
+                  size={18}
+                  color={colors.onPrimary}
+                />
+                <Text style={styles.primaryButtonText}>Copiar</Text>
+              </Pressable>
 
-                <View style={styles.actions}>
-                  <Pressable
-                    onPress={copyCode}
-                    style={({ pressed }) => [
-                      styles.primaryButton,
-                      pressed && styles.primaryButtonPressed,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Copiar código"
-                  >
-                    <Icon
-                      name="doc.on.doc"
-                      size={18}
-                      color={colors.onPrimary}
-                    />
-                    <Text style={styles.primaryButtonText}>Copiar</Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={shareCode}
-                    style={({ pressed }) => [
-                      styles.secondaryButton,
-                      pressed && styles.secondaryButtonPressed,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Compartir código"
-                  >
-                    <Icon
-                      name="square.and.arrow.up"
-                      size={18}
-                      color={colors.textPrimary}
-                    />
-                    <Text style={styles.secondaryButtonText}>Compartir</Text>
-                  </Pressable>
-                </View>
-              </>
-            ) : null}
-          </View>
-        </SafeAreaView>
+              <Pressable
+                onPress={shareCode}
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  pressed && styles.secondaryButtonPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Compartir código"
+              >
+                <Icon
+                  name="square.and.arrow.up"
+                  size={18}
+                  color={colors.textPrimary}
+                />
+                <Text style={styles.secondaryButtonText}>Compartir</Text>
+              </Pressable>
+            </View>
+          </>
+        ) : null}
       </View>
-    </Modal>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  backdropTouch: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  sheet: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
-    paddingTop: spacing.sm,
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-    alignSelf: 'center',
-    marginBottom: spacing.md,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.md,
-  },
-  kicker: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
-  },
-  closeButton: {
-    padding: spacing.xs,
-  },
   body: {
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xxl,

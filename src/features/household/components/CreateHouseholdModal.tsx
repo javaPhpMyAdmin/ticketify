@@ -7,19 +7,10 @@
  * after the dismissal animation finishes, so the parent screen never
  * swaps branches while this Modal is still animating.
  */
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  TextInput,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useState } from 'react';
 
-import { Spinner, Text } from '@/components';
+import { BottomSheet, Spinner, Text } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import {
   createHousehold,
@@ -103,123 +94,60 @@ export function CreateHouseholdModal({
   const isValid = name.trim().length >= 2;
 
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={handleClose}
-      statusBarTranslucent
+      onClose={handleClose}
+      title="Crear hogar"
+      closeIcon="text"
+      keyboardMode="avoidingView"
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.backdrop}
-      >
-        <Pressable style={styles.backdropTouch} onPress={handleClose} />
-        <SafeAreaView style={styles.sheet} edges={['bottom']}>
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <Text style={styles.kicker}>Crear hogar</Text>
-            <Pressable
-              onPress={handleClose}
-              hitSlop={12}
-              style={styles.closeButton}
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar"
-            >
-              <Text style={styles.closeX}>✕</Text>
-            </Pressable>
-          </View>
+      <View style={styles.body}>
+        <Text style={styles.helper}>
+          Elegí un nombre para identificar a tu hogar (ej: &quot;Familia Pérez&quot;).
+        </Text>
 
-          <View style={styles.body}>
-            <Text style={styles.helper}>
-              Elegí un nombre para identificar a tu hogar (ej: &quot;Familia Pérez&quot;).
-            </Text>
+        <TextInput
+          value={name}
+          onChangeText={(v) => {
+            setName(v);
+            setError(null);
+          }}
+          placeholder="Mi hogar"
+          placeholderTextColor={colors.textSecondary}
+          maxLength={30}
+          autoCorrect={false}
+          editable={!loading}
+          style={styles.input}
+          accessibilityLabel="Nombre del hogar"
+          returnKeyType="done"
+          blurOnSubmit
+        />
 
-            <TextInput
-              value={name}
-              onChangeText={(v) => {
-                setName(v);
-                setError(null);
-              }}
-              placeholder="Mi hogar"
-              placeholderTextColor={colors.textSecondary}
-              maxLength={30}
-              autoCorrect={false}
-              editable={!loading}
-              style={styles.input}
-              accessibilityLabel="Nombre del hogar"
-              returnKeyType="done"
-              blurOnSubmit
-            />
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-
-            <Pressable
-              onPress={handleCreate}
-              disabled={!isValid || loading}
-              style={({ pressed }) => [
-                styles.createButton,
-                (!isValid || loading) && styles.createButtonDisabled,
-                pressed && styles.createButtonPressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Crear hogar"
-            >
-              {loading ? (
-                <Spinner size="sm" color={colors.onPrimary} />
-              ) : (
-                <Text style={styles.createButtonText}>Crear</Text>
-              )}
-            </Pressable>
-          </View>
-        </SafeAreaView>
-      </KeyboardAvoidingView>
-    </Modal>
+        <Pressable
+          onPress={handleCreate}
+          disabled={!isValid || loading}
+          style={({ pressed }) => [
+            styles.createButton,
+            (!isValid || loading) && styles.createButtonDisabled,
+            pressed && styles.createButtonPressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Crear hogar"
+        >
+          {loading ? (
+            <Spinner size="sm" color={colors.onPrimary} />
+          ) : (
+            <Text style={styles.createButtonText}>Crear</Text>
+          )}
+        </Pressable>
+      </View>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  backdropTouch: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  sheet: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
-    paddingTop: spacing.sm,
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-    alignSelf: 'center',
-    marginBottom: spacing.md,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.md,
-  },
-  kicker: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
-  },
-  closeButton: {
-    padding: spacing.xs,
-  },
-  closeX: {
-    fontSize: 20,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
   body: {
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xxl,
