@@ -8,6 +8,7 @@ import {
   View,
   type IconName,
 } from '@/components';
+import { budgetProgressColor } from '@/features/analytics/category-budget-progress';
 import { formatCurrency, formatPercentLabel } from '@/lib/format';
 import { radii, spacing, typography } from '@/theme';
 
@@ -52,14 +53,12 @@ export function CategoryBudgetCard({
 }: CategoryBudgetCardProps) {
   const color = getCategoryColor(categoryKey);
 
-  /** Color based on spend vs limit ratio. */
+  // Shared bar color (spec NFR-4: identical thresholds/colors in every
+  // consumer). Only reached when `limit > 0` (the render gate below), so
+  // the ratio is always a positive, well-defined spend/limit split.
   const progressColor =
     typeof limit === 'number' && limit > 0
-      ? amount / limit >= 1
-        ? '#EF4444'
-        : amount / limit >= 0.7
-        ? '#F59E0B'
-        : '#10B981'
+      ? budgetProgressColor(amount / limit)
       : undefined;
 
   return (
@@ -111,6 +110,7 @@ export function CategoryBudgetCard({
                 color={progressColor}
                 height={4}
                 trackColor={`${color.foreground}33`}
+                accessibilityLabel={`Gastaste ${formatCurrency(amount, currency)} de ${formatCurrency(limit, currency)} en ${name}`}
               />
             </View>
           </View>

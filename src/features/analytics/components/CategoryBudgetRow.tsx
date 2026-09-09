@@ -4,6 +4,7 @@ import { Icon, Pressable, ProgressBar, Text, type IconName } from '@/components'
 import { formatCurrency, formatPercentLabel } from '@/lib/format';
 import { colors, spacing, typography } from '@/theme';
 import { getCategoryColor } from '@/features/home/categories';
+import { budgetProgressColor } from '../category-budget-progress';
 
 export interface CategoryBudgetRowProps {
   /** Stable category key; drives icon/background via the color registry. */
@@ -29,26 +30,13 @@ export interface CategoryBudgetRowProps {
 }
 
 /**
- * Progress bar color based on spend vs. limit ratio:
- * - green (<70%): on track
- * - amber (70–100%): approaching limit
- * - red (>100%): over budget
- */
-export function budgetProgressColor(spent: number, limit: number): string {
-  if (limit <= 0) return colors.primary;
-  const ratio = spent / limit;
-  if (ratio >= 1) return '#EF4444'; // red
-  if (ratio >= 0.7) return '#F59E0B'; // amber
-  return '#10B981'; // green
-}
-
-/**
  * Colored category row for the Analytics tab breakdown.
  *
  * Shows the category icon on a colored circle, the category name, the
  * percent of total spend, and the amount. When a per-category budget limit
- * exists it also shows "$X of $Y"; the limit line is omitted when no limit
- * is provided, matching the spec (per-category budgets do not exist yet).
+ * exists it also shows "$X of $Y" and a progress bar colored by the shared
+ * `budgetProgressColor` (spec NFR-4: identical thresholds in every
+ * consumer); the limit line is omitted when no limit is provided.
  * With `onPress` the whole row becomes a themed Pressable for drill-down;
  * without it the output is a plain View, so non-interactive consumers
  * (the analytics tab) stay byte-identical.
@@ -80,7 +68,10 @@ export function CategoryBudgetRow({
           {name}
         </Text>
         <Text style={styles.percent}>{formatPercentLabel(percent)} del gasto</Text>
-        {typeof limit === 'number' ? (
+        {/* Gate: only a positive limit renders the budget line (Correction 3).
+            A 0/negative limit is a delete-on-zero artifact — it must never
+            surface a limit, a ratio, or a progress bar. */}
+        {typeof limit === 'number' && limit > 0 ? (
           <>
             <Text style={styles.limit}>
               {formatCurrency(amount, currency)} de{' '}
@@ -88,8 +79,9 @@ export function CategoryBudgetRow({
             </Text>
             <ProgressBar
               value={Math.min(1, amount / limit)}
-              color={budgetProgressColor(amount, limit)}
+              color={budgetProgressColor(amount / limit)}
               height={4}
+              accessibilityLabel={`Gastaste ${formatCurrency(amount, currency)} de ${formatCurrency(limit, currency)} en ${name}`}
             />
           </>
         ) : null}

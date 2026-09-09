@@ -281,6 +281,12 @@ export interface CategoryBudget {
   category_slug: string;
   month: string; // 'YYYY-MM'
   amount: number;
+  /**
+   * True when the row was written by the monthly rollover (copied limits or
+   * the '__rollover__' sentinel). Sentinel rows carry amount 0 and are
+   * filtered out by consumers (EXPENSE_CATEGORIES iteration / amount > 0).
+   */
+  rollover_applied?: boolean;
 }
 
 /** Aggregated total for the analytics screen. */

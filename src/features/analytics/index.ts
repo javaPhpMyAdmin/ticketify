@@ -15,7 +15,12 @@ export type { InsightBannerProps } from './components/InsightBanner';
 export { MetricSummaryCard } from './components/MetricSummaryCard';
 export type { MetricSummaryCardProps } from './components/MetricSummaryCard';
 export { CategoryBudgetRow } from './components/CategoryBudgetRow';
-export { budgetProgressColor } from './components/CategoryBudgetRow';
+export {
+  BUDGET_COLOR,
+  budgetBySlug,
+  budgetProgressColor,
+  mergeBudgetLimits,
+} from './category-budget-progress';
 export type { CategoryBudgetRowProps } from './components/CategoryBudgetRow';
 export { fetchMonthlyTotals, fetchCategoryBreakdown } from './api';
 export { computePriceAlerts } from './price-alerts';
