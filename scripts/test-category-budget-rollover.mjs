@@ -3,16 +3,22 @@
  * Node harness for the category-budget rollover hook
  * (`src/features/analytics/hooks/useCategoryBudgets.ts`, REQ-B scenarios).
  *
- * Covers the REQ-B rollover scenarios:
+ * Covers the REQ-B rollover scenarios (persistence via
+ * `markCategoryBudgetRolloverApplied`, migration 0030):
  *   1. Copy previous month on first read (empty current → prev budgets copied)
  *   2. Rows exist → skip rollover
- *   3. Prev empty → no upsert, no infinite loop (ref guard)
+ *   3. Prev empty → marker still written (sentinel), ref guard prevents loop
  *   4. Past month → skip rollover
  *   5. Removed slug not copied (not in EXPENSE_CATEGORIES)
  *   6. Amount ≤ 0 not copied (delete-on-zero filtered)
  *   7. Double-mount idempotent (two instances, same result)
- *   8. Rollover error → no invalidate, no loop
- *   9. Upsert onSuccess invalidates both categoryBudgets and monthlyTotals
+ *   8. Rollover write error → no invalidate, no loop
+ *   9. Save after rollover → edited row survives, no re-copy on revisit
+ *  10. Invalidate keys → rollover success invalidates categoryBudgets + monthlyTotals
+ *  11. Prev read error → no mark, no invalidate, no loop
+ *  12. Household mode (rolloverEnabled=false) → no rollover at all
+ *  13. Delete-on-zero remount → sentinel survives, no re-rollover
+ *  14. All-reads error seam → hook error state, no mark, no crash
  *
  * The hook is mounted inside a real React tree (jsdom + react-dom/client +
  * act()) wrapped in a real QueryClientProvider — the exact pattern
@@ -20,8 +26,8 @@
  *
  * Determinism: currentMonthKey / previousMonthKey are stubbed via
  * `@/features/home/hooks/useHomeFeed`; userId via `@/features/auth`;
- * readCategoryBudgets / upsertCategoryBudgets via feature-access mock seams.
- * No real clock, no network.
+ * readCategoryBudgets / upsertCategoryBudgets / markCategoryBudgetRolloverApplied
+ * via feature-access mock seams. No real clock, no network.
  *
  * Usage: pnpm test:category-budget-rollover
  */
@@ -105,9 +111,20 @@ function load(mod) {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-/** A single CategoryBudget row. */
-function makeBudget(slug, amount, month) {
-  return { user_id: 'test-user-id', category_slug: slug, amount, month };
+/** A single CategoryBudget row (rollover_applied false unless flagged). */
+function makeBudget(slug, amount, month, rolloverApplied = false) {
+  return {
+    user_id: 'test-user-id',
+    category_slug: slug,
+    amount,
+    month,
+    rollover_applied: rolloverApplied,
+  };
+}
+
+/** The rollover sentinel row: durable "rollover ran for this month" record. */
+function makeSentinel(month) {
+  return makeBudget('__rollover__', 0, month, true);
 }
 
 /** Aug 2026 budgets (previous month). */
@@ -241,7 +258,7 @@ async function run() {
   // =========================================================================
   console.log('\n[tests] REQ-B rollover scenarios\n');
 
-  await test('copy-on-first-read: empty current + prev budgets → upsert fires', async () => {
+  await test('copy-on-first-read: empty current + prev budgets → mark fires', async () => {
     faMock.__reset();
     authStub.__setUserId('test-user-id');
     homeFeedStub.__setCurrentMonthKey('2026-09');
@@ -252,11 +269,11 @@ async function run() {
       return { status: 'ok', data: augBudgets };
     });
 
-    let upsertCalls = 0;
-    let lastUpsertArgs = null;
-    faMock.__setUpsertCategoryBudgets(async (budgets, yearMonth, userId) => {
-      upsertCalls += 1;
-      lastUpsertArgs = { budgets: [...budgets], yearMonth, userId };
+    let markCalls = 0;
+    let lastMarkArgs = null;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async (budgets, yearMonth, userId) => {
+      markCalls += 1;
+      lastMarkArgs = { budgets: [...budgets], yearMonth, userId };
       return { status: 'ok', data: null };
     });
 
@@ -266,20 +283,20 @@ async function run() {
     );
 
     try {
-      await waitFor(() => upsertCalls >= 1, { timeout: 3000 });
-      // Allow post-upsert invalidation to settle
+      await waitFor(() => markCalls >= 1, { timeout: 3000 });
+      // Allow post-rollover invalidation to settle
       for (let i = 0; i < 3; i++) {
         await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
       }
-      assert.equal(upsertCalls, 1, 'upsert fires exactly once');
-      assert.equal(lastUpsertArgs.yearMonth, '2026-09');
-      assert.equal(lastUpsertArgs.userId, 'test-user-id');
+      assert.equal(markCalls, 1, 'mark fires exactly once');
+      assert.equal(lastMarkArgs.yearMonth, '2026-09');
+      assert.equal(lastMarkArgs.userId, 'test-user-id');
       // Filter: alimentos (valid, 50000) + carnes (valid, 30000);
       // removed-slug (not in EXPENSE_CATEGORIES) + limpieza (0) filtered out
-      const slugs = lastUpsertArgs.budgets.map((b) => b.category_slug).sort();
+      const slugs = lastMarkArgs.budgets.map((b) => b.category_slug).sort();
       assert.deepEqual(slugs, ['alimentos', 'carnes']);
       assert.deepEqual(
-        lastUpsertArgs.budgets.map((b) => b.amount).sort((a, b) => a - b),
+        lastMarkArgs.budgets.map((b) => b.amount).sort((a, b) => a - b),
         [30000, 50000],
       );
     } finally {
@@ -302,9 +319,9 @@ async function run() {
       return { status: 'ok', data: augBudgets };
     });
 
-    let upsertCalls = 0;
-    faMock.__setUpsertCategoryBudgets(async () => {
-      upsertCalls += 1;
+    let markCalls = 0;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async () => {
+      markCalls += 1;
       return { status: 'ok', data: null };
     });
 
@@ -315,11 +332,11 @@ async function run() {
 
     try {
       await waitFor((r) => !!r && r.budgets.length > 0);
-      // Flush extra rounds to confirm no late upsert
+      // Flush extra rounds to confirm no late rollover
       for (let i = 0; i < 4; i++) {
         await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
       }
-      assert.equal(upsertCalls, 0, 'rollover must not fire when rows exist');
+      assert.equal(markCalls, 0, 'rollover must not fire when rows exist');
       assert.equal(ref.current.budgets.length, 1);
       assert.equal(ref.current.budgets[0].category_slug, 'alimentos');
       assert.equal(ref.current.budgets[0].amount, 40000);
@@ -329,9 +346,9 @@ async function run() {
   });
 
   // =========================================================================
-  // REQ-B: Prev empty → no upsert, ref guard prevents re-fire
+  // REQ-B: Prev empty → marker still written, ref guard prevents re-fire
   // =========================================================================
-  await test('prev-empty: no upsert, no infinite loop (ref guard)', async () => {
+  await test('prev-empty: marker written with zero copies, no loop (non-vacuous)', async () => {
     faMock.__reset();
     authStub.__setUserId('test-user-id');
     homeFeedStub.__setCurrentMonthKey('2026-09');
@@ -339,9 +356,11 @@ async function run() {
     // Both current and prev are empty
     faMock.__setReadCategoryBudgets(async () => ({ status: 'ok', data: [] }));
 
-    let upsertCalls = 0;
-    faMock.__setUpsertCategoryBudgets(async () => {
-      upsertCalls += 1;
+    let markCalls = 0;
+    let lastMarkBudgets = null;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async (budgets) => {
+      markCalls += 1;
+      lastMarkBudgets = budgets;
       return { status: 'ok', data: null };
     });
 
@@ -351,13 +370,23 @@ async function run() {
     );
 
     try {
-      // Wait for query to resolve
-      await waitFor((r) => !!r && r.isLoading === false && !r.error);
+      // Wait for query to resolve + rollover to run
+      await waitFor(() => markCalls >= 1, { timeout: 3000 });
       // Flush extra rounds — ref guard must prevent re-fire
       for (let i = 0; i < 6; i++) {
         await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
       }
-      assert.equal(upsertCalls, 0, 'no upsert when prev is empty');
+      // Non-vacuous: the marker IS written even with nothing to copy, but
+      // exactly once. Read count: initial current + prev + invalidate refetch.
+      assert.equal(markCalls, 1, 'mark fires exactly once despite empty prev');
+      assert.deepEqual(lastMarkBudgets, [], 'no copies when prev is empty');
+      // Prove the ref guard is what stops the loop (not an empty mutation):
+      // a broken guard would re-read prev every render → unbounded growth.
+      assert.equal(
+        faMock.__getReadCategoryBudgetsCallCount(),
+        3,
+        'reads: initial + prev + invalidate refetch — no more',
+      );
       assert.equal(ref.current.budgets.length, 0);
     } finally {
       unmount();
@@ -374,9 +403,9 @@ async function run() {
 
     faMock.__setReadCategoryBudgets(async () => ({ status: 'ok', data: [] }));
 
-    let upsertCalls = 0;
-    faMock.__setUpsertCategoryBudgets(async () => {
-      upsertCalls += 1;
+    let markCalls = 0;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async () => {
+      markCalls += 1;
       return { status: 'ok', data: null };
     });
 
@@ -390,7 +419,7 @@ async function run() {
       for (let i = 0; i < 4; i++) {
         await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
       }
-      assert.equal(upsertCalls, 0, 'past month must not trigger rollover');
+      assert.equal(markCalls, 0, 'past month must not trigger rollover');
       assert.equal(ref.current.budgets.length, 0);
     } finally {
       unmount();
@@ -415,11 +444,11 @@ async function run() {
       return { status: 'ok', data: [] };
     });
 
-    let upsertCalls = 0;
-    let lastUpsertBudgets = null;
-    faMock.__setUpsertCategoryBudgets(async (budgets) => {
-      upsertCalls += 1;
-      lastUpsertBudgets = budgets;
+    let markCalls = 0;
+    let lastMarkBudgets = null;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async (budgets) => {
+      markCalls += 1;
+      lastMarkBudgets = budgets;
       return { status: 'ok', data: null };
     });
 
@@ -429,12 +458,12 @@ async function run() {
     );
 
     try {
-      await waitFor(() => upsertCalls >= 1);
+      await waitFor(() => markCalls >= 1);
       for (let i = 0; i < 3; i++) {
         await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
       }
-      assert.equal(upsertCalls, 1);
-      const slugs = lastUpsertBudgets.map((b) => b.category_slug);
+      assert.equal(markCalls, 1);
+      const slugs = lastMarkBudgets.map((b) => b.category_slug);
       assert.ok(!slugs.includes('nonexistent-slug'), 'removed slug must not be copied');
       assert.ok(slugs.includes('alimentos'), 'valid slug must be copied');
     } finally {
@@ -460,11 +489,11 @@ async function run() {
       return { status: 'ok', data: [] };
     });
 
-    let upsertCalls = 0;
-    let lastUpsertBudgets = null;
-    faMock.__setUpsertCategoryBudgets(async (budgets) => {
-      upsertCalls += 1;
-      lastUpsertBudgets = budgets;
+    let markCalls = 0;
+    let lastMarkBudgets = null;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async (budgets) => {
+      markCalls += 1;
+      lastMarkBudgets = budgets;
       return { status: 'ok', data: null };
     });
 
@@ -474,12 +503,12 @@ async function run() {
     );
 
     try {
-      await waitFor(() => upsertCalls >= 1);
+      await waitFor(() => markCalls >= 1);
       for (let i = 0; i < 3; i++) {
         await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
       }
-      assert.equal(upsertCalls, 1);
-      const slugs = lastUpsertBudgets.map((b) => b.category_slug);
+      assert.equal(markCalls, 1);
+      const slugs = lastMarkBudgets.map((b) => b.category_slug);
       assert.ok(!slugs.includes('carnes'), 'amount 0 must not be copied');
       assert.ok(!slugs.includes('limpieza'), 'negative amount must not be copied');
       assert.ok(slugs.includes('alimentos'), 'valid positive amount must be copied');
@@ -491,7 +520,7 @@ async function run() {
   // =========================================================================
   // REQ-B: Double-mount idempotent
   // =========================================================================
-  await test('double-mount: two instances → both fire, upserts are idempotent', async () => {
+  await test('double-mount: two instances → both fire, writes are idempotent', async () => {
     faMock.__reset();
     authStub.__setUserId('test-user-id');
     homeFeedStub.__setCurrentMonthKey('2026-09');
@@ -502,11 +531,11 @@ async function run() {
       return { status: 'ok', data: [makeBudget('alimentos', 50000, '2026-08')] };
     });
 
-    let upsertCalls = 0;
-    const upsertPayloads = [];
-    faMock.__setUpsertCategoryBudgets(async (budgets) => {
-      upsertCalls += 1;
-      upsertPayloads.push(
+    let markCalls = 0;
+    const markPayloads = [];
+    faMock.__setMarkCategoryBudgetRolloverApplied(async (budgets) => {
+      markCalls += 1;
+      markPayloads.push(
         budgets.map((b) => ({ category_slug: b.category_slug, amount: b.amount })),
       );
       return { status: 'ok', data: null };
@@ -524,17 +553,17 @@ async function run() {
     );
 
     try {
-      await waitFor1(() => upsertCalls >= 1);
-      await waitFor2(() => upsertCalls >= 2, { timeout: 3000 });
+      await waitFor1(() => markCalls >= 1);
+      await waitFor2(() => markCalls >= 2, { timeout: 3000 });
       for (let i = 0; i < 3; i++) {
         await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
       }
-      // Each mount has its own ref guard → each fires once; the upsert is
-      // PK-idempotent, so the payloads are identical (final rows unchanged).
-      assert.equal(upsertCalls, 2, 'one upsert per mounted instance');
+      // Each mount has its own ref guard → each fires once; the marker write
+      // is PK-idempotent, so the payloads are identical (final rows unchanged).
+      assert.equal(markCalls, 2, 'one rollover write per mounted instance');
       assert.deepEqual(
-        upsertPayloads[0],
-        upsertPayloads[1],
+        markPayloads[0],
+        markPayloads[1],
         'both mounts copy the SAME rows (idempotent upsert)',
       );
       assert.ok(ref1.current !== undefined, 'first mount result exists');
@@ -546,9 +575,9 @@ async function run() {
   });
 
   // =========================================================================
-  // REQ-B: Rollover error → no invalidate, no loop
+  // REQ-B: Rollover write error → no invalidate, no loop
   // =========================================================================
-  await test('rollover-error: upsert fails → no invalidation, no loop', async () => {
+  await test('rollover-error: mark fails → no invalidation, no loop', async () => {
     faMock.__reset();
     authStub.__setUserId('test-user-id');
     homeFeedStub.__setCurrentMonthKey('2026-09');
@@ -559,9 +588,9 @@ async function run() {
       return { status: 'ok', data: [makeBudget('alimentos', 50000, '2026-08')] };
     });
 
-    let upsertCalls = 0;
-    faMock.__setUpsertCategoryBudgets(async () => {
-      upsertCalls += 1;
+    let markCalls = 0;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async () => {
+      markCalls += 1;
       return { status: 'error', message: 'network error' };
     });
 
@@ -571,12 +600,19 @@ async function run() {
     );
 
     try {
-      await waitFor(() => upsertCalls >= 1, { timeout: 3000 });
+      await waitFor(() => markCalls >= 1, { timeout: 3000 });
       // Flush extra rounds — must NOT loop
       for (let i = 0; i < 6; i++) {
         await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
       }
-      assert.equal(upsertCalls, 1, 'upsert fires exactly once even on error');
+      assert.equal(markCalls, 1, 'mark fires exactly once even on error');
+      // No-op result → onSuccess skips invalidation → no extra reads
+      // (initial current + prev only, no refetch).
+      assert.equal(
+        faMock.__getReadCategoryBudgetsCallCount(),
+        2,
+        'no invalidation → no refetch (read count stays at initial + prev)',
+      );
       // budgets remain empty (error → no data)
       assert.equal(ref.current.budgets.length, 0);
     } finally {
@@ -592,23 +628,43 @@ async function run() {
     authStub.__setUserId('test-user-id');
     homeFeedStub.__setCurrentMonthKey('2026-09');
 
-    // In-memory store: upserts write, reads serve — like the real DB.
+    // In-memory store: mark/upsert write, reads serve — like the real DB.
     const store = new Map(); // yearMonth → CategoryBudget[]
     faMock.__setReadCategoryBudgets(async (userId, yearMonth) => ({
       status: 'ok',
       data: [...(store.get(yearMonth) ?? [])],
     }));
 
-    let upsertCalls = 0;
-    const upsertPayloads = [];
-    faMock.__setUpsertCategoryBudgets(async (budgets, yearMonth, userId) => {
-      upsertCalls += 1;
-      upsertPayloads.push(budgets);
+    let markCalls = 0;
+    const markPayloads = [];
+    faMock.__setMarkCategoryBudgetRolloverApplied(async (budgets, yearMonth, userId) => {
+      markCalls += 1;
+      markPayloads.push(budgets);
       store.set(yearMonth, [
         ...(store.get(yearMonth) ?? []).filter(
           (b) => !budgets.some((nb) => nb.category_slug === b.category_slug),
         ),
-        ...budgets.map((b) => makeBudget(b.category_slug, b.amount, yearMonth)),
+        ...budgets.map((b) => makeBudget(b.category_slug, b.amount, yearMonth, true)),
+        makeSentinel(yearMonth),
+      ]);
+      return { status: 'ok', data: null };
+    });
+
+    let upsertCalls = 0;
+    faMock.__setUpsertCategoryBudgets(async (budgets, yearMonth, userId) => {
+      upsertCalls += 1;
+      const current = store.get(yearMonth) ?? [];
+      const remaining = current.filter(
+        (b) => !budgets.some((nb) => nb.category_slug === b.category_slug),
+      );
+      // Delete-on-zero semantics (same as the real upsertCategoryBudgets):
+      // amount <= 0 → row removed; amount > 0 → row replaced.
+      const cleared = budgets.filter((b) => b.amount <= 0).map((b) => b.category_slug);
+      store.set(yearMonth, [
+        ...remaining.filter((b) => !cleared.includes(b.category_slug)),
+        ...budgets
+          .filter((b) => b.amount > 0)
+          .map((b) => makeBudget(b.category_slug, b.amount, yearMonth)),
       ]);
       return { status: 'ok', data: null };
     });
@@ -622,44 +678,44 @@ async function run() {
     );
 
     try {
-      // First read: empty current → rollover copies prev (upsert #1)
-      await waitFor(() => upsertCalls >= 1, { timeout: 3000 });
-      // Post-rollover refetch serves the copied row
-      await waitFor((r) => !!r && r.budgets.length === 1 && r.budgets[0].amount === 50000, { timeout: 3000 });
+      // First read: empty current → rollover copies prev (mark #1)
+      await waitFor(() => markCalls >= 1, { timeout: 3000 });
+      // Post-rollover refetch serves the copied row (+ sentinel)
+      await waitFor((r) => !!r && r.budgets.length === 2 && r.budgets.some((b) => b.amount === 50000), { timeout: 3000 });
 
-      // User edits the copied row to $60,000 via save() — upsert #2
+      // User edits the copied row to $60,000 via save() — upsert #1
       await act(async () => {
         await ref.current.save([{ category_slug: 'alimentos', amount: 60000 }]);
       });
-      // Refetch after save returns the edited row
-      await waitFor((r) => !!r && r.budgets.length === 1 && r.budgets[0].amount === 60000, { timeout: 3000 });
+      // Refetch after save returns the edited row (+ sentinel)
+      await waitFor((r) => !!r && r.budgets.some((b) => b.category_slug === 'alimentos' && b.amount === 60000), { timeout: 3000 });
 
       // Flush rounds — rollover MUST NOT re-copy 50000 over the edit
       for (let i = 0; i < 6; i++) {
         await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
       }
 
-      assert.equal(upsertCalls, 2, 'one rollover copy + one user save — no re-copy');
-      assert.equal(ref.current.budgets.length, 1);
-      assert.equal(ref.current.budgets[0].category_slug, 'alimentos');
-      assert.equal(ref.current.budgets[0].amount, 60000, 'edited amount preserved');
-      assert.equal(upsertPayloads[0][0].amount, 50000, 'rollover copied prev limit');
+      assert.equal(markCalls, 1, 'one rollover copy — no re-copy');
+      assert.equal(upsertCalls, 1, 'one user save');
+      const alimentos = ref.current.budgets.find((b) => b.category_slug === 'alimentos');
+      assert.equal(alimentos.amount, 60000, 'edited amount preserved');
+      assert.equal(markPayloads[0][0].amount, 50000, 'rollover copied prev limit');
     } finally {
       unmount();
     }
   });
 
   // =========================================================================
-  // REQ-B: Upsert onSuccess invalidates both categoryBudgets and monthlyTotals
+  // REQ-B: Rollover onSuccess invalidates both categoryBudgets and monthlyTotals
   // =========================================================================
-  await test('invalidate-keys: upsert success → invalidates categoryBudgets + monthlyTotals', async () => {
+  await test('invalidate-keys: rollover success → invalidates categoryBudgets + monthlyTotals', async () => {
     faMock.__reset();
     authStub.__setUserId('test-user-id');
     homeFeedStub.__setCurrentMonthKey('2026-09');
 
-    let upsertCalls = 0;
-    faMock.__setUpsertCategoryBudgets(async () => {
-      upsertCalls += 1;
+    let markCalls = 0;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async () => {
+      markCalls += 1;
       return { status: 'ok', data: null };
     });
 
@@ -700,15 +756,236 @@ async function run() {
       // Both queries fire their initial fetch at mount.
       await waitFor(() => currentReads >= 1 && totalsFetches >= 1, { timeout: 3000 });
       // Rollover: mutation fires, onSuccess invalidates BOTH keys → both refetch.
-      await waitFor(() => upsertCalls >= 1, { timeout: 3000 });
+      await waitFor(() => markCalls >= 1, { timeout: 3000 });
       await waitFor(() => currentReads >= 2 && totalsFetches >= 2, { timeout: 3000 });
       for (let i = 0; i < 3; i++) {
         await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
       }
-      assert.equal(upsertCalls, 1, 'rollover upsert fired once');
+      assert.equal(markCalls, 1, 'rollover write fired once');
       assert.equal(currentReads, 2, 'categoryBudgets key invalidated → refetch');
       assert.equal(totalsFetches, 2, 'monthlyTotals key invalidated → refetch');
       assert.ok(ref.current !== undefined, 'hook mounted');
+    } finally {
+      unmount();
+    }
+  });
+
+  // =========================================================================
+  // R4-W: Prev read error → no mark, no invalidate, no loop
+  // =========================================================================
+  await test('prev-read-error: prev month read fails → no mark, no invalidate, no loop', async () => {
+    faMock.__reset();
+    authStub.__setUserId('test-user-id');
+    homeFeedStub.__setCurrentMonthKey('2026-09');
+
+    // Current month reads fine (empty); the PREV month read fails — the
+    // rollover must abort before writing anything (no copies, no marker).
+    faMock.__setReadCategoryBudgets(async (userId, yearMonth) => {
+      if (yearMonth === '2026-08') {
+        return { status: 'error', message: 'network error' };
+      }
+      return { status: 'ok', data: [] };
+    });
+
+    let markCalls = 0;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async () => {
+      markCalls += 1;
+      return { status: 'ok', data: null };
+    });
+
+    const { ref, unmount, waitFor } = mountHook(
+      () => useCategoryBudgets('2026-09'),
+      makeQueryClient(),
+    );
+
+    try {
+      await waitFor((r) => !!r && r.isLoading === false && !r.error);
+      // Flush extra rounds — must NOT loop
+      for (let i = 0; i < 6; i++) {
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      }
+      assert.equal(markCalls, 0, 'prev read error → rollover aborts before writing');
+      // No invalidate either: initial current read + prev read, no refetch.
+      assert.equal(
+        faMock.__getReadCategoryBudgetsCallCount(),
+        2,
+        'no invalidation → no refetch',
+      );
+      assert.equal(ref.current.budgets.length, 0);
+    } finally {
+      unmount();
+    }
+  });
+
+  // =========================================================================
+  // AD-6: Household mode (rolloverEnabled=false) → no rollover at all
+  // =========================================================================
+  await test('household-no-rollover: rolloverEnabled=false → nothing fires', async () => {
+    faMock.__reset();
+    authStub.__setUserId('test-user-id');
+    homeFeedStub.__setCurrentMonthKey('2026-09');
+
+    // Current empty, prev has budgets — yet nothing must be copied.
+    faMock.__setReadCategoryBudgets(async (userId, yearMonth) => {
+      if (yearMonth === '2026-09') return { status: 'ok', data: [] };
+      return { status: 'ok', data: augBudgets };
+    });
+
+    let markCalls = 0;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async () => {
+      markCalls += 1;
+      return { status: 'ok', data: null };
+    });
+
+    const { ref, unmount, waitFor } = mountHook(
+      () => useCategoryBudgets('2026-09', false),
+      makeQueryClient(),
+    );
+
+    try {
+      await waitFor((r) => !!r && r.isLoading === false && !r.error);
+      for (let i = 0; i < 4; i++) {
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      }
+      assert.equal(markCalls, 0, 'household mode must never roll over');
+      assert.equal(
+        faMock.__getReadCategoryBudgetsCallCount(),
+        1,
+        'no prev read either — gate short-circuits before the mutation',
+      );
+      assert.equal(ref.current.budgets.length, 0);
+    } finally {
+      unmount();
+    }
+  });
+
+  // =========================================================================
+  // REQ-B: Delete-on-zero + remount → sentinel survives, no re-rollover
+  // =========================================================================
+  await test('delete-on-zero-remount: sentinel survives clearing + remount → no re-rollover', async () => {
+    faMock.__reset();
+    authStub.__setUserId('test-user-id');
+    homeFeedStub.__setCurrentMonthKey('2026-09');
+
+    // In-memory store: mark/upsert write, reads serve — like the real DB.
+    const store = new Map(); // yearMonth → CategoryBudget[]
+    faMock.__setReadCategoryBudgets(async (userId, yearMonth) => ({
+      status: 'ok',
+      data: [...(store.get(yearMonth) ?? [])],
+    }));
+
+    let markCalls = 0;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async (budgets, yearMonth, userId) => {
+      markCalls += 1;
+      store.set(yearMonth, [
+        ...(store.get(yearMonth) ?? []).filter(
+          (b) => !budgets.some((nb) => nb.category_slug === b.category_slug),
+        ),
+        ...budgets.map((b) => makeBudget(b.category_slug, b.amount, yearMonth, true)),
+        makeSentinel(yearMonth),
+      ]);
+      return { status: 'ok', data: null };
+    });
+
+    let upsertCalls = 0;
+    faMock.__setUpsertCategoryBudgets(async (budgets, yearMonth, userId) => {
+      upsertCalls += 1;
+      const current = store.get(yearMonth) ?? [];
+      const remaining = current.filter(
+        (b) => !budgets.some((nb) => nb.category_slug === b.category_slug),
+      );
+      // Delete-on-zero semantics (same as the real upsertCategoryBudgets):
+      // amount <= 0 → row removed; amount > 0 → row replaced.
+      const cleared = budgets.filter((b) => b.amount <= 0).map((b) => b.category_slug);
+      store.set(yearMonth, [
+        ...remaining.filter((b) => !cleared.includes(b.category_slug)),
+        ...budgets
+          .filter((b) => b.amount > 0)
+          .map((b) => makeBudget(b.category_slug, b.amount, yearMonth)),
+      ]);
+      return { status: 'ok', data: null };
+    });
+
+    // Simulated history: rollover already ran for 2026-09 (a previous session
+    // copied alimentos 50000 + wrote the sentinel). Now the user clears the
+    // copied budget via delete-on-zero.
+    store.set('2026-09', [
+      makeBudget('alimentos', 50000, '2026-09', true),
+      makeSentinel('2026-09'),
+    ]);
+
+    const first = mountHook(() => useCategoryBudgets('2026-09'), makeQueryClient());
+    try {
+      await first.waitFor((r) => !!r && !r.isLoading && !r.error);
+      // User clears the copied budget (amount 0 → delete-on-zero).
+      await act(async () => {
+        await first.ref.current.save([{ category_slug: 'alimentos', amount: 0 }]);
+      });
+      await first.waitFor(
+        (r) => !!r && r.budgets.length === 1 && r.budgets[0].category_slug === '__rollover__',
+        { timeout: 3000 },
+      );
+      assert.equal(markCalls, 0, 'rows exist (sentinel) → no re-rollover on first mount');
+      assert.equal(upsertCalls, 1, 'user save deleted the copied row');
+    } finally {
+      first.unmount();
+    }
+
+    // Remount (fresh QueryClient — app restart): only the sentinel remains.
+    // The durable marker must prevent a second rollover.
+    const second = mountHook(() => useCategoryBudgets('2026-09'), makeQueryClient());
+    try {
+      await second.waitFor(
+        (r) => !!r && !r.isLoading && !r.error && r.budgets.length === 1,
+        { timeout: 3000 },
+      );
+      for (let i = 0; i < 4; i++) {
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      }
+      assert.equal(markCalls, 0, 'remount sees the sentinel → no re-rollover');
+      assert.equal(second.ref.current.budgets.length, 1, 'only the sentinel row');
+      assert.equal(
+        second.ref.current.budgets[0].category_slug,
+        '__rollover__',
+        'sentinel survives delete-on-zero',
+      );
+    } finally {
+      second.unmount();
+    }
+  });
+
+  // =========================================================================
+  // R4-W: All reads fail (seam) → hook error state, no mark, no crash
+  // =========================================================================
+  await test('all-reads-error: __setReadCategoryBudgetsError → error state, no mark, no crash', async () => {
+    faMock.__reset();
+    authStub.__setUserId('test-user-id');
+    homeFeedStub.__setCurrentMonthKey('2026-09');
+
+    // Every read (current + prev) fails via the global seam.
+    faMock.__setReadCategoryBudgetsError('network error');
+
+    let markCalls = 0;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async () => {
+      markCalls += 1;
+      return { status: 'ok', data: null };
+    });
+
+    const { ref, unmount, waitFor } = mountHook(
+      () => useCategoryBudgets('2026-09'),
+      makeQueryClient(),
+    );
+
+    try {
+      // The current-month query rejects through toQueryData → hook error.
+      await waitFor((r) => !!r && r.isLoading === false && !!r.error, { timeout: 3000 });
+      for (let i = 0; i < 4; i++) {
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      }
+      assert.equal(markCalls, 0, 'read error → rollover never starts');
+      assert.equal(ref.current.error, faMock.READ_ERROR_MESSAGE, 'user-safe error surfaced');
+      assert.equal(ref.current.budgets.length, 0);
+      assert.equal(ref.current.isLoading, false);
     } finally {
       unmount();
     }

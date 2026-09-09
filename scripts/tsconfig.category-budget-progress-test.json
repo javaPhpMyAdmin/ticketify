@@ -20,6 +20,7 @@
   },
   "include": [
     "../src/features/analytics/category-budget-progress.ts",
+    "../src/theme/colors.ts",
     "../src/types/index.ts",
     "../scripts/test-stubs/globals.d.ts"
   ]

@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useSessionUser } from '@/features/auth';
 import { currentMonthKey } from '@/features/home/hooks/useHomeFeed';
 import { fetchMonthlyTotals } from '../api';
-import { computeCategoryBudgetProgress } from '../category-budget-progress';
+import { mergeBudgetLimits } from '../category-budget-progress';
 import { queryKeys } from '@/lib/query-keys';
 import { useCategoryBudgets } from './useCategoryBudgets';
 import {
@@ -81,10 +81,11 @@ export function useMonthlyCache(
   const isHousehold = !!householdId;
 
   // Shared budget read (AD-6): called unconditionally so hooks order stays
-  // stable across viewMode switches. In household mode the read still rides
-  // the same query key, so the rollover also feeds the RPC's budget_limit
-  // after `monthlyTotals` invalidation.
-  const { budgets } = useCategoryBudgets(yearMonth);
+  // stable across viewMode switches. In household mode the rollover is
+  // disabled (`rolloverEnabled = !isHousehold`): household limits come from
+  // the server-side aggregation (migration 0026 nulls `budget_limit` there),
+  // so per-member copying must not happen (R3-S1 — household unchanged).
+  const { budgets } = useCategoryBudgets(yearMonth, !isHousehold);
 
   // Both query keys must be stable regardless of mode (React hooks rules).
   const cacheKey = queryKeys.monthlyCache(userId ?? '', yearMonth);
@@ -139,7 +140,7 @@ export function useMonthlyCache(
     () =>
       isHousehold
         ? transformCacheToCategoryTotals(row)
-        : computeCategoryBudgetProgress(
+        : mergeBudgetLimits(
             transformCacheToCategoryTotals(row),
             budgets,
             yearMonth,

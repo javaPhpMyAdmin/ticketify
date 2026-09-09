@@ -60,6 +60,35 @@ export function ScrollView(props: {
   children?: React.ReactNode;
   contentContainerStyle?: unknown;
   showsVerticalScrollIndicator?: boolean;
+  keyboardShouldPersistTaps?: string;
 }): React.ReactElement {
   return React.createElement('ScrollView', null, props.children);
+}
+
+// --- Settings screen surface (budget-month-local harness, compile-only) ---
+// The settings screen imports KeyboardAvoidingView / TextInput from
+// 'react-native'. The harness never executes the compiled screen (it only
+// greps its output), so these exist purely to satisfy the typecheck.
+
+export function KeyboardAvoidingView(props: {
+  children?: React.ReactNode;
+  behavior?: 'height' | 'position' | 'padding';
+  style?: unknown;
+}): React.ReactElement {
+  return React.createElement('KeyboardAvoidingView', null, props.children);
+}
+
+export function TextInput(props: {
+  value?: string;
+  onChangeText?: (text: string) => void;
+  placeholder?: string;
+  keyboardType?: string;
+  inputMode?: string;
+  maxLength?: number;
+  placeholderTextColor?: string;
+  editable?: boolean;
+  accessibilityLabel?: string;
+  style?: unknown;
+}): React.ReactElement {
+  return React.createElement('TextInput');
 }

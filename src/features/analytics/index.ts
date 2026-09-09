@@ -19,7 +19,7 @@ export {
   BUDGET_COLOR,
   budgetBySlug,
   budgetProgressColor,
-  computeCategoryBudgetProgress,
+  mergeBudgetLimits,
 } from './category-budget-progress';
 export type { CategoryBudgetRowProps } from './components/CategoryBudgetRow';
 export { fetchMonthlyTotals, fetchCategoryBreakdown } from './api';

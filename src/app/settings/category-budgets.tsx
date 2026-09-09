@@ -31,7 +31,8 @@ import { colors, radii, spacing, typography } from '@/theme';
 export default function CategoryBudgetsScreen() {
   // NFR-2: month key must come from the device-local calendar
   // (`currentMonthKey`) so the saved month always equals the displayed
-  // month — `utcYearMonth()` diverges in UTC-x timezones at boundaries.
+  // month — a UTC-derived month key diverges in UTC-x timezones at
+  // month boundaries.
   const yearMonth = currentMonthKey();
   const { budgets, isLoading, save, isSaving } = useCategoryBudgets(yearMonth);
   const { guard } = useFrozenGuard();

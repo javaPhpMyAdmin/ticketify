@@ -40,9 +40,15 @@ let _upsertCategoryBudgets = async (budgets, yearMonth, userId) => ({
   data: null,
 });
 
+let _markCategoryBudgetRollover = async (budgets, yearMonth, userId) => ({
+  status: 'ok',
+  data: null,
+});
+
 let _readCategoryBudgetsError = null;
 let _readCategoryBudgetsCallCount = 0;
 let _upsertCategoryBudgetsCallCount = 0;
+let _markCategoryBudgetRolloverCallCount = 0;
 
 // --- Seam functions (harness API) ---
 
@@ -83,8 +89,16 @@ exports.__setUpsertCategoryBudgets = function (fn) {
   _upsertCategoryBudgets = fn;
 };
 
+exports.__setMarkCategoryBudgetRolloverApplied = function (fn) {
+  _markCategoryBudgetRollover = fn;
+};
+
 exports.__setUpsertCategoryBudgetsCallCount = function (count) {
   _upsertCategoryBudgetsCallCount = count;
+};
+
+exports.__setMarkCategoryBudgetRolloverCallCount = function (count) {
+  _markCategoryBudgetRolloverCallCount = count;
 };
 
 exports.__getReadCategoryBudgetsCallCount = function () {
@@ -95,6 +109,10 @@ exports.__getUpsertCategoryBudgetsCallCount = function () {
   return _upsertCategoryBudgetsCallCount;
 };
 
+exports.__getMarkCategoryBudgetRolloverCallCount = function () {
+  return _markCategoryBudgetRolloverCallCount;
+};
+
 exports.__reset = function () {
   _readMonthlyCacheRow = async () => ({ status: 'ok', data: null });
   _readMonthlyCacheRows = async () => ({ status: 'ok', data: [] });
@@ -102,9 +120,11 @@ exports.__reset = function () {
   _readCategoryTotals = async () => ({ status: 'ok', data: [] });
   _readCategoryBudgets = async () => ({ status: 'ok', data: [] });
   _upsertCategoryBudgets = async () => ({ status: 'ok', data: null });
+  _markCategoryBudgetRollover = async () => ({ status: 'ok', data: null });
   _readCategoryBudgetsError = null;
   _readCategoryBudgetsCallCount = 0;
   _upsertCategoryBudgetsCallCount = 0;
+  _markCategoryBudgetRolloverCallCount = 0;
 };
 
 // --- Exported functions (same signatures as the real feature-access) ---
@@ -143,9 +163,10 @@ exports.readCategoryBudgets = async function readCategoryBudgets(
 ) {
   _readCategoryBudgetsCallCount += 1;
   if (_readCategoryBudgetsError) {
+    // Fidelity: the real accessor maps every failure to READ_ERROR_MESSAGE.
     return {
       status: 'error',
-      message: _readCategoryBudgetsError,
+      message: exports.READ_ERROR_MESSAGE,
     };
   }
   return _readCategoryBudgets(userId, yearMonth);
@@ -158,6 +179,15 @@ exports.upsertCategoryBudgets = async function upsertCategoryBudgets(
 ) {
   _upsertCategoryBudgetsCallCount += 1;
   return _upsertCategoryBudgets(budgets, yearMonth, userId);
+};
+
+exports.markCategoryBudgetRolloverApplied = async function markCategoryBudgetRolloverApplied(
+  budgets,
+  yearMonth,
+  userId,
+) {
+  _markCategoryBudgetRolloverCallCount += 1;
+  return _markCategoryBudgetRollover(budgets, yearMonth, userId);
 };
 
 exports.READ_ERROR_MESSAGE =

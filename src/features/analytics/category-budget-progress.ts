@@ -1,3 +1,4 @@
+import { colors } from '@/theme/colors';
 import type { CategoryBudget, CategoryMonthlyTotal } from '@/types';
 
 /**
@@ -18,8 +19,14 @@ export const BUDGET_COLOR = {
  * `ratio = spend / limit` — callers already compute this for the
  * `ProgressBar` value. Boundary: exactly 100% counts as red, matching the
  * previous component logic and the `CategoryBudgetCard` inline ternary.
+ *
+ * Degenerate ratios (NaN, ±Infinity, negative — e.g. a 0 limit or an
+ * unset budget) never render red: they fall back to the brand primary
+ * (`colors.primary`, which equals `BUDGET_COLOR.green`), so a broken value
+ * reads as "no progress" instead of "over budget".
  */
 export function budgetProgressColor(ratio: number): string {
+  if (!Number.isFinite(ratio) || ratio < 0) return colors.primary;
   if (ratio >= 1) return BUDGET_COLOR.red;
   if (ratio >= 0.7) return BUDGET_COLOR.amber;
   return BUDGET_COLOR.green;
@@ -33,7 +40,7 @@ export function budgetProgressColor(ratio: number): string {
  * `budget_limit = amount`; otherwise `budget_limit = null`. Budget rows for
  * slugs not present in `totals` are ignored (they never add entries).
  */
-export function computeCategoryBudgetProgress(
+export function mergeBudgetLimits(
   totals: CategoryMonthlyTotal[],
   budgets: CategoryBudget[],
   monthKey: string,
