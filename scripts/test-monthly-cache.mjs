@@ -64,6 +64,8 @@ function installRequireHook() {
   Module._resolveFilename = function rewrittenResolve(request, ...rest) {
     if (request === '@/features/auth') {
       request = join(outDir, 'scripts', 'test-stubs', 'auth.js');
+    } else if (request === '@/features/home/hooks/useHomeFeed') {
+      request = join(outDir, 'scripts', 'test-stubs', 'useHomeFeed.js');
     } else if (request === '@/lib/supabase') {
       request = join(outDir, 'scripts', 'test-stubs', 'supabase.js');
     } else if (request === '@/lib/supabase/feature-access') {
@@ -597,6 +599,51 @@ async function run() {
       assert.equal(ref.current.isLoading, false);
       assert.equal(ref.current.totals.length, 0);
       assert.equal(ref.current.monthTotal, 0);
+    } finally {
+      unmount();
+    }
+  });
+
+  // --- 5.2.8 Personal cache-hit with budgets → budget_limit merged (AD-5) ---
+  await test('personal: budget_limit merged from budgets (real hook)', async () => {
+    faMock.__reset();
+    const cacheRow = makeCacheRow({
+      total: 1000,
+      category_totals: {
+        food: makeCategoryEntry('food', 'Food', 800, 4),
+      },
+    });
+    faMock.__setReadMonthlyCacheRow(async () => ({
+      status: 'ok',
+      data: cacheRow,
+    }));
+    faMock.__setReadCategoryBudgets(async () => ({
+      status: 'ok',
+      data: [
+        {
+          user_id: 'test-user-id',
+          category_slug: 'food',
+          month: '2026-08',
+          amount: 50000,
+        },
+      ],
+    }));
+
+    const { ref, unmount, waitFor } = mountHook(
+      () => useMonthlyCache('2026-08'),
+      makeQueryClient(),
+    );
+
+    try {
+      await waitFor(
+        (r) => !!r && r.hasData === true && r.totals.length === 1,
+      );
+      // The personal totals carry the real budget limit — the surfacing
+      // contract for charts/analytics bars (spec REQ: budget_limit non-null
+      // → progress bar; AD-5 post-step merge in useMonthlyCache).
+      assert.equal(ref.current.totals[0].category_slug, 'food');
+      assert.equal(ref.current.totals[0].budget_limit, 50000);
+      assert.equal(ref.current.totals[0].total, 800);
     } finally {
       unmount();
     }

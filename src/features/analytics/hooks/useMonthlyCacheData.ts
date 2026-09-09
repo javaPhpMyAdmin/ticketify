@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { useSessionUser } from '@/features/auth';
+import { currentMonthKey } from '@/features/home/hooks/useHomeFeed';
 import { readMonthlyCacheRow } from '@/lib/supabase/feature-access';
 import { toQueryData } from '@/lib/supabase/query-adapters';
 import type { MonthlyTotalsCacheRow } from '@/types';
-import { queryKeys, utcYearMonth } from '@/lib/query-keys';
+import { queryKeys } from '@/lib/query-keys';
 
 /**
  * Reads the raw materialized monthly cache row for personal mode.
@@ -17,7 +18,7 @@ import { queryKeys, utcYearMonth } from '@/lib/query-keys';
  * jsonb fields that the `CategoryMonthlyTotal[]` transform discards.
  */
 export function useMonthlyCacheData(
-  yearMonth = utcYearMonth(),
+  yearMonth = currentMonthKey(),
 ): MonthlyTotalsCacheRow | null {
   const { userId } = useSessionUser();
 
