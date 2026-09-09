@@ -11,12 +11,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Card, Icon, Pressable, Spinner, Text, View } from '@/components';
 import { useCategoryBudgets } from '@/features/analytics';
+import { currentMonthKey } from '@/features/home';
 import {
   EXPENSE_CATEGORIES,
   type ExpenseCategoryKey,
 } from '@/features/home/categories';
 import { useFrozenGuard } from '@/features/pro';
-import { utcYearMonth } from '@/lib/query-keys';
 import { colors, radii, spacing, typography } from '@/theme';
 
 /**
@@ -29,7 +29,10 @@ import { colors, radii, spacing, typography } from '@/theme';
  * budget amounts from the `category_budgets` table.
  */
 export default function CategoryBudgetsScreen() {
-  const yearMonth = utcYearMonth();
+  // NFR-2: month key must come from the device-local calendar
+  // (`currentMonthKey`) so the saved month always equals the displayed
+  // month — `utcYearMonth()` diverges in UTC-x timezones at boundaries.
+  const yearMonth = currentMonthKey();
   const { budgets, isLoading, save, isSaving } = useCategoryBudgets(yearMonth);
   const { guard } = useFrozenGuard();
 

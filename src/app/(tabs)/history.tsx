@@ -22,7 +22,11 @@ import {
   Text,
   View,
 } from '@/components';
-import { useMonthlyTotals } from '@/features/analytics';
+import {
+  budgetBySlug,
+  useCategoryBudgets,
+  useMonthlyTotals,
+} from '@/features/analytics';
 import { useSessionStore, useSessionUser } from '@/features/auth';
 import { categoryDetailHref } from '@/features/charts';
 import {
@@ -120,6 +124,16 @@ export default function HistoryScreen() {
     error: householdTotalsError,
     hasData: householdTotalsHasData,
   } = useMonthlyTotals(monthKey, viewMode === 'household' ? householdId : null);
+
+  // Personal mode: month budget limits (shared key — rollover-fed). The
+  // slug → amount map feeds each category card's progress bar; cards
+  // without a budget for the month render no bar (spec REQ: no limit → no
+  // bar, only the spend amount).
+  const { budgets: monthBudgets } = useCategoryBudgets(monthKey);
+  const budgetLimitBySlug = useMemo(
+    () => budgetBySlug(monthBudgets, monthKey),
+    [monthBudgets, monthKey],
+  );
 
   // Combined total across every VISIBLE result row: searching "yerba"
   // matches both "Yerba 1kg" and "Yerba mate 1kg" as separate rows, and this
@@ -462,6 +476,7 @@ export default function HistoryScreen() {
                   currency={currency}
                   icon={category.icon}
                   itemCount={categoryItemCounts[category.key]}
+                  limit={budgetLimitBySlug.get(category.key)}
                   onPress={() =>
                     router.push(
                       categoryDetailHref(

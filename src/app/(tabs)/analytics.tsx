@@ -84,6 +84,14 @@ export default function AnalyticsScreen() {
     hasData: householdTotalsHasData,
   } = useMonthlyTotals(monthKey, viewMode === 'household' ? householdId : null);
 
+  // Personal mode: `householdTotals` is the cache-backed personal totals
+  // with budget limits merged (AD-5). Whether any budget is set decides the
+  // "Configurar"/"Editar" affordance label (charts pattern).
+  const hasAnyBudgets = useMemo(
+    () => householdTotals.some((t) => t.budget_limit !== null),
+    [householdTotals],
+  );
+
   const monthKeys = useAvailableMonthKeys(userId);
   const alerts = usePriceAlerts(monthKey);
   const overview = useMonthlyOverview(monthKey);
@@ -307,12 +315,84 @@ export default function AnalyticsScreen() {
             </Card>
           )
         ) : (
+          <>
           <TopItemsBreakdown
             rows={topItems}
             total={monthTotal}
             currency={currency}
             title="Top Artículos"
           />
+          {/* Personal "Categorías" section (AD-8): the cache-backed totals
+              already carry merged budget limits (useMonthlyCache → AD-5),
+              so CategoryBudgetRow renders bars exactly where a budget
+              exists. New section — TopItemsBreakdown stays above it. */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Categorías</Text>
+              <Pressable
+                onPress={() => router.push('/settings/category-budgets')}
+                style={({ pressed }) => [
+                  styles.budgetLink,
+                  pressed && styles.budgetLinkPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Configurar presupuestos por categoría"
+              >
+                <Icon name="pencil" size={14} color={colors.primary} />
+                <Text style={styles.budgetLinkText}>
+                  {hasAnyBudgets ? 'Editar' : 'Configurar'}
+                </Text>
+              </Pressable>
+            </View>
+            {householdTotalsLoading ? (
+              <Card padding={spacing.lg}>
+                <Text style={styles.empty}>Cargando categorías…</Text>
+              </Card>
+            ) : householdTotalsError && !householdTotalsHasData ? (
+              <EmptyState
+                framed
+                icon="exclamationmark.triangle.fill"
+                title={householdTotalsError}
+              />
+            ) : householdTotals.length === 0 ? (
+              <Card padding={spacing.lg}>
+                <Text style={styles.empty}>Sin categorías este mes.</Text>
+              </Card>
+            ) : (
+              <Card padding={spacing.lg}>
+                <View style={styles.categoryList}>
+                  {householdTotals.map((t) => {
+                    const category = getExpenseCategory(t.category_slug);
+                    return (
+                      <CategoryBudgetRow
+                        key={t.category_id}
+                        categoryKey={t.category_slug}
+                        name={t.category_name}
+                        amount={t.total}
+                        percent={t.percent_of_total}
+                        icon={category.icon}
+                        limit={t.budget_limit ?? undefined}
+                        currency={currency}
+                        onPress={() =>
+                          router.push(
+                            categoryDetailHref(
+                              t.category_slug,
+                              monthKey,
+                              currentMonthKey(),
+                            ),
+                          )
+                        }
+                      />
+                    );
+                  })}
+                </View>
+              </Card>
+            )}
+            {householdTotalsError ? (
+              <Text style={styles.error}>{householdTotalsError}</Text>
+            ) : null}
+          </View>
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -437,6 +517,39 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     paddingVertical: spacing.xl,
+  },
+  section: {
+    gap: spacing.md,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionTitle: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  budgetLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  budgetLinkPressed: {
+    backgroundColor: colors.surface,
+  },
+  budgetLinkText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  error: {
+    ...typography.labelSm,
+    color: colors.danger,
   },
   alertBanner: {
     height: 100,
