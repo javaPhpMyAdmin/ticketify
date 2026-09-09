@@ -1,4 +1,4 @@
-import { utcYearMonth } from '@/lib/query-keys';
+import { currentMonthKey } from '@/features/home/hooks/useHomeFeed';
 import type { CategoryMonthlyTotal } from '@/types';
 
 import { useMonthlyCache } from './useMonthlyCache';
@@ -14,7 +14,7 @@ import { useMonthlyCache } from './useMonthlyCache';
  * continue to work without modification.
  */
 export function useMonthlyTotals(
-  yearMonth = utcYearMonth(),
+  yearMonth = currentMonthKey(),
   householdId?: string | null,
 ): {
   totals: CategoryMonthlyTotal[];

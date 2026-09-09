@@ -2,8 +2,11 @@ import { useEffect, useMemo } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { useSessionUser } from '@/features/auth';
+import { currentMonthKey } from '@/features/home/hooks/useHomeFeed';
 import { fetchMonthlyTotals } from '../api';
-import { queryKeys, utcYearMonth } from '@/lib/query-keys';
+import { computeCategoryBudgetProgress } from '../category-budget-progress';
+import { queryKeys } from '@/lib/query-keys';
+import { useCategoryBudgets } from './useCategoryBudgets';
 import {
   readMonthlyCacheRow,
   triggerMonthlyRecalc,
@@ -63,7 +66,7 @@ export function transformCacheToCategoryTotals(
  * between them without API changes.
  */
 export function useMonthlyCache(
-  yearMonth = utcYearMonth(),
+  yearMonth = currentMonthKey(),
   householdId?: string | null,
 ): {
   totals: CategoryMonthlyTotal[];
@@ -76,6 +79,12 @@ export function useMonthlyCache(
   const { userId } = useSessionUser();
 
   const isHousehold = !!householdId;
+
+  // Shared budget read (AD-6): called unconditionally so hooks order stays
+  // stable across viewMode switches. In household mode the read still rides
+  // the same query key, so the rollover also feeds the RPC's budget_limit
+  // after `monthlyTotals` invalidation.
+  const { budgets } = useCategoryBudgets(yearMonth);
 
   // Both query keys must be stable regardless of mode (React hooks rules).
   const cacheKey = queryKeys.monthlyCache(userId ?? '', yearMonth);
@@ -122,7 +131,21 @@ export function useMonthlyCache(
   }, [cacheQuery.data, cacheQuery.isLoading, isHousehold]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const row = cacheQuery.data ?? null;
-  const totals = useMemo(() => transformCacheToCategoryTotals(row), [row]);
+  // AD-5: personal mode merges the month's budgets into the cache-backed
+  // totals (post-step — the transform keeps its `budget_limit: null`
+  // contract). `budgets` in the dep array recomputes when the rollover
+  // refetch lands, covering the totals-refetch-before-budgets-refetch race.
+  const totals = useMemo(
+    () =>
+      isHousehold
+        ? transformCacheToCategoryTotals(row)
+        : computeCategoryBudgetProgress(
+            transformCacheToCategoryTotals(row),
+            budgets,
+            yearMonth,
+          ),
+    [row, budgets, yearMonth, isHousehold],
+  );
   const monthTotal = row?.total ?? 0;
 
   if (isHousehold) {
