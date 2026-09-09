@@ -27,10 +27,12 @@ import {
   currentMonthKey,
   mapPurchaseRowsToHomeFeed,
   monthKeyToLabel,
+  RunRateCard,
   useAvailableMonthKeys,
   useHouseholdMonthTotal,
   useMonthNavigation,
   useMonthReceipts,
+  useRunRate,
 } from '@/features/home';
 import {
   HouseholdCard,
@@ -112,6 +114,10 @@ export default function HomeScreen() {
     monthKey,
     setMonthKey,
   );
+  // Monthly run-rate card. Returns `{ data: null }` until every visibility
+  // gate passes (current month selected REQ-5a, ≥3 spend days REQ-5b, a
+  // baseline, cache row resolved) — the parent renders nothing on null.
+  const runRate = useRunRate(monthKey);
 
   // Unified per-month feed: receipts + categories + snacks total derived
   // from the FULL month's rows for the SELECTED month. Works identically
@@ -222,6 +228,19 @@ export default function HomeScreen() {
                 />
               </Pressable>
             </View>
+
+            {/* Run-rate card — below the month selector, above the budget card
+                (REQ-8). Renders only when the hook yields data; on null (past
+                month, loading, cache-miss pending, read failure, or any
+                visibility gate) nothing occupies the slot (AD-6), so the
+                `listHeader` gap absorbs the collapse. */}
+            {runRate.data ? (
+              <RunRateCard
+                result={runRate.data}
+                currency={currency}
+                monthKey={monthKey}
+              />
+            ) : null}
 
             {/* Budget card + snacks callout — shown for ALL months, scoped to
                 the selected month's `spent`. */}

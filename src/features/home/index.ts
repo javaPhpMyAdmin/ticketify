@@ -35,3 +35,8 @@ export type {
   SegmentedBudgetBarSegment,
 } from './components/SegmentedBudgetBar';
 export { CategoryBudgetCardSkeleton } from './components/CategoryBudgetCardSkeleton';
+export { RunRateCard } from './components/RunRateCard';
+export type { RunRateCardProps } from './components/RunRateCard';
+export { useRunRate } from './hooks/useRunRate';
+export { aggregateRunRate } from './lib/runRate';
+export type { RunRateResult } from './lib/runRate';
