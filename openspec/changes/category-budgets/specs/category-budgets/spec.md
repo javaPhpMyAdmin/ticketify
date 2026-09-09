@@ -6,7 +6,7 @@ Delta v2 over the archived v1 capability (2026-08-17). Closes three gaps: person
 
 ### Requirement: Monthly Budget Rollover
 
-When the current month has no budget rows for a category, the system MUST copy the previous month's limits as the current month's defaults at first read of the month. Limp: opening the app on the 1st with last month's budgets set MUST NOT leave the current month empty. The copies SHALL be explicit current-month rows (user-editable), not view-time fallbacks: editing or deleting them SHALL affect only the current month. Delete-on-zero (v1) SHALL keep applying to copied rows. Rollover MUST be a client-side lazy upsert, idempotent, and MUST only copy for existing `EXPENSE_CATEGORIES` slugs.
+When the current month has no budget rows for a category, the system MUST copy the previous month's limits as the current month's defaults at first read of the month. Limp: opening the app on the 1st with last month's budgets set MUST NOT leave the current month empty. The copies SHALL be explicit current-month rows (user-editable), not view-time fallbacks: editing or deleting them SHALL affect only the current month. Delete-on-zero (v1) SHALL keep applying to copied rows. Rollover MUST be a client-side lazy upsert, idempotent, and MUST only copy for existing `EXPENSE_CATEGORIES` slugs. Rollover SHALL be one-shot per month across sessions and devices (persisted `rollover_applied` marker + sentinel row). Household mode SHALL remain unchanged (R3-S1): rollover and the client-side merge apply to the caller's own rows only; household `budget_limit` continues to come from the server-side aggregation and the household screens keep their v1 behavior.
 
 #### Scenario: Copy previous month on first read
 
@@ -32,6 +32,12 @@ When the current month has no budget rows for a category, the system MUST copy t
 - GIVEN the current month already has at least one budget row
 - WHEN budgets are read
 - THEN rollover does not run and all current-month rows are untouched
+
+#### Scenario: Marker prevents re-rollover on a later session
+
+- GIVEN rollover already ran for 2026-09 (marker + sentinel written)
+- WHEN the app reads 2026-09 budgets again in a new session
+- THEN no copies are created again — `readCategoryBudgets` still returns the sentinel row, so the `budgets.length > 0` gate stops the rollover before it can copy (the sentinel never surfaces to the UI because consumers iterate `EXPENSE_CATEGORIES` or filter `amount > 0`)
 
 ## MODIFIED Requirements
 

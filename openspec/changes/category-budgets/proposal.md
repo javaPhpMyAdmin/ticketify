@@ -8,7 +8,7 @@ The v1 change (archived 2026-08-17) delivered storage, settings, and household-m
 
 ### In Scope
 - Wire `budget_limit` into personal-mode History (CategoryBudgetCard), Analytics (CategoryBudgetRow), and Pro charts
-- Extract shared `computeCategoryBudgetProgress(totals, budgets)` helper + single `budgetProgressColor()` function
+- Extract shared `mergeBudgetLimits(totals, budgets, monthKey)` helper + single `budgetProgressColor()` function
 - Monthly rollover: copy previous month's limits into new month on first visit (client-side upsert with fallback)
 - Unify settings + display month key to `currentMonthKey()` (local) — fix UTC drift bug
 - Deduplicate `budgetProgressColor` (currently inline in both Card and Row)
@@ -29,9 +29,9 @@ The v1 change (archived 2026-08-17) delivered storage, settings, and household-m
 
 ## Approach
 
-**Client-side merge**: The RPC already returns `budget_limit` for household. For personal, `transformCacheToCategoryTotals` in `useMonthlyCache.ts` reads budgets via `useCategoryBudgets(month)` and injects real `budget_limit` values into the totals object. A pure helper `computeCategoryBudgetProgress(totals, budgets)` returns per-category `{ spend, limit, ratio, color }`. Progress bar components consume this instead of computing inline.
+**Client-side merge**: The RPC already returns `budget_limit` for household. For personal, `transformCacheToCategoryTotals` in `useMonthlyCache.ts` reads budgets via `useCategoryBudgets(month)` and injects real `budget_limit` values into the totals object. A pure helper `mergeBudgetLimits(totals, budgets, monthKey)` returns the totals with `budget_limit` filled per category (unchanged rows when no budget matches), and `budgetProgressColor(ratio)` maps spend/limit ratios to the shared color. Progress bar components consume these instead of computing inline.
 
-**Rollover**: On month mount, if no budgets exist for the target month, read previous month → upsert into current month. Lazy, no migration needed. Design decision (deferred to design phase): whether this runs in `useCategoryBudgets` hook or a one-shot `useEffect`.
+**Rollover**: On month mount, if no budgets exist for the target month, read previous month → upsert into current month. Lazy; one idempotence schema addition (migration `0030` — `rollover_applied` marker + sentinel row) so the one-shot survives sessions/devices. Design decision (deferred to design phase): whether this runs in `useCategoryBudgets` hook or a one-shot `useEffect` — resolved: read-path effect in the hook (AD-1).
 
 **UTC fix**: Replace all `utcYearMonth()` calls in settings with `currentMonthKey()`. Single function, no schema change.
 
@@ -40,9 +40,10 @@ The v1 change (archived 2026-08-17) delivered storage, settings, and household-m
 | Area | Impact | Description |
 |------|--------|-------------|
 | `src/features/analytics/hooks/useMonthlyCache.ts` | Modified | Inject budget_limit in transformCacheToCategoryTotals |
-| `src/features/analytics/components/CategoryBudgetRow.tsx` | Modified | Use shared helper, remove inline color logic |
+| `src/features/analytics/components/CategoryBudgetRow.tsx` | Modified | Use shared helper + `budgetProgressColor`, remove inline color logic, a11y label |
 | `src/features/home/components/CategoryBudgetCard.tsx` | Modified | Use shared helper, remove inline color logic |
-| `src/lib/supabase/feature-access.ts` | Modified | Rollover read/write, fix utcYearMonth → currentMonthKey |
+| `src/lib/supabase/feature-access.ts` | Modified | Rollover read/write + marker accessor, defensive marker exclusion |
+| `supabase/migrations/0030_category_budgets_rollover.sql` | Added | `rollover_applied` marker column + sentinel semantics |
 | `src/features/analytics/hooks/useCategoryBudgets.ts` | Modified | Rollover fallback logic |
 | `src/app/settings/category-budgets.tsx` | Modified | Fix month key to local |
 
@@ -57,7 +58,7 @@ The v1 change (archived 2026-08-17) delivered storage, settings, and household-m
 
 ## Rollback Plan
 
-All changes are additive to existing merged code. Revert the PR commit. No data migration — `category_budgets` rows are untouched. Rollover rows can be deleted manually if needed.
+All changes are additive to existing merged code. Revert the PR commit. Migration `0030` is additive (new column, default false, no backfill) — rolling back the PR leaves the column harmless; a later re-ship is safe because the rollover never touches past months and the column stays idle until the client writes a rollover. Rollover rows can be deleted manually if needed.
 
 ## Dependencies
 
