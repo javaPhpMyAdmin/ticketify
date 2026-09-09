@@ -15,6 +15,11 @@ let _readMonthlyCacheRow = async (userId, yearMonth) => ({
   data: null,
 });
 
+let _readMonthlyCacheRows = async (userId, yearMonths) => ({
+  status: 'ok',
+  data: [],
+});
+
 let _triggerMonthlyRecalc = async (userId, yearMonth) => ({
   status: 'ok',
   data: undefined,
@@ -31,6 +36,10 @@ exports.__setReadMonthlyCacheRow = function (fn) {
   _readMonthlyCacheRow = fn;
 };
 
+exports.__setReadMonthlyCacheRows = function (fn) {
+  _readMonthlyCacheRows = fn;
+};
+
 exports.__setTriggerMonthlyRecalc = function (fn) {
   _triggerMonthlyRecalc = fn;
 };
@@ -41,6 +50,7 @@ exports.__setReadCategoryTotals = function (fn) {
 
 exports.__reset = function () {
   _readMonthlyCacheRow = async () => ({ status: 'ok', data: null });
+  _readMonthlyCacheRows = async () => ({ status: 'ok', data: [] });
   _triggerMonthlyRecalc = async () => ({ status: 'ok', data: undefined });
   _readCategoryTotals = async () => ({ status: 'ok', data: [] });
 };
@@ -52,6 +62,13 @@ exports.readMonthlyCacheRow = async function readMonthlyCacheRow(
   yearMonth,
 ) {
   return _readMonthlyCacheRow(userId, yearMonth);
+};
+
+exports.readMonthlyCacheRows = async function readMonthlyCacheRows(
+  userId,
+  yearMonths,
+) {
+  return _readMonthlyCacheRows(userId, yearMonths);
 };
 
 exports.triggerMonthlyRecalc = async function triggerMonthlyRecalc(
