@@ -93,10 +93,10 @@ export function aggregateRunRate(
 export function useRunRate(monthKey: string): { data: RunRateResult | null }
 ```
 
-- `useSessionUser()` first (hooks-order safe), then **gate**: `monthKey !== currentMonthKey() || !userId` → `{ data: null }` — no queries fire for past months (REQ-5a).
+- `useSessionUser()` first (hooks-order safe), then **gate via `enabled`**: `monthKey !== currentMonthKey() || !userId` → query disabled and `{ data: null }` — no queries fire for past months (REQ-5a). The gate is implemented as `enabled` on the query rather than an early-return `{ data: null }` to keep hook call order stable when navigating Home to a past month (early-return would unmount `useQuery`/`useMutation` and violate React Rules of Hooks); external behavior is identical.
 - `useQuery` on `readMonthlyCacheRows(userId, [currentKey, prev1, prev2, prev3, prev4])` (feature-access.ts:791 — one indexed batch read, NFR-1), key `[...queryKeys.monthlyCachePrefix(userId), 'run-rate', monthKey]` (AD-4), `enabled: isCurrent && !!userId`, `.then(toQueryData)`.
 - **Cache-miss effect (REQ-6):** when the query resolves and no row has `year_month === currentKey`, fire `triggerMonthlyRecalc(userId, currentKey)` once (`mutationFn`), refetch on success — verbatim pattern of `useMonthlyCache` (useMonthlyCache.ts:104-122).
-- **Error → `{ data: null }`** (query `isError`; `toQueryData` rejects on `{status:'error'}` — never fabricate numbers, REQ-6).
+- **Error → last-good:** initial read error with no verified data (`isError && !hasData`) → `{ data: null }`; background refetch failure keeps the previously verified data (last-good policy, consistent with the budget card — `toQueryData` rejects on `{status:'error'}`, never fabricate numbers, REQ-6).
 - Result: `useMemo(() => aggregateRunRate(rows, todayLocalISO()), [rows, todayLocalISO()])` — the day token re-derives on the local-day flip so a month boundary mid-session doesn't serve yesterday's math; recompute cost is trivial.
 
 ### `RunRateCard` — `src/features/home/components/RunRateCard.tsx` (presentational)
@@ -105,6 +105,7 @@ export function useRunRate(monthKey: string): { data: RunRateResult | null }
 export interface RunRateCardProps {
   result: RunRateResult; // data !== null, guaranteed by parent
   currency: string;      // passed from useSettingsStore (index.tsx:60)
+  monthKey: string;      // selected monthKey, drives the label (R3-S1)
 }
 ```
 
@@ -191,7 +192,7 @@ No migration, no SQL, no new dependencies (NFR-1).
 | Feb vs 31-day months | Day-vs-day baseline; current-month denominator | `dayOfMonth` cap on prev window; `daysInMonth` from referenceDate's own month |
 | January (year rollover) | Dec of prior year | `previousMonthKey` (useHomeFeed.ts:170) |
 | Current-month cache-miss | Hidden until recalc resolves | `triggerMonthlyRecalc` effect + refetch (REQ-6) |
-| Read failure (network/DB) | Hidden | query `isError` → `{ data: null }`; never fabricate (REQ-6) |
+| Read failure (network/DB) | Hidden on initial error; last-good on background refetch failure | query `isError && !hasData` → `{ data: null }`; verified data survives a refetch failure (last-good policy, same as budget card); never fabricate (REQ-6) |
 | `deltaPct` ≈ 0 | Renders `0%` | `-0` normalization (AD-7) |
 | Month boundary while app open | Math re-derives on day flip | `todayLocalISO()` in memo deps |
 | Past-month selected | No reads, hidden | Hook early gate in `currentMonthKey()` |

@@ -57,12 +57,12 @@ The card SHALL render only when ALL hold: (a) the selected month key equals `cur
 
 ### REQ-6: Data source, cache-miss and read failure
 
-The system SHALL read run-rate figures exclusively from the signed-in user's personal `monthly_user_totals` rows via the existing cache read path (`readMonthlyCacheRows`); household data SHALL NOT be aggregated. On cache-miss of the current month, the existing auto-recalc path SHALL populate the row and the card SHALL NOT render computed figures until it resolves. On any read error the card SHALL be hidden. The system MUST NOT fabricate, substitute, or estimate numbers when reads fail.
+The system SHALL read run-rate figures exclusively from the signed-in user's personal `monthly_user_totals` rows via the existing cache read path (`readMonthlyCacheRows`); household data SHALL NOT be aggregated. On cache-miss of the current month, the existing auto-recalc path SHALL populate the row and the card SHALL NOT render computed figures until it resolves. On an initial read error (no data yet) the card SHALL be hidden; on a background refetch failure with already-verified data, the card SHALL keep rendering the last-good figures (last-good policy, consistent with the budget card). The system MUST NOT fabricate, substitute, or estimate numbers when reads fail.
 
 **Given/When/Then**:
 
 1. Given the current-month row is missing, When the hook reads, Then recalculation is triggered and no computed figures render until the row resolves.
-2. Given a baseline read fails (network/DB error), When the card would render, Then the card is hidden.
+2. Given a baseline read fails (network/DB error) and no verified data exists yet, When the card would render, Then the card is hidden; given data was already verified, a later refetch failure keeps the last-good figures visible.
 3. Given a household exists, When run-rate is computed, Then only the personal cache rows contribute.
 
 ### REQ-7: Card content and interaction
