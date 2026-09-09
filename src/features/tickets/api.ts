@@ -773,6 +773,13 @@ async function persistReceipt(
  * - Item search reads the same rows: a write can rename or remove items
  *   (and a save adds new ones), so EVERY month/query variant of the
  *   itemSearch keys must refetch — invalidated by the user prefix.
+ * - The materialized monthly cache (`monthly_user_totals`) is rebuilt
+ *   server-side by the trigger on purchases writes (migration 0015 §4-§5),
+ *   so invalidating the `monthlyCachePrefix` refetches the FRESH row — the
+ *   Analytics monthly-cache consumers and the Home run-rate card refresh
+ *   immediately after a write (month-run-rate design AD-4). Without this
+ *   the card keeps the pre-write figures until the next AppState foreground
+ *   refetch.
  * scanUsage is deliberately NOT invalidated here: only a SAVE consumes a
  * scan — updates and deletes do not.
  */
@@ -790,6 +797,9 @@ function invalidateReceiptFeeds(userId: string): void {
   });
   void queryClient.invalidateQueries({
     queryKey: queryKeys.monthlyImpulseItemsPrefix(userId),
+  });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.monthlyCachePrefix(userId),
   });
   void queryClient.invalidateQueries({
     queryKey: queryKeys.itemSearchPrefix(userId),
@@ -820,6 +830,9 @@ function invalidateEditFeeds(userId: string): void {
   });
   void queryClient.invalidateQueries({
     queryKey: queryKeys.monthlyImpulseItemsPrefix(userId),
+  });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.monthlyCachePrefix(userId),
   });
   void queryClient.invalidateQueries({
     queryKey: queryKeys.itemSearchPrefix(userId),
