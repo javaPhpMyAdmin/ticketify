@@ -37,22 +37,22 @@ Chain strategy: pending
 
 ## Phase 2: Rollover Hook (PR 2)
 
-- [ ] T2.1 Extend `scripts/test-mocks/feature-access.js`: budget read/upsert mocks + seams + reset
-- [ ] T2.2 `useCategoryBudgets.ts`: default → `currentMonthKey()`; `rolloverDoneRef` + `rolloverMutation` (read prev → filter registry ∧ `> 0` → upsert current; invalidate both keys); effect gates `!userId`/not-current/rows-exist/loading/pending/ref → return, else ref + mutate
-- [ ] T2.3 Create `scripts/tsconfig.category-budget-rollover-test.json`
-- [ ] T2.4 Create `scripts/test-category-budget-rollover.mjs` (jsdom + act + QueryClientProvider, `currentMonthKey` stub): copy-on-first-read; rows-exist → skip; prev empty → no loop; past/future → skip; removed slug / `<= 0` not copied; double-mount idempotent; save-after preserves edits; error → no invalidate
-- [ ] T2.5 `package.json`: add `test:category-budget-rollover` to `test` chain
+- [x] T2.1 Extend `scripts/test-mocks/feature-access.js`: budget read/upsert mocks + seams + reset
+- [x] T2.2 `useCategoryBudgets.ts`: default → `currentMonthKey()`; `rolloverDoneRef` + `rolloverMutation` (read prev → filter registry ∧ `> 0` → upsert current; invalidate both keys); effect gates `!userId`/not-current/rows-exist/loading/pending/ref → return, else ref + mutate
+- [x] T2.3 Create `scripts/tsconfig.category-budget-rollover-test.json`
+- [x] T2.4 Create `scripts/test-category-budget-rollover.mjs` (jsdom + act + QueryClientProvider, `currentMonthKey` stub): copy-on-first-read; rows-exist → skip; prev empty → no loop; past/future → skip; removed slug / `<= 0` not copied; double-mount idempotent; save-after preserves edits; error → no invalidate
+- [x] T2.5 `package.json`: add `test:category-budget-rollover` to `test` chain
 
 ## Phase 3: Surfacing + UTC Fix (PR 2)
 
-- [ ] T3.1 `useMonthlyCache.ts`: `useCategoryBudgets(yearMonth)` unconditional; memo `computeCategoryBudgetProgress(transformCacheToCategoryTotals(row), budgets, yearMonth)`; default → `currentMonthKey()`
-- [ ] T3.2 `useMonthlyCacheData.ts` + `useMonthlyTotals.ts`: default → `currentMonthKey()`
-- [ ] T3.3 `CategoryBudgetRow.tsx`: drop local color fn, import from `../category-budget-progress`
-- [ ] T3.4 `analytics/index.ts`: re-export `budgetProgressColor` + new helpers from lib
-- [ ] T3.5 `CategoryBudgetCard.tsx`: replace inline hex (:56–63) with `budgetProgressColor(amount / limit)`
-- [ ] T3.6 `settings/category-budgets.tsx`: `utcYearMonth()` → `currentMonthKey()`
-- [ ] T3.7 `history.tsx`: personal Card `limit` from `useCategoryBudgets(monthKey)` + `budgetBySlug`; household unchanged (flagged)
-- [ ] T3.8 `analytics.tsx`: personal "Categorías" Card (`CategoryBudgetRow` over existing totals) + "Configurar presupuestos" CTA when no budgets; mirror household gates
+- [x] T3.1 `useMonthlyCache.ts`: `useCategoryBudgets(yearMonth)` unconditional; memo `computeCategoryBudgetProgress(transformCacheToCategoryTotals(row), budgets, yearMonth)`; default → `currentMonthKey()`
+- [x] T3.2 `useMonthlyCacheData.ts` + `useMonthlyTotals.ts`: default → `currentMonthKey()`
+- [x] T3.3 `CategoryBudgetRow.tsx`: drop local color fn, import from `../category-budget-progress`
+- [x] T3.4 `analytics/index.ts`: re-export `budgetProgressColor` + new helpers from lib
+- [x] T3.5 `CategoryBudgetCard.tsx`: replace inline hex (:56–63) with `budgetProgressColor(amount / limit)`
+- [x] T3.6 `settings/category-budgets.tsx`: `utcYearMonth()` → `currentMonthKey()`
+- [x] T3.7 `history.tsx`: personal Card `limit` from `useCategoryBudgets(monthKey)` + `budgetBySlug`; household unchanged (flagged)
+- [x] T3.8 `analytics.tsx`: personal "Categorías" Card (`CategoryBudgetRow` over existing totals) + "Configurar presupuestos" CTA when no budgets; mirror household gates
 
 ## Phase 4: Verification
 
