@@ -128,8 +128,12 @@ export default function HistoryScreen() {
   // Personal mode: month budget limits (shared key — rollover-fed). The
   // slug → amount map feeds each category card's progress bar; cards
   // without a budget for the month render no bar (spec REQ: no limit → no
-  // bar, only the spend amount).
-  const { budgets: monthBudgets } = useCategoryBudgets(monthKey);
+  // bar, only the spend amount). In household view the rollover is disabled
+  // (AD-6): viewing the house must not write personal budget rows.
+  const { budgets: monthBudgets } = useCategoryBudgets(
+    monthKey,
+    viewMode !== 'household',
+  );
   const budgetLimitBySlug = useMemo(
     () => budgetBySlug(monthBudgets, monthKey),
     [monthBudgets, monthKey],

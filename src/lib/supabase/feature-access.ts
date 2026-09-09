@@ -212,6 +212,15 @@ export async function readMonthlyImpulseItems(
 }
 
 /**
+ * Sentinel slug written by the monthly rollover (migration 0030). The row
+ * `(user_id, '__rollover__', month)` with `amount = 0` and
+ * `rollover_applied = true` durably records that the rollover ran for a
+ * month — including months where there was nothing to copy. It is not a real
+ * category: every consumer filters on EXPENSE_CATEGORIES or `amount > 0`.
+ */
+export const ROLLOVER_MARKER_SLUG = '__rollover__';
+
+/**
  * Read the user's category budget limits for a month. Returns an array
  * (possibly empty) — an empty array means no budgets are configured.
  */
@@ -236,6 +245,10 @@ export async function readCategoryBudgets(
  * Upsert category budget amounts for a month. Items with amount > 0 are
  * inserted or updated; items with amount <= 0 are deleted (clearing the
  * budget for that category). Returns `ok` on success or `error` on failure.
+ *
+ * The rollover sentinel slug (`__rollover__`) is never writable through this
+ * path: it is not a real category, and clearing/creating it would corrupt the
+ * rollover record. `markCategoryBudgetRolloverApplied` owns that row.
  */
 export async function upsertCategoryBudgets(
   budgets: Array<{ category_slug: string; amount: number }>,
@@ -244,8 +257,9 @@ export async function upsertCategoryBudgets(
 ): Promise<FeatureReadResult<null>> {
   if (!isSupabaseConfigured) return { status: 'unconfigured' };
 
-  const toUpsert = budgets.filter((b) => b.amount > 0);
-  const toDelete = budgets.filter((b) => b.amount <= 0);
+  const realBudgets = budgets.filter((b) => b.category_slug !== ROLLOVER_MARKER_SLUG);
+  const toUpsert = realBudgets.filter((b) => b.amount > 0);
+  const toDelete = realBudgets.filter((b) => b.amount <= 0);
 
   // Delete budgets that are being cleared
   if (toDelete.length > 0) {
@@ -279,6 +293,67 @@ export async function upsertCategoryBudgets(
       console.warn('[upsert] category budgets upsert failed:', upsertError.code, upsertError.message);
       return { status: 'error', message: READ_ERROR_MESSAGE };
     }
+  }
+
+  return { status: 'ok', data: null };
+}
+
+/**
+ * Persist the monthly rollover record for a month (migration 0030).
+ *
+ * Writes the copied limits with `rollover_applied = true` and upserts the
+ * `__rollover__` sentinel (amount 0, `rollover_applied = true`) so a later
+ * read can tell the rollover already ran for the month — even when there was
+ * nothing to copy. Copies are written first: real data before the marker.
+ */
+export async function markCategoryBudgetRolloverApplied(
+  budgets: Array<{ category_slug: string; amount: number }>,
+  yearMonth: string,
+  userId: string,
+): Promise<FeatureReadResult<null>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+
+  const copies = budgets.filter(
+    (b) => b.category_slug !== ROLLOVER_MARKER_SLUG && b.amount > 0,
+  );
+
+  if (copies.length > 0) {
+    const rows = copies.map((b) => ({
+      user_id: userId,
+      category_slug: b.category_slug,
+      month: yearMonth,
+      amount: b.amount,
+      rollover_applied: true,
+    }));
+    const { error: copyError } = await supabase
+      .from('category_budgets')
+      .upsert(rows, { onConflict: 'user_id,category_slug,month' });
+    if (copyError) {
+      console.warn('[rollover] copy upsert failed:', copyError.code, copyError.message);
+      return { status: 'error', message: READ_ERROR_MESSAGE };
+    }
+  }
+
+  // Sentinel row: durable "rollover ran for this month" record, even when
+  // there was nothing to copy. Not a real category — consumers filter on
+  // EXPENSE_CATEGORIES / amount > 0.
+  const { error: markerError } = await supabase
+    .from('category_budgets')
+    .upsert(
+      [
+        {
+          user_id: userId,
+          category_slug: ROLLOVER_MARKER_SLUG,
+          month: yearMonth,
+          amount: 0,
+          rollover_applied: true,
+        },
+      ],
+      { onConflict: 'user_id,category_slug,month' },
+    );
+  if (markerError) {
+    console.warn('[rollover] marker upsert failed:', markerError.code, markerError.message);
+    return { status: 'error', message: READ_ERROR_MESSAGE };
   }
 
   return { status: 'ok', data: null };

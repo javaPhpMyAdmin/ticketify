@@ -68,7 +68,10 @@ export function CategoryBudgetRow({
           {name}
         </Text>
         <Text style={styles.percent}>{formatPercentLabel(percent)} del gasto</Text>
-        {typeof limit === 'number' ? (
+        {/* Gate: only a positive limit renders the budget line (Correction 3).
+            A 0/negative limit is a delete-on-zero artifact — it must never
+            surface a limit, a ratio, or a progress bar. */}
+        {typeof limit === 'number' && limit > 0 ? (
           <>
             <Text style={styles.limit}>
               {formatCurrency(amount, currency)} de{' '}
@@ -78,6 +81,7 @@ export function CategoryBudgetRow({
               value={Math.min(1, amount / limit)}
               color={budgetProgressColor(amount / limit)}
               height={4}
+              accessibilityLabel={`Gastaste ${formatCurrency(amount, currency)} de ${formatCurrency(limit, currency)} en ${name}`}
             />
           </>
         ) : null}

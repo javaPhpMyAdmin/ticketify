@@ -17,11 +17,14 @@
  *     preserved — the result is a new array with new objects
  *   - `budgetProgressColor` boundary table: 0.69 → green,
  *     0.7 / 0.99 → amber, 1 / 1.2 → red
+ *   - degenerate ratios (NaN / ±Infinity / negative) → `colors.primary`
+ *     (never red), and `BUDGET_COLOR.green` is the same token as
+ *     `colors.primary` (Correction 3 identity)
  *   - `budgetBySlug`: month filter + amount > 0 filter
  *
- * Dependency-free by design (type-only imports): unlike the harnesses that
- * pull home/auth/supabase deps, the compiled module emits no requires, so no
- * require-hook remapping is needed here.
+ * Near-dependency-free: type-only imports plus one runtime import
+ * (`@/theme/colors`, itself self-contained). The require-hook below remaps
+ * `@/theme/colors` to the compiled module; no other remapping is needed.
  *
  * Deterministic: no clock; all fixture months are explicit `YYYY-MM` keys.
  *
@@ -30,6 +33,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -69,6 +73,18 @@ async function compile() {
   );
 }
 
+// The compiled category-budget-progress.js requires '@/theme/colors': remap
+// it to the compiled colors module.
+function installRequireHook() {
+  const originalResolve = Module._resolveFilename;
+  Module._resolveFilename = function rewrittenResolve(request, ...rest) {
+    if (request === '@/theme/colors') {
+      request = join(outDir, 'src', 'theme', 'colors.js');
+    }
+    return originalResolve.call(this, request, ...rest);
+  };
+}
+
 function load(mod) {
   return import(pathToFileURL(join(outDir, mod)).href);
 }
@@ -100,10 +116,12 @@ async function run() {
   console.log('\n[tests] compiling category-budget-progress modules…');
   await compile();
   console.log('[tests] loading compiled module…');
+  installRequireHook();
 
   const mod = await load('src/features/analytics/category-budget-progress.js');
+  const colorsMod = await load('src/theme/colors.js');
   const compute = (totals, budgets, monthKey) =>
-    mod.computeCategoryBudgetProgress(totals, budgets, monthKey);
+    mod.mergeBudgetLimits(totals, budgets, monthKey);
   const color = (ratio) => mod.budgetProgressColor(ratio);
   const bySlug = (budgets, monthKey) => mod.budgetBySlug(budgets, monthKey);
 
@@ -217,6 +235,19 @@ async function run() {
   await test('1 → red and 1.2 → red (>= 100%)', () => {
     assert.equal(color(1), RED);
     assert.equal(color(1.2), RED);
+  });
+
+  await test('degenerate ratios → colors.primary, never red (Correction 3)', () => {
+    const PRIMARY = colorsMod.colors.primary;
+    assert.equal(PRIMARY, '#10B981', 'colors.primary is the brand emerald');
+    assert.equal(color(NaN), PRIMARY, 'NaN (0/0 limit) → primary');
+    assert.equal(color(Infinity), PRIMARY, '+Infinity → primary');
+    assert.equal(color(-Infinity), PRIMARY, '-Infinity → primary');
+    assert.equal(color(-0.5), PRIMARY, 'negative ratio → primary');
+  });
+
+  await test('BUDGET_COLOR.green is colors.primary (shared identity)', () => {
+    assert.equal(mod.BUDGET_COLOR.green, colorsMod.colors.primary);
   });
 
   await test('BUDGET_COLOR exports the canonical palette', () => {

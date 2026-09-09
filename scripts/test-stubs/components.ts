@@ -78,3 +78,41 @@ export function EmptyState(props: EmptyStateProps): React.ReactElement {
       : null,
   );
 }
+
+// --- Settings screen surface (budget-month-local harness, compile-only) ---
+// The settings screen imports Card / Pressable / Spinner from '@/components'.
+// The harness never executes the compiled screen (it only greps its output),
+// so these stubs exist purely to satisfy the typecheck.
+
+export interface PressableProps {
+  children?: React.ReactNode;
+  onPress?: () => void;
+  disabled?: boolean;
+  hitSlop?: number | Record<string, number>;
+  style?: unknown | ((state: { pressed: boolean }) => unknown);
+  accessibilityRole?: string;
+  accessibilityLabel?: string;
+}
+
+export function Pressable(props: PressableProps): React.ReactElement {
+  return React.createElement('Pressable', null, props.children);
+}
+
+export interface CardProps {
+  children?: React.ReactNode;
+  padding?: unknown;
+  style?: unknown;
+}
+
+export function Card(props: CardProps): React.ReactElement {
+  return React.createElement('Card', null, props.children);
+}
+
+export interface SpinnerProps {
+  size?: 'sm' | 'md' | 'lg';
+  color?: string;
+}
+
+export function Spinner(props: SpinnerProps): React.ReactElement {
+  return React.createElement('Spinner');
+}

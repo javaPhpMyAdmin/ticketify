@@ -7,6 +7,7 @@ import { currentMonthKey, previousMonthKey } from '@/features/home/hooks/useHome
 import { EXPENSE_CATEGORIES } from '@/features/home/categories';
 import { queryKeys } from '@/lib/query-keys';
 import {
+  markCategoryBudgetRolloverApplied,
   readCategoryBudgets,
   upsertCategoryBudgets,
 } from '@/lib/supabase/feature-access';
@@ -27,9 +28,20 @@ import type { CategoryBudget } from '@/types';
  *
  * Rollover (AD-1/AD-2/AD-7): when the resolved current-month budget read is
  * empty and the month is the local current month, copies the previous month's
- * limits once (idempotent PK upsert, ref-guarded one-shot per mount+month).
+ * limits once and durably records the copy (migration 0030: the
+ * `rollover_applied` flag plus the `__rollover__` sentinel row). The record
+ * is written even when there is nothing to copy, so the copy never re-runs on
+ * remount or restart — including after the user clears every budget
+ * (delete-on-zero does not touch the sentinel).
+ *
+ * `rolloverEnabled` (default true) lets callers opt out — the household
+ * context passes `false` because household limits are aggregated server-side
+ * and must not be re-copied per member (AD-6).
  */
-export function useCategoryBudgets(yearMonth = currentMonthKey()) {
+export function useCategoryBudgets(
+  yearMonth = currentMonthKey(),
+  rolloverEnabled = true,
+) {
   const { userId } = useSessionUser();
   const queryClient = useQueryClient();
 
@@ -57,29 +69,44 @@ export function useCategoryBudgets(yearMonth = currentMonthKey()) {
   const budgets: CategoryBudget[] = budgetsQuery.data ?? [];
 
   // --- Rollover (AD-1, AD-2) ---
-  // Guards: not-current month → skip; rows exist → skip; loading → skip;
-  // ref guard → skip. One-shot per mount+month via rolloverDoneRef.
+  // Guards: disabled → skip; not-current month → skip; rows exist or the
+  // rollover already ran this month (copies/sentinel carry rollover_applied)
+  // → skip; loading → skip; ref guard → skip. One-shot per mount+month via
+  // rolloverDoneRef, plus the durable marker so restart is safe too.
   const rolloverDoneRef = useRef<string | null>(null);
+  const lastRolloverAttemptRef = useRef<number | null>(null);
 
   const rolloverMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<{ copied: number } | null> => {
       const prevKey = previousMonthKey(yearMonth);
       const prevResult = await readCategoryBudgets(userId!, prevKey);
-      if (prevResult.status !== 'ok') return;
+      if (prevResult.status !== 'ok') return null;
 
       const prevBudgets = prevResult.data ?? [];
       const validKeys = new Set(Object.keys(EXPENSE_CATEGORIES));
 
-      // Filter: slug must exist in EXPENSE_CATEGORIES and amount > 0 (AD-7)
+      // Filter: slug must exist in EXPENSE_CATEGORIES and amount > 0 (AD-7).
+      // The sentinel slug (amount 0) is excluded by the amount filter.
       const copies = prevBudgets
         .filter((b) => validKeys.has(b.category_slug) && b.amount > 0)
         .map((b) => ({ category_slug: b.category_slug, amount: b.amount }));
 
-      if (copies.length === 0) return;
+      lastRolloverAttemptRef.current = copies.length;
 
-      return upsertCategoryBudgets(copies, yearMonth, userId!).then(toQueryData);
+      // Persist the copies (rollover_applied = true) + the __rollover__
+      // sentinel — durable "ran for this month", even with zero copies.
+      const result = await markCategoryBudgetRolloverApplied(
+        copies,
+        yearMonth,
+        userId!,
+      );
+      if (result.status !== 'ok') return null;
+      return { copied: copies.length };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      // No-op result (prev read error / write error) → nothing was copied →
+      // skip invalidation: refetching would only re-enter the same gate.
+      if (result === null) return;
       queryClient.invalidateQueries({
         queryKey: queryKeys.categoryBudgets(userId!, yearMonth),
       });
@@ -87,19 +114,37 @@ export function useCategoryBudgets(yearMonth = currentMonthKey()) {
         queryKey: queryKeys.monthlyTotals(userId!, yearMonth),
       });
     },
+    onError: () => {
+      // Unexpected throw (not a FeatureReadResult error): log the attempt so
+      // repeated failures are diagnosable without user-visible noise.
+      console.warn(
+        `[rollover] copy for ${yearMonth} failed after reading ${
+          lastRolloverAttemptRef.current ?? 'unknown'
+        } previous budgets`,
+      );
+    },
   });
 
   useEffect(() => {
     if (!userId) return;
+    if (!rolloverEnabled) return;
     if (yearMonth !== currentMonthKey()) return;
     if (budgets.length > 0) return;
+    if (budgets.some((b) => b.rollover_applied === true)) return;
     if (budgetsQuery.data === undefined) return;
     if (rolloverMutation.isPending) return;
     if (rolloverDoneRef.current === yearMonth) return;
 
     rolloverDoneRef.current = yearMonth;
     rolloverMutation.mutate();
-  }, [userId, yearMonth, budgets, budgetsQuery.data, rolloverMutation.isPending]);
+  }, [
+    userId,
+    yearMonth,
+    budgets,
+    budgetsQuery.data,
+    rolloverMutation.isPending,
+    rolloverEnabled,
+  ]);
 
   return {
     budgets,

@@ -1,0 +1,52 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020", "dom"],
+    "jsx": "react-jsx",
+    "strict": false,
+    "noImplicitAny": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "..",
+    "paths": {
+      "@/components": ["./scripts/test-stubs/components.ts"],
+      "@/features/auth": ["./scripts/test-stubs/auth.ts"],
+      "@/features/home": ["./scripts/test-stubs/home.ts"],
+      "@/features/analytics": ["./scripts/test-stubs/analytics.ts"],
+      "@/features/pro": ["./scripts/test-stubs/pro.ts"],
+      "@/lib/supabase": ["./scripts/test-stubs/supabase.ts"],
+      "@/lib/supabase/storage-adapter": ["./scripts/test-stubs/storage-adapter.ts"],
+      "react-native": ["./scripts/test-stubs/react-native.ts"],
+      "react-native-safe-area-context": ["./scripts/test-stubs/safe-area-context.ts"],
+      "@/*": ["./src/*"]
+    },
+    "rootDir": ".."
+  },
+  "include": [
+    "../src/features/home/hooks/useHomeFeed.ts",
+    "../src/features/analytics/hooks/useCategoryBudgets.ts",
+    "../src/app/settings/category-budgets.tsx",
+    "../src/features/home/categories.ts",
+    "../src/features/home/api.ts",
+    "../src/features/home/feed-row.ts",
+    "../src/lib/query-keys.ts",
+    "../src/lib/supabase/feature-access.ts",
+    "../src/lib/supabase/query-adapters.ts",
+    "../src/lib/supabase/config-status.ts",
+    "../src/stores/use-household-store.ts",
+    "../src/stores/use-receipts-store.ts",
+    "../scripts/test-stubs/globals.d.ts",
+    "../scripts/test-stubs/auth.ts",
+    "../scripts/test-stubs/components.ts",
+    "../scripts/test-stubs/home.ts",
+    "../scripts/test-stubs/analytics.ts",
+    "../scripts/test-stubs/pro.ts",
+    "../scripts/test-stubs/supabase.ts",
+    "../scripts/test-stubs/storage-adapter.ts",
+    "../scripts/test-stubs/react-native.ts",
+    "../scripts/test-stubs/safe-area-context.ts"
+  ]
+}

@@ -110,6 +110,7 @@ export function CategoryBudgetCard({
                 color={progressColor}
                 height={4}
                 trackColor={`${color.foreground}33`}
+                accessibilityLabel={`Gastaste ${formatCurrency(amount, currency)} de ${formatCurrency(limit, currency)} en ${name}`}
               />
             </View>
           </View>
