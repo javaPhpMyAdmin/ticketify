@@ -30,6 +30,20 @@ let _readCategoryTotals = async (yearMonth, householdId) => ({
   data: [],
 });
 
+let _readCategoryBudgets = async (userId, yearMonth) => ({
+  status: 'ok',
+  data: [],
+});
+
+let _upsertCategoryBudgets = async (budgets, yearMonth, userId) => ({
+  status: 'ok',
+  data: null,
+});
+
+let _readCategoryBudgetsError = null;
+let _readCategoryBudgetsCallCount = 0;
+let _upsertCategoryBudgetsCallCount = 0;
+
 // --- Seam functions (harness API) ---
 
 exports.__setReadMonthlyCacheRow = function (fn) {
@@ -48,11 +62,49 @@ exports.__setReadCategoryTotals = function (fn) {
   _readCategoryTotals = fn;
 };
 
+exports.__setReadCategoryBudgets = function (fn) {
+  _readCategoryBudgets = fn;
+};
+
+// Alias for the rollover slice contract — same seam as __setReadCategoryBudgets.
+exports.__setReadCategoryBudgetsRows = function (fn) {
+  _readCategoryBudgets = fn;
+};
+
+exports.__setReadCategoryBudgetsError = function (err) {
+  _readCategoryBudgetsError = err;
+};
+
+exports.__setReadCategoryBudgetsCallCount = function (count) {
+  _readCategoryBudgetsCallCount = count;
+};
+
+exports.__setUpsertCategoryBudgets = function (fn) {
+  _upsertCategoryBudgets = fn;
+};
+
+exports.__setUpsertCategoryBudgetsCallCount = function (count) {
+  _upsertCategoryBudgetsCallCount = count;
+};
+
+exports.__getReadCategoryBudgetsCallCount = function () {
+  return _readCategoryBudgetsCallCount;
+};
+
+exports.__getUpsertCategoryBudgetsCallCount = function () {
+  return _upsertCategoryBudgetsCallCount;
+};
+
 exports.__reset = function () {
   _readMonthlyCacheRow = async () => ({ status: 'ok', data: null });
   _readMonthlyCacheRows = async () => ({ status: 'ok', data: [] });
   _triggerMonthlyRecalc = async () => ({ status: 'ok', data: undefined });
   _readCategoryTotals = async () => ({ status: 'ok', data: [] });
+  _readCategoryBudgets = async () => ({ status: 'ok', data: [] });
+  _upsertCategoryBudgets = async () => ({ status: 'ok', data: null });
+  _readCategoryBudgetsError = null;
+  _readCategoryBudgetsCallCount = 0;
+  _upsertCategoryBudgetsCallCount = 0;
 };
 
 // --- Exported functions (same signatures as the real feature-access) ---
@@ -83,6 +135,29 @@ exports.readCategoryTotals = async function readCategoryTotals(
   householdId,
 ) {
   return _readCategoryTotals(yearMonth, householdId);
+};
+
+exports.readCategoryBudgets = async function readCategoryBudgets(
+  userId,
+  yearMonth,
+) {
+  _readCategoryBudgetsCallCount += 1;
+  if (_readCategoryBudgetsError) {
+    return {
+      status: 'error',
+      message: _readCategoryBudgetsError,
+    };
+  }
+  return _readCategoryBudgets(userId, yearMonth);
+};
+
+exports.upsertCategoryBudgets = async function upsertCategoryBudgets(
+  budgets,
+  yearMonth,
+  userId,
+) {
+  _upsertCategoryBudgetsCallCount += 1;
+  return _upsertCategoryBudgets(budgets, yearMonth, userId);
 };
 
 exports.READ_ERROR_MESSAGE =
