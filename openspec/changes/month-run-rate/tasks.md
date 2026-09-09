@@ -34,14 +34,14 @@ Both slices fit the 600-line review budget (PR 1 ~470 < 600, PR 2 ~230 < 600); t
 
 ## Phase 2: Data Hook (PR 2)
 
-- [ ] T2.1 Create `src/features/home/hooks/useRunRate.ts` — mirror `useMonthlyCache` pattern (analytics/hooks/useMonthlyCache.ts:88–122): early gate `monthKey === currentMonthKey() && !!userId` (REQ-5a); `useQuery` on `readMonthlyCacheRows(userId, [current, prev1..prev4])` (feature-access.ts:791), key `[...queryKeys.monthlyCachePrefix(userId), 'run-rate', monthKey]` (AD-4); cache-miss → one-shot `triggerMonthlyRecalc` mutation + refetch (REQ-6); `isError` → `{ data: null }`; memo `aggregateRunRate(rows, todayLocalISO())` (NFR-2)
+- [x] T2.1 Create `src/features/home/hooks/useRunRate.ts` — mirror `useMonthlyCache` pattern (analytics/hooks/useMonthlyCache.ts:88–122): early gate `monthKey === currentMonthKey() && !!userId` (REQ-5a); `useQuery` on `readMonthlyCacheRows(userId, [current, prev1..prev4])` (feature-access.ts:791), key `[...queryKeys.monthlyCachePrefix(userId), 'run-rate', monthKey]` (AD-4); cache-miss → one-shot `triggerMonthlyRecalc` mutation + refetch (REQ-6); `isError` → `{ data: null }`; memo `aggregateRunRate(rows, todayLocalISO())` (NFR-2)
 
 ## Phase 3: UI + Integration (PR 2)
 
-- [ ] T3.1 Create `src/features/home/components/RunRateCard.tsx` — presentational: kicker `RITMO DEL MES`, `formatCurrencyWhole(mtd, currency)`, signed delta badge (`+12,5% vs mes anterior` / `vs tu promedio`), `~` projection line «Al ritmo actual cerras en ~$Z»; `Pressable` → `router.push('/analytics')`; `accessibilityRole="button"` + label/hint; styling per `MonthlyOverviewCard` (analytics/components/MonthlyOverviewCard.tsx) (REQ-4, REQ-7, NFR-3/4)
-- [ ] T3.2 `src/features/home/index.ts` — barrel: export `aggregateRunRate`, `RunRateResult` (lib), `useRunRate` (hooks), `RunRateCard` (components)
-- [ ] T3.3 `src/app/(tabs)/index.tsx` — `const runRate = useRunRate(monthKey)`; render `{runRate.data ? <RunRateCard result={runRate.data} currency={currency} /> : null}` between monthSelector (~:209) and MonthlyBudgetCard (~:229) (REQ-8, AD-6)
+- [x] T3.1 Create `src/features/home/components/RunRateCard.tsx` — presentational: kicker `RITMO DEL MES`, `formatCurrencyWhole(mtd, currency)`, signed delta badge (`+12,5% vs mes anterior` / `vs tu promedio`), `~` projection line «Al ritmo actual cerras en ~$Z»; `Pressable` → `router.push('/analytics')`; `accessibilityRole="button"` + label/hint; styling per `MonthlyOverviewCard` (analytics/components/MonthlyOverviewCard.tsx) (REQ-4, REQ-7, NFR-3/4)
+- [x] T3.2 `src/features/home/index.ts` — barrel: export `aggregateRunRate`, `RunRateResult` (lib), `useRunRate` (hooks), `RunRateCard` (components)
+- [x] T3.3 `src/app/(tabs)/index.tsx` — `const runRate = useRunRate(monthKey)`; render `{runRate.data ? <RunRateCard result={runRate.data} currency={currency} /> : null}` between monthSelector (~:209) and MonthlyBudgetCard (~:229) (REQ-8, AD-6)
 
 ## Phase 4: Verification (whole change)
 
-- [ ] T4.1 Acceptance gates: `pnpm typecheck`; `pnpm test:run-rate` 14/14 green; manual — 5 hidden states (day 1–2, empty month, past month, no baseline, read failure), Feb check, cache-miss → recalc → render, tap → Analytics
+- [ ] T4.1 Acceptance gates: `pnpm typecheck`; `pnpm test:run-rate` 15/15 green; `pnpm test:run-rate-hook` 8/8 green (R3 review — real hook mount, deterministic clock, recalc-once + last-good + mid-session navigation pins); manual — 5 hidden states (day 1–2, empty month, past month, no baseline, read failure), Feb check, cache-miss → recalc → render, tap → Analytics

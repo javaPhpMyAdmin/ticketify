@@ -279,6 +279,7 @@ function compile() {
       monthlyPurchasesTotalPrefix: p('monthly-purchases-total'),
       monthlyImpulseTotalPrefix: p('monthly-impulse-total'),
       monthlyImpulseItemsPrefix: p('monthly-impulse-items'),
+      monthlyCachePrefix: p('monthly-cache'),
       itemSearchPrefix: p('item-search'),
       monthReceiptsPrefix: p('month-receipts'),
       monthKeys: p('month-keys'),
