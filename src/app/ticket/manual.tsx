@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { router, Stack } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -53,6 +54,7 @@ import type { CardType, ReviewItem } from '@/types';
  * the RPC.
  */
 export default function ManualEntryScreen() {
+  const { t } = useTranslation(['tickets', 'a11y', 'common']);
   const { userId } = useSessionUser();
   const currency = useSettingsStore((s) => s.currency);
   const { draft } = useReceiptDraftDraft();
@@ -181,9 +183,9 @@ export default function ManualEntryScreen() {
               clear();
               router.dismiss();
             }}
-            accessibilityLabel="Cerrar carga de compra"
+            accessibilityLabel={t('tickets:manualClose')}
           />
-          <Text style={styles.topBarTitle}>Cargar compra</Text>
+          <Text style={styles.topBarTitle}>{t('tickets:manualTitle')}</Text>
           <View style={styles.topBarSpacer} />
         </View>
 
@@ -195,17 +197,17 @@ export default function ManualEntryScreen() {
           <Card>
             <View style={styles.fieldStack}>
               <View style={styles.fieldWrap}>
-                <Text style={styles.kicker}>TIENDA</Text>
+                <Text style={styles.kicker}>{t('tickets:manualStoreKicker')}</Text>
                 <TextInput
                   value={draft?.store_name ?? ''}
                   onChangeText={setStore}
                   style={styles.input}
-                  placeholder="Nombre de la tienda"
+                  placeholder={t('tickets:manualStorePlaceholder')}
                   placeholderTextColor={colors.textSecondary}
                 />
               </View>
               <View style={styles.fieldWrap}>
-                <Text style={styles.kicker}>FECHA</Text>
+                <Text style={styles.kicker}>{t('tickets:manualDateKicker')}</Text>
                 <Pressable
                   onPress={() => setDatePickerOpen(true)}
                   style={({ pressed }) => [
@@ -213,7 +215,7 @@ export default function ManualEntryScreen() {
                     pressed && styles.dateTriggerPressed,
                   ]}
                   accessibilityRole="button"
-                  accessibilityLabel="Elegir fecha"
+                  accessibilityLabel={t('tickets:manualDatePick')}
                 >
                   <Icon name="calendar" size={18} color={colors.textPrimary} />
                   <Text style={styles.dateValue}>
@@ -231,14 +233,14 @@ export default function ManualEntryScreen() {
 
           {/* Payment */}
           <Card>
-            <Text style={styles.kicker}>PAGO</Text>
+            <Text style={styles.kicker}>{t('tickets:manualPaymentKicker')}</Text>
             <View style={styles.paymentRow}>
               {paymentMethods.map((m) => {
                 const label =
                   m.key === 'card' &&
                   draft?.payment_method === 'card' &&
                   cardType
-                    ? `Tarjeta · ${cardTypeLabels[cardType]}`
+                    ? `${t('tickets:manualTarjetaPrefix')} ${cardTypeLabels[cardType]}`
                     : m.label;
                 return (
                   <Pressable
@@ -257,7 +259,7 @@ export default function ManualEntryScreen() {
                 persisted by saveManualReceipt / buildSaveReceiptArgs. */}
             {draft?.payment_method === 'card' ? (
               <View style={styles.cardTypeRow}>
-                <Text style={styles.cardTypeLabel}>Tipo de tarjeta</Text>
+                <Text style={styles.cardTypeLabel}>{t('tickets:manualCardType')}</Text>
                 {cardTypeOptions.map((opt) => (
                   <Pressable key={opt.key} onPress={() => setCardType(opt.key)}>
                     <Chip label={opt.label} selected={cardType === opt.key} />
@@ -271,7 +273,7 @@ export default function ManualEntryScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>
-                Ítems ({draft?.items.length ?? 0})
+                {t('tickets:manualItemsHeader', { count: draft?.items.length ?? 0 })}
               </Text>
               <Pressable
                 onPress={openAddItem}
@@ -280,10 +282,10 @@ export default function ManualEntryScreen() {
                   pressed && styles.addButtonPressed,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel="Agregar artículo"
+                accessibilityLabel={t('tickets:manualAddItem')}
               >
                 <Icon name="plus" size={16} color={colors.surface} />
-                <Text style={styles.addButtonLabel}>Agregar</Text>
+                <Text style={styles.addButtonLabel}>{t('tickets:manualAddItemShort')}</Text>
               </Pressable>
             </View>
             {draft?.items?.length ? (
@@ -335,7 +337,7 @@ export default function ManualEntryScreen() {
                         <Pressable
                           onPress={() => setCategoryTarget(item)}
                           accessibilityRole="button"
-                          accessibilityLabel={`Categoría de ${item.name}`}
+                          accessibilityLabel={`${t('a11y:categoryOfItem')} ${item.name}`}
                         >
                           <Chip label={categoryLabel} />
                         </Pressable>
@@ -345,7 +347,7 @@ export default function ManualEntryScreen() {
                 })}
               </Card>
             ) : (
-              <Text style={styles.noItems}>Todavía no hay artículos.</Text>
+              <Text style={styles.noItems}>{t('tickets:manualNoItems')}</Text>
             )}
           </View>
 
@@ -363,11 +365,11 @@ export default function ManualEntryScreen() {
 
         <View style={styles.footer}>
           <View style={styles.totalRow}>
-            <Text style={styles.kicker}>Total</Text>
+            <Text style={styles.kicker}>{t('tickets:manualTotal')}</Text>
             <Text style={styles.totalValue}>{formatCurrency(total, currency)}</Text>
           </View>
           <Fab
-            label="Guardar compra"
+            label={t('tickets:manualSave')}
             icon="checkmark"
             onPress={() => void handleSubmit()}
             disabled={saving}
