@@ -983,7 +983,7 @@ async function run() {
         await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
       }
       assert.equal(markCalls, 0, 'read error → rollover never starts');
-      assert.equal(ref.current.error, faMock.READ_ERROR_MESSAGE, 'user-safe error surfaced');
+      assert.equal(ref.current.error, faMock.READ_ERROR_MESSAGE(), 'user-safe error surfaced');
       assert.equal(ref.current.budgets.length, 0);
       assert.equal(ref.current.isLoading, false);
     } finally {

@@ -281,7 +281,7 @@ async function run() {
     });
     const result = await profileMod.fetchProfile('u1');
     assert.equal(result.status, 'error');
-    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE());
     assert.notEqual(result.message, 'relation "profiles" does not exist');
   });
 
@@ -469,7 +469,7 @@ async function run() {
     });
     const result = await analyticsMod.fetchMonthlyTotals('2026-08');
     assert.equal(result.status, 'error');
-    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE());
   });
 
   await test('readCategoryTotals reaches the RPC with p_year_month only and aggregates via sumCategoryTotals', async () => {
@@ -564,7 +564,7 @@ async function run() {
     });
     const result = await seamMod.readCategoryTotals('2026-08');
     assert.equal(result.status, 'error');
-    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE());
   });
 
   await test('readMonthlyPurchasesTotal (budget spent seam) calls monthly_purchases_total with the month only', async () => {
@@ -600,7 +600,7 @@ async function run() {
     });
     const result = await seamMod.readMonthlyPurchasesTotal('2026-08');
     assert.equal(result.status, 'error');
-    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE());
   });
 
   await test('sumCategoryTotals skips malformed rows (missing/null total) and sums the valid ones only', async () => {
@@ -703,7 +703,7 @@ async function run() {
     });
     const result = await seamMod.generateInviteCode('h-1');
     assert.equal(result.status, 'error');
-    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE());
     assert.notEqual(result.message, 'connection reset');
   });
 
@@ -714,7 +714,7 @@ async function run() {
     });
     const result = await seamMod.generateInviteCode('h-1');
     assert.equal(result.status, 'error');
-    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE());
   });
 
   await test('readActiveInviteCode returns the most recent unconsumed code row', async () => {
@@ -775,7 +775,7 @@ async function run() {
     });
     const result = await seamMod.readActiveInviteCode('h-1');
     assert.equal(result.status, 'error');
-    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE());
     assert.notEqual(result.message, 'permission denied for table invite_codes');
   });
 
@@ -831,7 +831,7 @@ async function run() {
     });
     const result = await seamMod.joinHousehold('ABC123');
     assert.equal(result.status, 'error');
-    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE());
     assert.notEqual(result.message, 'connection reset');
   });
 
@@ -957,7 +957,7 @@ async function run() {
     });
     const result = await seamMod.readHouseholdMembers('h-1');
     assert.equal(result.status, 'error');
-    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE());
     assert.notEqual(
       result.message,
       'function get_household_members(uuid) does not exist',
@@ -1031,7 +1031,7 @@ async function run() {
       () => adaptersMod.toQueryData({ status: 'missing-profile' }),
       'missing-profile',
     );
-    assert.equal(err.message, seamMod.READ_ERROR_MESSAGE);
+    assert.equal(err.message, seamMod.READ_ERROR_MESSAGE());
   });
 
   await test('toQueryData throws unconfigured with the generic copy', async () => {
@@ -1039,7 +1039,7 @@ async function run() {
       () => adaptersMod.toQueryData({ status: 'unconfigured' }),
       'unconfigured',
     );
-    assert.equal(err.message, seamMod.READ_ERROR_MESSAGE);
+    assert.equal(err.message, seamMod.READ_ERROR_MESSAGE());
   });
 
   await test('toQueryData throws error kind carrying the seam message', async () => {
@@ -1086,14 +1086,14 @@ async function run() {
 
   await test('toQueryErrorMessage carries the seam message for error kind', async () => {
     const msg = adaptersMod.toQueryErrorMessage(
-      new adaptersMod.FeatureQueryError('error', seamMod.READ_ERROR_MESSAGE),
+      new adaptersMod.FeatureQueryError('error', seamMod.READ_ERROR_MESSAGE()),
     );
-    assert.equal(msg, seamMod.READ_ERROR_MESSAGE);
+    assert.equal(msg, seamMod.READ_ERROR_MESSAGE());
   });
 
   await test('toQueryErrorMessage maps non-adapter errors to the generic copy', async () => {
-    assert.equal(adaptersMod.toQueryErrorMessage(new Error('raw text')), seamMod.READ_ERROR_MESSAGE);
-    assert.equal(adaptersMod.toQueryErrorMessage('not an error'), seamMod.READ_ERROR_MESSAGE);
+    assert.equal(adaptersMod.toQueryErrorMessage(new Error('raw text')), seamMod.READ_ERROR_MESSAGE());
+    assert.equal(adaptersMod.toQueryErrorMessage('not an error'), seamMod.READ_ERROR_MESSAGE());
   });
 
   await test('config-status: a missing URL disqualifies the configuration', async () => {

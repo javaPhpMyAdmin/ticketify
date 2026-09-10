@@ -80,7 +80,7 @@ export function CreateHouseholdModal({
       setError(
         result.status === 'error'
           ? result.message
-          : READ_ERROR_MESSAGE,
+          : READ_ERROR_MESSAGE(),
       );
     }
   };

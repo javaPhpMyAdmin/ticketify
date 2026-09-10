@@ -1,0 +1,18 @@
+{
+  "featureAccess": {
+    "generic": "Não foi possível carregar seus dados. Tente novamente.",
+    "createHouseholdFallback": "Não foi possível criar a família. Verifique sua conexão e tente novamente. Se persistir, saia da sua família atual e tente de novo.",
+    "tooManyInviteCodes": "Já existem 3 códigos ativos. Use o código atual ou aguarde 24h.",
+    "inviteProRequired": "Você precisa do Pro para convidar. Ative o Pro no seu perfil.",
+    "joinAlreadyInHousehold": "Você já faz parte de uma família. Saia da sua família atual antes de entrar em outra.",
+    "joinInvalidCode": "Este código é inválido ou expirou. Peça um novo código ao criador da família."
+  },
+  "manualForm": {
+    "store_required": "Digite o nome da loja",
+    "date_required": "Escolha uma data válida",
+    "items_required": "Adicione pelo menos um item",
+    "quantity_invalid": "A quantidade deve ser um número inteiro maior que zero",
+    "price_invalid": "O preço unitário não pode ser negativo",
+    "total_invalid": "O total não pode ser negativo"
+  }
+}

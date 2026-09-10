@@ -9,6 +9,12 @@ export interface CategoryBreakdownListProps {
   rows: CategoryMonthlyTotal[];
   /** Optional section title. */
   title?: string;
+  /**
+   * ISO 4217 currency code (`formatCurrency(value, currency)` requires it
+   * since the PR 2 hybrid policy — see `src/lib/format.ts`). Defaults to
+   * `UYU` so a consumer that omits it still renders.
+   */
+  currency?: string;
 }
 
 /**
@@ -20,6 +26,7 @@ export interface CategoryBreakdownListProps {
 export function CategoryBreakdownList({
   rows,
   title,
+  currency = 'UYU',
 }: CategoryBreakdownListProps) {
   return (
     <View style={styles.wrap}>
@@ -32,7 +39,7 @@ export function CategoryBreakdownList({
             <View style={styles.row}>
               <View style={{ backgroundColor: colors.surface }}>
                 <Text style={styles.kicker}>{t.category_slug.toUpperCase()}</Text>
-                <Text style={styles.total}>{formatCurrency(t.total)}</Text>
+                <Text style={styles.total}>{formatCurrency(t.total, currency)}</Text>
               </View>
               <View style={styles.right}>
                 <Text style={styles.percent}>

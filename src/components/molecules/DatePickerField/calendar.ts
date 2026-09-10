@@ -6,7 +6,24 @@
  * device. Operates on plain ISO date strings (YYYY-MM-DD) matching the
  * `purchases.purchase_date` format the RPC stores (`p_purchase_date`); no
  * time component exists for manual entries (REQ-004).
+ *
+ * PR 2 (`app-i18n`): `formatDateES` is now a one-line wrapper that delegates
+ * to the canonical `formatDate('es-AR', iso, { todayISO })` in
+ * `src/lib/format.ts`. The signature `(iso, todayISO)` is preserved so every
+ * existing call site keeps working unchanged — the public API here is still
+ * the ES-AR-pinned helper the DatePickerField trigger uses.
+ *
+ * PR 2 WU-2.8b: the month/weekday arrays and `formatDateES`/`fullMonthES`
+ * are kept as module-level data (test harness still asserts the calendar
+ * grid layout) but the DatePickerField component reads the localized
+ * month/weekday names via `i18next.t()` at render time. Future PR can
+ * delete these constants — they're kept for backwards compatibility with
+ * the test harness and the calendar grid header.
  */
+
+import i18next from 'i18next';
+
+import { formatDate } from '@/lib/format';
 
 // ---------------------------------------------------------------------------
 // Calendar math (local calendar time)
@@ -134,20 +151,21 @@ export function weekdayLabels(mondayFirst: boolean): string[] {
 /**
  * Long es-AR date for the trigger/header, e.g. `07 set 2026` — or a friendlier
  * `Hoy` / `Ayer` when the value rounds to the near present.
+ *
+ * PR 2 wrapper pass: delegates to the canonical `formatDate(locale, iso,
+ * opts)` helper. The signature `(iso, todayISO)` is preserved on purpose so
+ * the one existing call site (`src/app/ticket/manual.tsx:220`) keeps
+ * working without churn — WU-2.1 is a wrapper pass, not a signature change.
+ * The empty / invalid-input fallback ("Elegir fecha") stays local because
+ * the canonical helper has no UI affordance for "no date picked yet" and
+ * a malformed input (e.g. 'garbage') historically collapsed to the same
+ * placeholder — the manual-receipt harness asserts on that contract.
  */
 export function formatDateES(iso: string | null, todayISO: string): string {
-  const parts = partsFromISO(iso);
-  if (!parts) return 'Elegir fecha';
-  if (iso === todayISO) return 'Hoy';
-  // Ayer (only when the derived date is exactly today minus one day)
-  const [ty, tm, td] = todayISO.split('-').map(Number);
-  const yest = new Date(ty, tm - 1, td);
-  yest.setDate(yest.getDate() - 1);
-  const yestISO = `${yest.getFullYear()}-${pad2(yest.getMonth() + 1)}-${pad2(
-    yest.getDate(),
-  )}`;
-  if (iso === yestISO) return 'Ayer';
-  return `${pad2(parts.day)} ${MONTHS_ABBR_ES_AR[parts.month - 1]} ${parts.year}`;
+  if (!iso) return 'Elegir fecha';
+  const parsed = partsFromISO(iso);
+  if (!parsed) return 'Elegir fecha';
+  return formatDate('es-AR', iso, { todayISO });
 }
 
 /** Full month name used in the picker header, e.g. `septiembre`. */

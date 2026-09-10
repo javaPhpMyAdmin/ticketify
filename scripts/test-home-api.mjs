@@ -356,7 +356,7 @@ async function run() {
     });
     const result = await homeApiMod.readPurchaseList('u1');
     assert.equal(result.status, 'error');
-    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE());
     assert.notEqual(result.message, 'connection reset by peer');
   });
 
@@ -597,7 +597,7 @@ async function run() {
     });
     const result = await homeApiMod.searchPurchaseItems('u1', '2026-08', 'leche');
     assert.equal(result.status, 'error');
-    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE);
+    assert.equal(result.message, seamMod.READ_ERROR_MESSAGE());
     assert.notEqual(result.message, 'relation "purchase_items" does not exist');
   });
 

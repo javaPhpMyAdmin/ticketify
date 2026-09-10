@@ -166,7 +166,7 @@ exports.readCategoryBudgets = async function readCategoryBudgets(
     // Fidelity: the real accessor maps every failure to READ_ERROR_MESSAGE.
     return {
       status: 'error',
-      message: exports.READ_ERROR_MESSAGE,
+      message: exports.READ_ERROR_MESSAGE(),
     };
   }
   return _readCategoryBudgets(userId, yearMonth);
@@ -190,5 +190,12 @@ exports.markCategoryBudgetRolloverApplied = async function markCategoryBudgetRol
   return _markCategoryBudgetRollover(budgets, yearMonth, userId);
 };
 
-exports.READ_ERROR_MESSAGE =
-  'No se pudieron cargar los datos. Inténtalo de nuevo.';
+/**
+ * PR 2: `READ_ERROR_MESSAGE` is now a function in the real feature-access
+ * seam (`feature-access.ts`). The mock mirrors the signature so consumers
+ * keep compiling — call sites in the test pass `READ_ERROR_MESSAGE()`
+ * (a function call) instead of `READ_ERROR_MESSAGE` (a string literal).
+ */
+exports.READ_ERROR_MESSAGE = function READ_ERROR_MESSAGE() {
+  return 'No se pudieron cargar los datos. Inténtalo de nuevo.';
+};

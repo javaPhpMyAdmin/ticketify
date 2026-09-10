@@ -128,7 +128,7 @@ export async function readPurchaseList(
     .order('created_at', { ascending: false });
   if (error) {
     console.warn('[read] purchase list failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   const rows = (data as unknown[] | null) ?? [];
   return {
@@ -172,7 +172,7 @@ export async function readPurchaseListByMonth(
     .order('created_at', { ascending: false });
   if (error) {
     console.warn('[read] purchase list by month failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   const rows = (data as unknown[] | null) ?? [];
   return {
@@ -203,7 +203,7 @@ export async function readPurchaseMonthKeys(
     .order('purchase_date', { ascending: false });
   if (error) {
     console.warn('[read] purchase month keys failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   const rows = (data as unknown[] | null) ?? [];
   const keys = new Set<string>();
@@ -351,7 +351,7 @@ export async function searchPurchaseItems(
     .limit(200);
   if (error) {
     console.warn('[read] item search failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   const rows = (data as unknown[] | null) ?? [];
   return {

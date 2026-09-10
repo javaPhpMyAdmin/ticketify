@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { Icon, Text } from '@/components/atoms';
 import { BottomSheet } from '@/components/molecules/BottomSheet';
 import { colors, radii, spacing, typography } from '@/theme';
 
-import { todayLocalISO } from '@/lib/format';
+import { todayLocalISO, fullMonthForLocale, type FormatDateLocale } from '@/lib/format';
 import {
-  fullMonthES,
   isoFromParts,
   isFutureISO,
   monthGrid,
@@ -15,6 +15,14 @@ import {
   partsFromISO,
   weekdayLabels,
 } from './calendar';
+
+/**
+ * Tiny inline alias for `fullMonthForLocale(locale, month)`. Kept short so
+ * the JSX below reads cleanly (`fullMonthFor(activeLocale, month)`).
+ */
+function fullMonthFor(locale: FormatDateLocale, month: number): string {
+  return fullMonthForLocale(locale, month);
+}
 
 export interface DatePickerFieldProps {
   /** Whether the sheet is open. Kept mounted so closing animates (modal pattern). */
@@ -46,6 +54,8 @@ export function DatePickerField({
   onPick,
   onClose,
 }: DatePickerFieldProps) {
+  const { t, i18n } = useTranslation(['common', 'a11y']);
+  const activeLocale = i18n.language as FormatDateLocale;
   const today = todayLocalISO();
   // `todayLocalISO()` always produces a calendar-valid ISO date, so the
   // parse of TODAY cannot fail (non-null assertion satisfies the checker).
@@ -104,11 +114,11 @@ export function DatePickerField({
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      kicker="FECHA DE COMPRA"
+      kicker={t('a11y:buyDate')}
       // Header title mirrors the selected date; updates as the user navigates
       // months (the base re-renders it from this prop on every render).
-      title={`${pad2(month + 1)} · ${fullMonthES(month)} · ${year}`}
-      backdropLabel="Cerrar fecha"
+      title={`${pad2(month + 1)} · ${fullMonthFor(activeLocale, month)} · ${year}`}
+      backdropLabel={t('a11y:close')}
       backdropColor="rgba(0, 0, 0, 0.5)"
       maxHeight="82%"
       divider
@@ -118,13 +128,13 @@ export function DatePickerField({
           onPress={prevMonth}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Mes anterior"
+          accessibilityLabel={t('a11y:previous')}
           style={styles.navButton}
         >
           <Icon name="chevron.left" size={20} color={colors.textPrimary} />
         </Pressable>
         <Text style={styles.monthLabel}>
-          {fullMonthES(month)}{' '}
+          {fullMonthFor(activeLocale, month)}{' '}
           <Text style={styles.yearInline}>{year}</Text>
         </Text>
         <Pressable
@@ -132,7 +142,7 @@ export function DatePickerField({
           disabled={!canGoNext}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Mes siguiente"
+          accessibilityLabel={t('a11y:next')}
           style={styles.navButton}
         >
           <Icon
@@ -171,7 +181,7 @@ export function DatePickerField({
                     onPress={() => selectDay(d)}
                     disabled={isFutureCell}
                     accessibilityRole="button"
-                    accessibilityLabel={`Día ${d}`}
+                    accessibilityLabel={`${t('a11y:dayPrefix')} ${d}`}
                     style={({ pressed }) => [
                       styles.dayCell,
                       isSelected && styles.dayCellSelected,
@@ -197,7 +207,7 @@ export function DatePickerField({
           })}
         </View>
         <Text style={styles.helper}>
-          {isFuture ? 'No podés elegir una fecha futura' : `Máx. hoy (${today})`}
+          {isFuture ? t('a11y:futureBlocked') : `${t('a11y:maxToday')} (${today})`}
         </Text>
       </ScrollView>
       <View style={styles.actions}>
@@ -209,9 +219,9 @@ export function DatePickerField({
             pressed && styles.actionPressed,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Cancelar"
+          accessibilityLabel={t('common:cancel')}
         >
-          <Text style={styles.cancelLabel}>Cancelar</Text>
+          <Text style={styles.cancelLabel}>{t('common:cancel')}</Text>
         </Pressable>
         <Pressable
           onPress={() => selectedISO !== null && !isFuture && onPick(selectedISO)}
@@ -223,10 +233,10 @@ export function DatePickerField({
             (selectedISO === null || isFuture) && styles.actionDisabled,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Guardar fecha"
+          accessibilityLabel={t('a11y:selectDate')}
           accessibilityState={{ disabled: selectedISO === null || isFuture }}
         >
-          <Text style={styles.saveLabel}>Guardar</Text>
+          <Text style={styles.saveLabel}>{t('common:save')}</Text>
         </Pressable>
       </View>
     </BottomSheet>

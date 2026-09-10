@@ -11,6 +11,7 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 
 import { useQuery } from '@tanstack/react-query';
 
@@ -67,6 +68,7 @@ const TAB_BAR_HEIGHT = Platform.select({ ios: 49, android: 80, default: 49 });
  * even when it has no data yet ("Sin gastos este mes.").
  */
 export default function HistoryScreen() {
+  const { t } = useTranslation(['household']);
   const list = useReceiptsStore((s) => s.list);
   const currency = useSettingsStore((s) => s.currency);
   const insets = useSafeAreaInsets();
@@ -183,7 +185,7 @@ export default function HistoryScreen() {
       <View style={styles.header}>
         <Pressable
           onPress={() => router.push('/profile')}
-          accessibilityLabel="Abrir perfil"
+          accessibilityLabel={t('household:openProfile')}
           accessibilityRole="button"
         >
           {avatarUrl ? (
@@ -196,7 +198,7 @@ export default function HistoryScreen() {
             </View>
           )}
         </Pressable>
-        <Text style={styles.title}>Ticketify</Text>
+        <Text style={styles.title}>{t('household:ticketifyTitle')}</Text>
         <Icon name="calendar" size={30} color={colors.primary} />
       </View>
 
@@ -210,7 +212,7 @@ export default function HistoryScreen() {
             disabled={!canGoOlder}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Mes anterior"
+            accessibilityLabel={t('household:previousMonth')}
             accessibilityState={{ disabled: !canGoOlder }}
           >
             <Icon
@@ -225,7 +227,7 @@ export default function HistoryScreen() {
             disabled={!canGoNewer}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Mes siguiente"
+            accessibilityLabel={t('household:nextMonth')}
             accessibilityState={{ disabled: !canGoNewer }}
           >
             <Icon
@@ -247,14 +249,14 @@ export default function HistoryScreen() {
             }}
             placeholder={
               viewMode === 'household'
-                ? 'Buscador no disponible en modo hogar'
-                : 'Buscar producto…'
+                ? t('household:searchUnavailableInHousehold')
+                : t('household:searchProduct')
             }
             placeholderTextColor={colors.textSecondary}
             autoCorrect={false}
             autoCapitalize="none"
             clearButtonMode="while-editing"
-            accessibilityLabel="Buscar producto"
+            accessibilityLabel={t('household:searchProduct')}
             editable={viewMode !== 'household'}
           />
         </View>
@@ -285,7 +287,7 @@ export default function HistoryScreen() {
                       active && styles.viewSegmentLabelActive,
                     ]}
                   >
-                    {mode === 'personal' ? 'Mi gasto' : 'Hogar'}
+                    {mode === 'personal' ? t('household:mySpending') : t('household:household')}
                   </Text>
                 </Pressable>
               );
@@ -322,22 +324,22 @@ export default function HistoryScreen() {
             />
           ) : searchResults.length === 0 ? (
             <Text style={styles.empty}>
-              Sin resultados para “{query.trim()}”.
+              {t('household:searchEmpty_one', { query: query.trim() })}
             </Text>
           ) : visibleResults.length === 0 ? (
             <View style={styles.searchResults}>
               <View style={styles.searchTotalRow}>
                 <Text style={styles.searchTotalLabel}>
                   {hiddenItems.size === searchResults.length
-                    ? 'Todos ocultos'
-                    : '0 artículos'}
+                    ? t('household:searchAllHiddenLabel')
+                    : t('household:searchZeroArticles')}
                 </Text>
                 <Text style={styles.searchTotalAmount}>
                   {formatCurrency(0, currency)}
                 </Text>
               </View>
               <Text style={styles.empty}>
-                Ocultaste todos los resultados de “{query.trim()}”.
+                {t('household:searchAllHidden', { query: query.trim() })}
               </Text>
               <Pressable
                 style={({ pressed }) => [
@@ -346,10 +348,10 @@ export default function HistoryScreen() {
                 ]}
                 onPress={() => setHiddenItems(new Set())}
                 accessibilityRole="button"
-                accessibilityLabel="Restaurar resultados"
+                accessibilityLabel={t('household:searchHiddenRestore')}
               >
                 <Text style={styles.restoreButtonText}>
-                  Restaurar resultados
+                  {t('household:searchHiddenRestore')}
                 </Text>
               </Pressable>
             </View>
@@ -358,17 +360,16 @@ export default function HistoryScreen() {
               <View style={styles.searchTotalRow}>
                 <View style={styles.searchTotalLeft}>
                   <Text style={styles.searchTotalLabel}>
-                    {visibleResults.length}{' '}
-                    {visibleResults.length === 1 ? 'artículo' : 'artículos'}
+                    {t('household:searchArticleCount', { count: visibleResults.length })}
                   </Text>
                   {hiddenItems.size > 0 ? (
                     <Pressable
                       onPress={() => setHiddenItems(new Set())}
                       hitSlop={8}
                       accessibilityRole="button"
-                      accessibilityLabel="Restaurar resultados"
+                      accessibilityLabel={t('household:searchHiddenRestore')}
                     >
-                      <Text style={styles.restoreLink}>Restaurar</Text>
+                      <Text style={styles.restoreLink}>{t('household:searchHiddenRestore')}</Text>
                     </Pressable>
                   ) : null}
                 </View>
@@ -391,7 +392,7 @@ export default function HistoryScreen() {
                       )
                     }
                     accessibilityRole="button"
-                    accessibilityHint="Toca para ver el detalle del artículo"
+                    accessibilityHint={t('household:searchResultA11y')}
                   >
                     <Text style={styles.searchResultName} numberOfLines={1}>
                       {item.name}
@@ -414,7 +415,7 @@ export default function HistoryScreen() {
                       setHiddenItems((prev) => new Set(prev).add(item.name))
                     }
                     accessibilityRole="button"
-                    accessibilityLabel={`Ocultar ${item.name}`}
+                    accessibilityLabel={t('household:searchHideItem', { name: item.name })}
                   >
                     <Icon name="trash" size={30} color="red" />
                   </Pressable>
@@ -425,14 +426,14 @@ export default function HistoryScreen() {
         ) : viewMode === 'household' ? (
           // Household mode: show RPC-backed category totals
           householdTotalsLoading ? (
-            <Text style={styles.empty}>Cargando datos del hogar…</Text>
+            <Text style={styles.empty}>{t('household:loadingHousehold')}</Text>
           ) : householdTotalsError && !householdTotalsHasData ? (
             <EmptyState
               icon="exclamationmark.triangle.fill"
               title={householdTotalsError}
             />
           ) : householdTotals.length === 0 ? (
-            <Text style={styles.empty}>Sin gastos este mes en el hogar.</Text>
+            <Text style={styles.empty}>{t('household:emptyNoDataHousehold')}</Text>
           ) : (
             <View style={styles.categoryList}>
               {householdTotals.map((t) => {
@@ -463,7 +464,7 @@ export default function HistoryScreen() {
             </View>
           )
         ) : categories.length === 0 ? (
-          <Text style={styles.empty}>Sin gastos este mes.</Text>
+          <Text style={styles.empty}>{t('household:emptyNoData')}</Text>
         ) : (
           <View style={styles.categoryList}>
             <SegmentedBudgetBar categories={categories} />
