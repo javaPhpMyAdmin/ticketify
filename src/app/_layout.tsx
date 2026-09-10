@@ -3,6 +3,7 @@ import { router, Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import * as SplashScreen from 'expo-splash-screen';
+import i18next from 'i18next';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -11,6 +12,7 @@ import { DialogHost, ToastHost } from '@/components';
 import { BootSplash } from '@/components/molecules/BootSplash';
 import { useSessionStore } from '@/features/auth';
 import { ProBootstrap } from '@/features/pro';
+import { I18nProvider } from '@/i18n/components/I18nProvider';
 import { decideSessionNavigation } from '@/lib/auth/session-nav';
 import { queryClient } from '@/lib/query-client';
 import { colors } from '@/theme';
@@ -78,6 +80,26 @@ export default function RootLayout() {
     restore();
   }, [restore]);
 
+  // ── i18n boot gate (REQ-6 / AD-9) ──────────────────────────────────
+  // We subscribe to i18next's `initialized` event so `setBooted(true)`
+  // only fires after the catalogs are loaded — the first frame must
+  // show localized labels, never raw keys. The provider emits this
+  // event from inside its boot sequence, but subscribing at the layout
+  // level keeps the gate co-located with `BootSplash`. The
+  // `failedLoading` fallback mirrors the same logic for the rare case
+  // where a namespace file fails to parse: advance the gate anyway so
+  // the splash never gets stuck (the `I18nProvider` already falls back
+  // to `es-AR` internally).
+  useEffect(() => {
+    const advance = () => setBooted(true);
+    i18next.on('initialized', advance);
+    i18next.on('failedLoading', advance);
+    return () => {
+      i18next.off('initialized', advance);
+      i18next.off('failedLoading', advance);
+    };
+  }, []);
+
   // Paint the native root view once so pop/modal transitions never flash
   // the system background (black in dark mode) between frames — the Stack
   // `contentStyle` only covers the navigator content, not the window that
@@ -88,8 +110,12 @@ export default function RootLayout() {
     });
   }, []);
 
+  // Combined readiness: auth bootstrap AND i18n init both finished. The
+  // i18n effect above flips `booted` on the `initialized` event; the
+  // auth effect below flips it when `isBootstrapping` clears. Both must
+  // be true before the splash fades.
   useEffect(() => {
-    if (!isBootstrapping) setBooted(true);
+    if (!isBootstrapping && i18next.isInitialized) setBooted(true);
   }, [isBootstrapping]);
 
   const [bootSplashVisible, setBootSplashVisible] = useState(true);
@@ -102,6 +128,19 @@ export default function RootLayout() {
     <GestureHandlerRootView style={styles.root}>
       <QueryClientProvider client={queryClient}>
         <StatusBar style="dark" backgroundColor={colors.background} />
+        {/* i18n boot (REQ-6 / AD-9): hydrates the locale store from
+            secure-store, calls `i18next.init()` once, and fires the
+            `initialized` event so the boot gate above can advance.
+            The provider is mounted BEFORE the Stack so the first
+            painted frame already has catalogs loaded — never raw
+            keys. */}
+        <I18nProvider
+          onInitialized={() => setBooted(true)}
+          onError={(err) => {
+            // eslint-disable-next-line no-console -- boot-path diagnostic only
+            console.warn('[i18n] boot error', err);
+          }}
+        />
         {/* Configures RevenueCat once and pipes customerInfo into the pro
             store (REQ-PRO-1). Renders null; safe to mount unconditionally
             — the effect gates on a real session. */}
