@@ -48,9 +48,9 @@ export function toQueryData<T>(result: FeatureReadResult<T>): T {
     case 'ok':
       return result.data;
     case 'missing-profile':
-      throw new FeatureQueryError('missing-profile', READ_ERROR_MESSAGE);
+      throw new FeatureQueryError('missing-profile', READ_ERROR_MESSAGE());
     case 'unconfigured':
-      throw new FeatureQueryError('unconfigured', READ_ERROR_MESSAGE);
+      throw new FeatureQueryError('unconfigured', READ_ERROR_MESSAGE());
     case 'error':
       throw new FeatureQueryError('error', result.message);
   }
@@ -83,5 +83,5 @@ export function toQueryErrorMessage(error: unknown): string {
     if (error.kind === 'missing-profile') return MISSING_PROFILE_MESSAGE;
     return error.message;
   }
-  return READ_ERROR_MESSAGE;
+  return READ_ERROR_MESSAGE();
 }

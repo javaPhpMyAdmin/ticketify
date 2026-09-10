@@ -15,6 +15,7 @@ import {
   StyleSheet,
   TextInput,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Card, EmptyState, Icon, Pressable, Spinner, Text, View } from '@/components';
@@ -55,6 +56,7 @@ function HouseholdScreenContent({
   onOpenCreate,
   onOpenInvite,
 }: HouseholdScreenContentProps) {
+  const { t } = useTranslation(['settings', 'common', 'household']);
   const { userId } = useSessionUser();
   const { household, members, role, isLoading } = useHousehold();
   const setHouseholdSharing = useSettingsStore((s) => s.setHouseholdSharing);
@@ -68,12 +70,11 @@ function HouseholdScreenContent({
   // ── Leave household ────────────────────────────────────────────────────
   const handleLeave = () => {
     useDialogStore.getState().show({
-      title: 'Salir del hogar',
-      message:
-        '¿Seguro que querés salir? Si sos el único miembro, el hogar se disuelve.',
-      primaryLabel: 'Salir',
+      title: t('settings:householdLeaveConfirmTitle'),
+      message: t('settings:householdLeaveConfirmBody'),
+      primaryLabel: t('settings:householdLeaveAction'),
       tone: 'danger',
-      secondaryLabel: 'Cancelar',
+      secondaryLabel: t('common:cancel'),
       onPrimary: async () => {
         setLeaving(true);
         const result = await leaveHousehold();
@@ -87,9 +88,9 @@ function HouseholdScreenContent({
           }
         } else {
           useDialogStore.getState().show({
-            title: 'Error',
-            message: READ_ERROR_MESSAGE,
-            primaryLabel: 'Aceptar',
+            title: t('settings:householdError'),
+            message: READ_ERROR_MESSAGE(),
+            primaryLabel: t('common:ok'),
           });
         }
         setLeaving(false);
@@ -102,12 +103,11 @@ function HouseholdScreenContent({
     if (!household) return;
     guard(() => {
       useDialogStore.getState().show({
-        title: 'Disolver hogar',
-        message:
-          'Se eliminará el hogar para todos los miembros. Esta acción no se puede deshacer.',
-        primaryLabel: 'Disolver',
+        title: t('settings:householdDisbandConfirmTitle'),
+        message: t('settings:householdDisbandConfirmBody'),
+        primaryLabel: t('settings:householdDisbandAction'),
         tone: 'danger',
-        secondaryLabel: 'Cancelar',
+        secondaryLabel: t('common:cancel'),
         onPrimary: async () => {
           setDisbanding(true);
           const result = await disbandHousehold(household.id);
@@ -121,9 +121,9 @@ function HouseholdScreenContent({
             }
           } else {
             useDialogStore.getState().show({
-              title: 'Error',
-              message: READ_ERROR_MESSAGE,
-              primaryLabel: 'Aceptar',
+              title: t('settings:householdError'),
+              message: READ_ERROR_MESSAGE(),
+              primaryLabel: t('common:ok'),
             });
           }
           setDisbanding(false);
@@ -147,11 +147,11 @@ function HouseholdScreenContent({
             onPress={() => router.back()}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Volver"
+            accessibilityLabel={t('common:back')}
           >
             <Icon name="arrow.left" size={24} color={colors.textPrimary} />
           </Pressable>
-          <Text style={styles.title}>Hogar</Text>
+          <Text style={styles.title}>{t('settings:householdTitle')}</Text>
         </View>
         <View style={styles.loadingWrap}>
           <Spinner size="sm" color={colors.primary} />
@@ -168,17 +168,17 @@ function HouseholdScreenContent({
             onPress={() => router.back()}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Volver"
+            accessibilityLabel={t('common:back')}
           >
             <Icon name="arrow.left" size={24} color={colors.textPrimary} />
           </Pressable>
-          <Text style={styles.title}>Hogar</Text>
+          <Text style={styles.title}>{t('settings:householdTitle')}</Text>
         </View>
         <View style={styles.emptyWrap}>
           <EmptyState
             icon="house.fill"
-            title="Sin hogar todavía"
-            body="Creá un hogar o unite con un código de invitación para ver los gastos de tu familia en conjunto."
+            title={t('settings:householdEmpty')}
+            body={t('settings:householdEmptyBody')}
           />
 
           <View style={styles.emptyActions}>
@@ -189,9 +189,9 @@ function HouseholdScreenContent({
                 pressed && styles.createButtonPressed,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Crear hogar"
+              accessibilityLabel={t('settings:householdCreateName')}
             >
-              <Text style={styles.createButtonText}>Crear hogar</Text>
+              <Text style={styles.createButtonText}>{t('settings:householdCreateName')}</Text>
             </Pressable>
 
             <Pressable
@@ -201,9 +201,9 @@ function HouseholdScreenContent({
                 pressed && styles.joinButtonPressed,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Unirse con código"
+              accessibilityLabel={t('settings:householdJoinWithCode')}
             >
-              <Text style={styles.joinButtonText}>Unirse con código</Text>
+              <Text style={styles.joinButtonText}>{t('settings:householdJoinWithCode')}</Text>
             </Pressable>
           </View>
         </View>
@@ -218,7 +218,7 @@ function HouseholdScreenContent({
           onPress={() => router.back()}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Volver"
+          accessibilityLabel={t('common:back')}
         >
           <Icon name="arrow.left" size={24} color={colors.textPrimary} />
         </Pressable>
@@ -232,7 +232,7 @@ function HouseholdScreenContent({
         {/* ── Members ─────────────────────────────────────────────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
-            MIEMBROS ({members.length}/{MAX_MEMBERS})
+            {t('settings:householdMembers')} ({members.length}/{MAX_MEMBERS})
           </Text>
           <Card>
             {members.map((m, index) => {
@@ -247,12 +247,12 @@ function HouseholdScreenContent({
                 >
                   <View style={styles.memberLeft}>
                     <Text style={styles.memberName} numberOfLines={1}>
-                      {m.full_name ?? 'Miembro'}
-                      {isCurrentUser ? ' (vos)' : ''}
+                      {m.full_name ?? t('settings:householdCreateMemberName')}
+                      {isCurrentUser ? t('household:youSuffix') : ''}
                     </Text>
                     {m.role === 'owner' ? (
                       <View style={styles.ownerBadge}>
-                        <Text style={styles.ownerBadgeText}>DUEÑO</Text>
+                        <Text style={styles.ownerBadgeText}>{t('settings:householdOwner')}</Text>
                       </View>
                     ) : null}
                   </View>
@@ -278,14 +278,14 @@ function HouseholdScreenContent({
                 pressed && styles.actionRowPressed,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Invitar a un miembro"
+              accessibilityLabel={t('settings:householdInviteLabel')}
             >
               <Icon
                 name="person.badge.plus"
                 size={20}
                 color={colors.primary}
               />
-              <Text style={styles.actionText}>Invitar</Text>
+              <Text style={styles.actionText}>{t('settings:householdInvite')}</Text>
               <Icon
                 name="chevron.right"
                 size={18}
@@ -302,14 +302,14 @@ function HouseholdScreenContent({
               pressed && styles.leaveRowPressed,
             ]}
             accessibilityRole="button"
-            accessibilityLabel="Salir del hogar"
+            accessibilityLabel={t('settings:householdLeave')}
           >
             {leaving ? (
               <Spinner size="sm" color={colors.danger} />
             ) : (
               <>
                 <Icon name="rectangle.portrait.and.arrow.right" size={20} color={colors.danger} />
-                <Text style={styles.leaveText}>Salir del hogar</Text>
+                <Text style={styles.leaveText}>{t('settings:householdLeave')}</Text>
               </>
             )}
           </Pressable>
@@ -323,14 +323,14 @@ function HouseholdScreenContent({
                 pressed && styles.disbandRowPressed,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Disolver hogar"
+              accessibilityLabel={t('settings:householdDisband')}
             >
               {disbanding ? (
                 <Spinner size="sm" color={colors.danger} />
               ) : (
                 <>
                   <Icon name="trash" size={20} color={colors.danger} />
-                  <Text style={styles.disbandText}>Disolver hogar</Text>
+                  <Text style={styles.disbandText}>{t('settings:householdDisband')}</Text>
                 </>
               )}
             </Pressable>
