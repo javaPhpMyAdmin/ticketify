@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020", "dom"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "baseUrl": "..",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "rootDir": ".."
+  },
+  "include": [
+    "../src/i18n/config.ts",
+    "../src/i18n/detector.ts",
+    "../src/i18n/types.ts",
+    "../src/i18n/stores/useLocaleStore.ts",
+    "../src/i18n/storage/localeSecureStore.ts",
+    "../src/i18n/locales/en/common.json",
+    "../src/i18n/locales/en/tabs.json",
+    "../src/i18n/locales/en/settingsLanguage.json",
+    "../src/i18n/locales/es-AR/common.json",
+    "../src/i18n/locales/es-AR/tabs.json",
+    "../src/i18n/locales/es-AR/settingsLanguage.json",
+    "../src/i18n/locales/pt-BR/common.json",
+    "../src/i18n/locales/pt-BR/tabs.json",
+    "../src/i18n/locales/pt-BR/settingsLanguage.json",
+    "../scripts/test-stubs/expo-secure-store.ts",
+    "../scripts/test-stubs/expo-localization.ts"
+  ]
+}

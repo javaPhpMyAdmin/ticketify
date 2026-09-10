@@ -12,6 +12,7 @@ import {
   useProfile,
   type AccountSettingRow,
 } from '@/features/profile';
+import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { leaveHousehold } from '@/lib/supabase/feature-access';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
@@ -28,6 +29,7 @@ export default function ProfileScreen() {
   const { email } = useSessionUser();
   const { isPro, isLoading: proLoading, subscriptionStatus, trialEndsAt, daysRemaining, isFrozen, everPaid } =
     useProEntitlement();
+  const localeOverride = useLocaleStore((s) => s.override);
 
   const householdName = useHouseholdStore((s) => s.household?.name);
 
@@ -128,6 +130,21 @@ export default function ProfileScreen() {
         value: household,
         onChange: handleHouseholdToggle,
       },
+    },
+    {
+      id: 'language',
+      // Spanish label for PR 1 (the screen list is still hardcoded).
+      // PR 2 will move this and every other settings label into the
+      // `settings.*` namespace along with the rest of the migration.
+      label: 'Idioma',
+      // Surface the current override as a chip so the user knows
+      // which language is active without opening the selector. The
+      // raw override tag is fine here — `auto` reads as "device
+      // locale", the locale codes as themselves.
+      value: localeOverride,
+      icon: 'globe',
+      trailing: { type: 'chevron' },
+      onPress: () => router.push('/settings/language'),
     },
   ];
 
