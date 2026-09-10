@@ -57,7 +57,8 @@ export type IconName =
   | 'trash'
   | 'doc.on.doc'
   | 'person.badge.plus'
-  | 'rectangle.portrait.and.arrow.right';
+  | 'rectangle.portrait.and.arrow.right'
+  | 'globe';
 
 /**
  * Material icon names are a strict union from the MaterialIcons glyph map.
@@ -111,6 +112,7 @@ const materialMap: Record<IconName, string> = {
   'doc.on.doc': 'content-copy',
   'person.badge.plus': 'person-add',
   'rectangle.portrait.and.arrow.right': 'logout',
+  globe: 'public',
 };
 
 export interface IconProps {
