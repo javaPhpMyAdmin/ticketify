@@ -5,23 +5,34 @@
  * data structures.  The node harness (`scripts/test-manual-receipt.mjs`)
  * compiles and imports these functions directly to verify the contract
  * without a device.
+ *
+ * PR 2 (`app-i18n`): `MANUAL_ERROR_MESSAGES` is now a function-scoped
+ * getter — `getManualErrorMessage(code)` returns the localized string at
+ * call time so the active UI language wins. The export name stays the
+ * same shape (a string→string map) by exposing the getter as
+ * `MANUAL_ERROR_MESSAGES.get(code)` — callers that previously did
+ * `MANUAL_ERROR_MESSAGES[code]` now do `MANUAL_ERROR_MESSAGES.get(code)`,
+ * but `formatManualErrors` (the only caller that walked the map)
+ * already invokes a function per code.
  */
+
+import i18next from 'i18next';
 
 import { tempId } from '@/lib/format';
 import { MANUAL_FORM_ERROR } from '@/features/tickets/manual-receipt';
 import type { CardType, PaymentMethod, ReviewItem } from '@/types';
 
 // ---------------------------------------------------------------------------
-// Stable error code → user-friendly es-AR message
+// Stable error code → user-friendly message
 // ---------------------------------------------------------------------------
 
 /**
- * Maps stable validation error codes (from `validateManualForm`) to
- * display-ready Spanish (es-AR) messages.  The screen only needs to
- * call `formatManualErrors(errors)` where `errors` is the string[]
- * returned by `validateManualForm`; the codes are never shown raw.
+ * Hardcoded fallback message per code — used when i18next isn't
+ * initialized (test harness) so the function never returns `undefined`.
+ * Mirrors the es-AR copy in `src/i18n/locales/es-AR/errors.json` so the
+ * fallback stays in sync with the source-of-truth locale.
  */
-export const MANUAL_ERROR_MESSAGES: Record<string, string> = {
+const MANUAL_ERROR_FALLBACK: Record<string, string> = {
   [MANUAL_FORM_ERROR.STORE_REQUIRED]: 'Ingresá el nombre de la tienda',
   [MANUAL_FORM_ERROR.DATE_REQUIRED]: 'Elegí una fecha válida',
   [MANUAL_FORM_ERROR.ITEMS_REQUIRED]: 'Agregá al menos un artículo',
@@ -34,7 +45,39 @@ export const MANUAL_ERROR_MESSAGES: Record<string, string> = {
 };
 
 /**
- * Converts an array of stable error codes into user-friendly es-AR
+ * Maps a stable validation error code (from `validateManualForm`) to
+ * its localized message. The active UI language wins at runtime; if
+ * i18next isn't initialized (e.g. test harness without `initI18n()`),
+ * the function falls back to the canonical es-AR copy.
+ */
+export function getManualErrorMessage(code: string): string {
+  if (!i18next.isInitialized) {
+    return MANUAL_ERROR_FALLBACK[code] ?? '';
+  }
+  return i18next.t(`errors:manualForm.${code}` as
+    | 'errors:manualForm.store_required'
+    | 'errors:manualForm.date_required'
+    | 'errors:manualForm.items_required'
+    | 'errors:manualForm.quantity_invalid'
+    | 'errors:manualForm.price_invalid'
+    | 'errors:manualForm.total_invalid', {
+    defaultValue: MANUAL_ERROR_FALLBACK[code] ?? '',
+  });
+}
+
+/**
+ * Public surface preserved for the export contract: a `MANUAL_ERROR_MESSAGES`
+ * object whose `.get(code)` returns the localized string. Callers that
+ * previously indexed with `MANUAL_ERROR_MESSAGES[code]` migrate to
+ * `.get(code)`. The only consumer (`formatManualErrors` below) already
+ * walks the codes via the function.
+ */
+export const MANUAL_ERROR_MESSAGES = {
+  get: (code: string): string => getManualErrorMessage(code),
+};
+
+/**
+ * Converts an array of stable error codes into user-friendly
  * messages. Unknown codes are dropped (not shown raw).  Returns a
  * unique list (a code may appear only once in `validateManualForm`'s
  * output, but this guard is defensive).
@@ -43,7 +86,7 @@ export function formatManualErrors(codes: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const code of codes) {
-    const msg = MANUAL_ERROR_MESSAGES[code];
+    const msg = getManualErrorMessage(code);
     if (msg && !seen.has(msg)) {
       seen.add(msg);
       out.push(msg);
