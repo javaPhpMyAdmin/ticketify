@@ -3,5 +3,9 @@
   "cancel": "Cancel",
   "back": "Back",
   "save": "Save",
-  "loading": "Loading…"
+  "loading": "Loading…",
+  "subscription": {
+    "daysRemaining_one": "1 day left",
+    "daysRemaining_other": "{{count}} days left"
+  }
 }

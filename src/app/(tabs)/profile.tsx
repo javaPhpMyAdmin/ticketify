@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 
 import { Pressable, ProfileHeader, Spinner, Text, View } from '@/components';
 import { useSessionStore, useSessionUser } from '@/features/auth';
@@ -21,6 +22,7 @@ import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
 
 export default function ProfileScreen() {
+  const { t } = useTranslation(['settings', 'common', 'auth']);
   const { user, usage, error } = useProfile();
   const currency = useSettingsStore((s) => s.currency);
   const household = useSettingsStore((s) => s.household_sharing);
@@ -86,21 +88,21 @@ export default function ProfileScreen() {
   const settings: AccountSettingRow[] = [
     {
       id: 'profile-edit',
-      label: 'Editar perfil',
+      label: t('settings:editProfile'),
       icon: 'pencil',
       trailing: { type: 'chevron' },
       onPress: () => router.push('/settings/profile-edit'),
     },
     {
       id: 'export',
-      label: 'Exportar datos',
+      label: t('settings:export'),
       icon: 'square.and.arrow.up',
       trailing: { type: 'chevron' },
       onPress: () => router.push(exportTarget),
     },
     {
       id: 'currency',
-      label: 'Moneda',
+      label: t('settings:currency'),
       value: `${currency}`,
       icon: 'creditcard',
       trailing: { type: 'chevron' },
@@ -108,21 +110,21 @@ export default function ProfileScreen() {
     },
     {
       id: 'budget',
-      label: 'Presupuesto mensual',
+      label: t('settings:monthlyBudget'),
       icon: 'chart.pie.fill',
       trailing: { type: 'chevron' },
       onPress: () => router.push('/settings/budget'),
     },
     {
       id: 'category-budgets',
-      label: 'Presupuestos por categoría',
+      label: t('settings:categoryBudgets'),
       icon: 'chart.bar.fill',
       trailing: { type: 'chevron' },
       onPress: () => router.push('/settings/category-budgets'),
     },
     {
       id: 'household',
-      label: 'Uso compartido del hogar',
+      label: t('settings:household'),
       value: household && householdName ? householdName : undefined,
       icon: 'person.fill',
       trailing: {
@@ -133,10 +135,7 @@ export default function ProfileScreen() {
     },
     {
       id: 'language',
-      // Spanish label for PR 1 (the screen list is still hardcoded).
-      // PR 2 will move this and every other settings label into the
-      // `settings.*` namespace along with the rest of the migration.
-      label: 'Idioma',
+      label: t('settings:language'),
       // Surface the current override as a chip so the user knows
       // which language is active without opening the selector. The
       // raw override tag is fine here — `auto` reads as "device
@@ -186,7 +185,7 @@ export default function ProfileScreen() {
                 <View style={styles.statusBadgeActive}>
                   <Text style={styles.statusBadgeText}>PRO</Text>
                 </View>
-                <Text style={styles.statusLabel}>Suscripción activa</Text>
+                <Text style={styles.statusLabel}>{t('settings:proActive')}</Text>
               </View>
             );
           }
@@ -201,7 +200,7 @@ export default function ProfileScreen() {
                   pressed && styles.statusRowPressed,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel="Ver planes"
+                accessibilityLabel={t('settings:seePlans')}
               >
                 <View style={styles.statusBadgeTrial}>
                   <Text style={styles.statusBadgeTrialText}>
@@ -209,14 +208,12 @@ export default function ProfileScreen() {
                   </Text>
                 </View>
                 <View style={styles.statusTextCol}>
-                  <Text style={styles.statusLabel}>Prueba PRO activa</Text>
+                  <Text style={styles.statusLabel}>{t('settings:trialActive')}</Text>
                   <Text style={styles.statusHint}>
-                    {daysRemaining === 1
-                      ? 'Queda 1 día'
-                      : `Quedan ${daysRemaining} días`}
+                    {t('common:subscription.daysRemaining', { count: daysRemaining })}
                   </Text>
                 </View>
-                <Text style={styles.statusLink}>Ver planes</Text>
+                <Text style={styles.statusLink}>{t('settings:seePlans')}</Text>
               </Pressable>
             );
           }
@@ -232,12 +229,12 @@ export default function ProfileScreen() {
                   pressed && styles.statusRowPressed,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel="Ver planes"
+                accessibilityLabel={t('settings:seePlans')}
               >
                 <Text style={styles.statusLabelExpired}>
-                  Prueba expirada
+                  {t('settings:trialExpired')}
                 </Text>
-                <Text style={styles.statusLink}>Ver planes</Text>
+                <Text style={styles.statusLink}>{t('settings:seePlans')}</Text>
               </Pressable>
             );
           }
@@ -258,10 +255,10 @@ export default function ProfileScreen() {
                   pressed && styles.statusRowPressed,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel="Ver planes"
+                accessibilityLabel={t('settings:seePlans')}
               >
-                <Text style={styles.statusLabel}>Plan Gratis</Text>
-                <Text style={styles.statusLink}>Ver planes</Text>
+                <Text style={styles.statusLabel}>{t('settings:freePlan')}</Text>
+                <Text style={styles.statusLink}>{t('settings:seePlans')}</Text>
               </Pressable>
             );
           }
@@ -278,10 +275,10 @@ export default function ProfileScreen() {
                 pressed && styles.statusRowPressed,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Ver planes"
+              accessibilityLabel={t('settings:seePlans')}
             >
-              <Text style={styles.statusLabel}>Plan Gratis</Text>
-              <Text style={styles.statusLink}>Ver planes</Text>
+              <Text style={styles.statusLabel}>{t('settings:freePlan')}</Text>
+              <Text style={styles.statusLink}>{t('settings:seePlans')}</Text>
             </Pressable>
           ) : (
             <Pressable
@@ -291,10 +288,10 @@ export default function ProfileScreen() {
                 pressed && styles.statusRowPressed,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Empezar prueba gratis"
+              accessibilityLabel={t('settings:startFreeTrial')}
             >
-              <Text style={styles.statusLabel}>Gratis</Text>
-              <Text style={styles.statusLink}>Empezar prueba gratis</Text>
+              <Text style={styles.statusLabel}>{t('settings:free')}</Text>
+              <Text style={styles.statusLink}>{t('settings:startFreeTrial')}</Text>
             </Pressable>
           );
         })()}
@@ -304,10 +301,10 @@ export default function ProfileScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>CONFIGURACIÓN </Text>
+          <Text style={styles.sectionTitle}>{t('settings:sectionTitle')}</Text>
           <AccountSettingsList rows={settings} />
           {!isPro && !proLoading ? (
-            <Text style={styles.proNote}>Función premium</Text>
+            <Text style={styles.proNote}>{t('settings:premiumFeature')}</Text>
           ) : null}
         </View>
 
@@ -320,12 +317,12 @@ export default function ProfileScreen() {
             onPress={handleSignOut}
             disabled={signingOut}
             accessibilityRole="button"
-            accessibilityLabel="Cerrar sesión"
+            accessibilityLabel={t('auth:signOut')}
           >
             {signingOut ? (
               <Spinner size="sm" color={colors.danger} />
             ) : (
-              <Text style={styles.signOutText}>Cerrar sesión</Text>
+              <Text style={styles.signOutText}>{t('auth:signOut')}</Text>
             )}
           </Pressable>
         </View>

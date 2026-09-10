@@ -1,0 +1,18 @@
+{
+  "featureAccess": {
+    "generic": "We couldn't load your data. Try again.",
+    "createHouseholdFallback": "Couldn't create the household. Check your connection and try again. If it persists, leave your current household and try again.",
+    "tooManyInviteCodes": "There are already 3 active codes. Use the active one or wait 24h.",
+    "inviteProRequired": "You need Pro to invite. Activate Pro from your profile.",
+    "joinAlreadyInHousehold": "You're already in a household. Leave your current one before joining another.",
+    "joinInvalidCode": "This code is invalid or expired. Ask the household owner for a new code."
+  },
+  "manualForm": {
+    "store_required": "Enter the store name",
+    "date_required": "Choose a valid date",
+    "items_required": "Add at least one item",
+    "quantity_invalid": "Quantity must be a whole number greater than zero",
+    "price_invalid": "Unit price cannot be negative",
+    "total_invalid": "Total cannot be negative"
+  }
+}

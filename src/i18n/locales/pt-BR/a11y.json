@@ -1,0 +1,17 @@
+{
+  "previous": "Anterior",
+  "next": "Próximo",
+  "close": "Fechar",
+  "selectDate": "Fechar data",
+  "pickDate": "Escolher data",
+  "dayPrefix": "Dia",
+  "futureBlocked": "Você não pode escolher uma data futura",
+  "maxToday": "Máx. hoje",
+  "buyDate": "DATA DA COMPRA",
+  "categoryOfItem": "Categoria de",
+  "renameItem": "Editar nome do produto",
+  "renameHint": "Toque para mudar o nome",
+  "delete": "Excluir",
+  "sinCategoria": "SEM CATEGORIA",
+  "compraImpulsiva": "Compra por impulso"
+}

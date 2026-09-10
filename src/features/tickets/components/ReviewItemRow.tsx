@@ -38,7 +38,7 @@ export interface ReviewItemRowProps {
  */
 export function ReviewItemRow({
   item,
-  currency,
+  currency = 'UYU',
   onPressCategory,
   onToggleImpulse,
   onEditName,

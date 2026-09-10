@@ -9,6 +9,7 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Image, StyleSheet } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { Card, Icon, Pressable, Text, View } from '@/components';
 import { useSessionUser } from '@/features/auth';
@@ -131,6 +132,7 @@ export function HouseholdCard({
   householdTotal,
   isLoading,
 }: HouseholdCardProps) {
+  const { t } = useTranslation(['household']);
   const household = useHouseholdStore((s) => s.household);
   const members = useHouseholdStore((s) => s.members);
   const currency = useSettingsStore((s) => s.currency);
@@ -141,18 +143,15 @@ export function HouseholdCard({
   if (!sharingEnabled || !household) return null;
 
   const memberCount = members.length;
-  const memberLabel =
-    memberCount === 1
-      ? '1 miembro'
-      : memberCount > 0
-      ? `${memberCount} miembros`
-      : '';
+  const memberLabel = memberCount === 0
+    ? ''
+    : t('household:householdMemberCount', { count: memberCount });
 
   return (
     <Pressable
       onPress={() => router.push('/settings/household')}
       accessibilityRole="button"
-      accessibilityLabel={`Hogar ${household.name}. Tocar para ver detalles.`}
+      accessibilityLabel={t('household:householdCardA11y', { name: household.name })}
       style={({ pressed }) => pressed && styles.pressed}
     >
       <Card style={styles.card}>
@@ -190,7 +189,7 @@ export function HouseholdCard({
               <Icon name="house.fill" size={22} color={colors.primaryDark} />
             </View>
           )}
-          <Text style={styles.label}>Gasto del hogar</Text>
+          <Text style={styles.label}>{t('household:householdSpendingLabel')}</Text>
           <Text style={styles.name} numberOfLines={1}>
             {household.name}
           </Text>

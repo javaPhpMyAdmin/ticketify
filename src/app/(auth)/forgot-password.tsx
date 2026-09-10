@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import * as AuthSession from 'expo-auth-session';
+import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FieldGroup, Pressable, Spinner, Text, View } from '@/components';
@@ -25,6 +26,7 @@ import { colors, radii, spacing, typography } from '@/theme';
 const RECOVERY_REDIRECT = AuthSession.makeRedirectUri({ path: 'reset-password' });
 
 export default function ForgotPasswordScreen() {
+  const { t } = useTranslation(['auth']);
   const [email, setEmail] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +50,7 @@ export default function ForgotPasswordScreen() {
       // account enumeration.
       setEmailSent(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo enviar el correo de restablecimiento.');
+      setError(err instanceof Error ? err.message : t('auth:couldNotSendReset'));
     } finally {
       setPending(false);
     }
@@ -58,20 +60,18 @@ export default function ForgotPasswordScreen() {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <View style={styles.confirmation}>
-          <Text style={styles.kicker}>TICKETIFY</Text>
-          <Text style={styles.title}>Revisa tu bandeja de entrada</Text>
+          <Text style={styles.kicker}>{t('auth:kicker')}</Text>
+          <Text style={styles.title}>{t('auth:checkInboxTitle')}</Text>
           <Text style={styles.subtitle}>
-            Si {email.trim()} está registrado, recibirás un enlace para
-            restablecer la contraseña. Ábrelo en este dispositivo para elegir
-            una nueva.
+            {t('auth:checkInboxReset', { email: email.trim() })}
           </Text>
           <Pressable
             style={styles.primaryButton}
             onPress={() => router.replace('/sign-in')}
             accessibilityRole="button"
-            accessibilityLabel="Volver a iniciar sesión"
+            accessibilityLabel={t('auth:backToSignIn')}
           >
-            <Text style={styles.primaryButtonText}>Volver a iniciar sesión</Text>
+            <Text style={styles.primaryButtonText}>{t('auth:backToSignIn')}</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -89,8 +89,8 @@ export default function ForgotPasswordScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.heading}>
-            <Text style={styles.kicker}>TICKETIFY</Text>
-            <Text style={styles.title}>Restablecer contraseña</Text>
+            <Text style={styles.kicker}>{t('auth:kicker')}</Text>
+            <Text style={styles.title}>{t('auth:resetPassword')}</Text>
             <Text style={styles.subtitle}>
               Ingresa el correo de tu cuenta y te enviaremos un enlace de
               recuperación.
@@ -98,12 +98,12 @@ export default function ForgotPasswordScreen() {
           </View>
 
           <View style={styles.form}>
-            <FieldGroup label="Correo electrónico">
+            <FieldGroup label={t('auth:email')}>
               <TextInput
                 value={email}
                 onChangeText={setEmail}
                 style={styles.input}
-                placeholder="you@example.com"
+                placeholder={t('auth:emailPlaceholder')}
                 placeholderTextColor={colors.textSecondary}
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -123,24 +123,24 @@ export default function ForgotPasswordScreen() {
               onPress={handleSend}
               disabled={!canSubmit}
               accessibilityRole="button"
-              accessibilityLabel="Enviar enlace de restablecimiento"
+              accessibilityLabel={t('auth:sendResetLink')}
             >
               {pending ? (
                 <Spinner size="sm" color={colors.onPrimary} />
               ) : (
-                <Text style={styles.primaryButtonText}>Enviar enlace de restablecimiento</Text>
+                <Text style={styles.primaryButtonText}>{t('auth:sendResetLink')}</Text>
               )}
             </Pressable>
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>¿Lo recordaste? </Text>
+            <Text style={styles.footerText}>{t('auth:rememberedIt')}</Text>
             <Pressable
               onPress={() => router.replace('/sign-in')}
               disabled={pending}
               accessibilityRole="link"
             >
-              <Text style={styles.footerLink}>Iniciar sesión</Text>
+              <Text style={styles.footerLink}>{t('auth:signIn')}</Text>
             </Pressable>
           </View>
         </ScrollView>

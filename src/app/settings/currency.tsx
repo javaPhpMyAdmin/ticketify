@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -9,14 +10,16 @@ import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
 
 /**
- * The currencies the app offers (ISO 4217 codes). The labels are
- * user-facing Spanish copy, matching the app's neutral Spanish style.
+ * The currencies the app offers (ISO 4217 codes). Labels are pulled
+ * from the `currency` catalog so the locale-aware name (e.g.
+ * "Uruguayan peso" in en, "Peso uruguayo" in es-AR) wins at render
+ * time. The code stays as the ISO 4217 string for storage.
  */
-const CURRENCIES: ReadonlyArray<{ code: string; label: string }> = [
-  { code: 'UYU', label: 'Peso uruguayo' },
-  { code: 'USD', label: 'Dólar estadounidense' },
-  { code: 'ARS', label: 'Peso argentino' },
-  { code: 'BRL', label: 'Real brasileño' },
+const CURRENCY_CODES: ReadonlyArray<string> = [
+  'UYU',
+  'USD',
+  'ARS',
+  'BRL',
 ];
 
 /**
@@ -28,6 +31,7 @@ const CURRENCIES: ReadonlyArray<{ code: string; label: string }> = [
  * the user-safe message inline instead of navigating.
  */
 export default function CurrencySelectorScreen() {
+  const { t } = useTranslation(['settings', 'currency', 'common']);
   const currency = useSettingsStore((s) => s.currency);
   const { setCurrency } = useProfile();
   const [saving, setSaving] = useState(false);
@@ -58,11 +62,11 @@ export default function CurrencySelectorScreen() {
           onPress={() => router.back()}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Volver"
+          accessibilityLabel={t('common:back')}
         >
           <Icon name="arrow.left" size={24} color={colors.textPrimary} />
         </Pressable>
-        <Text style={styles.title}>Moneda</Text>
+        <Text style={styles.title}>{t('settings:currencyTitle')}</Text>
       </View>
 
       <ScrollView
@@ -70,29 +74,37 @@ export default function CurrencySelectorScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Card padding={spacing.xs}>
-          {CURRENCIES.map((item, idx) => {
-            const selected = item.code === currency;
+          {CURRENCY_CODES.map((code, idx) => {
+            const selected = code === currency;
+            // Currency code is the runtime key — the catalog type guarantees
+            // these exact 4 strings resolve, but TS can't follow a dynamic
+            // template against a fixed union, so we narrow via `as`.
+            const label = t(`currency:${code}` as
+              | 'currency:UYU'
+              | 'currency:USD'
+              | 'currency:ARS'
+              | 'currency:BRL');
             return (
-              <View key={item.code}>
+              <View key={code}>
                 <Pressable
-                  onPress={() => handleSelect(item.code)}
+                  onPress={() => handleSelect(code)}
                   disabled={saving}
                   style={styles.row}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  accessibilityLabel={item.label}
+                  accessibilityLabel={label}
                 >
                   <Text style={styles.label} numberOfLines={1}>
-                    {item.label}
+                    {label}
                   </Text>
                   <Text style={[styles.code, selected && styles.codeSelected]}>
-                    {item.code}
+                    {code}
                   </Text>
                   {selected ? (
                     <Icon name="checkmark" size={18} color={colors.primary} />
                   ) : null}
                 </Pressable>
-                {idx < CURRENCIES.length - 1 ? <Divider /> : null}
+                {idx < CURRENCY_CODES.length - 1 ? <Divider /> : null}
               </View>
             );
           })}

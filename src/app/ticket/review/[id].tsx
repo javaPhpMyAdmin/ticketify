@@ -15,6 +15,7 @@ import {
   StyleSheet,
   TextInput,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -85,6 +86,7 @@ class LottieErrorBoundary extends Component<
 }
 
 export default function ReviewReceiptScreen() {
+  const { t } = useTranslation(['tickets', 'a11y', 'common']);
   const params = useLocalSearchParams<{ id: string }>();
   const { userId } = useSessionUser();
   // Edit mode only when the route id matches the stored editing id: the
@@ -197,12 +199,12 @@ export default function ReviewReceiptScreen() {
       // the inline retry block below remains the retry affordance. The host
       // dismisses the dialog itself, so there is no onPrimary callback.
       useDialogStore.getState().show({
-        title: 'No se pudo procesar el ticket',
+        title: t('tickets:reviewFailedDialogTitle'),
         message:
           err instanceof Error
             ? err.message
-            : 'No se pudo procesar el ticket. Inténtalo de nuevo.',
-        primaryLabel: 'Aceptar',
+            : t('tickets:reviewCantProcess'),
+        primaryLabel: t('common:ok'),
       });
     } finally {
       // Guaranteed cleanup: a rejected scan must never leave the screen
@@ -400,7 +402,7 @@ export default function ReviewReceiptScreen() {
       useToastStore
         .getState()
         .show(
-          editingMode ? 'Cambios guardados.' : 'Ticket guardado.',
+          editingMode ? t('tickets:reviewSavedToast') : t('tickets:reviewSavedNewToast'),
           'success',
         );
       router.dismiss();
@@ -436,12 +438,12 @@ export default function ReviewReceiptScreen() {
               clear();
               router.dismiss();
             }}
-            accessibilityLabel="Cerrar revisión"
+            accessibilityLabel={t('tickets:reviewClose')}
           />
           <Text
             style={{ fontSize: 20, fontWeight: '700', color: colors.primary }}
           >
-            Revisando ticket escaneado
+            {t('tickets:reviewTitle')}
           </Text>
           {thumbSource && !thumbFailed ? (
             <Image
@@ -475,7 +477,7 @@ export default function ReviewReceiptScreen() {
                     <Icon name="checkmark" size={40} color={colors.surface} />
                   </Animated.View>
                 </View>
-                <Text style={styles.parsingTitle}>Ticket listo</Text>
+                <Text style={styles.parsingTitle}>{t('tickets:reviewSuccessTitle')}</Text>
               </View>
             ) : (
               <View style={styles.parsingWrap}>
@@ -509,7 +511,7 @@ export default function ReviewReceiptScreen() {
                     driver). Separate nodes keep the dots on the same line
                     AND give them a real node to animate. */}
                 <View style={styles.parsingRow}>
-                  <Text style={styles.parsingTitle}>Procesando ticket</Text>
+                  <Text style={styles.parsingTitle}>{t('tickets:reviewProcessingTitle')}</Text>
                   {dotOpacity.map((dot, index) => (
                     <Animated.Text
                       key={index}
@@ -524,7 +526,7 @@ export default function ReviewReceiptScreen() {
                   ))}
                 </View>
                 <View style={styles.parsingRow}>
-                  <Text style={styles.parsingHint}>Espera un momento</Text>
+                  <Text style={styles.parsingHint}>{t('tickets:reviewProcessingHint')}</Text>
                   {dotOpacity.map((dot, index) => (
                     <Animated.Text
                       key={index}
@@ -546,47 +548,47 @@ export default function ReviewReceiptScreen() {
             // the draft being absent.
             <View style={styles.parsingWrap}>
               <Text style={styles.parsingTitle}>
-                No se pudo procesar este ticket
+                {t('tickets:reviewFailedTitle')}
               </Text>
               <Text style={styles.parsingHint}>
-                Revisa que la foto sea clara e inténtalo de nuevo.
+                {t('tickets:reviewFailedHint')}
               </Text>
               <Pressable
                 onPress={() => void runParse()}
                 style={styles.retryButton}
                 accessibilityRole="button"
               >
-                <Text style={styles.retryLabel}>Intentar de nuevo</Text>
+                <Text style={styles.retryLabel}>{t('tickets:reviewRetry')}</Text>
               </Pressable>
             </View>
           ) : (
             <>
               {/* Store + date + payment */}
               <Card>
-                <Text style={styles.kicker}>TIENDA</Text>
+                <Text style={styles.kicker}>{t('tickets:manualStoreKicker')}</Text>
                 <TextInput
                   value={draft?.store_name ?? ''}
                   onChangeText={setStore}
                   style={styles.storeInput}
-                  placeholder="Nombre de la tienda"
+                  placeholder={t('tickets:manualStorePlaceholder')}
                   placeholderTextColor={colors.textSecondary}
                 />
                 <View style={styles.metaRow}>
                   <View style={styles.metaCol}>
-                    <Text style={styles.kicker}>FECHA</Text>
+                    <Text style={styles.kicker}>{t('tickets:reviewDateKicker')}</Text>
                     <Text style={styles.metaValue}>
                       {draft?.purchase_date ?? '—'}
                     </Text>
                   </View>
                   <View style={styles.metaCol}>
-                    <Text style={styles.kicker}>PAGO</Text>
+                    <Text style={styles.kicker}>{t('tickets:reviewPaymentKicker')}</Text>
                     <View style={styles.paymentRow}>
                       {paymentMethods.map((m) => {
                         const label =
                           m.key === 'card' &&
                           draft?.payment_method === 'card' &&
                           cardInfo
-                            ? `Tarjeta · ${cardInfo}`
+                            ? `${t('tickets:manualTarjetaPrefix')} ${cardInfo}`
                             : m.label;
                         return (
                           <Pressable
@@ -608,7 +610,7 @@ export default function ReviewReceiptScreen() {
               {/* Items */}
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>
-                  Artículos procesados ({draft?.items.length ?? 0})
+                  {t('tickets:reviewItemsHeader', { count: draft?.items.length ?? 0 })}
                 </Text>
                 {draft?.items ? (
                   <ReceiptItemsList
@@ -632,7 +634,7 @@ export default function ReviewReceiptScreen() {
         {!parsing ? (
           <View style={styles.footerWrap}>
             <View style={styles.totalRow}>
-              <Text style={styles.kicker}>Total del ticket</Text>
+              <Text style={styles.kicker}>{t('tickets:reviewTotalLabel')}</Text>
               <Text style={styles.totalValue}>
                 {formatCurrency(draft?.total ?? itemsTotal, currency)}
               </Text>
@@ -643,7 +645,7 @@ export default function ReviewReceiptScreen() {
                 noisy. Show a one-line hint next to the total instead. */}
             {editingMode && !matches ? (
               <Text style={styles.matchesInlineHint}>
-                No coincide con la suma de los artículos
+                {t('tickets:reviewMismatchHint')}
               </Text>
             ) : null}
             {/* SCAN mode (error banner in footer): the user is confirming a
@@ -663,22 +665,22 @@ export default function ReviewReceiptScreen() {
                     { color: matches ? colors.primary : colors.danger },
                   ]}
                 >
-                  {matches ? 'Coincide' : 'No coincide'}
+                  {matches ? t('tickets:reviewMatches') : t('tickets:reviewMismatch')}
                 </Text>
                 {!matches ? (
                   <Text style={styles.matchesDetail}>
-                    Declarado {formatCurrency(draft.total, currency)}
+                    {t('tickets:reviewDeclared')} {formatCurrency(draft.total, currency)}
                   </Text>
                 ) : itemsTotal > (draft?.total ?? 0) + 0.01 ? (
                   <Text style={styles.matchesDetail}>
-                    Incluye descuento de{' '}
+                    {t('tickets:reviewDiscount')}{' '}
                     {formatCurrency(itemsTotal - (draft?.total ?? 0), currency)}
                   </Text>
                 ) : null}
               </View>
             ) : null}
             <Fab
-              label="Confirmar y guardar"
+              label={t('tickets:reviewConfirm')}
               icon="bolt.fill"
               onPress={() => void handleConfirm()}
               disabled={saving}

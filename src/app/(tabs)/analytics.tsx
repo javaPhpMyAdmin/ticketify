@@ -5,6 +5,7 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 
 import { Card, EmptyState, Icon, Pressable, Text } from '@/components';
 import type { PriceAlert } from '@/features/analytics';
@@ -56,6 +57,7 @@ const ANALYTICS_TAB_BAR_HEIGHT = Platform.select({
  * reachable even when it has no data yet ("Sin artículos este mes.").
  */
 export default function AnalyticsScreen() {
+  const { t } = useTranslation(['household', 'analytics']);
   const insets = useSafeAreaInsets();
   const currency = useSettingsStore((s) => s.currency);
   const { isPro } = useProEntitlement();
@@ -161,7 +163,7 @@ export default function AnalyticsScreen() {
       <View style={styles.header}>
         <Pressable
           onPress={() => router.push('/profile')}
-          accessibilityLabel="Abrir perfil"
+          accessibilityLabel={t('household:openProfile')}
           accessibilityRole="button"
         >
           {avatarUrl ? (
@@ -174,7 +176,7 @@ export default function AnalyticsScreen() {
             </View>
           )}
         </Pressable>
-        <Text style={styles.title}>Ticketify</Text>
+        <Text style={styles.title}>{t('household:ticketifyTitle')}</Text>
         <Icon name="qr-code-scanner" size={33} color={colors.primary} />
       </View>
       <View style={styles.fixedHeader}>
@@ -184,7 +186,7 @@ export default function AnalyticsScreen() {
             disabled={!canGoOlder}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Mes anterior"
+            accessibilityLabel={t('household:previousMonth')}
             accessibilityState={{ disabled: !canGoOlder }}
           >
             <Icon
@@ -199,7 +201,7 @@ export default function AnalyticsScreen() {
             disabled={!canGoNewer}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Mes siguiente"
+            accessibilityLabel={t('household:nextMonth')}
             accessibilityState={{ disabled: !canGoNewer }}
           >
             <Icon
@@ -232,7 +234,7 @@ export default function AnalyticsScreen() {
                       active && styles.viewSegmentLabelActive,
                     ]}
                   >
-                    {mode === 'personal' ? 'Mi gasto' : 'Hogar'}
+                    {mode === 'personal' ? t('household:mySpending') : t('household:household')}
                   </Text>
                 </Pressable>
               );
@@ -271,7 +273,7 @@ export default function AnalyticsScreen() {
         {viewMode === 'household' ? (
           monthTotalsLoading ? (
             <Card>
-              <Text style={styles.empty}>Cargando datos del hogar…</Text>
+              <Text style={styles.empty}>{t('household:loadingHousehold')}</Text>
             </Card>
           ) : monthTotalsError && !monthTotalsHasData ? (
             <EmptyState
@@ -282,7 +284,7 @@ export default function AnalyticsScreen() {
           ) : monthTotals.length === 0 ? (
             <Card>
               <Text style={styles.empty}>
-                Sin categorías este mes en el hogar.
+                {t('analytics:noCategoriesHousehold')}
               </Text>
             </Card>
           ) : (
@@ -322,7 +324,7 @@ export default function AnalyticsScreen() {
                 rows={topItems}
                 total={topItemsTotal}
                 currency={currency}
-                title="Top Artículos"
+                title={t('analytics:topItems')}
               />
               {/* Personal "Categorías" section (AD-8): the cache-backed totals
                   already carry merged budget limits (useMonthlyCache → AD-5),
@@ -330,7 +332,7 @@ export default function AnalyticsScreen() {
                   exists. New section — TopItemsBreakdown stays above it. */}
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Categorías</Text>
+                  <Text style={styles.sectionTitle}>{t('analytics:categories')}</Text>
                   <Pressable
                     onPress={() => router.push('/settings/category-budgets')}
                     style={({ pressed }) => [
@@ -338,17 +340,17 @@ export default function AnalyticsScreen() {
                       pressed && styles.budgetLinkPressed,
                     ]}
                     accessibilityRole="button"
-                    accessibilityLabel="Configurar presupuestos por categoría"
+                    accessibilityLabel={t('analytics:configureBudgetsA11y')}
                   >
                     <Icon name="pencil" size={14} color={colors.primary} />
                     <Text style={styles.budgetLinkText}>
-                      {hasAnyBudgets ? 'Editar' : 'Configurar'}
+                      {hasAnyBudgets ? t('analytics:editBudgets') : t('analytics:configureBudgets')}
                     </Text>
                   </Pressable>
                 </View>
                 {monthTotalsLoading ? (
                   <Card padding={spacing.lg}>
-                    <Text style={styles.empty}>Cargando categorías…</Text>
+                    <Text style={styles.empty}>{t('analytics:loadingCategories')}</Text>
                   </Card>
                 ) : monthTotalsError && !monthTotalsHasData ? (
                   <EmptyState
@@ -358,7 +360,7 @@ export default function AnalyticsScreen() {
                   />
                 ) : monthTotals.length === 0 ? (
                   <Card padding={spacing.lg}>
-                    <Text style={styles.empty}>Sin categorías este mes.</Text>
+                    <Text style={styles.empty}>{t('analytics:noCategories')}</Text>
                   </Card>
                 ) : (
                   <Card padding={spacing.lg}>
@@ -665,12 +667,13 @@ interface ChartsEntryCardProps {
 }
 
 function ChartsEntryCard({ isPro }: ChartsEntryCardProps) {
+  const { t } = useTranslation(['analytics']);
   if (isPro) {
     return (
       <Pressable
         onPress={() => router.push('/pro/charts')}
         accessibilityRole="button"
-        accessibilityLabel="Ver estadísticas Pro"
+        accessibilityLabel={t('analytics:viewStatsA11y')}
         style={({ pressed }) => [
           styles.entryPressable,
           pressed && styles.entryPressed,
@@ -682,9 +685,9 @@ function ChartsEntryCard({ isPro }: ChartsEntryCardProps) {
               <Icon name="chart.bar.fill" size={22} color={colors.primary} />
             </View>
             <View style={styles.entryTextWrap}>
-              <Text style={styles.entryTitle}>Ver estadísticas</Text>
+              <Text style={styles.entryTitle}>{t('analytics:viewStats')}</Text>
               <Text style={styles.entryBody}>
-                Tendencias de gasto, categorías y tiendas
+                {t('analytics:statsProBody')}
               </Text>
             </View>
             <Icon name="chevron.right" size={22} color={colors.textSecondary} />
@@ -698,7 +701,7 @@ function ChartsEntryCard({ isPro }: ChartsEntryCardProps) {
     <Pressable
       onPress={() => router.push('/pro')}
       accessibilityRole="button"
-      accessibilityLabel="Desbloquear Estadísticas Pro"
+      accessibilityLabel={t('analytics:statsProA11y')}
       style={({ pressed }) => [
         styles.entryPressable,
         pressed && styles.entryPressed,
@@ -711,13 +714,13 @@ function ChartsEntryCard({ isPro }: ChartsEntryCardProps) {
           </View>
           <View style={styles.entryTextWrap}>
             <View style={styles.entryTitleRow}>
-              <Text style={styles.entryTitle}>Estadísticas Pro</Text>
+              <Text style={styles.entryTitle}>{t('analytics:statsPro')}</Text>
               <View style={styles.proPill}>
-                <Text style={styles.proPillText}>Pro</Text>
+                <Text style={styles.proPillText}>{t('analytics:proPill')}</Text>
               </View>
             </View>
             <Text style={styles.entryBody}>
-              Tendencias de gasto, categorías y tiendas
+              {t('analytics:statsProBody')}
             </Text>
           </View>
           <Icon name="chevron.right" size={22} color={colors.textSecondary} />
@@ -749,6 +752,7 @@ interface PriceAlertBannerProps {
 }
 
 function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
+  const { t } = useTranslation(['analytics']);
   const handlePress = () => {
     if (isPro && alert.receiptId) {
       router.push(`/receipts/${alert.receiptId}`);
@@ -761,12 +765,12 @@ function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityHint={
-        isPro ? 'Toca para ver el ticket' : 'Abrir el plan Pro'
+        isPro ? t('analytics:priceAlertA11yHint') : t('analytics:priceAlertProA11yHint')
       }
       accessibilityLabel={
         isPro
-          ? 'Ver ticket de la alerta de precio'
-          : 'Desbloquear Alerta de precio Pro'
+          ? t('analytics:priceAlertA11y')
+          : t('analytics:priceAlertProA11y')
       }
       style={({ pressed }) => [
         styles.alertBanner,
@@ -780,20 +784,20 @@ function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
       />
       <View style={styles.wrapTextIcon}>
         <View style={styles.alertTitleRow}>
-          <Text style={styles.priceAlert}>Alerta de precio</Text>
+          <Text style={styles.priceAlert}>{t('analytics:priceAlertTitle')}</Text>
           {!isPro ? (
             <View style={styles.proPill}>
-              <Text style={styles.proPillText}>Pro</Text>
+              <Text style={styles.proPillText}>{t('analytics:proPill')}</Text>
             </View>
           ) : null}
         </View>
         <View style={styles.alertTextWrap}>
           <Text style={styles.alertText}>
-            {alert.name} {alert.changePct >= 0 ? 'aumentó' : 'bajó'}{' '}
+            {alert.name} {alert.changePct >= 0 ? t('analytics:priceAlertUp') : t('analytics:priceAlertDown')}{' '}
             <Text style={{ fontSize: 17.5, fontWeight: 900, color: 'black' }}>
               {Math.abs(alert.changePct)}%
             </Text>{' '}
-            desde el mes pasado.
+            {t('analytics:priceAlertSince')}
           </Text>
         </View>
       </View>

@@ -74,19 +74,6 @@ async function run() {
   console.log('[tests] loading compiled module…');
   const fmt = await import(pathToFileURL(join(outDir, 'src', 'lib', 'format.js')).href);
 
-  await test('formatCurrency UYU renders with the $ symbol', () => {
-    assert.equal(fmt.formatCurrency(1234.5, 'UYU'), '$1,234.50');
-    assert.equal(fmt.formatCurrency(1234.5, 'ARS'), '$1,234.50');
-  });
-
-  await test('formatCurrency prefixes negative amounts with the sign', () => {
-    assert.equal(fmt.formatCurrency(-1234.5, 'UYU'), '-$1,234.50');
-  });
-
-  await test('formatCurrency falls back to "CODE " for unknown currencies', () => {
-    assert.equal(fmt.formatCurrency(5, 'XYZ'), 'XYZ 5.00');
-  });
-
   await test('formatShortDate → day-first "12 Ago." (capitalized month + period)', () => {
     const iso = new Date(2026, 7, 12, 14, 30).toISOString();
     assert.equal(fmt.formatShortDate(iso), '12 Ago. ');

@@ -1,0 +1,10 @@
+{
+  "receiptManual": "Manual",
+  "receiptItemCount_one": "{{count}} item",
+  "receiptItemCount_other": "{{count}} itens",
+  "receiptItemCount_zero": "0 itens",
+  "purchaseFromStore": "Compra de",
+  "purchaseFromStoreBy": "Compra de {{date}} por {{amount}}",
+  "ticketFromDate": "Ticket de {{date}}",
+  "ticketEmpty": "Sem tickets para mostrar"
+}

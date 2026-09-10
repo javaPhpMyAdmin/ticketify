@@ -764,7 +764,7 @@ async function run() {
       );
       const text = renderText(renderer);
       assert.ok(text.includes('TOTAL DEL MES'), 'total card header');
-      assert.ok(text.includes('$0.00'), 'zero total is legit in personal (no read pending)');
+      assert.ok(text.includes('$U 0'), 'zero total is legit in personal (no read pending)');
       assert.ok(text.includes('Carnicería'), 'category label from the registry');
       assert.ok(!text.includes('Cargando datos del hogar…'), 'no household placeholder');
     } finally {
@@ -782,7 +782,7 @@ async function run() {
       await settleUntil(() => renderText(renderer).includes('Asado'), 'personal rows render');
       const text = renderText(renderer);
       assert.ok(text.includes('Asado'), 'item name capitalized');
-      assert.ok(text.includes('$500.00'), 'item amount formatted');
+      assert.ok(text.includes('$U 500'), 'item amount formatted (whole-number drops trailing cents per PR 2 LATAM convention)');
       assert.ok(!text.includes('Sin gastos'), 'rows replace the empty message');
     } finally {
       await unmountProbe(renderer);
@@ -812,7 +812,7 @@ async function run() {
       const loading = renderText(renderer);
       assert.ok(loading.includes('Cargando datos del hogar…'), 'loading placeholder list');
       assert.ok(loading.includes('—'), 'dash total while the read is pending');
-      assert.ok(!loading.includes('$0.00'), 'NO false zero total while loading');
+      assert.ok(!loading.includes('$U 0'), 'NO false zero total while loading');
       assert.ok(!loading.includes('Sin gastos'), 'NO false "no spend" while loading');
 
       openFetch();
@@ -822,7 +822,7 @@ async function run() {
       );
       const ready = renderText(renderer);
       assert.ok(ready.includes(' ×3'), 'quantity multiplier shows');
-      assert.ok(ready.includes('$180.00'), 'aggregated total');
+      assert.ok(ready.includes('$U 180'), 'aggregated total');
       assert.ok(!ready.includes('Cargando datos del hogar…'), 'placeholder gone');
     } finally {
       await unmountProbe(renderer);
@@ -871,7 +871,7 @@ async function run() {
         'retry recovers to rows',
       );
       const recovered = renderText(renderer);
-      assert.ok(recovered.includes('$180.00'), 'total after recovery');
+      assert.ok(recovered.includes('$U 180'), 'total after recovery');
       assert.ok(!recovered.includes('Reintentar'), 'error state gone');
     } finally {
       await unmountProbe(renderer);
@@ -891,7 +891,7 @@ async function run() {
         'empty household month settles',
       );
       const text = renderText(renderer);
-      assert.ok(text.includes('$0.00'), 'post-success zero total is legit');
+      assert.ok(text.includes('$U 0'), 'post-success zero total is legit');
       assert.ok(!text.includes('Cargando datos del hogar…'), 'loading placeholder gone');
       assert.ok(!text.includes('Reintentar'), 'no error action');
     } finally {
@@ -914,7 +914,7 @@ async function run() {
       );
       const text = renderText(renderer);
       assert.ok(text.includes('—'), 'dash total (no data to read yet)');
-      assert.ok(!text.includes('$0.00'), 'no false zero before hydration');
+      assert.ok(!text.includes('$U 0'), 'no false zero before hydration');
       assert.ok(!text.includes('Sin gastos'), 'no false "no spend" before hydration');
       assert.equal(stubMod.__lastRpcCall(), null, 'no RPC fired without a householdId');
     } finally {
