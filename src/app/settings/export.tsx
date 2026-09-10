@@ -2,6 +2,7 @@ import { File, Paths } from 'expo-file-system';
 import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -37,6 +38,7 @@ function todayISO(): string {
  * exporting so the action can never fire twice.
  */
 export default function ExportScreen() {
+  const { t } = useTranslation(['settings', 'common']);
   const { rows, isLoading, error, hasData, refetch } = useExportRows();
   const [format, setFormat] = useState<ExportFormat>('csv');
   const [exporting, setExporting] = useState(false);
@@ -55,7 +57,7 @@ export default function ExportScreen() {
     try {
       const sharingAvailable = await Sharing.isAvailableAsync();
       if (!sharingAvailable) {
-        setExportError('Compartir no está disponible en este dispositivo.');
+        setExportError(t('settings:exportShareUnavailable'));
         return;
       }
       if (selectedFormat === 'csv') {
@@ -88,11 +90,11 @@ export default function ExportScreen() {
           onPress={() => router.back()}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Volver"
+          accessibilityLabel={t('common:back')}
         >
           <Icon name="arrow.left" size={24} color={colors.textPrimary} />
         </Pressable>
-        <Text style={styles.title}>Exportar datos</Text>
+        <Text style={styles.title}>{t('settings:exportTitle')}</Text>
       </View>
 
       <ScrollView
@@ -115,8 +117,8 @@ export default function ExportScreen() {
           <View style={styles.emptySection}>
             <EmptyState
               icon="square.and.arrow.up"
-              title="Todavía no hay tickets para exportar"
-              body="Tus tickets confirmados van a aparecer acá."
+              title={t('settings:exportEmpty')}
+              body={t('settings:exportEmptyBody')}
               framed
             />
             <Pressable
@@ -131,10 +133,10 @@ export default function ExportScreen() {
         ) : (
           <>
             <Card>
-              <Text style={styles.cardTitle}>Resumen</Text>
+              <Text style={styles.cardTitle}>{t('settings:exportSummary')}</Text>
               <Text style={styles.summaryText}>
-                {rows.length} {pluralize(rows.length, 'ticket', 'tickets')} ·{' '}
-                {itemCount} {pluralize(itemCount, 'artículo', 'artículos')}
+                {rows.length} {rows.length === 1 ? t('settings:exportTickets') : t('settings:exportTicketsPlural')} ·{' '}
+                {itemCount} {itemCount === 1 ? t('settings:exportArticles_one', { count: itemCount }) : t('settings:exportArticles_other', { count: itemCount })}
               </Text>
             </Card>
 
@@ -144,12 +146,12 @@ export default function ExportScreen() {
                 `(tabs)/index.tsx`). */}
             {hasData && error ? (
               <Text style={styles.error}>
-                No se pudo actualizar. Mostrando datos guardados.
+                {t('settings:exportStaleData')}
               </Text>
             ) : null}
 
             <Card>
-              <Text style={styles.cardTitle}>Formato</Text>
+              <Text style={styles.cardTitle}>{t('settings:exportFormat')}</Text>
               <View style={styles.formatRow}>
                 {(['csv', 'pdf'] as const).map((option) => {
                   const selected = format === option;
