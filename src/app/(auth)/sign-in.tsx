@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -26,6 +27,7 @@ import { colors, radii, spacing, typography } from '@/theme';
  * user here without a session.
  */
 export default function SignInScreen() {
+  const { t } = useTranslation(['auth']);
   const signInWithEmail = useSessionStore((s) => s.signInWithEmail);
   const params = useLocalSearchParams<{ error?: string | string[] }>();
 
@@ -64,7 +66,7 @@ export default function SignInScreen() {
       // signInWithEmail never rejects (every failure is mapped to the generic
       // message in the store); this is a defensive fallback with the same
       // anti-enumeration copy.
-      setError('Correo o contraseña inválidos.');
+      setError(t('auth:invalidCredentials'));
     } finally {
       setPending(false);
     }
@@ -83,7 +85,7 @@ export default function SignInScreen() {
       setError(
         err instanceof Error
           ? err.message
-          : 'No se pudo iniciar sesión. Inténtalo de nuevo.',
+          : t('auth:couldNotStartSession'),
       );
     } finally {
       setProviderPending(null);
@@ -103,20 +105,18 @@ export default function SignInScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.heading}>
-            <Text style={styles.kicker}>TICKETIFY</Text>
-            <Text style={styles.title}>Iniciar sesión</Text>
-            <Text style={styles.subtitle}>
-              Accede a tus tickets, presupuesto y analítica.
-            </Text>
+            <Text style={styles.kicker}>{t('auth:kicker')}</Text>
+            <Text style={styles.title}>{t('auth:signIn')}</Text>
+            <Text style={styles.subtitle}>{t('auth:tagline')}</Text>
           </View>
 
           <View style={styles.form}>
-            <FieldGroup label="Correo electrónico">
+            <FieldGroup label={t('auth:email')}>
               <TextInput
                 value={email}
                 onChangeText={setEmail}
                 style={styles.input}
-                placeholder="you@example.com"
+                placeholder={t('auth:emailPlaceholder')}
                 placeholderTextColor={colors.textSecondary}
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -127,12 +127,12 @@ export default function SignInScreen() {
               />
             </FieldGroup>
 
-            <FieldGroup label="Contraseña">
+            <FieldGroup label={t('auth:password')}>
               <TextInput
                 value={password}
                 onChangeText={setPassword}
                 style={styles.input}
-                placeholder="Tu contraseña"
+                placeholder={t('auth:passwordPlaceholder')}
                 placeholderTextColor={colors.textSecondary}
                 secureTextEntry
                 autoCapitalize="none"
@@ -151,12 +151,12 @@ export default function SignInScreen() {
               onPress={handleSignIn}
               disabled={!canSubmit || providerBusy}
               accessibilityRole="button"
-              accessibilityLabel="Iniciar sesión"
+              accessibilityLabel={t('auth:signIn')}
             >
               {pending ? (
                 <Spinner size="sm" color={colors.onPrimary} />
               ) : (
-                <Text style={styles.primaryButtonText}>Iniciar sesión</Text>
+                <Text style={styles.primaryButtonText}>{t('auth:signIn')}</Text>
               )}
             </Pressable>
 
@@ -166,13 +166,13 @@ export default function SignInScreen() {
               accessibilityRole="link"
               style={styles.inlineLinkWrap}
             >
-              <Text style={styles.inlineLink}>¿Olvidaste tu contraseña?</Text>
+              <Text style={styles.inlineLink}>{t('auth:forgotPassword')}</Text>
             </Pressable>
           </View>
 
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerLabel}>O</Text>
+            <Text style={styles.dividerLabel}>{t('auth:or')}</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -182,13 +182,13 @@ export default function SignInScreen() {
               onPress={() => handleProvider('google')}
               disabled={pending || providerBusy}
               accessibilityRole="button"
-              accessibilityLabel="Continuar con Google"
+              accessibilityLabel={t('auth:continueWithGoogle')}
             >
               {providerPending === 'google' ? (
                 <Spinner size="sm" />
               ) : (
                 <Text style={styles.secondaryButtonText}>
-                  Continuar con Google
+                  {t('auth:continueWithGoogle')}
                 </Text>
               )}
             </Pressable>
@@ -197,26 +197,26 @@ export default function SignInScreen() {
               onPress={() => handleProvider('apple')}
               disabled={pending || providerBusy}
               accessibilityRole="button"
-              accessibilityLabel="Continuar con Apple"
+              accessibilityLabel={t('auth:continueWithApple')}
             >
               {providerPending === 'apple' ? (
                 <Spinner size="sm" />
               ) : (
                 <Text style={styles.secondaryButtonText}>
-                  Continuar con Apple
+                  {t('auth:continueWithApple')}
                 </Text>
               )}
             </Pressable>
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>¿Nuevo en Ticketify? </Text>
+            <Text style={styles.footerText}>{t('auth:newToTicketify')}</Text>
             <Pressable
               onPress={() => router.push('/sign-up')}
               disabled={pending || providerBusy}
               accessibilityRole="link"
             >
-              <Text style={styles.footerLink}>Crear una cuenta</Text>
+              <Text style={styles.footerLink}>{t('auth:createAccountLink')}</Text>
             </Pressable>
           </View>
         </ScrollView>

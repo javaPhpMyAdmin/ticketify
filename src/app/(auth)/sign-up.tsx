@@ -7,6 +7,7 @@ import {
   TextInput,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FieldGroup, Pressable, Spinner, Text, View } from '@/components';
@@ -22,6 +23,7 @@ import { colors, radii, spacing, typography } from '@/theme';
  * exposes the app content.
  */
 export default function SignUpScreen() {
+  const { t } = useTranslation(['auth']);
   const signUpWithEmail = useSessionStore((s) => s.signUpWithEmail);
 
   const [email, setEmail] = useState('');
@@ -48,7 +50,7 @@ export default function SignUpScreen() {
         return;
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo crear la cuenta. Inténtalo de nuevo.');
+      setError(err instanceof Error ? err.message : t('auth:couldNotCreateAccount'));
     } finally {
       setPending(false);
     }
@@ -58,19 +60,18 @@ export default function SignUpScreen() {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <View style={styles.confirmation}>
-          <Text style={styles.kicker}>TICKETIFY</Text>
-          <Text style={styles.title}>Revisa tu bandeja de entrada</Text>
+          <Text style={styles.kicker}>{t('auth:kicker')}</Text>
+          <Text style={styles.title}>{t('auth:checkInboxTitle')}</Text>
           <Text style={styles.subtitle}>
-            Si esta dirección es nueva, te enviamos un enlace de confirmación.
-            Ábrelo para activar tu cuenta y luego vuelve para iniciar sesión.
+            {t('auth:checkInboxSignUp')}
           </Text>
           <Pressable
             style={styles.primaryButton}
             onPress={() => router.replace('/sign-in')}
             accessibilityRole="button"
-            accessibilityLabel="Volver a iniciar sesión"
+            accessibilityLabel={t('auth:backToSignIn')}
           >
-            <Text style={styles.primaryButtonText}>Volver a iniciar sesión</Text>
+            <Text style={styles.primaryButtonText}>{t('auth:backToSignIn')}</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -88,20 +89,18 @@ export default function SignUpScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.heading}>
-            <Text style={styles.kicker}>TICKETIFY</Text>
-            <Text style={styles.title}>Crear cuenta</Text>
-            <Text style={styles.subtitle}>
-              Regístrate con tu correo para empezar a registrar tus tickets.
-            </Text>
+            <Text style={styles.kicker}>{t('auth:kicker')}</Text>
+            <Text style={styles.title}>{t('auth:signUp')}</Text>
+            <Text style={styles.subtitle}>{t('auth:signUpTagline')}</Text>
           </View>
 
           <View style={styles.form}>
-            <FieldGroup label="Correo electrónico">
+            <FieldGroup label={t('auth:email')}>
               <TextInput
                 value={email}
                 onChangeText={setEmail}
                 style={styles.input}
-                placeholder="you@example.com"
+                placeholder={t('auth:emailPlaceholder')}
                 placeholderTextColor={colors.textSecondary}
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -113,14 +112,14 @@ export default function SignUpScreen() {
             </FieldGroup>
 
             <FieldGroup
-              label="Contraseña"
-              helper="Al menos 8 caracteres."
+              label={t('auth:password')}
+              helper={t('auth:newPasswordHelper')}
             >
               <TextInput
                 value={password}
                 onChangeText={setPassword}
                 style={styles.input}
-                placeholder="Elige una contraseña"
+                placeholder={t('auth:passwordChoosePlaceholder')}
                 placeholderTextColor={colors.textSecondary}
                 secureTextEntry
                 autoCapitalize="none"
@@ -139,24 +138,24 @@ export default function SignUpScreen() {
               onPress={handleSignUp}
               disabled={!canSubmit}
               accessibilityRole="button"
-              accessibilityLabel="Crear cuenta"
+              accessibilityLabel={t('auth:signUp')}
             >
               {pending ? (
                 <Spinner size="sm" color={colors.onPrimary} />
               ) : (
-                <Text style={styles.primaryButtonText}>Crear cuenta</Text>
+                <Text style={styles.primaryButtonText}>{t('auth:signUp')}</Text>
               )}
             </Pressable>
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>¿Ya tienes una cuenta? </Text>
+            <Text style={styles.footerText}>{t('auth:alreadyHaveAccount')}</Text>
             <Pressable
               onPress={() => router.replace('/sign-in')}
               disabled={pending}
               accessibilityRole="link"
             >
-              <Text style={styles.footerLink}>Iniciar sesión</Text>
+              <Text style={styles.footerLink}>{t('auth:signIn')}</Text>
             </Pressable>
           </View>
         </ScrollView>

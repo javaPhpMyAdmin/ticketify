@@ -7,6 +7,7 @@ import {
   TextInput,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FieldGroup, Pressable, Spinner, Text, View } from '@/components';
@@ -18,7 +19,7 @@ type ExchangeState = 'exchanging' | 'ready' | 'invalid' | 'error';
 
 /** User-safe copy for a failed password update — never a raw GoTrue message
  *  (anti-enumeration posture, same as sign-in/sign-up). */
-const UPDATE_PASSWORD_ERROR =
+const UPDATE_PASSWORD_ERROR_FALLBACK =
   'No se pudo actualizar tu contraseña. Inténtalo de nuevo.';
 
 /**
@@ -36,6 +37,7 @@ const UPDATE_PASSWORD_ERROR =
  * message.
  */
 export default function ResetPasswordScreen() {
+  const { t } = useTranslation(['auth']);
   const params = useLocalSearchParams<{
     code?: string | string[];
     sb_flow_id?: string | string[];
@@ -90,14 +92,14 @@ export default function ResetPasswordScreen() {
     try {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) {
-        setError(UPDATE_PASSWORD_ERROR);
+        setError(t('auth:couldNotUpdatePassword'));
         return;
       }
       // Fresh session from the recovery exchange is active; the root gate
       // exposes the app content.
       router.replace('/');
     } catch {
-      setError(UPDATE_PASSWORD_ERROR);
+      setError(t('auth:couldNotUpdatePassword'));
     } finally {
       setPending(false);
     }
@@ -110,21 +112,20 @@ export default function ResetPasswordScreen() {
           {exchangeState === 'exchanging' ? (
             <>
               <Spinner size="md" />
-              <Text style={styles.subtitle}>Verificando tu enlace de restablecimiento…</Text>
+              <Text style={styles.subtitle}>{t('auth:verifyingResetLink')}</Text>
             </>
           ) : exchangeState === 'error' ? (
             <>
-              <Text style={styles.kicker}>TICKETIFY</Text>
-              <Text style={styles.title}>Algo salió mal</Text>
+              <Text style={styles.kicker}>{t('auth:kicker')}</Text>
+              <Text style={styles.title}>{t('auth:somethingWentWrong')}</Text>
               <Text style={styles.subtitle}>
-                No pudimos verificar tu enlace de restablecimiento. Revisa tu
-                conexión e inténtalo de nuevo.
+                {t('auth:verifyResetHelp')}
               </Text>
               <Pressable
                 style={styles.primaryButton}
                 onPress={handleRetry}
                 accessibilityRole="button"
-                accessibilityLabel="Volver a verificar el enlace de restablecimiento"
+                accessibilityLabel={t('auth:retryVerifyLink')}
               >
                 <Text style={styles.primaryButtonText}>Intentar de nuevo</Text>
               </Pressable>
@@ -133,24 +134,23 @@ export default function ResetPasswordScreen() {
                 onPress={() => router.replace('/forgot-password')}
                 accessibilityRole="link"
               >
-                <Text style={styles.secondaryButtonText}>Nuevo enlace de restablecimiento</Text>
+                <Text style={styles.secondaryButtonText}>{t('auth:requestResetLink')}</Text>
               </Pressable>
             </>
           ) : (
             <>
-              <Text style={styles.kicker}>TICKETIFY</Text>
-              <Text style={styles.title}>Enlace no válido</Text>
+              <Text style={styles.kicker}>{t('auth:kicker')}</Text>
+              <Text style={styles.title}>{t('auth:invalidLink')}</Text>
               <Text style={styles.subtitle}>
-                Este enlace de restablecimiento no es válido o ha caducado.
-                Solicita uno nuevo e inténtalo de nuevo.
+                {t('auth:invalidLinkHelp')}
               </Text>
               <Pressable
                 style={styles.primaryButton}
                 onPress={() => router.replace('/forgot-password')}
                 accessibilityRole="button"
-                accessibilityLabel="Solicitar un nuevo enlace de restablecimiento"
+                accessibilityLabel={t('auth:sendResetLink')}
               >
-                <Text style={styles.primaryButtonText}>Nuevo enlace de restablecimiento</Text>
+                <Text style={styles.primaryButtonText}>{t('auth:requestResetLink')}</Text>
               </Pressable>
             </>
           )}
@@ -170,21 +170,20 @@ export default function ResetPasswordScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.heading}>
-            <Text style={styles.kicker}>TICKETIFY</Text>
-            <Text style={styles.title}>Elige una nueva contraseña</Text>
+            <Text style={styles.kicker}>{t('auth:kicker')}</Text>
+            <Text style={styles.title}>{t('auth:chooseNewPassword')}</Text>
             <Text style={styles.subtitle}>
-              Al menos 8 caracteres. Se iniciará tu sesión después de
-              actualizarla.
+              {t('auth:chooseNewPasswordHelper')}
             </Text>
           </View>
 
           <View style={styles.form}>
-            <FieldGroup label="Nueva contraseña" helper="Al menos 8 caracteres.">
+            <FieldGroup label={t('auth:newPassword')} helper={t('auth:newPasswordHelper')}>
               <TextInput
                 value={password}
                 onChangeText={setPassword}
                 style={styles.input}
-                placeholder="Elige una nueva contraseña"
+                placeholder={t('auth:passwordChoosePlaceholder')}
                 placeholderTextColor={colors.textSecondary}
                 secureTextEntry
                 autoCapitalize="none"
@@ -203,12 +202,12 @@ export default function ResetPasswordScreen() {
               onPress={handleReset}
               disabled={!canSubmit}
               accessibilityRole="button"
-              accessibilityLabel="Actualizar contraseña"
+              accessibilityLabel={t('auth:updatePassword')}
             >
               {pending ? (
                 <Spinner size="sm" color={colors.onPrimary} />
               ) : (
-                <Text style={styles.primaryButtonText}>Actualizar contraseña</Text>
+                <Text style={styles.primaryButtonText}>{t('auth:updatePassword')}</Text>
               )}
             </Pressable>
           </View>

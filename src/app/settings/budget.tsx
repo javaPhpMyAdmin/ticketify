@@ -7,6 +7,7 @@ import {
   StyleSheet,
   TextInput,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Card, FieldGroup, Icon, Pressable, Spinner, Text, View } from '@/components';
@@ -35,6 +36,7 @@ import { colors, radii, spacing, typography } from '@/theme';
  * both platforms (the currency screen uses the same pattern).
  */
 export default function BudgetEditorScreen() {
+  const { t } = useTranslation(['settings', 'common']);
   const { user, setBudget } = useProfile();
   const currency = useSettingsStore((s) => s.currency);
   const { guard } = useFrozenGuard();
@@ -84,11 +86,11 @@ export default function BudgetEditorScreen() {
           onPress={() => router.back()}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Volver"
+          accessibilityLabel={t('common:back')}
         >
           <Icon name="arrow.left" size={24} color={colors.textPrimary} />
         </Pressable>
-        <Text style={styles.title}>Presupuesto mensual</Text>
+        <Text style={styles.title}>{t('settings:monthlyBudgetTitle')}</Text>
       </View>
 
       <KeyboardAvoidingView
@@ -103,7 +105,7 @@ export default function BudgetEditorScreen() {
           <Card>
             <FieldGroup
               label={`Monto (${currency})`}
-              helper="Monto máximo que querés gastar este mes."
+              helper={t('settings:monthlyBudgetHelper')}
               error={error ?? undefined}
             >
               <TextInput
@@ -119,7 +121,7 @@ export default function BudgetEditorScreen() {
                 placeholderTextColor={colors.textSecondary}
                 editable={!saving}
                 style={styles.input}
-                accessibilityLabel="Monto del presupuesto"
+                accessibilityLabel={t('settings:monthlyBudgetInputLabel')}
               />
             </FieldGroup>
           </Card>
@@ -128,7 +130,7 @@ export default function BudgetEditorScreen() {
             onPress={handleSave}
             disabled={!valid || saving}
             accessibilityRole="button"
-            accessibilityLabel="Guardar presupuesto"
+            accessibilityLabel={t('settings:saveBudget')}
             style={({ pressed }) => [
               styles.saveButton,
               (!valid || saving) && styles.saveButtonDisabled,
@@ -138,7 +140,7 @@ export default function BudgetEditorScreen() {
             {saving ? (
               <Spinner size="sm" color={colors.onPrimary} />
             ) : (
-              <Text style={styles.saveButtonText}>Guardar</Text>
+              <Text style={styles.saveButtonText}>{t('common:save')}</Text>
             )}
           </Pressable>
         </ScrollView>

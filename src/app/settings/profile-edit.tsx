@@ -8,6 +8,7 @@ import {
   StyleSheet,
   TextInput,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon, Pressable, Spinner, Text, View } from '@/components';
@@ -24,6 +25,7 @@ import { colors, radii, spacing, typography } from '@/theme';
  * Available to ALL users regardless of subscription tier.
  */
 export default function ProfileEditScreen() {
+  const { t } = useTranslation(['settings', 'common']);
   const { user, setFullName } = useProfile();
 
   const [draft, setDraft] = useState<string>(user?.full_name ?? '');
@@ -55,9 +57,9 @@ export default function ProfileEditScreen() {
     const result = await setFullName(trimmed);
     if (result.status === 'ok') {
       useDialogStore.getState().show({
-        title: 'Listo',
-        message: 'Tu nombre fue actualizado.',
-        primaryLabel: 'OK',
+        title: t('settings:savedAs'),
+        message: t('settings:nameUpdated'),
+        primaryLabel: t('settings:okShort'),
         onPrimary: () => router.back(),
       });
     } else {
@@ -73,11 +75,11 @@ export default function ProfileEditScreen() {
           onPress={() => router.back()}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Volver"
+          accessibilityLabel={t('common:back')}
         >
           <Icon name="arrow.left" size={24} color={colors.textPrimary} />
         </Pressable>
-        <Text style={styles.title}>Editar perfil</Text>
+        <Text style={styles.title}>{t('settings:editProfile')}</Text>
       </View>
 
       <KeyboardAvoidingView
@@ -102,21 +104,21 @@ export default function ProfileEditScreen() {
 
           {/* Name input */}
           <View style={styles.fieldCard}>
-            <Text style={styles.fieldLabel}>Nombre completo</Text>
+            <Text style={styles.fieldLabel}>{t('settings:fullName')}</Text>
             <TextInput
               value={draft}
               onChangeText={(v) => {
                 setDirty(true);
                 setDraft(v);
               }}
-              placeholder="Tu nombre"
+              placeholder={t('settings:fullNamePlaceholder')}
               placeholderTextColor={colors.textSecondary}
               autoCapitalize="words"
               autoCorrect={false}
               textContentType="name"
               editable={!saving}
               style={styles.input}
-              accessibilityLabel="Nombre completo"
+              accessibilityLabel={t('settings:fullName')}
             />
           </View>
 
@@ -126,7 +128,7 @@ export default function ProfileEditScreen() {
             onPress={handleSave}
             disabled={!valid || saving}
             accessibilityRole="button"
-            accessibilityLabel="Guardar nombre"
+            accessibilityLabel={t('settings:editName')}
             style={({ pressed }) => [
               styles.saveButton,
               (!valid || saving) && styles.saveButtonDisabled,
@@ -136,7 +138,7 @@ export default function ProfileEditScreen() {
             {saving ? (
               <Spinner size="sm" color={colors.onPrimary} />
             ) : (
-              <Text style={styles.saveButtonText}>Guardar</Text>
+              <Text style={styles.saveButtonText}>{t('common:save')}</Text>
             )}
           </Pressable>
         </ScrollView>

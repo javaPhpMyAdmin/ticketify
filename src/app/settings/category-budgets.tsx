@@ -7,6 +7,7 @@ import {
   StyleSheet,
   TextInput,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Card, Icon, Pressable, Spinner, Text, View } from '@/components';
@@ -29,6 +30,7 @@ import { colors, radii, spacing, typography } from '@/theme';
  * budget amounts from the `category_budgets` table.
  */
 export default function CategoryBudgetsScreen() {
+  const { t } = useTranslation(['settings', 'common']);
   // NFR-2: month key must come from the device-local calendar
   // (`currentMonthKey`) so the saved month always equals the displayed
   // month — a UTC-derived month key diverges in UTC-x timezones at
@@ -100,7 +102,7 @@ export default function CategoryBudgetsScreen() {
         router.back();
       } catch {
         setSubmitting(false);
-        setError('No se pudieron guardar los presupuestos. Inténtalo de nuevo.');
+        setError(t('settings:categoryBudgetSaveError'));
       }
     });
   };
@@ -112,11 +114,11 @@ export default function CategoryBudgetsScreen() {
           onPress={() => router.back()}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Volver"
+          accessibilityLabel={t('common:back')}
         >
           <Icon name="arrow.left" size={24} color={colors.textPrimary} />
         </Pressable>
-        <Text style={styles.title}>Presupuestos por categoría</Text>
+        <Text style={styles.title}>{t('settings:categoryBudgetsTitle')}</Text>
       </View>
 
       <KeyboardAvoidingView
@@ -169,7 +171,7 @@ export default function CategoryBudgetsScreen() {
                       placeholderTextColor={colors.textSecondary}
                       editable={!isSaving && !submitting}
                       style={styles.input}
-                      accessibilityLabel={`Presupuesto ${cat.label}`}
+                      accessibilityLabel={`${t('settings:categoryBudgetLabel')} ${cat.label}`}
                     />
                   </View>
                 );
@@ -183,7 +185,7 @@ export default function CategoryBudgetsScreen() {
             onPress={handleSave}
             disabled={isSaving || submitting}
             accessibilityRole="button"
-            accessibilityLabel="Guardar presupuestos"
+            accessibilityLabel={t('settings:saveCategoryBudgets')}
             style={({ pressed }) => [
               styles.saveButton,
               (isSaving || submitting) && styles.saveButtonDisabled,
@@ -193,7 +195,7 @@ export default function CategoryBudgetsScreen() {
             {isSaving || submitting ? (
               <Spinner size="sm" color={colors.onPrimary} />
             ) : (
-              <Text style={styles.saveButtonText}>Guardar</Text>
+              <Text style={styles.saveButtonText}>{t('common:save')}</Text>
             )}
           </Pressable>
         </ScrollView>
