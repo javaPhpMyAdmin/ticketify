@@ -9,7 +9,21 @@
  * `isSupabaseConfigured`, never throw on PostgREST errors, and report a
  * discriminated status the hooks map to UI state (missing profile, read
  * failure, unconfigured).
+ *
+ * PR 2 (`app-i18n`): the user-safe error message constants became
+ * functions that delegate to `i18next.t('errors:featureAccess.*')`. The
+ * export NAME stays the same so every existing `import { X }` keeps
+ * compiling, but the export is now a function returning the localized
+ * string at call time (callers must invoke `READ_ERROR_MESSAGE()`). The
+ * 6 migrated constants: `READ_ERROR_MESSAGE`,
+ * `CREATE_HOUSEHOLD_FALLBACK_MESSAGE`, `TOO_MANY_INVITE_CODES_MESSAGE`,
+ * `INVITE_PRO_REQUIRED_MESSAGE`, `JOIN_ALREADY_IN_HOUSEHOLD_MESSAGE`,
+ * `JOIN_INVALID_CODE_MESSAGE`. The other 4 actionable household copies
+ * stay as plain strings for PR 3 (the spec kept these as consts since
+ * they don't appear in the user-facing migration scope).
  */
+import i18next from 'i18next';
+
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import type {
   CategoryBudget,
@@ -42,8 +56,20 @@ export interface HouseholdCategoryItem {
 /**
  * User-safe copy shown when an authenticated read fails. Raw PostgREST text
  * must never reach the UI (same posture as the auth screens).
+ *
+ * PR 2: function-scoped — returns the localized `errors:featureAccess.generic`
+ * at call time so the active UI language wins. The export name stays the
+ * same (callers now invoke `READ_ERROR_MESSAGE()`). Falls back to the
+ * canonical es-AR string when i18next isn't initialized yet (boot path
+ * before `<I18nProvider>` mounts, or test harnesses that exercise the seam
+ * without `initI18n()`) — never leaks `undefined` to the UI.
  */
-export const READ_ERROR_MESSAGE = 'No se pudieron cargar los datos. Inténtalo de nuevo.';
+export function READ_ERROR_MESSAGE(): string {
+  if (!i18next.isInitialized) {
+    return 'No se pudieron cargar los datos. Inténtalo de nuevo.';
+  }
+  return i18next.t('errors:featureAccess.generic');
+}
 
 /**
  * Discriminated result every feature read returns:
@@ -72,7 +98,7 @@ export async function readProfileRow(
     .maybeSingle();
   if (error) {
     console.warn('[read] profile failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   if (!data) return { status: 'missing-profile' };
   return { status: 'ok', data: data as User };
@@ -96,7 +122,7 @@ export async function readScanUsageRow(
     .maybeSingle();
   if (error) {
     console.warn('[read] scan usage failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: (data as ScanUsage | null) ?? null };
 }
@@ -113,7 +139,7 @@ export async function readMonthlyBudgetRow(
     .maybeSingle();
   if (error) {
     console.warn('[read] monthly budget failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   if (!data) return { status: 'missing-profile' };
   return {
@@ -138,7 +164,7 @@ export async function readCategoryTotals(
   const { data, error } = await supabase.rpc('monthly_category_totals', params);
   if (error) {
     console.warn('[read] category totals failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: (data ?? []) as CategoryMonthlyTotal[] };
 }
@@ -162,7 +188,7 @@ export async function readMonthlyPurchasesTotal(
   const { data, error } = await supabase.rpc('monthly_purchases_total', params);
   if (error) {
     console.warn('[read] monthly purchases total failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: (data ?? []) as { total: number }[] };
 }
@@ -186,7 +212,7 @@ export async function readMonthlyImpulseTotal(
   const { data, error } = await supabase.rpc('monthly_impulse_total', params);
   if (error) {
     console.warn('[read] monthly impulse total failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: (data ?? []) as { total: number }[] };
 }
@@ -206,7 +232,7 @@ export async function readMonthlyImpulseItems(
   });
   if (error) {
     console.warn('[read] monthly impulse items failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: (data ?? []) as { name: string; amount: number }[] };
 }
@@ -236,7 +262,7 @@ export async function readCategoryBudgets(
     .eq('month', yearMonth);
   if (error) {
     console.warn('[read] category budgets failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: (data ?? []) as CategoryBudget[] };
 }
@@ -274,7 +300,7 @@ export async function upsertCategoryBudgets(
       );
     if (deleteError) {
       console.warn('[upsert] category budgets delete failed:', deleteError.code, deleteError.message);
-      return { status: 'error', message: READ_ERROR_MESSAGE };
+      return { status: 'error', message: READ_ERROR_MESSAGE() };
     }
   }
 
@@ -291,7 +317,7 @@ export async function upsertCategoryBudgets(
       .upsert(rows, { onConflict: 'user_id,category_slug,month' });
     if (upsertError) {
       console.warn('[upsert] category budgets upsert failed:', upsertError.code, upsertError.message);
-      return { status: 'error', message: READ_ERROR_MESSAGE };
+      return { status: 'error', message: READ_ERROR_MESSAGE() };
     }
   }
 
@@ -330,7 +356,7 @@ export async function markCategoryBudgetRolloverApplied(
       .upsert(rows, { onConflict: 'user_id,category_slug,month' });
     if (copyError) {
       console.warn('[rollover] copy upsert failed:', copyError.code, copyError.message);
-      return { status: 'error', message: READ_ERROR_MESSAGE };
+      return { status: 'error', message: READ_ERROR_MESSAGE() };
     }
   }
 
@@ -353,7 +379,7 @@ export async function markCategoryBudgetRolloverApplied(
     );
   if (markerError) {
     console.warn('[rollover] marker upsert failed:', markerError.code, markerError.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
 
   return { status: 'ok', data: null };
@@ -378,7 +404,7 @@ export async function readHouseholdInfo(
     .maybeSingle();
   if (profileErr) {
     console.warn('[read] household profile failed:', profileErr.code, profileErr.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   const profileRow = profile as Record<string, unknown> | null;
   if (!profileRow?.household_id) return { status: 'ok', data: null };
@@ -389,7 +415,7 @@ export async function readHouseholdInfo(
     .maybeSingle();
   if (error) {
     console.warn('[read] household info failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: (data as Household | null) ?? null };
 }
@@ -412,7 +438,7 @@ export async function readHouseholdRole(
     .maybeSingle();
   if (error) {
     console.warn('[read] household role failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   const row = data as Record<string, unknown> | null;
   return { status: 'ok', data: (row?.role as string | null) ?? null };
@@ -440,7 +466,7 @@ export async function readHouseholdMembers(
   });
   if (error) {
     console.warn('[read] household members failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   const members = ((data as unknown as Array<Record<string, unknown>>) ?? []).map((row) => {
     return {
@@ -476,7 +502,7 @@ export async function readActiveInviteCode(
     .maybeSingle();
   if (error) {
     console.warn('[read] active invite code failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: (data as InviteCode | null) ?? null };
 }
@@ -507,9 +533,16 @@ const ALREADY_IN_HOUSEHOLD_MESSAGE =
  * detail (constraint/RLS/table names from `raise exception`) is logged, never
  * shown; this fixed message avoids leaking schema internals while still being
  * more specific than the generic read-error copy.
+ *
+ * PR 2: function-scoped — returns `errors.featureAccess.createHouseholdFallback`
+ * at call time.
  */
-const CREATE_HOUSEHOLD_FALLBACK_MESSAGE =
-  'No se pudo crear el hogar. Revisá tu conexión e intentá de nuevo. Si persiste, salí de tu hogar actual y volvé a intentar.';
+export function CREATE_HOUSEHOLD_FALLBACK_MESSAGE(): string {
+  if (!i18next.isInitialized) {
+      return 'No se pudo crear el hogar. Revisá tu conexión e intentá de nuevo. Si persiste, salí de tu hogar actual y volvé a intentar.';
+    }
+    return i18next.t('errors:featureAccess.createHouseholdFallback');
+}
 
 /**
  * Create a new household. Calls the `create_household` RPC which inserts
@@ -548,7 +581,7 @@ export async function createHousehold(
     // household) are surfaced above; anything else gets this generic copy.
     return {
       status: 'error',
-      message: CREATE_HOUSEHOLD_FALLBACK_MESSAGE,
+      message: CREATE_HOUSEHOLD_FALLBACK_MESSAGE(),
     };
   }
   return { status: 'ok', data: (data as unknown as Household) };
@@ -559,16 +592,30 @@ export async function createHousehold(
  * unconsumed invite codes within 24h (the generate_invite_code RPC rate
  * limit). Actionable: the user should reuse the code the modal already
  * shows (the read-first flow surfaces it) or wait for the window to pass.
+ *
+ * PR 2: function-scoped — returns `errors.featureAccess.tooManyInviteCodes`
+ * at call time.
  */
-const TOO_MANY_INVITE_CODES_MESSAGE =
-  'Ya hay 3 códigos activos. Usá el código vigente o esperá 24h.';
+export function TOO_MANY_INVITE_CODES_MESSAGE(): string {
+  if (!i18next.isInitialized) {
+      return 'Ya hay 3 códigos activos. Usá el código vigente o esperá 24h.';
+    }
+    return i18next.t('errors:featureAccess.tooManyInviteCodes');
+}
 
 /**
  * User-safe copy shown when the caller's subscription cannot invite (the
  * generate_invite_code RPC requires Pro, migration 0014 §5b).
+ *
+ * PR 2: function-scoped — returns `errors.featureAccess.inviteProRequired`
+ * at call time.
  */
-const INVITE_PRO_REQUIRED_MESSAGE =
-  'Necesitás Pro para invitar. Activá Pro desde tu perfil.';
+export function INVITE_PRO_REQUIRED_MESSAGE(): string {
+  if (!i18next.isInitialized) {
+      return 'Necesitás Pro para invitar. Activá Pro desde tu perfil.';
+    }
+    return i18next.t('errors:featureAccess.inviteProRequired');
+}
 
 /**
  * User-safe copy shown when a non-owner calls generate_invite_code (the RPC
@@ -590,17 +637,31 @@ const INVITE_HOUSEHOLD_FULL_MESSAGE =
  * Actionable: the user cannot join a second household until they leave their
  * current one — telling them why unblocks the confusion instead of the
  * dead-end generic read-error copy.
+ *
+ * PR 2: function-scoped — returns `errors.featureAccess.joinAlreadyInHousehold`
+ * at call time.
  */
-const JOIN_ALREADY_IN_HOUSEHOLD_MESSAGE =
-  'Ya pertenecés a un hogar. Para unirte a otro, primero tenés que salir del actual.';
+export function JOIN_ALREADY_IN_HOUSEHOLD_MESSAGE(): string {
+  if (!i18next.isInitialized) {
+      return 'Ya pertenecés a un hogar. Para unirte a otro, primero tenés que salir del actual.';
+    }
+    return i18next.t('errors:featureAccess.joinAlreadyInHousehold');
+}
 
 /**
  * User-safe copy shown when an invite code is consumed, unknown, or expired
  * (the join_household RPC raises 'invalid or expired invite code'). The code
  * cannot be reused, so the user needs a fresh one from the household owner.
+ *
+ * PR 2: function-scoped — returns `errors.featureAccess.joinInvalidCode`
+ * at call time.
  */
-const JOIN_INVALID_CODE_MESSAGE =
-  'El código es inválido o expiró. Pedile un código nuevo a quien creó el hogar.';
+export function JOIN_INVALID_CODE_MESSAGE(): string {
+  if (!i18next.isInitialized) {
+      return 'El código es inválido o expiró. Pedile un código nuevo a quien creó el hogar.';
+    }
+    return i18next.t('errors:featureAccess.joinInvalidCode');
+}
 
 /**
  * Generate an invite code for a household. Calls the `generate_invite_code`
@@ -628,10 +689,10 @@ export async function generateInviteCode(
     const detail =
       error.message ?? (error as { details?: string }).details ?? '';
     if (/too many active invite codes \(max 3 per 24h\)/i.test(detail)) {
-      return { status: 'error', message: TOO_MANY_INVITE_CODES_MESSAGE };
+      return { status: 'error', message: TOO_MANY_INVITE_CODES_MESSAGE() };
     }
     if (/pro subscription required/i.test(detail)) {
-      return { status: 'error', message: INVITE_PRO_REQUIRED_MESSAGE };
+      return { status: 'error', message: INVITE_PRO_REQUIRED_MESSAGE() };
     }
     if (/only the owner can generate invite codes/i.test(detail)) {
       return { status: 'error', message: INVITE_OWNER_ONLY_MESSAGE };
@@ -641,7 +702,7 @@ export async function generateInviteCode(
     }
     // 'household not found' and any unknown error keep the fixed
     // user-safe fallback — the raw PostgREST text never reaches the UI.
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: (data as unknown as InviteCode) };
 }
@@ -678,17 +739,17 @@ export async function joinHousehold(
     const detail =
       error.message ?? (error as { details?: string }).details ?? '';
     if (/already in a household/i.test(detail)) {
-      return { status: 'error', message: JOIN_ALREADY_IN_HOUSEHOLD_MESSAGE };
+      return { status: 'error', message: JOIN_ALREADY_IN_HOUSEHOLD_MESSAGE() };
     }
     if (/invalid or expired invite code/i.test(detail)) {
-      return { status: 'error', message: JOIN_INVALID_CODE_MESSAGE };
+      return { status: 'error', message: JOIN_INVALID_CODE_MESSAGE() };
     }
     if (/household is full/i.test(detail)) {
       return { status: 'error', message: INVITE_HOUSEHOLD_FULL_MESSAGE };
     }
     // Anything else keeps the fixed user-safe fallback — the raw PostgREST
     // text (e.g. RLS/constraint names) never reaches the UI.
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: (data as unknown as string) };
 }
@@ -702,7 +763,7 @@ export async function leaveHousehold(): Promise<FeatureReadResult<void>> {
   const { error } = await supabase.rpc('leave_household');
   if (error) {
     console.warn('[write] leave household failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: undefined };
 }
@@ -720,7 +781,7 @@ export async function disbandHousehold(
   });
   if (error) {
     console.warn('[write] disband household failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: undefined };
 }
@@ -740,7 +801,7 @@ export async function readHouseholdFeed(
   const { data, error } = await supabase.rpc('get_household_feed', params);
   if (error) {
     console.warn('[read] household feed failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: (data ?? []) as HouseholdFeedItem[] };
 }
@@ -764,7 +825,7 @@ export async function readHouseholdCategoryItems(
   const { data, error } = await supabase.rpc('get_household_category_items', params);
   if (error) {
     console.warn('[read] household category items failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: (data ?? []) as HouseholdCategoryItem[] };
 }
@@ -853,7 +914,7 @@ export async function readMonthlyCacheRow(
     .maybeSingle();
   if (error) {
     console.warn('[read] monthly cache failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: (data as MonthlyTotalsCacheRow | null) ?? null };
 }
@@ -876,7 +937,7 @@ export async function readMonthlyCacheRows(
     .in('year_month', yearMonths);
   if (error) {
     console.warn('[read] monthly cache batch failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: (data ?? []) as MonthlyTotalsCacheRow[] };
 }
@@ -897,7 +958,7 @@ export async function triggerMonthlyRecalc(
   });
   if (error) {
     console.warn('[write] trigger monthly recalc failed:', error.code, error.message);
-    return { status: 'error', message: READ_ERROR_MESSAGE };
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: undefined };
 }

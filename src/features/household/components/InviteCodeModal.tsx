@@ -77,7 +77,7 @@ export function InviteCodeModal({ visible, onClose }: InviteCodeModalProps) {
         setError(active.message);
       } else {
         // unconfigured client — reads are impossible; generic read copy.
-        setError(READ_ERROR_MESSAGE);
+        setError(READ_ERROR_MESSAGE());
       }
       setLoading(false);
     })();
