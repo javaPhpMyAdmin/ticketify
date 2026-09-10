@@ -87,10 +87,14 @@ function compile() {
   mkdirSync(srcDir, { recursive: true });
   mkdirSync(join(workdir, 'lib-stubs'), { recursive: true });
 
-  // --- calendar.ts — 100% pure, no rewrites needed ---
-  const calendarSource = readFileSync(
-    join(root, 'src/components/molecules/DatePickerField/calendar.ts'),
-    'utf8',
+  // --- calendar.ts — PR 2 wraps formatDate from @/lib/format; rewrite to the
+// local stub (same pattern as the manual-form rewrites below).
+  const calendarSource = patchImports(
+    readFileSync(
+      join(root, 'src/components/molecules/DatePickerField/calendar.ts'),
+      'utf8',
+    ),
+    [FORMAT_REWRITE],
   );
   writeFileSync(join(srcDir, 'calendar.ts'), calendarSource);
 
@@ -116,6 +120,32 @@ function compile() {
     export const tempId = () => 'test-' + (++_c);
     export const todayLocalISO = () => '2026-09-07';
     export const formatCurrency = (v: number, c = 'UYU') => c + ' ' + v;
+    // PR 2 canonical API (calendar.ts imports formatDate from @/lib/format).
+    // The manual-screen harness cares about the es-AR trigger output, so we
+    // mirror the es-AR short-month contract in the stub.
+    const MONTHS_ABBR_ES_AR = [
+      'ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic',
+    ];
+    function pad2(n: number) { return String(n).padStart(2, '0'); }
+    export function formatDate(
+      locale: 'en' | 'es-AR' | 'pt-BR',
+      iso: string,
+      opts: { todayISO?: string } = {},
+    ): string {
+      const todayISO = opts.todayISO ?? todayLocalISO();
+      if (iso === todayISO) return 'Hoy';
+      const m = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(todayISO);
+      if (m) {
+        const [, ty, tm, td] = m.map(Number) as unknown as [string, number, number, number];
+        const d = new Date(ty, tm - 1, td - 1);
+        const yestISO = \`\${d.getFullYear()}-\${pad2(d.getMonth() + 1)}-\${pad2(d.getDate())}\`;
+        if (iso === yestISO) return 'Ayer';
+      }
+      const parts = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(iso);
+      if (!parts) return iso;
+      const month = Number(parts[2]);
+      return \`\${parts[3]} \${MONTHS_ABBR_ES_AR[month - 1]} \${parts[1]}\`;
+    }
   `,
   );
   writeFileSync(
