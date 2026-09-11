@@ -249,12 +249,15 @@ export function formatYearMonth(
 }
 
 /**
- * Renders a 0-100 percent share as a compact Spanish label, keeping a
- * significant digit for tiny slices so a small category never reads as a
- * misleading "0%": "0%" (zero), "<0.1%" (sub-tenth), "0.2%" (exact one
- * decimal below 1%), "12%" (integer otherwise). Callers append the
- * " del gasto" phrase where it belongs (budget cards/rows); the analytics
- * breakdown renders the token as-is.
+ * Renders a 0-100 percent share as a compact, locale-neutral label —
+ * the token itself ("12%") reads the same in every shipped locale, so
+ * no locale argument is needed. Keeps a significant digit for tiny
+ * slices so a small category never reads as a misleading "0%": "0%"
+ * (zero), "<0.1%" (sub-tenth), "0.2%" (exact one decimal below 1%),
+ * "12%" (integer otherwise). Callers append the localized
+ * `analytics:percentOfSpending` phrase where the "of spending" suffix
+ * belongs (budget cards/rows and the analytics breakdown); the catalog
+ * key owns the per-locale wording.
  */
 export function formatPercentLabel(value: number): string {
   if (value <= 0) return '0%';
