@@ -44,13 +44,17 @@ export interface RunRateCardProps {
  * pure function already normalizes `-0`, AD-7).
  */
 export function RunRateCard({ result, currency, monthKey }: RunRateCardProps) {
-  // PR 3 (`app-i18n` cleanup, W3): the tap-through hint is localized via
-  // the `a11y` namespace instead of a hardcoded Spanish string.
-  const { t } = useTranslation('a11y');
+  // The tap-through hint lives in the `a11y` namespace; the accessibility
+  // label and its source variants live in `analytics` — same figures the
+  // card renders.
+  const { t } = useTranslation(['analytics', 'a11y']);
   const up = result.deltaPct >= 0;
   const trendIcon: IconName = up ? 'arrow.up.right' : 'arrow.down.right';
   const deltaPrefix = result.deltaPct > 0 ? '+' : '';
-  const sourceCopy = result.source === 'mom' ? 'mes anterior' : 'tu promedio';
+  // Localized baseline label — the badge and the accessibility label below
+  // share the same `runRateSource*` keys (same figures on both surfaces).
+  const sourceCopy =
+    result.source === 'mom' ? t('runRateSourceMom') : t('runRateSourceFallback');
   const monthLabel = monthKeyToLabel(monthKey);
   const mtd = formatCurrencyWhole(result.mtd, currency);
   const projection = formatCurrencyWhole(result.projection, currency);
@@ -59,8 +63,17 @@ export function RunRateCard({ result, currency, monthKey }: RunRateCardProps) {
     <Pressable
       onPress={() => router.push('/analytics')}
       accessibilityRole="button"
-      accessibilityLabel={`Ritmo de gasto de ${monthLabel}: ${mtd} este mes, ${deltaPrefix}${result.deltaPct}% vs ${sourceCopy}; al ritmo actual cerras en ~${projection}`}
-      accessibilityHint={t('openAnalytics')}
+      // VoiceOver label: one flat sentence over the same figures the card
+      // renders (month, MTD, delta vs. source, projection).
+      accessibilityLabel={t('runRateA11y', {
+        monthLabel,
+        mtd,
+        deltaPrefix,
+        deltaPct: result.deltaPct,
+        source: sourceCopy,
+        projection,
+      })}
+      accessibilityHint={t('a11y:openAnalytics')}
     >
       <Card>
         <View style={[styles.content, styles.contentWithBadge]}>
