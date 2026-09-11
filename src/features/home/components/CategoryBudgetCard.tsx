@@ -52,8 +52,8 @@ export function CategoryBudgetCard({
   limit,
   onPress,
 }: CategoryBudgetCardProps) {
-  // PR 3 (`app-i18n` cleanup, W2): the "of spending" suffix after the
-  // percent token is localized via the `analytics` namespace.
+  // The "of spending" suffix after the percent token and the item-count
+  // line are localized via the `analytics` namespace.
   const { t } = useTranslation('analytics');
   const color = getCategoryColor(categoryKey);
 
