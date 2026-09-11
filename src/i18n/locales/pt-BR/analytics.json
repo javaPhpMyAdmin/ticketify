@@ -45,6 +45,7 @@
   "donutKicker": "TOTAL",
   "donutEmpty": "Sem gastos neste mês",
   "donutPctSuffix": "% do mês",
+  "percentOfSpending": "{{percent}} do gasto",
   "dayDetailTitle": "Detalhes do dia",
   "dayDetailBackdropA11y": "Fechar detalhes do dia",
   "dayDetailEmptyTitle": "Sem gastos neste dia.",

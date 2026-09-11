@@ -1,4 +1,5 @@
 import { StyleSheet } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   Icon,
@@ -51,6 +52,9 @@ export function CategoryBudgetCard({
   limit,
   onPress,
 }: CategoryBudgetCardProps) {
+  // PR 3 (`app-i18n` cleanup, W2): the "of spending" suffix after the
+  // percent token is localized via the `analytics` namespace.
+  const { t } = useTranslation('analytics');
   const color = getCategoryColor(categoryKey);
 
   // Shared bar color (spec NFR-4: identical thresholds/colors in every
@@ -90,7 +94,7 @@ export function CategoryBudgetCard({
         </Text>
         <View style={styles.metaRow}>
           <Text style={[styles.percent, { color: color.foreground }]}>
-            {formatPercentLabel(percent)} del gasto
+            {t('percentOfSpending', { percent: formatPercentLabel(percent) })}
           </Text>
           {itemCount !== undefined && itemCount > 0 ? (
             <Text style={[styles.itemCount, { color: color.foreground }]}>

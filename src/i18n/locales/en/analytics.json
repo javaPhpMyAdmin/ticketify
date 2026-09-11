@@ -45,6 +45,7 @@
   "donutKicker": "TOTAL",
   "donutEmpty": "No spending this month",
   "donutPctSuffix": "% of the month",
+  "percentOfSpending": "{{percent}} of spending",
   "dayDetailTitle": "Day details",
   "dayDetailBackdropA11y": "Close day details",
   "dayDetailEmptyTitle": "No spending this day.",
