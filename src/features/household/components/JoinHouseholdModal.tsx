@@ -4,6 +4,7 @@
  */
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { BottomSheet, Spinner, Text } from '@/components';
 import { useSessionUser } from '@/features/auth';
@@ -27,6 +28,10 @@ const DISMISS_ANIMATION_MS = 400;
  * error states for common failure scenarios.
  */
 export function JoinHouseholdModal({ visible, onClose }: JoinHouseholdModalProps) {
+  // PR 3 (`app-i18n`): title, helper, placeholder, a11y, button label,
+  // and the success/error copy read from the `household` + `settings`
+  // + `common` namespaces.
+  const { t } = useTranslation(['household', 'settings', 'common']);
   const { userId } = useSessionUser();
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -36,7 +41,7 @@ export function JoinHouseholdModal({ visible, onClose }: JoinHouseholdModalProps
     if (loading || !userId) return;
     const trimmed = code.trim().toUpperCase();
     if (trimmed.length !== 6) {
-      setError('El código debe tener 6 caracteres.');
+      setError(t('household:householdJoinCodeLengthError'));
       return;
     }
     setLoading(true);
@@ -66,16 +71,16 @@ export function JoinHouseholdModal({ visible, onClose }: JoinHouseholdModalProps
         // calls the helper — there is nothing to invalidate on a failed join.
         invalidateHouseholdAfterJoin(queryClient, userId);
         useDialogStore.getState().show({
-          title: '¡Listo!',
-          message: 'Te uniste al hogar.',
-          primaryLabel: 'Aceptar',
+          title: t('settings:okShort'),
+          message: t('household:householdJoinedSuccess'),
+          primaryLabel: t('common:ok'),
         });
       }, DISMISS_ANIMATION_MS);
     } else {
       setError(
         result.status === 'error'
           ? result.message
-          : 'No se pudo unir al hogar. Verificá el código.',
+          : t('household:householdJoinFallback'),
       );
     }
   };
@@ -92,13 +97,13 @@ export function JoinHouseholdModal({ visible, onClose }: JoinHouseholdModalProps
     <BottomSheet
       visible={visible}
       onClose={handleClose}
-      title="Unirse a un hogar"
+      title={t('household:householdJoin')}
       keyboardMode="avoidingView"
       headerCentered
     >
       <View style={styles.body}>
         <Text style={styles.helper}>
-          Pedile el código de 6 caracteres a quien creó el hogar.
+          {t('household:joinHouseholdHelper')}
         </Text>
 
         <TextInput
@@ -107,14 +112,14 @@ export function JoinHouseholdModal({ visible, onClose }: JoinHouseholdModalProps
             setCode(v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6));
             setError(null);
           }}
-          placeholder="ABC123"
+          placeholder={t('household:joinHouseholdCodePlaceholder')}
           placeholderTextColor={colors.textSecondary}
           maxLength={6}
           autoCapitalize="characters"
           autoCorrect={false}
           editable={!loading}
           style={styles.input}
-          accessibilityLabel="Código de invitación"
+          accessibilityLabel={t('household:joinHouseholdCodeLabel')}
         />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -128,12 +133,12 @@ export function JoinHouseholdModal({ visible, onClose }: JoinHouseholdModalProps
             pressed && styles.joinButtonPressed,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Unirse al hogar"
+          accessibilityLabel={t('household:joinHouseholdAction')}
         >
           {loading ? (
             <Spinner size="sm" color={colors.onPrimary} />
           ) : (
-            <Text style={styles.joinButtonText}>Unirse</Text>
+            <Text style={styles.joinButtonText}>{t('household:joinHouseholdAction')}</Text>
           )}
         </Pressable>
       </View>

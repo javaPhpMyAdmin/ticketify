@@ -72,5 +72,14 @@
   "householdCreateProRequired": "Você precisa de uma assinatura PRO (ou um trial ativo) para criar uma família.",
   "householdAlreadyInHousehold": "Você já faz parte de uma família. Saia da sua família atual para poder criar outra.",
   "householdCreateFallback": "Não foi possível criar a família. Verifique sua conexão e tente novamente. Se persistir, saia da sua família atual e tente de novo.",
-  "householdCreateMemberName": "Membro"
+  "householdCreateMemberName": "Membro",
+  "exportPdfTitle": "Exportação de tickets",
+  "exportGeneratedPrefix": "Gerado em",
+  "usageKicker": "Escaneamentos gratuitos mensais",
+  "usageLimitKicker": "LIMITE DE USO",
+  "usageUnlimited": "Ilimitado",
+  "usageScansUsed": "Escaneamentos usados",
+  "usageResetPrefix": "Renova em 1º de",
+  "usageUpgradeLabel": "Atualize para escaneamentos ilimitados.",
+  "usageCtaLabel": "Atualizar para Pro"
 }

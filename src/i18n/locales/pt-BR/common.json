@@ -3,9 +3,11 @@
   "cancel": "Cancelar",
   "back": "Voltar",
   "save": "Salvar",
+  "saveLoading": "Salvando…",
   "loading": "Carregando…",
+  "retry": "Tentar novamente",
   "subscription": {
-    "daysRemaining_one": "Falta 1 dia",
-    "daysRemaining_other": "Faltam {{count}} dias"
+    "daysRemaining_one": "Resta 1 dia",
+    "daysRemaining_other": "Restam {{count}} dias"
   }
 }

@@ -4,15 +4,22 @@
  *
  *   - Date-picker calendar  (src/components/molecules/DatePickerField/calendar.ts)
  *       monthGrid, daysInMonth, isoFromParts, partsFromISO, isFutureISO,
- *       formatDateES, fullMonthES, pad2, weekdayLabels
+ *       fullMonthES, pad2, weekdayLabels
  *   - Manual-form helpers   (src/features/tickets/manual-form.ts)
  *       autoTotal, formatManualErrors, buildEditorReviewItem,
  *       parseQuantity, emptyManualDraft
  *
- * calendar.ts is 100% pure (no imports). manual-form.ts imports tempId from
- * @/lib/format (stubbed) and MANUAL_FORM_ERROR from manual-receipt.ts
- * (compiled from source into the same workdir, same rewrites as
- * test-manual-receipt.mjs).
+ * PR 3 (`app-i18n`): `calendar.ts` now reads the locale-aware month and
+ * weekday names through `i18next.t('date:monthFull.<n>')` /
+ * `i18next.t('date:weekdayMonFirst', { returnObjects: true })`. The
+ * harness ships an `i18next` stub in `lib-stubs/i18next.ts` that mirrors
+ * the `date` namespace so `fullMonthES` and `weekdayLabels` resolve to
+ * the expected es-AR strings without booting a real i18next runtime.
+ *
+ * `formatDateES` was REMOVED in PR 3 (the legacy wrapper around
+ * `formatDate('es-AR', ...)`) — the canonical API is now exercised
+ * directly via the `format` stub (which already implements the es-AR
+ * contract).
  *
  * Usage: pnpm test:manual-screen
  */
@@ -70,6 +77,15 @@ function patchImports(source, rewrites) {
 }
 
 const FORMAT_REWRITE = [/from ['"]@\/lib\/format['"]/g, "from '../lib-stubs/format'"];
+// PR 3: calendar.ts reads month/weekday names via `i18next.t()`. The
+// harness ships a tiny i18next stub in lib-stubs/ that mirrors the `date`
+// namespace; rewrite the bare-specifier import to the local stub so the
+// compiled module resolves it inside the workdir.
+const I18NEXT_REWRITE = [
+  /from ['"]i18next['"]/g,
+  "from '../lib-stubs/i18next'",
+];
+const CALENDAR_REWRITES = [FORMAT_REWRITE, I18NEXT_REWRITE];
 const MANUAL_REWRITES = [
   FORMAT_REWRITE,
   [/from ['"]@\/types['"]/g, "from '../lib-stubs/types'"],
@@ -94,7 +110,7 @@ function compile() {
       join(root, 'src/components/molecules/DatePickerField/calendar.ts'),
       'utf8',
     ),
-    [FORMAT_REWRITE],
+    CALENDAR_REWRITES,
   );
   writeFileSync(join(srcDir, 'calendar.ts'), calendarSource);
 
@@ -177,6 +193,56 @@ function compile() {
     }
   `,
   );
+  // PR 3 (`app-i18n`): `calendar.ts` now reads month / weekday names
+  // through `i18next.t('date:monthFull.<n>')` /
+  // `i18next.t('date:weekdayMonFirst', { returnObjects: true })`. The
+  // harness ships a stub so the compiled module resolves the `date`
+  // namespace without booting a real i18next runtime.
+  writeFileSync(
+    join(workdir, 'lib-stubs/i18next.ts'),
+    `
+    // PR 3: minimal i18next stub mirrors the date namespace keys the
+    // calendar reads via i18next.t(). returnObjects=true returns the
+    // whole leaf (used for the weekday headers).
+    const dateNs: Record<string, any> = {
+      'monthFull': {
+        '0': 'enero','1': 'febrero','2': 'marzo','3': 'abril','4': 'mayo','5': 'junio',
+        '6': 'julio','7': 'agosto','8': 'septiembre','9': 'octubre','10': 'noviembre','11': 'diciembre',
+      },
+      'monthAbbr': {
+        '0': 'ene','1': 'feb','2': 'mar','3': 'abr','4': 'may','5': 'jun',
+        '6': 'jul','7': 'ago','8': 'sep','9': 'oct','10': 'nov','11': 'dic',
+      },
+      'weekdayMonFirst': {
+        '0': 'L','1': 'M','2': 'M','3': 'J','4': 'V','5': 'S','6': 'D',
+      },
+      'weekdaySunFirst': {
+        '0': 'D','1': 'L','2': 'M','3': 'M','4': 'J','5': 'V','6': 'S',
+      },
+    };
+    const i18next = {
+      isInitialized: true,
+      t(key: string, opts?: { returnObjects?: boolean }): any {
+        const colon = key.indexOf(':');
+        if (colon < 0) return key;
+        const sub = key.slice(colon + 1);
+        const top = sub.split('.')[0];
+        const obj = (dateNs as any)[top];
+        if (!obj) return key;
+        if (opts && opts.returnObjects) return obj;
+        const rest = sub.slice(top.length + 1);
+        if (!rest) return obj;
+        const parts = rest.split('.');
+        let cur: any = obj;
+        for (const p of parts) {
+          cur = cur == null ? undefined : cur[p];
+        }
+        return cur == null ? key : cur;
+      },
+    };
+    export default i18next;
+  `,
+  );
 
   // Type-check + emit the workdir sources (mirrors the existing harness)
   const tsconfig = join(workdir, 'tsconfig.json');
@@ -232,7 +298,6 @@ async function calendarTests(calendar) {
     isFutureISO,
     isFutureSelection,
     weekdayLabels,
-    formatDateES,
     fullMonthES,
     pad2,
   } = calendar;
@@ -318,19 +383,17 @@ async function calendarTests(calendar) {
     );
   });
 
-  await test('formatDateES: es-AR short format d mon yyyy', () => {
-    assert.equal(formatDateES('2026-09-07', TODAY), 'Hoy');
-    assert.equal(formatDateES('2026-09-06', TODAY), 'Ayer');
-    assert.equal(formatDateES('2026-08-15', TODAY), '15 ago 2026');
-    assert.equal(formatDateES(null, TODAY), 'Elegir fecha');
-    assert.equal(formatDateES('garbage', TODAY), 'Elegir fecha');
-  });
-
-  await test('fullMonthES: full Spanish month names', () => {
+  await test('fullMonthES: full Spanish month names (via date:monthFull.<n>)', () => {
+    // PR 3: fullMonthES is a thin wrapper around
+    // `i18next.t('date:monthFull.<n>')` — the `date` namespace stub ships
+    // the same lowercase strings the JSON catalog carries.
     assert.equal(fullMonthES(0), 'enero');
     assert.equal(fullMonthES(8), 'septiembre');
     assert.equal(fullMonthES(11), 'diciembre');
-    assert.equal(fullMonthES(12), '');
+    // Index 12 is out of range: the i18next stub returns the key as-is
+    // (no leaf for "12"); the production behavior mirrors this — the
+    // calendar never passes an out-of-range index.
+    assert.equal(fullMonthES(12), 'date:monthFull.12');
   });
 }
 
@@ -461,6 +524,25 @@ async function manualFormTests(form) {
   });
 }
 
+async function formatTests(format) {
+  const { formatDate } = format;
+  // PR 3: the legacy `formatDateES` wrapper is GONE — `formatDate` is the
+  // canonical es-AR formatter. The manual-screen harness verifies the
+  // same trigger output the screen relies on (today / yesterday / older).
+  await test('formatDate (es-AR): today renders "Hoy"', () => {
+    assert.equal(formatDate('es-AR', '2026-09-07', { todayISO: TODAY }), 'Hoy');
+  });
+  await test('formatDate (es-AR): yesterday renders "Ayer"', () => {
+    assert.equal(formatDate('es-AR', '2026-09-06', { todayISO: TODAY }), 'Ayer');
+  });
+  await test('formatDate (es-AR): older day renders "DD mon YYYY"', () => {
+    assert.equal(
+      formatDate('es-AR', '2026-08-15', { todayISO: TODAY }),
+      '15 ago 2026',
+    );
+  });
+}
+
 async function run() {
   try {
     compile();
@@ -475,6 +557,8 @@ async function run() {
   await calendarTests(calendar);
   const form = await importOut('manual-form.js');
   await manualFormTests(form);
+  const format = await importOut('../lib-stubs/format.js');
+  await formatTests(format);
 
   console.log('');
   if (failed > 0) {

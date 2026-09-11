@@ -1,4 +1,5 @@
 import { FlatList, StyleSheet, View, type ListRenderItem } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { BottomSheet, Divider, EmptyState, Text } from '@/components';
 import { formatCurrency } from '@/lib/format';
@@ -47,6 +48,9 @@ export function ReceiptCategoryItemsModal({
   currency = 'UYU',
   onClose,
 }: ReceiptCategoryItemsModalProps) {
+  // PR 3 (`app-i18n`): sheet title, backdrop a11y, total label, and
+  // empty-state copy all read from the `receipts` namespace.
+  const { t } = useTranslation(['receipts']);
   const renderItem: ListRenderItem<ReceiptCategoryItem> = ({ item, index }) => (
     <View>
       {index > 0 ? <Divider /> : null}
@@ -67,11 +71,11 @@ export function ReceiptCategoryItemsModal({
       visible={visible}
       onClose={onClose}
       kicker={categoryLabel}
-      title="Artículos de la categoría"
-      backdropLabel="Cerrar artículos de la categoría"
+      title={t('receipts:categoryItemsSheetTitle')}
+      backdropLabel={t('receipts:categoryItemsSheetBackdropA11y')}
     >
       <View style={styles.totalRow}>
-        <Text style={styles.totalLabel}>Total en este ticket</Text>
+        <Text style={styles.totalLabel}>{t('receipts:categoryItemsSheetTotal')}</Text>
         <Text style={styles.totalAmount}>
           {formatCurrency(total, currency)}
         </Text>
@@ -81,8 +85,8 @@ export function ReceiptCategoryItemsModal({
         <View style={styles.emptyWrap}>
           <EmptyState
             icon="doc.text"
-            title="Sin artículos en esta categoría."
-            body="Este ticket no tiene artículos detallados en esta categoría."
+            title={t('receipts:categoryItemsSheetEmptyTitle')}
+            body={t('receipts:categoryItemsSheetEmptyBody')}
           />
         </View>
       ) : (

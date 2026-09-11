@@ -1,4 +1,5 @@
 import { StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { Text } from '@/components';
 import { formatCurrency } from '@/lib/format';
@@ -32,12 +33,16 @@ export function TopItemsBreakdown({
   currency,
   title,
 }: TopItemsBreakdownProps) {
+  // PR 3 (`app-i18n`): the empty-state copy reads from the `analytics`
+  // namespace; the rest of the row data (name, amount, percent) is
+  // user-data or formatted via `formatCurrency`.
+  const { t } = useTranslation(['analytics']);
   return (
     <View style={styles.wrap}>
       <View style={styles.card}>
         {title ? <Text style={styles.title}>{title}</Text> : null}
         {rows.length === 0 ? (
-          <Text style={styles.empty}>Sin artículos este mes.</Text>
+          <Text style={styles.empty}>{t('analytics:topItemsEmpty')}</Text>
         ) : (
           rows.map((row) => {
             const pct = total > 0 ? (row.amount / total) * 100 : 0;

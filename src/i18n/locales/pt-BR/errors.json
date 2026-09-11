@@ -2,8 +2,12 @@
   "featureAccess": {
     "generic": "Não foi possível carregar seus dados. Tente novamente.",
     "createHouseholdFallback": "Não foi possível criar a família. Verifique sua conexão e tente novamente. Se persistir, saia da sua família atual e tente de novo.",
+    "createHouseholdProRequired": "Você precisa de uma assinatura PRO (ou de um trial ativo) para criar uma família.",
+    "alreadyInHousehold": "Você já faz parte de uma família. Saia dela antes de criar uma nova.",
     "tooManyInviteCodes": "Já existem 3 códigos ativos. Use o código atual ou aguarde 24h.",
     "inviteProRequired": "Você precisa do Pro para convidar. Ative o Pro no seu perfil.",
+    "inviteOwnerOnly": "Apenas o dono da família pode gerar códigos.",
+    "inviteHouseholdFull": "A família está completa (máximo 5 membros).",
     "joinAlreadyInHousehold": "Você já faz parte de uma família. Saia da sua família atual antes de entrar em outra.",
     "joinInvalidCode": "Este código é inválido ou expirou. Peça um novo código ao criador da família."
   },

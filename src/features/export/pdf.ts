@@ -11,7 +11,14 @@
  * is imported DYNAMICALLY inside the function so the pure module graph never
  * loads the native binding: plain-node harnesses can import `pdf.ts` (for
  * `buildExportHtml`) without a native module registry.
+ *
+ * PR 3 (`app-i18n`): the static HTML labels (page title, "generated on"
+ * prefix, table headers, empty-state message, summary footer) read from
+ * the `settings` + `analytics` namespaces via `i18next.t()`. The
+ * `settings:exportCurrencyCode` and date strings stay locale-agnostic.
  */
+import i18next from 'i18next';
+
 import {
   formatTwoDecimals,
   normalizeExportRows,
@@ -71,17 +78,57 @@ export function buildExportHtml(
 ): string {
   const lines = normalizeExportRows(rows);
   const totalSum = rows.reduce((sum, row) => sum + row.total, 0);
+  // The export PDF labels read from i18next — same module-level t()
+  // pattern the other non-React helpers use (AD-2 / REQ-10). When
+  // i18next is not yet initialized the helper falls through to the
+  // es-AR literal so a test-time render still produces a sane doc.
+  // PR 3 (`app-i18n`): the export PDF labels read from i18next — same
+  // module-level t() pattern the other non-React helpers use
+  // (AD-2 / REQ-10). The dynamic `key` is intentionally a runtime string
+  // (one per template slot); the `as never` cast bypasses the typed
+  // ResourceNamespaceMap check that only fires for literal keys.
+  const t = (key: string, fallback: string): string =>
+    i18next.isInitialized
+      ? (i18next.t as (k: string) => string)(key)
+      : fallback;
+
+  const emptyMsg = t(
+    'analytics:exportEmpty',
+    'No hay tickets para exportar.',
+  );
+  const title = t('settings:exportPdfTitle', 'Exportación de tickets');
+  const generatedPrefix = t(
+    'settings:exportGeneratedPrefix',
+    'Generado el',
+  );
+  const headerDate = t('analytics:exportHeaderDate', 'Fecha');
+  const headerStore = t('analytics:exportHeaderStore', 'Tienda');
+  const headerTotal = t('analytics:exportHeaderTotal', 'Total');
+  const headerPayment = t('analytics:exportHeaderPayment', 'Pago');
+  const headerCategory = t('analytics:exportHeaderCategory', 'Categoría');
+  const headerItem = t('analytics:exportHeaderItem', 'Artículo');
+  const headerQty = t('analytics:exportHeaderQty', 'Cant.');
+  const headerUnitPrice = t('analytics:exportHeaderUnitPrice', 'Precio unit.');
+  const headerLineTotal = t(
+    'analytics:exportHeaderLineTotal',
+    'Total línea',
+  );
+  const headerImpulse = t('analytics:exportHeaderImpulse', 'Impulsivo');
+  const summaryTotalLabel = t(
+    'analytics:exportSummaryTotalLabel',
+    'Total',
+  );
 
   const tableRows =
     lines.length === 0
-      ? `<tr><td colspan="10" class="empty">No hay tickets para exportar.</td></tr>`
+      ? `<tr><td colspan="10" class="empty">${emptyMsg}</td></tr>`
       : lines.map(lineToTableRow).join('\n');
 
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<title>Exportación de tickets</title>
+<title>${title}</title>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111827; margin: 24px; }
   h1 { font-size: 22px; margin: 0 0 4px; }
@@ -95,28 +142,28 @@ export function buildExportHtml(
 </style>
 </head>
 <body>
-<h1>Exportación de tickets</h1>
-<p class="meta">Generado el ${formatGeneratedDate(generatedAt)}</p>
+<h1>${title}</h1>
+<p class="meta">${generatedPrefix} ${formatGeneratedDate(generatedAt)}</p>
 <table>
 <thead>
 <tr>
-  <th>Fecha</th>
-  <th>Tienda</th>
-  <th class="num">Total</th>
-  <th>Pago</th>
-  <th>Categoría</th>
-  <th>Artículo</th>
-  <th class="num">Cant.</th>
-  <th class="num">Precio unit.</th>
-  <th class="num">Total línea</th>
-  <th>Impulsivo</th>
+  <th>${headerDate}</th>
+  <th>${headerStore}</th>
+  <th class="num">${headerTotal}</th>
+  <th>${headerPayment}</th>
+  <th>${headerCategory}</th>
+  <th>${headerItem}</th>
+  <th class="num">${headerQty}</th>
+  <th class="num">${headerUnitPrice}</th>
+  <th class="num">${headerLineTotal}</th>
+  <th>${headerImpulse}</th>
 </tr>
 </thead>
 <tbody>
 ${tableRows}
 </tbody>
 </table>
-<p class="summary">${rows.length} ${pluralize(rows.length, 'ticket', 'tickets')} · Total ${formatTwoDecimals(totalSum)}</p>
+<p class="summary">${rows.length} ${pluralize(rows.length, 'ticket', 'tickets')} · ${summaryTotalLabel} ${formatTwoDecimals(totalSum)}</p>
 </body>
 </html>`;
 }

@@ -31,13 +31,18 @@ export type ScreenTitleKey =
   | 'tabs:home'
   | 'tabs:analytics'
   | 'tabs:history'
-  | 'tabs:profile';
+  | 'tabs:profile'
+  | 'pro:chartsTitle'
+  | 'pro:paywallTitle'
+  | 'receipts:detailTitle';
 
 export function useScreenTitle(key: ScreenTitleKey): string {
   const { t } = useTranslation([
     'common',
     'tabs',
     'settings',
+    'pro',
+    'receipts',
   ]);
   return t(key);
 }

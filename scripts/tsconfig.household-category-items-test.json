@@ -18,7 +18,9 @@
       "react-native": ["./scripts/test-stubs/react-native.ts"],
       "react-native-safe-area-context": ["./scripts/test-stubs/safe-area-context.ts"],
       "expo-router": ["./scripts/test-stubs/expo-router.ts"],
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "react-i18next": ["./scripts/test-stubs/react-i18next.ts"],
+      "react-i18next/*": ["./scripts/test-stubs/react-i18next.ts"]
     },
     "rootDir": ".."
   },
@@ -48,6 +50,7 @@
     "../scripts/test-stubs/expo-router.ts",
     "../scripts/test-stubs/safe-area-context.ts",
     "../scripts/test-stubs/features-home.ts",
+    "../scripts/test-stubs/react-i18next.ts",
     "../scripts/render-drilldown-screen.ts"
   ]
 }
