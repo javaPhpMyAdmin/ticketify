@@ -72,5 +72,14 @@
   "householdCreateProRequired": "You need a PRO subscription (or an active trial) to create a household.",
   "householdAlreadyInHousehold": "You're already in a household. Leave your current one to create another.",
   "householdCreateFallback": "Couldn't create the household. Check your connection and try again. If it persists, leave your current household and try again.",
-  "householdCreateMemberName": "Member"
+  "householdCreateMemberName": "Member",
+  "exportPdfTitle": "Ticket export",
+  "exportGeneratedPrefix": "Generated on",
+  "usageKicker": "Free monthly scans",
+  "usageLimitKicker": "USAGE LIMIT",
+  "usageUnlimited": "Unlimited",
+  "usageScansUsed": "Scans used",
+  "usageResetPrefix": "Resets on",
+  "usageUpgradeLabel": "Upgrade to get unlimited scans.",
+  "usageCtaLabel": "Upgrade to Pro"
 }

@@ -122,6 +122,12 @@ function installRequireHook() {
       request = join(outDir, 'scripts', 'test-stubs', 'expo-router.js');
     } else if (request === 'react-native-safe-area-context') {
       request = join(outDir, 'scripts', 'test-stubs', 'safe-area-context.js');
+    } else if (request === 'react-i18next') {
+      // PR 3 (`app-i18n`): the screen now uses `useTranslation`. Without
+      // an i18next runtime in this harness, `t()` would return its key
+      // and the literal-string assertions would break. Route to the stub
+      // that maps the keys the screen uses back to their es-AR values.
+      request = join(outDir, 'scripts', 'test-stubs', 'react-i18next.js');
     } else if (request.startsWith('@/')) {
       request = join(outDir, 'src', request.slice(2));
     }
