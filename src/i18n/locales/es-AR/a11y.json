@@ -3,7 +3,6 @@
   "next": "Siguiente",
   "close": "Cerrar",
   "selectDate": "Cerrar fecha",
-  "pickDate": "Elegir fecha",
   "dayPrefix": "Día",
   "futureBlocked": "No podés elegir una fecha futura",
   "maxToday": "Máx. hoy",
@@ -11,8 +10,5 @@
   "categoryOfItem": "Categoría de",
   "renameItem": "Editar nombre del producto",
   "renameHint": "Toca para cambiar el nombre",
-  "openAnalytics": "Abrir Analytics",
-  "delete": "Eliminar",
-  "sinCategoria": "SIN CATEGORÍA",
-  "compraImpulsiva": "Compra impulsiva"
+  "openAnalytics": "Abrir Analytics"
 }
