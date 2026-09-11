@@ -1,13 +1,7 @@
 {
   "receiptManual": "Manual",
-  "receiptItemCount_one": "{{count}} artículo",
-  "receiptItemCount_other": "{{count}} artículos",
   "tapToViewHint": "Toca para ver el ticket",
   "tapToViewCaption": "Toca para ver",
-  "purchaseFromStore": "Compra del",
-  "purchaseFromStoreBy": "Compra del {{date}} por {{amount}}",
-  "ticketFromDate": "Ticket del {{date}}",
-  "ticketEmpty": "Sin tickets para mostrar",
   "detailTitle": "Detalle del ticket",
   "storeKicker": "TIENDA",
   "dateKicker": "FECHA",

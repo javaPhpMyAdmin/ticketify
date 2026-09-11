@@ -48,7 +48,7 @@
   "donutEmpty": "No spending this month",
   "donutPctSuffix": "% of the month",
   "percentOfSpending": "{{percent}} of spending",
-  "runRateA11y": "Spending pace for {{monthLabel}}: {{mtd}} spent this month, {{deltaPrefix}}{{deltaPct}}% vs {{source}}; at the current pace you'll run out at ~{{projection}}",
+  "runRateA11y": "Spending pace for {{monthLabel}}: {{mtd}} spent this month, {{deltaPrefix}}{{deltaPct}}% vs {{source}}; at the current pace the month closes at ~{{projection}}",
   "runRateSourceMom": "last month",
   "runRateSourceFallback": "your average",
   "dayDetailTitle": "Day details",
