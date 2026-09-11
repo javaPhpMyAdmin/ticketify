@@ -2,6 +2,8 @@
   "receiptManual": "Manual",
   "receiptItemCount_one": "{{count}} item",
   "receiptItemCount_other": "{{count}} itens",
+  "tapToViewHint": "Toque para ver o ticket",
+  "tapToViewCaption": "Toque para ver",
   "purchaseFromStore": "Compra de",
   "purchaseFromStoreBy": "Compra de {{date}} por {{amount}}",
   "ticketFromDate": "Ticket de {{date}}",
