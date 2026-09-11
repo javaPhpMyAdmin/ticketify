@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import { StyleSheet } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { Card, Icon, Pressable, Text, View, type IconName } from '@/components';
 import { monthKeyToLabel } from '@/features/home/hooks/useHomeFeed';
@@ -43,6 +44,9 @@ export interface RunRateCardProps {
  * pure function already normalizes `-0`, AD-7).
  */
 export function RunRateCard({ result, currency, monthKey }: RunRateCardProps) {
+  // PR 3 (`app-i18n` cleanup, W3): the tap-through hint is localized via
+  // the `a11y` namespace instead of a hardcoded Spanish string.
+  const { t } = useTranslation('a11y');
   const up = result.deltaPct >= 0;
   const trendIcon: IconName = up ? 'arrow.up.right' : 'arrow.down.right';
   const deltaPrefix = result.deltaPct > 0 ? '+' : '';
@@ -56,7 +60,7 @@ export function RunRateCard({ result, currency, monthKey }: RunRateCardProps) {
       onPress={() => router.push('/analytics')}
       accessibilityRole="button"
       accessibilityLabel={`Ritmo de gasto de ${monthLabel}: ${mtd} este mes, ${deltaPrefix}${result.deltaPct}% vs ${sourceCopy}; al ritmo actual cerras en ~${projection}`}
-      accessibilityHint="Abrir Analytics"
+      accessibilityHint={t('openAnalytics')}
     >
       <Card>
         <View style={[styles.content, styles.contentWithBadge]}>
