@@ -16,6 +16,7 @@
  * can't tell whether the screen is broken or genuinely has no spend.
  */
 import { Pressable, StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { Text } from '@/components';
 import { formatCurrency } from '@/lib/format';
@@ -51,10 +52,14 @@ export function StoreBars({
   currency = 'UYU',
   emptyHeight = 120,
 }: StoreBarsProps) {
+  // PR 3 (`app-i18n`): the empty-state copy and the per-row a11y label
+  // (which interpolates the localized amount) read from the `analytics`
+  // namespace + the shared `formatCurrency` helper.
+  const { t } = useTranslation(['analytics']);
   if (data.length === 0) {
     return (
       <View style={[styles.empty, { minHeight: emptyHeight }]}>
-        <Text style={styles.emptyText}>Sin compras en este mes</Text>
+        <Text style={styles.emptyText}>{t('analytics:storeBarsEmpty')}</Text>
       </View>
     );
   }
@@ -73,7 +78,10 @@ export function StoreBars({
             key={store.storeId}
             onPress={() => onRowPress?.(store)}
             accessibilityRole="button"
-            accessibilityLabel={`${store.storeName}, ${formatCurrency(store.total, currency)}`}
+            accessibilityLabel={t('analytics:storeBarRowA11y', {
+              storeName: store.storeName,
+              amount: formatCurrency(store.total, currency),
+            })}
             style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
           >
             <View style={styles.rowHeader}>

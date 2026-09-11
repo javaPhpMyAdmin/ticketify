@@ -6,6 +6,7 @@
 import { Pressable, Share, StyleSheet, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { BottomSheet, Icon, Spinner, Text } from '@/components';
 import { useSessionUser } from '@/features/auth';
@@ -35,6 +36,10 @@ const DISMISS_ANIMATION_MS = 400;
  * share buttons, and displays the expiry window ("Vence en 72h").
  */
 export function InviteCodeModal({ visible, onClose }: InviteCodeModalProps) {
+  // PR 3 (`app-i18n`): title, loading text, expiry label, button labels,
+  // and the share/copy dialog copy read from the `household` + `common`
+  // namespaces. The 6-char code itself is user-data.
+  const { t } = useTranslation(['household', 'common']);
   const { userId } = useSessionUser();
   const householdId = useHouseholdStore((s) => s.household?.id);
   const [loading, setLoading] = useState(false);
@@ -68,7 +73,7 @@ export function InviteCodeModal({ visible, onClose }: InviteCodeModalProps) {
           setError(
             result.status === 'error'
               ? result.message
-              : 'No se pudo generar el código.',
+              : t('household:inviteGenerateFallback'),
           );
         }
       } else if (active.status === 'error') {
@@ -84,7 +89,7 @@ export function InviteCodeModal({ visible, onClose }: InviteCodeModalProps) {
     return () => {
       cancelled = true;
     };
-  }, [visible, householdId, userId]);
+  }, [visible, householdId, userId, t]);
 
   const handleClose = () => {
     setCode(null);
@@ -104,9 +109,9 @@ export function InviteCodeModal({ visible, onClose }: InviteCodeModalProps) {
     handleClose();
     setTimeout(() => {
       useDialogStore.getState().show({
-        title: 'Copiado',
-        message: 'Compartí el código con quien quieras invitar.',
-        primaryLabel: 'Aceptar',
+        title: t('household:inviteCopiedTitle'),
+        message: t('household:inviteCopiedBody'),
+        primaryLabel: t('common:ok'),
       });
     }, DISMISS_ANIMATION_MS);
   };
@@ -114,7 +119,7 @@ export function InviteCodeModal({ visible, onClose }: InviteCodeModalProps) {
   const shareCode = async () => {
     if (!code) return;
     await Share.share({
-      message: `Unite a mi hogar en Ticketify con este código: ${code}`,
+      message: t('household:inviteShareMessage', { code }),
     });
   };
 
@@ -122,21 +127,21 @@ export function InviteCodeModal({ visible, onClose }: InviteCodeModalProps) {
     <BottomSheet
       visible={visible}
       onClose={handleClose}
-      title="Invitar a mi hogar"
+      title={t('household:householdInviteModalTitle')}
       headerCentered
     >
       <View style={styles.body}>
         {loading ? (
           <View style={styles.loadingWrap}>
             <Spinner size="sm" color={colors.primary} />
-            <Text style={styles.loadingText}>Generando código...</Text>
+            <Text style={styles.loadingText}>{t('household:inviteGenerating')}</Text>
           </View>
         ) : error ? (
           <Text style={styles.error}>{error}</Text>
         ) : code ? (
           <>
             <Text style={styles.code}>{code}</Text>
-            <Text style={styles.expiry}>Vence en 72h</Text>
+            <Text style={styles.expiry}>{t('household:inviteExpiresIn')}</Text>
 
             <View style={styles.actions}>
               <Pressable
@@ -146,14 +151,14 @@ export function InviteCodeModal({ visible, onClose }: InviteCodeModalProps) {
                   pressed && styles.primaryButtonPressed,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel="Copiar código"
+                accessibilityLabel={t('household:inviteCopy')}
               >
                 <Icon
                   name="doc.on.doc"
                   size={18}
                   color={colors.onPrimary}
                 />
-                <Text style={styles.primaryButtonText}>Copiar</Text>
+                <Text style={styles.primaryButtonText}>{t('household:inviteCopy')}</Text>
               </Pressable>
 
               <Pressable
@@ -163,14 +168,14 @@ export function InviteCodeModal({ visible, onClose }: InviteCodeModalProps) {
                   pressed && styles.secondaryButtonPressed,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel="Compartir código"
+                accessibilityLabel={t('household:inviteShare')}
               >
                 <Icon
                   name="square.and.arrow.up"
                   size={18}
                   color={colors.textPrimary}
                 />
-                <Text style={styles.secondaryButtonText}>Compartir</Text>
+                <Text style={styles.secondaryButtonText}>{t('household:inviteShare')}</Text>
               </Pressable>
             </View>
           </>

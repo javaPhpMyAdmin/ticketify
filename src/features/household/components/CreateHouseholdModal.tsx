@@ -9,6 +9,7 @@
  */
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { BottomSheet, Spinner, Text } from '@/components';
 import { useSessionUser } from '@/features/auth';
@@ -35,6 +36,10 @@ export function CreateHouseholdModal({
   visible,
   onClose,
 }: CreateHouseholdModalProps) {
+  // PR 3 (`app-i18n`): title, helper, placeholder, a11y, button label,
+  // and the success toast copy read from the `household` + `settings`
+  // + `common` namespaces.
+  const { t } = useTranslation(['household', 'settings', 'common']);
   const { userId } = useSessionUser();
   const setHouseholdSharing = useSettingsStore((s) => s.setHouseholdSharing);
   const [name, setName] = useState('');
@@ -45,7 +50,7 @@ export function CreateHouseholdModal({
     if (loading || !userId) return;
     const trimmed = name.trim();
     if (!trimmed) {
-      setError('Elegí un nombre para tu hogar.');
+      setError(t('household:householdCreateChooseName'));
       return;
     }
     setLoading(true);
@@ -71,9 +76,9 @@ export function CreateHouseholdModal({
         // overlay View that paints below any open native Modal window) is
         // visible over the destination screen.
         useDialogStore.getState().show({
-          title: '¡Listo!',
-          message: `Creaste el hogar "${trimmed}".`,
-          primaryLabel: 'Aceptar',
+          title: t('settings:okShort'),
+          message: t('household:householdCreatedSuccess', { name: trimmed }),
+          primaryLabel: t('common:ok'),
         });
       }, DISMISS_ANIMATION_MS);
     } else {
@@ -97,14 +102,14 @@ export function CreateHouseholdModal({
     <BottomSheet
       visible={visible}
       onClose={handleClose}
-      title="Crear hogar"
+      title={t('household:householdCreate')}
       closeIcon="text"
       keyboardMode="avoidingView"
       headerCentered
     >
       <View style={styles.body}>
         <Text style={styles.helper}>
-          Elegí un nombre para identificar a tu hogar (ej: &quot;Familia Pérez&quot;).
+          {t('household:householdCreateHelper')}
         </Text>
 
         <TextInput
@@ -113,13 +118,13 @@ export function CreateHouseholdModal({
             setName(v);
             setError(null);
           }}
-          placeholder="Mi hogar"
+          placeholder={t('settings:householdNamePlaceholder')}
           placeholderTextColor={colors.textSecondary}
           maxLength={30}
           autoCorrect={false}
           editable={!loading}
           style={styles.input}
-          accessibilityLabel="Nombre del hogar"
+          accessibilityLabel={t('settings:householdNameLabel')}
           returnKeyType="done"
           blurOnSubmit
         />
@@ -135,12 +140,12 @@ export function CreateHouseholdModal({
             pressed && styles.createButtonPressed,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Crear hogar"
+          accessibilityLabel={t('household:householdCreateA11y')}
         >
           {loading ? (
             <Spinner size="sm" color={colors.onPrimary} />
           ) : (
-            <Text style={styles.createButtonText}>Crear</Text>
+            <Text style={styles.createButtonText}>{t('household:householdCreateAction')}</Text>
           )}
         </Pressable>
       </View>

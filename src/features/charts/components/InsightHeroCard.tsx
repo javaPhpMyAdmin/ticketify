@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { Bar, CartesianChart } from 'victory-native';
 
 import { Icon, Text } from '@/components';
@@ -85,6 +86,10 @@ export function InsightHeroCard({
   chartHeight = 120,
   onDayPress,
 }: InsightHeroCardProps) {
+  // PR 3 (`app-i18n`): the kicker and the empty-state copy read from
+  // the `analytics` namespace; the rest of the card (month label, totals,
+  // weekday initials) is user-data or already localized.
+  const { t } = useTranslation(['analytics']);
   const hasChange = deltaPct !== null;
   const isUp = hasChange && deltaPct >= 0;
 
@@ -157,7 +162,7 @@ export function InsightHeroCard({
     <View style={styles.card}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.kicker}>Gastado este mes</Text>
+          <Text style={styles.kicker}>{t('analytics:heroKicker')}</Text>
           <Text style={styles.month}>{monthLabel}</Text>
           <Text style={styles.total}>{formatCurrency(total, currency)}</Text>
         </View>
@@ -296,7 +301,7 @@ export function InsightHeroCard({
         </ScrollView>
       ) : (
         <View style={[styles.emptyChart, { height: chartHeight }]}>
-          <Text style={styles.emptyText}>Sin gastos este mes</Text>
+          <Text style={styles.emptyText}>{t('analytics:heroEmpty')}</Text>
         </View>
       )}
     </View>

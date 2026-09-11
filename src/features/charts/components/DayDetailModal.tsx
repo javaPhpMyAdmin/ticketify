@@ -1,4 +1,5 @@
 import { FlatList, StyleSheet, View, type ListRenderItem } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { BottomSheet, Divider, EmptyState, Text } from '@/components';
 import { formatCurrency, formatCurrencyWhole } from '@/lib/format';
@@ -48,6 +49,12 @@ export function DayDetailModal({
   currency = 'UYU',
   onClose,
 }: DayDetailModalProps) {
+  // PR 3 (`app-i18n`): sheet title, backdrop a11y, total label, and
+  // empty-state copy read from the `analytics` namespace; the synthetic
+  // "Ticket" fallback row stays in es-AR for now (it's a generic label
+  // for the "non-zero total but no items" edge case — covered by the
+  // analytics:dayDetailFallbackItem key below for future translation).
+  const { t } = useTranslation(['analytics']);
   const itemsTotal = items.reduce((sum, item) => sum + item.amount, 0);
   const displayedTotal = total ?? itemsTotal;
 
@@ -60,7 +67,7 @@ export function DayDetailModal({
     items.length > 0
       ? items
       : displayedTotal > 0
-        ? [{ name: 'Ticket', quantity: 1, amount: displayedTotal }]
+        ? [{ name: t('analytics:dayDetailFallbackItem'), quantity: 1, amount: displayedTotal }]
         : [];
 
   const renderItem: ListRenderItem<DayItemGroup> = ({ item, index }) => (
@@ -90,11 +97,11 @@ export function DayDetailModal({
       visible={visible}
       onClose={onClose}
       kicker={dayLabel}
-      title="Detalle del día"
-      backdropLabel="Cerrar detalle del día"
+      title={t('analytics:dayDetailTitle')}
+      backdropLabel={t('analytics:dayDetailBackdropA11y')}
     >
       <View style={styles.totalRow}>
-        <Text style={styles.totalLabel}>Total del día</Text>
+        <Text style={styles.totalLabel}>{t('analytics:dayDetailTotalKicker')}</Text>
         <Text style={styles.totalAmount}>
           {/* Whole currency to match the bar the user tapped — the
               chart shows "$812", so the modal must not add cents. */}
@@ -106,8 +113,8 @@ export function DayDetailModal({
         <View style={styles.emptyWrap}>
           <EmptyState
             icon="doc.text"
-            title="Sin gastos este día."
-            body="Escaneá un ticket con gastos este día para ver el detalle acá."
+            title={t('analytics:dayDetailEmptyTitle')}
+            body={t('analytics:dayDetailEmptyBody')}
           />
         </View>
       ) : (
