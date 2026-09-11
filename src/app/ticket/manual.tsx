@@ -35,8 +35,7 @@ import {
   cardTypeOptions,
   paymentMethods,
 } from '@/features/tickets';
-import { formatDateES } from '@/components/molecules/DatePickerField/calendar';
-import { formatCurrency, todayLocalISO } from '@/lib/format';
+import { formatCurrency, formatDate, todayLocalISO } from '@/lib/format';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { useToastStore } from '@/stores/use-toast-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -219,7 +218,11 @@ export default function ManualEntryScreen() {
                 >
                   <Icon name="calendar" size={18} color={colors.textPrimary} />
                   <Text style={styles.dateValue}>
-                    {formatDateES(draft?.purchase_date ?? null, todayLocalISO())}
+                    {draft?.purchase_date
+                      ? formatDate('es-AR', draft.purchase_date, {
+                          todayISO: todayLocalISO(),
+                        })
+                      : 'Elegir fecha'}
                   </Text>
                   <Icon
                     name="chevron.right"
