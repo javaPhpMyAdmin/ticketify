@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Image, StyleSheet } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   Icon,
@@ -10,7 +11,7 @@ import {
   type IconName,
 } from '@/components/atoms';
 import { Chip } from '@/components/molecules/Chip';
-import { formatCurrency, formatShortDate } from '@/lib/format';
+import { formatCurrency, formatDate } from '@/lib/format';
 import {
   getSignedReceiptPhotoUrl,
   resolveReceiptPhotoPath,
@@ -49,6 +50,12 @@ export function ReceiptRow({
   imageUrl,
   isManual = false,
 }: ReceiptRowProps) {
+  // PR 3 (`app-i18n`): the row reads its copy from the `receipts`
+  // namespace and formats dates through the canonical, locale-aware
+  // `formatDate(locale, iso)` — the active UI language wins for the
+  // visible date and the accessibility label/hint.
+  const { t, i18n } = useTranslation('receipts');
+  const locale = i18n.language as 'en' | 'es-AR' | 'pt-BR';
   // The stored photo reference may be a ready http(s) URL (seed/demo rows)
   // or an object path in the private `receipts` bucket — resolve the path
   // to a signed URL (expires ~1h) before rendering. The effect keys on the
@@ -133,7 +140,7 @@ export function ReceiptRow({
             <Text style={styles.name} numberOfLines={1}>
               {name}
             </Text>
-            {isManual ? <Chip label="Manual" /> : null}
+            {isManual ? <Chip label={t('receiptManual')} /> : null}
           </View>
         </View>
         <View
@@ -151,13 +158,13 @@ export function ReceiptRow({
               contract says the row becomes a button only when `onPress` is
               set. */}
           <Text style={styles.date} numberOfLines={1}>
-            {formatShortDate(date)}
+            {formatDate(locale, date)}
           </Text>
           <Text style={styles.amount}>{formatCurrency(amount, currency)}</Text>
         </View>
         {onPress ? (
           <Text style={styles.caption} numberOfLines={1}>
-            Toca para ver
+            {t('tapToViewCaption')}
           </Text>
         ) : null}
       </View>
@@ -165,18 +172,21 @@ export function ReceiptRow({
   );
 
   // The label intentionally excludes the visible caption so VoiceOver
-  // doesn't double-announce "Toca para ver el ticket" (label + hint).
-  // A manual ticket announces its origin FIRST so the breakdown never
-  // depends on spotting the visual chip.
+  // doesn't double-announce the tap hint (label + hint). A manual ticket
+  // announces its origin FIRST so the breakdown never depends on spotting
+  // the visual chip.
   if (onPress) {
     return (
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityHint="Toca para ver el ticket"
-        accessibilityLabel={`${isManual ? 'Manual, ' : ''}${name}, ${formatShortDate(
-          date,
-        )}, ${formatCurrency(amount, currency)}`}
+        accessibilityHint={t('tapToViewHint')}
+        accessibilityLabel={`${
+          isManual ? `${t('receiptManual')}, ` : ''
+        }${name}, ${formatDate(locale, date)}, ${formatCurrency(
+          amount,
+          currency,
+        )}`}
         style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       >
         {row}
