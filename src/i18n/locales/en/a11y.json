@@ -3,7 +3,6 @@
   "next": "Next",
   "close": "Close",
   "selectDate": "Close date",
-  "pickDate": "Pick date",
   "dayPrefix": "Day",
   "futureBlocked": "You can't pick a future date",
   "maxToday": "Max. today",
@@ -11,8 +10,5 @@
   "categoryOfItem": "Category of",
   "renameItem": "Edit product name",
   "renameHint": "Tap to change the name",
-  "openAnalytics": "Open Analytics",
-  "delete": "Delete",
-  "sinCategoria": "NO CATEGORY",
-  "compraImpulsiva": "Impulse purchase"
+  "openAnalytics": "Open Analytics"
 }
