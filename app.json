@@ -10,10 +10,10 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ticketify.app"
+      "bundleIdentifier": "com.tickettify.app"
     },
     "android": {
-      "package": "com.ticketify.app",
+      "package": "com.tickettify.app",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
