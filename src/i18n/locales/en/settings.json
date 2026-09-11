@@ -15,8 +15,6 @@
   "free": "Free",
   "seePlans": "See plans",
   "startFreeTrial": "Start free trial",
-  "daysRemaining_one": "1 day left",
-  "daysRemaining_other": "{{count}} days left",
   "editName": "Edit name",
   "fullName": "Full name",
   "fullNamePlaceholder": "Your name",
