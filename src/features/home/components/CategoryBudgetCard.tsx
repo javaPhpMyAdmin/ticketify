@@ -1,4 +1,5 @@
 import { StyleSheet } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   Icon,
@@ -23,7 +24,7 @@ export interface CategoryBudgetCardProps {
   currency?: string;
   /**
    * Number of items bought in the category during the shown month. When
-   * present, renders a small "{n} artículos" line under the percent.
+   * present, renders a localized item-count line under the percent.
    */
   itemCount?: number;
   /** Optional per-category budget limit; when set, renders a progress bar. */
@@ -51,6 +52,9 @@ export function CategoryBudgetCard({
   limit,
   onPress,
 }: CategoryBudgetCardProps) {
+  // The "of spending" suffix after the percent token and the item-count
+  // line are localized via the `analytics` namespace.
+  const { t } = useTranslation('analytics');
   const color = getCategoryColor(categoryKey);
 
   // Shared bar color (spec NFR-4: identical thresholds/colors in every
@@ -90,11 +94,11 @@ export function CategoryBudgetCard({
         </Text>
         <View style={styles.metaRow}>
           <Text style={[styles.percent, { color: color.foreground }]}>
-            {formatPercentLabel(percent)} del gasto
+            {t('percentOfSpending', { percent: formatPercentLabel(percent) })}
           </Text>
           {itemCount !== undefined && itemCount > 0 ? (
             <Text style={[styles.itemCount, { color: color.foreground }]}>
-              {itemCount === 1 ? '1 artículo' : `${itemCount} artículos`}
+              {t('categoryItemCount', { count: itemCount })}
             </Text>
           ) : null}
         </View>

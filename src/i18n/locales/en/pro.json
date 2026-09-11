@@ -30,5 +30,9 @@
   "topCategoryDash": "—",
   "configureBudgetsA11y": "Set category budgets",
   "editBudgets": "Edit",
-  "configureBudgets": "Set up"
+  "configureBudgets": "Set up",
+  "trialActiveDays_one": "Your PRO trial is active — {{count}} day left",
+  "trialActiveDays_other": "Your PRO trial is active — {{count}} days left",
+  "trialBannerDays_one": "PRO trial: {{count}} day left",
+  "trialBannerDays_other": "PRO trial: {{count}} days left"
 }

@@ -1,4 +1,5 @@
 import { StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { Icon, Pressable, ProgressBar, Text, type IconName } from '@/components';
 import { formatCurrency, formatPercentLabel } from '@/lib/format';
@@ -51,6 +52,9 @@ export function CategoryBudgetRow({
   currency = 'UYU',
   onPress,
 }: CategoryBudgetRowProps) {
+  // The "of spending" suffix after the percent token is localized via
+  // the `analytics` namespace.
+  const { t } = useTranslation('analytics');
   const color = getCategoryColor(categoryKey);
 
   const rowContent = (
@@ -67,7 +71,9 @@ export function CategoryBudgetRow({
         <Text style={styles.name} numberOfLines={1}>
           {name}
         </Text>
-        <Text style={styles.percent}>{formatPercentLabel(percent)} del gasto</Text>
+        <Text style={styles.percent}>
+          {t('percentOfSpending', { percent: formatPercentLabel(percent) })}
+        </Text>
         {/* Gate: only a positive limit renders the budget line (Correction 3).
             A 0/negative limit is a delete-on-zero artifact — it must never
             surface a limit, a ratio, or a progress bar. */}

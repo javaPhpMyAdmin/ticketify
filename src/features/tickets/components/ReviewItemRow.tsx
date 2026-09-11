@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Switch } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { Chip, Icon, Text, View } from '@/components';
 import { getExpenseCategory } from '@/features/home/categories';
@@ -43,6 +44,9 @@ export function ReviewItemRow({
   onToggleImpulse,
   onEditName,
 }: ReviewItemRowProps) {
+  // The rename affordance reads its a11y label + hint from the `a11y`
+  // namespace (the keys shipped with the change but were never wired).
+  const { t } = useTranslation('a11y');
   const categoryId = item.category_id ?? item.ai_suggested_category_id;
   const category = categoryId ? getExpenseCategory(categoryId) : null;
 
@@ -58,8 +62,8 @@ export function ReviewItemRow({
                 pressed && styles.namePressed,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Editar nombre del producto"
-              accessibilityHint="Toca para cambiar el nombre"
+              accessibilityLabel={t('renameItem')}
+              accessibilityHint={t('renameHint')}
             >
               <Text style={styles.name} numberOfLines={1}>
                 {item.name}

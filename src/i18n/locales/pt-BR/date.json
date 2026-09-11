@@ -62,11 +62,5 @@
     "4": "Quinta",
     "5": "Sexta",
     "6": "Sábado"
-  },
-  "time": {
-    "meridiem": {
-      "am": "da manhã",
-      "pm": "da tarde"
-    }
   }
 }

@@ -86,8 +86,7 @@ declare module 'i18next' {
      * sites can read `t('date.monthFull.0')` without dynamic-key
      * interpolation (which i18next-icu would handle but is explicitly
      * out of scope). Weekday headers use the same shape with
-     * `weekdayMonFirst` / `weekdaySunFirst`. The meridiem key carries the
-     * 12-hour clock labels for the es-AR style (a.m. / p.m.).
+     * `weekdayMonFirst` / `weekdaySunFirst`.
      */
     date: typeof esARDate & Partial<typeof enDate>;
     /**

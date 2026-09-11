@@ -15,8 +15,6 @@
   "free": "Gratis",
   "seePlans": "Ver planes",
   "startFreeTrial": "Empezar prueba gratis",
-  "daysRemaining_one": "Queda 1 día",
-  "daysRemaining_other": "Quedan {{count}} días",
   "editName": "Editar nombre",
   "fullName": "Nombre completo",
   "fullNamePlaceholder": "Tu nombre",
