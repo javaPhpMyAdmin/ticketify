@@ -7,23 +7,24 @@
  * `purchases.purchase_date` format the RPC stores (`p_purchase_date`); no
  * time component exists for manual entries (REQ-004).
  *
- * PR 2 (`app-i18n`): `formatDateES` is now a one-line wrapper that delegates
- * to the canonical `formatDate('es-AR', iso, { todayISO })` in
- * `src/lib/format.ts`. The signature `(iso, todayISO)` is preserved so every
- * existing call site keeps working unchanged — the public API here is still
- * the ES-AR-pinned helper the DatePickerField trigger uses.
+ * PR 2 (`app-i18n`): `formatDateES` was a one-line wrapper around the
+ * canonical `formatDate('es-AR', iso, { todayISO })` in
+ * `src/lib/format.ts`. PR 3 deletes the wrapper: every call site reads
+ * `formatDate('es-AR', iso, { todayISO })` directly. The "Elegir fecha"
+ * placeholder for empty / malformed inputs is a UI affordance that lives
+ * in the screen (`src/app/ticket/manual.tsx`) where it belongs.
  *
- * PR 2 WU-2.8b: the month/weekday arrays and `formatDateES`/`fullMonthES`
- * are kept as module-level data (test harness still asserts the calendar
- * grid layout) but the DatePickerField component reads the localized
- * month/weekday names via `i18next.t()` at render time. Future PR can
- * delete these constants — they're kept for backwards compatibility with
- * the test harness and the calendar grid header.
+ * PR 3 (`app-i18n`): month and weekday names now read from the locale-
+ * aware `date` namespace via `i18next.t()` (single source of truth per
+ * AD-12). The static `MONTHS_*_ES_AR` / `WEEKDAY_*` arrays are GONE —
+ * any other reader (calendar component, manual-form harness) reads
+ * through `i18next.t('date.monthFull.<n>')`. `fullMonthES` stays as a
+ * thin wrapper so the existing test harness (`scripts/test-manual-screen.mjs`)
+ * keeps a stable surface; new code should prefer the typed
+ * `fullMonthForLocale` helper in `src/lib/format.ts`.
  */
 
 import i18next from 'i18next';
-
-import { formatDate } from '@/lib/format';
 
 // ---------------------------------------------------------------------------
 // Calendar math (local calendar time)
@@ -110,65 +111,50 @@ export function isFutureSelection(
 // es-AR display formatting
 // ---------------------------------------------------------------------------
 
-const MONTHS_FULL_ES_AR = [
-  'enero',
-  'febrero',
-  'marzo',
-  'abril',
-  'mayo',
-  'junio',
-  'julio',
-  'agosto',
-  'septiembre',
-  'octubre',
-  'noviembre',
-  'diciembre',
-];
-
-const MONTHS_ABBR_ES_AR = [
-  'ene',
-  'feb',
-  'mar',
-  'abr',
-  'may',
-  'jun',
-  'jul',
-  'ago',
-  'sep',
-  'oct',
-  'nov',
-  'dic',
-];
-
-const WEEKDAY_SUNDAY_FIRST = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
-const WEEKDAY_MONDAY_FIRST = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-
-/** Weekday header labels. `mondayFirst` mirrors the grid alignment. */
+/**
+ * Weekday header labels. Reads the locale-aware `date` namespace via
+ * `i18next.t()` — the single source of truth (per AD-12) shared with
+ * the calendar grid and any future widget. Falls back to the empty
+ * string per index when i18next is not yet initialized (mirrors the
+ * `formatDate` fallback contract for early-render pre-i18n states).
+ *
+ * `mondayFirst` picks the `weekdayMonFirst` (es-AR convention) or
+ * `weekdaySunFirst` cluster — the header matches the grid alignment.
+ */
 export function weekdayLabels(mondayFirst: boolean): string[] {
-  return mondayFirst ? WEEKDAY_MONDAY_FIRST : WEEKDAY_SUNDAY_FIRST;
+  if (!i18next.isInitialized) return ['', '', '', '', '', '', ''];
+  const key = mondayFirst ? 'date:weekdayMonFirst' : 'date:weekdaySunFirst';
+  const labels: Record<string, string> = i18next.t(key, { returnObjects: true }) as Record<string, string>;
+  // Index keys are JSON-stringified ints ("0".."6"). Map into a dense
+  // string[] so the calendar header renders in order.
+  return [0, 1, 2, 3, 4, 5, 6].map((i) => labels[String(i)] ?? '');
 }
 
 /**
  * Long es-AR date for the trigger/header, e.g. `07 set 2026` — or a friendlier
  * `Hoy` / `Ayer` when the value rounds to the near present.
  *
- * PR 2 wrapper pass: delegates to the canonical `formatDate(locale, iso,
- * opts)` helper. The signature `(iso, todayISO)` is preserved on purpose so
- * the one existing call site (`src/app/ticket/manual.tsx:220`) keeps
- * working without churn — WU-2.1 is a wrapper pass, not a signature change.
- * The empty / invalid-input fallback ("Elegir fecha") stays local because
- * the canonical helper has no UI affordance for "no date picked yet" and
- * a malformed input (e.g. 'garbage') historically collapsed to the same
- * placeholder — the manual-receipt harness asserts on that contract.
+ * PR 3: REMOVED. The PR 2 wrapper around `formatDate('es-AR', ...)` is
+ * gone — call sites now read `formatDate('es-AR', iso, { todayISO })`
+ * directly from `@/lib/format`. The "Elegir fecha" UI affordance for an
+ * empty / malformed input lives in `src/app/ticket/manual.tsx` where it
+ * belongs.
  */
-export function formatDateES(iso: string | null, todayISO: string): string {
-  if (!iso) return 'Elegir fecha';
-  const parsed = partsFromISO(iso);
-  if (!parsed) return 'Elegir fecha';
-  return formatDate('es-AR', iso, { todayISO });
-}
 
-/** Full month name used in the picker header, e.g. `septiembre`. */
+/**
+ * Full month name used in the picker header, e.g. `septiembre`.
+ *
+ * PR 3 (`app-i18n`): reads from the locale-aware `date` namespace via
+ * `i18next.t()` — same source the calendar grid header uses. Kept here
+ * as a thin wrapper because the test harness
+ * (`scripts/test-manual-screen.mjs`) imports it; new code should prefer
+ * the typed `fullMonthForLocale` in `src/lib/format.ts`.
+ *
+ * `month` is 0-based (matching `Date#getMonth()`); the underlying
+ * `date.monthFull.<n>` keys use JSON-stringified ints, so the lookup
+ * resolves the right leaf.
+ */
 export function fullMonthES(month: number): string {
-  return MONTHS_FULL_ES_AR[month] ?? '';
+  if (!i18next.isInitialized) return '';
+  return i18next.t(`date:monthFull.${month}` as 'date:monthFull.0');
 }

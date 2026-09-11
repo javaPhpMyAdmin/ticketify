@@ -1,0 +1,72 @@
+{
+  "monthFull": {
+    "0": "Janeiro",
+    "1": "Fevereiro",
+    "2": "Março",
+    "3": "Abril",
+    "4": "Maio",
+    "5": "Junho",
+    "6": "Julho",
+    "7": "Agosto",
+    "8": "Setembro",
+    "9": "Outubro",
+    "10": "Novembro",
+    "11": "Dezembro"
+  },
+  "monthAbbr": {
+    "0": "jan",
+    "1": "fev",
+    "2": "mar",
+    "3": "abr",
+    "4": "mai",
+    "5": "jun",
+    "6": "jul",
+    "7": "ago",
+    "8": "set",
+    "9": "out",
+    "10": "nov",
+    "11": "dez"
+  },
+  "weekdayMonFirst": {
+    "0": "S",
+    "1": "T",
+    "2": "Q",
+    "3": "Q",
+    "4": "S",
+    "5": "S",
+    "6": "D"
+  },
+  "weekdaySunFirst": {
+    "0": "D",
+    "1": "S",
+    "2": "T",
+    "3": "Q",
+    "4": "Q",
+    "5": "S",
+    "6": "S"
+  },
+  "weekdayMonFirstFull": {
+    "0": "Segunda",
+    "1": "Terça",
+    "2": "Quarta",
+    "3": "Quinta",
+    "4": "Sexta",
+    "5": "Sábado",
+    "6": "Domingo"
+  },
+  "weekdaySunFirstFull": {
+    "0": "Domingo",
+    "1": "Segunda",
+    "2": "Terça",
+    "3": "Quarta",
+    "4": "Quinta",
+    "5": "Sexta",
+    "6": "Sábado"
+  },
+  "time": {
+    "meridiem": {
+      "am": "da manhã",
+      "pm": "da tarde"
+    }
+  }
+}

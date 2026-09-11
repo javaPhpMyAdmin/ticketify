@@ -37,6 +37,8 @@ import enAnalytics from './locales/en/analytics.json';
 import enErrors from './locales/en/errors.json';
 import enA11y from './locales/en/a11y.json';
 import enCurrency from './locales/en/currency.json';
+import enDate from './locales/en/date.json';
+import enPro from './locales/en/pro.json';
 import esARCommon from './locales/es-AR/common.json';
 import esARTabs from './locales/es-AR/tabs.json';
 import esARSettingsLanguage from './locales/es-AR/settingsLanguage.json';
@@ -49,6 +51,8 @@ import esARAnalytics from './locales/es-AR/analytics.json';
 import esARErrors from './locales/es-AR/errors.json';
 import esARA11y from './locales/es-AR/a11y.json';
 import esARCurrency from './locales/es-AR/currency.json';
+import esARDate from './locales/es-AR/date.json';
+import esARPro from './locales/es-AR/pro.json';
 import ptBRCommon from './locales/pt-BR/common.json';
 import ptBRTabs from './locales/pt-BR/tabs.json';
 import ptBRSettingsLanguage from './locales/pt-BR/settingsLanguage.json';
@@ -61,6 +65,8 @@ import ptBRAnalytics from './locales/pt-BR/analytics.json';
 import ptBRErrors from './locales/pt-BR/errors.json';
 import ptBRA11y from './locales/pt-BR/a11y.json';
 import ptBRCurrency from './locales/pt-BR/currency.json';
+import ptBRDate from './locales/pt-BR/date.json';
+import ptBRPro from './locales/pt-BR/pro.json';
 import { useLocaleStore } from './stores/useLocaleStore';
 
 /** Every locale the catalog ships, in `lng` form (matches JSON folder names). */
@@ -68,10 +74,13 @@ export const SUPPORTED_LOCALE_TAGS = ['en', 'es-AR', 'pt-BR'] as const;
 export type SupportedLocaleTag = (typeof SUPPORTED_LOCALE_TAGS)[number];
 
 /**
- * Every namespace the catalog ships for PR 2. PR 1 only shipped
- * `common`, `tabs`, `settingsLanguage`; PR 2 widens with the rest of
- * the user-facing strings (`auth`, `settings`, `tickets`, `receipts`,
- * `household`, `analytics`, `errors`, `a11y`, `currency`).
+ * Every namespace the catalog ships. PR 1 only shipped `common`,
+ * `tabs`, `settingsLanguage`; PR 2 widens with the rest of the
+ * user-facing strings (`auth`, `settings`, `tickets`, `receipts`,
+ * `household`, `analytics`, `errors`, `a11y`, `currency`). PR 3 adds
+ * `date` — single locale-aware source for the calendar / weekday /
+ * month arrays (per AD-12 in the design doc) — and `pro` for the
+ * Pro charts screen copy.
  */
 export const NAMESPACES = [
   'common',
@@ -86,6 +95,8 @@ export const NAMESPACES = [
   'errors',
   'a11y',
   'currency',
+  'date',
+  'pro',
 ] as const;
 export type Namespace = (typeof NAMESPACES)[number];
 
@@ -104,6 +115,8 @@ export const RESOURCES = {
     errors: enErrors,
     a11y: enA11y,
     currency: enCurrency,
+    date: enDate,
+    pro: enPro,
   },
   'es-AR': {
     common: esARCommon,
@@ -118,6 +131,8 @@ export const RESOURCES = {
     errors: esARErrors,
     a11y: esARA11y,
     currency: esARCurrency,
+    date: esARDate,
+    pro: esARPro,
   },
   'pt-BR': {
     common: ptBRCommon,
@@ -132,6 +147,8 @@ export const RESOURCES = {
     errors: ptBRErrors,
     a11y: ptBRA11y,
     currency: ptBRCurrency,
+    date: ptBRDate,
+    pro: ptBRPro,
   },
 } as const;
 

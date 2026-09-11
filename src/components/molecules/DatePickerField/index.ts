@@ -8,7 +8,6 @@ export {
   isFutureISO,
   isFutureSelection,
   weekdayLabels,
-  formatDateES,
   fullMonthES,
   pad2,
 } from './calendar';

@@ -28,10 +28,12 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { Pie, PolarChart } from 'victory-native';
 
 import { Text } from '@/components';
 import { getCategoryColor } from '@/features/home/categories';
+import { formatCurrency } from '@/lib/format';
 import { colors, spacing } from '@/theme';
 
 import { CHART_PALETTE } from '../constants';
@@ -69,35 +71,22 @@ interface DonutDatum extends Record<string, unknown> {
   value: number;
 }
 
-/**
- * Currency symbols — a tiny mirror of the helpers in `lib/format.ts` so
- * the legend can format without a second dep on the chart feature. The
- * formats must stay in lockstep with `formatCurrency` or the donut's
- * center number and the legend rows will read differently.
- */
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: '$',
-  EUR: '€',
-  ARS: '$',
-  GBP: '£',
-  BRL: 'R$',
-  MXN: 'MX$',
-  UYU: '$',
-};
-
-function formatAmount(value: number, currency: string): string {
-  const symbol = CURRENCY_SYMBOLS[currency.toUpperCase()] ?? `${currency} `;
-  const fixed = Math.abs(value).toFixed(2);
-  const [intPart, decPart] = fixed.split('.');
-  const withSeparators = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${value < 0 ? '-' : ''}${symbol}${withSeparators}.${decPart}`;
-}
+// PR 3 (app-i18n): amount formatting consolidated onto `formatCurrency`
+// in `src/lib/format.ts`. The chart and the legend now render through the
+// same helper, so any future tweak to grouping or symbol form lands in
+// exactly one place.
 
 export function CategoryDonut({
   data,
   size = 200,
   currency = 'UYU',
 }: CategoryDonutProps) {
+  // PR 3 (`app-i18n`): empty-state copy + center kicker ("TOTAL" →
+  // `analytics:donutKicker`) read from the `analytics` namespace.
+  // Percent-of-total text + tooltip use the same locale-aware
+  // `formatCurrency` so the chart numbers stay in lockstep with the
+  // legend.
+  const { t } = useTranslation(['analytics']);
   const [containerWidth, setContainerWidth] = useState(0);
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
     setContainerWidth(event.nativeEvent.layout.width);
@@ -148,7 +137,7 @@ export function CategoryDonut({
   if (data.length === 0) {
     return (
       <View style={[styles.empty, { height: size }]}>
-        <Text style={styles.emptyText}>Sin gastos en este mes</Text>
+        <Text style={styles.emptyText}>{t('analytics:donutEmpty')}</Text>
       </View>
     );
   }
@@ -172,8 +161,8 @@ export function CategoryDonut({
       total > 0 ? Math.round((largest.amount / total) * 100) : 0;
     tooltip.show(locationX, locationY, [
       largest.name,
-      formatAmount(largest.amount, currency),
-      `${pct}% del mes`,
+      formatCurrency(largest.amount, currency),
+      `${pct}${t('analytics:donutPctSuffix')}`,
     ]);
   };
 
@@ -212,13 +201,13 @@ export function CategoryDonut({
           </Pie.Chart>
         </PolarChart>
         <View style={styles.centerOverlay} pointerEvents="none">
-          <Text style={styles.centerKicker}>TOTAL</Text>
+          <Text style={styles.centerKicker}>{t('analytics:donutKicker')}</Text>
           <Text
             style={styles.centerAmount}
             numberOfLines={1}
             adjustsFontSizeToFit
           >
-            {formatAmount(total, currency)}
+            {formatCurrency(total, currency)}
           </Text>
         </View>
         <ChartTooltip state={tooltip.state} containerWidth={containerWidth} />
