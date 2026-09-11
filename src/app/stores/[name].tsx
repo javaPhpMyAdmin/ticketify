@@ -1,4 +1,5 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -8,7 +9,7 @@ import {
   Text,
 } from '@/components';
 import { monthKeyToLabel, useStoreDetail } from '@/features/home';
-import { formatCurrency, formatShortDate } from '@/lib/format';
+import { formatCurrency, formatDate } from '@/lib/format';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -32,6 +33,12 @@ export default function StoreDetailScreen() {
     month?: string;
   }>();
   const currency = useSettingsStore((s) => s.currency);
+  // PR 3 (`app-i18n`): store drill-down reads from `analytics` +
+  // `common`. The Stack header keeps the raw store name (it's a
+  // user-data value, not a UI literal). Dates flow through
+  // `formatDate(locale, iso)` so the active locale wins.
+  const { t, i18n } = useTranslation(['analytics', 'common']);
+  const activeLocale = i18n.language as 'en' | 'es-AR' | 'pt-BR';
   const storeName = name ?? '';
   const { total, purchases } = useStoreDetail(storeName, month);
 
@@ -43,7 +50,7 @@ export default function StoreDetailScreen() {
           onPress={() => router.back()}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Volver"
+          accessibilityLabel={t('common:back')}
         >
           <Icon name="arrow.left" size={24} color={colors.textPrimary} />
         </Pressable>
@@ -65,7 +72,7 @@ export default function StoreDetailScreen() {
           <View style={styles.iconCircle}>
             <Icon name="cart.fill" size={24} color={colors.primary} />
           </View>
-          <Text style={styles.totalLabel}>TOTAL DEL MES</Text>
+          <Text style={styles.totalLabel}>{t('analytics:storeTotalKicker')}</Text>
           <Text style={styles.totalAmount}>
             {formatCurrency(total, currency)}
           </Text>
@@ -74,35 +81,41 @@ export default function StoreDetailScreen() {
         <View style={styles.purchasesCard}>
           {purchases.length === 0 ? (
             <Text style={styles.empty}>
-              Sin compras en esta tienda este mes.
+              {t('analytics:storeEmpty')}
             </Text>
           ) : (
-            purchases.map((purchase, idx) => (
-              <Pressable
-                key={purchase.receiptId}
-                onPress={() => router.push(`/receipts/${purchase.receiptId}`)}
-                accessibilityRole="button"
-                accessibilityHint="Toca para ver el ticket"
-                accessibilityLabel={`Compra del ${formatShortDate(purchase.date)} por ${formatCurrency(purchase.amount, currency)}`}
-              >
-                {idx > 0 ? <Divider /> : null}
-                <View style={styles.purchaseRow}>
-                  <View style={styles.purchaseBody}>
-                    <Text style={styles.purchaseItemName} numberOfLines={1}>
-                      Ticket del {formatShortDate(purchase.date)}
-                    </Text>
-                    <Text style={styles.purchaseDate}>
-                      {purchase.receiptId
-                        ? 'Toca para ver el ticket'
-                        : 'Ticket sin id'}
+            purchases.map((purchase, idx) => {
+              const formattedDate = formatDate(activeLocale, purchase.date);
+              return (
+                <Pressable
+                  key={purchase.receiptId}
+                  onPress={() => router.push(`/receipts/${purchase.receiptId}`)}
+                  accessibilityRole="button"
+                  accessibilityHint={t('analytics:itemReceiptHint')}
+                  accessibilityLabel={t('analytics:storePurchaseA11y', {
+                    date: formattedDate,
+                    amount: formatCurrency(purchase.amount, currency),
+                  })}
+                >
+                  {idx > 0 ? <Divider /> : null}
+                  <View style={styles.purchaseRow}>
+                    <View style={styles.purchaseBody}>
+                      <Text style={styles.purchaseItemName} numberOfLines={1}>
+                        {t('analytics:storeTicketFromDate', { date: formattedDate })}
+                      </Text>
+                      <Text style={styles.purchaseDate}>
+                        {purchase.receiptId
+                          ? t('analytics:storeTapCaption')
+                          : t('analytics:storeNoIdCaption')}
+                      </Text>
+                    </View>
+                    <Text style={styles.purchaseAmount}>
+                      {formatCurrency(purchase.amount, currency)}
                     </Text>
                   </View>
-                  <Text style={styles.purchaseAmount}>
-                    {formatCurrency(purchase.amount, currency)}
-                  </Text>
-                </View>
-              </Pressable>
-            ))
+                </Pressable>
+              );
+            })
           )}
         </View>
       </ScrollView>
