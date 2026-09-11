@@ -1,0 +1,72 @@
+{
+  "monthFull": {
+    "0": "January",
+    "1": "February",
+    "2": "March",
+    "3": "April",
+    "4": "May",
+    "5": "June",
+    "6": "July",
+    "7": "August",
+    "8": "September",
+    "9": "October",
+    "10": "November",
+    "11": "December"
+  },
+  "monthAbbr": {
+    "0": "jan",
+    "1": "feb",
+    "2": "mar",
+    "3": "apr",
+    "4": "may",
+    "5": "jun",
+    "6": "jul",
+    "7": "aug",
+    "8": "sep",
+    "9": "oct",
+    "10": "nov",
+    "11": "dec"
+  },
+  "weekdayMonFirst": {
+    "0": "M",
+    "1": "T",
+    "2": "W",
+    "3": "T",
+    "4": "F",
+    "5": "S",
+    "6": "S"
+  },
+  "weekdaySunFirst": {
+    "0": "S",
+    "1": "M",
+    "2": "T",
+    "3": "W",
+    "4": "T",
+    "5": "F",
+    "6": "S"
+  },
+  "weekdayMonFirstFull": {
+    "0": "Monday",
+    "1": "Tuesday",
+    "2": "Wednesday",
+    "3": "Thursday",
+    "4": "Friday",
+    "5": "Saturday",
+    "6": "Sunday"
+  },
+  "weekdaySunFirstFull": {
+    "0": "Sunday",
+    "1": "Monday",
+    "2": "Tuesday",
+    "3": "Wednesday",
+    "4": "Thursday",
+    "5": "Friday",
+    "6": "Saturday"
+  },
+  "time": {
+    "meridiem": {
+      "am": "AM",
+      "pm": "PM"
+    }
+  }
+}
