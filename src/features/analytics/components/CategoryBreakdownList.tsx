@@ -12,7 +12,7 @@ export interface CategoryBreakdownListProps {
   title?: string;
   /**
    * ISO 4217 currency code (`formatCurrency(value, currency)` requires it
-   * since the PR 2 hybrid policy — see `src/lib/format.ts`). Defaults to
+   * since the hybrid policy — see `src/lib/format.ts`). Defaults to
    * `UYU` so a consumer that omits it still renders.
    */
   currency?: string;
@@ -30,7 +30,7 @@ export function CategoryBreakdownList({
   currency = 'UYU',
 }: CategoryBreakdownListProps) {
   // The percent row reads the localized "of spending" phrase from the
-  // `analytics` namespace (PR 3 `app-i18n` cleanup — W2).
+  // `analytics` namespace; the item count below uses its plural keys.
   const { t } = useTranslation('analytics');
   return (
     <View style={styles.wrap}>

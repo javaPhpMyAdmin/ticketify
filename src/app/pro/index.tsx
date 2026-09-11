@@ -53,8 +53,8 @@ interface OfferingsView {
 export default function PaywallScreen() {
   const { refresh, subscriptionStatus, trialEndsAt, isFrozen, daysRemaining, everPaid } =
     useProEntitlement();
-  // PR 3 (`app-i18n` cleanup, W4): the active-trial countdown reads its
-  // pluralized copy from the `pro` namespace (`_one` / `_other`).
+  // The active-trial countdown reads its pluralized copy from the `pro`
+  // namespace (`_one` / `_other`).
   const { t } = useTranslation('pro');
   const setSubscriptionState = useProStore((s) => s.setSubscriptionState);
   const [state, setState] = useState<PaywallState>('loading');

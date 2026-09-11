@@ -44,9 +44,8 @@ export function ReviewItemRow({
   onToggleImpulse,
   onEditName,
 }: ReviewItemRowProps) {
-  // PR 3 (`app-i18n` cleanup, W3): the rename affordance reads its a11y
-  // label + hint from the `a11y` namespace (the keys shipped with the
-  // change but were never wired).
+  // The rename affordance reads its a11y label + hint from the `a11y`
+  // namespace (the keys shipped with the change but were never wired).
   const { t } = useTranslation('a11y');
   const categoryId = item.category_id ?? item.ai_suggested_category_id;
   const category = categoryId ? getExpenseCategory(categoryId) : null;

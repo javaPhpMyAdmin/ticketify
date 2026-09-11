@@ -15,9 +15,8 @@ import { colors, radii, spacing, typography } from '@/theme';
 
 export function TrialBanner() {
   const { isTrialing, daysRemaining } = useProEntitlement();
-  // PR 3 (`app-i18n` cleanup, W4): the countdown reads its pluralized
-  // copy from the `pro` namespace; the "see plans" hint reuses the
-  // existing `settings:seePlans` key.
+  // The countdown reads its pluralized copy from the `pro` namespace;
+  // the "see plans" hint reuses the existing `settings:seePlans` key.
   const { t } = useTranslation(['pro', 'settings']);
 
   if (!isTrialing) return null;

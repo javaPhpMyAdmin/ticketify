@@ -50,10 +50,10 @@ export function ReceiptRow({
   imageUrl,
   isManual = false,
 }: ReceiptRowProps) {
-  // PR 3 (`app-i18n`): the row reads its copy from the `receipts`
-  // namespace and formats dates through the canonical, locale-aware
-  // `formatDate(locale, iso)` — the active UI language wins for the
-  // visible date and the accessibility label/hint.
+  // The row reads its copy from the `receipts` namespace and formats
+  // dates through the canonical, locale-aware `formatDate(locale, iso)`
+  // — the active UI language wins for the visible date and the
+  // accessibility label/hint.
   const { t, i18n } = useTranslation('receipts');
   const locale = i18n.language as 'en' | 'es-AR' | 'pt-BR';
   // The stored photo reference may be a ready http(s) URL (seed/demo rows)
