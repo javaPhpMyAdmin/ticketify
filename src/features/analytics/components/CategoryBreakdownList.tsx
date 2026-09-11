@@ -36,7 +36,7 @@ export function CategoryBreakdownList({
     <View style={styles.wrap}>
       {title ? <Text style={styles.title}>{title}</Text> : null}
       {rows.length === 0 ? (
-        <EmptyState title="Sin categorías este mes." />
+        <EmptyState title={t('noCategories')} />
       ) : (
         rows.map((row) => (
           <Card key={row.category_id}>
@@ -51,7 +51,9 @@ export function CategoryBreakdownList({
                     percent: formatPercentLabel(row.percent_of_total),
                   })}
                 </Text>
-                <Text style={styles.items}>{row.item_count} artículos</Text>
+                <Text style={styles.items}>
+                  {t('categoryItemCount', { count: row.item_count })}
+                </Text>
               </View>
             </View>
           </Card>

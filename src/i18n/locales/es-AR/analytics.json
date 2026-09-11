@@ -1,6 +1,8 @@
 {
   "topItems": "Top Artículos",
   "categories": "Categorías",
+  "categoryItemCount_one": "{{count}} artículo",
+  "categoryItemCount_other": "{{count}} artículos",
   "noCategories": "Sin categorías este mes.",
   "noCategoriesHousehold": "Sin categorías este mes en el hogar.",
   "loadingCategories": "Cargando categorías…",

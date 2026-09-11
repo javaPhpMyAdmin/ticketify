@@ -24,7 +24,7 @@ export interface CategoryBudgetCardProps {
   currency?: string;
   /**
    * Number of items bought in the category during the shown month. When
-   * present, renders a small "{n} artículos" line under the percent.
+   * present, renders a localized item-count line under the percent.
    */
   itemCount?: number;
   /** Optional per-category budget limit; when set, renders a progress bar. */
@@ -98,7 +98,7 @@ export function CategoryBudgetCard({
           </Text>
           {itemCount !== undefined && itemCount > 0 ? (
             <Text style={[styles.itemCount, { color: color.foreground }]}>
-              {itemCount === 1 ? '1 artículo' : `${itemCount} artículos`}
+              {t('categoryItemCount', { count: itemCount })}
             </Text>
           ) : null}
         </View>
