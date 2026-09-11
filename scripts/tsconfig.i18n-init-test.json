@@ -21,6 +21,7 @@
     "../src/i18n/types.ts",
     "../src/i18n/stores/useLocaleStore.ts",
     "../src/i18n/storage/localeSecureStore.ts",
+    "../src/i18n/components/I18nProvider.tsx",
     "../src/i18n/locales/en/common.json",
     "../src/i18n/locales/en/tabs.json",
     "../src/i18n/locales/en/settingsLanguage.json",
