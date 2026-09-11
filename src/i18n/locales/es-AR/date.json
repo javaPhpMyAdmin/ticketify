@@ -62,11 +62,5 @@
     "4": "Jueves",
     "5": "Viernes",
     "6": "Sábado"
-  },
-  "time": {
-    "meridiem": {
-      "am": "a. m.",
-      "pm": "p. m."
-    }
   }
 }

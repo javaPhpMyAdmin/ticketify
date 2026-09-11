@@ -191,9 +191,13 @@ export default function RootLayout() {
             {/* Pro paywall + Pro-gated charts placeholder. The paywall is
                 session-gated only (free users reach it to upgrade); the
                 charts screen enforces its Pro gate inside the screen body
-                (ProRouteGuard). */}
-            <Stack.Screen name="pro/index" options={{ title: 'Pro' }} />
-            <Stack.Screen name="pro/charts" options={{ title: 'Estadísticas Pro' }} />
+                (ProRouteGuard). The per-screen titles are NOT declared here:
+                `pro/index` sets its own `<Stack.Screen options>` inline and
+                `pro/charts` uses `useScreenTitle('pro:chartsTitle')` (AD-11)
+                — the screen-level options win at runtime, so layout titles
+                would be dead code. */}
+            <Stack.Screen name="pro/index" />
+            <Stack.Screen name="pro/charts" />
           </Stack.Protected>
           <Stack.Screen name="(auth)" />
         </Stack>

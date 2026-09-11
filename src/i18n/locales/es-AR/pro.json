@@ -30,5 +30,9 @@
   "topCategoryDash": "—",
   "configureBudgetsA11y": "Configurar presupuestos por categoría",
   "editBudgets": "Editar",
-  "configureBudgets": "Configurar"
+  "configureBudgets": "Configurar",
+  "trialActiveDays_one": "Tu prueba PRO está activa — {{count}} día restante",
+  "trialActiveDays_other": "Tu prueba PRO está activa — {{count}} días restantes",
+  "trialBannerDays_one": "Prueba PRO: {{count}} día restante",
+  "trialBannerDays_other": "Prueba PRO: {{count}} días restantes"
 }

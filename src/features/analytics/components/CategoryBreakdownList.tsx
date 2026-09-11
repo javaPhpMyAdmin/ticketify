@@ -1,4 +1,5 @@
 import { StyleSheet } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { Card, EmptyState, Text, View } from '@/components';
 import { formatCurrency, formatPercentLabel } from '@/lib/format';
@@ -11,7 +12,7 @@ export interface CategoryBreakdownListProps {
   title?: string;
   /**
    * ISO 4217 currency code (`formatCurrency(value, currency)` requires it
-   * since the PR 2 hybrid policy — see `src/lib/format.ts`). Defaults to
+   * since the hybrid policy — see `src/lib/format.ts`). Defaults to
    * `UYU` so a consumer that omits it still renders.
    */
   currency?: string;
@@ -28,24 +29,31 @@ export function CategoryBreakdownList({
   title,
   currency = 'UYU',
 }: CategoryBreakdownListProps) {
+  // The percent row reads the localized "of spending" phrase from the
+  // `analytics` namespace; the item count below uses its plural keys.
+  const { t } = useTranslation('analytics');
   return (
     <View style={styles.wrap}>
       {title ? <Text style={styles.title}>{title}</Text> : null}
       {rows.length === 0 ? (
-        <EmptyState title="Sin categorías este mes." />
+        <EmptyState title={t('noCategories')} />
       ) : (
-        rows.map((t) => (
-          <Card key={t.category_id}>
+        rows.map((row) => (
+          <Card key={row.category_id}>
             <View style={styles.row}>
               <View style={{ backgroundColor: colors.surface }}>
-                <Text style={styles.kicker}>{t.category_slug.toUpperCase()}</Text>
-                <Text style={styles.total}>{formatCurrency(t.total, currency)}</Text>
+                <Text style={styles.kicker}>{row.category_slug.toUpperCase()}</Text>
+                <Text style={styles.total}>{formatCurrency(row.total, currency)}</Text>
               </View>
               <View style={styles.right}>
                 <Text style={styles.percent}>
-                  {formatPercentLabel(t.percent_of_total)}
+                  {t('percentOfSpending', {
+                    percent: formatPercentLabel(row.percent_of_total),
+                  })}
                 </Text>
-                <Text style={styles.items}>{t.item_count} artículos</Text>
+                <Text style={styles.items}>
+                  {t('categoryItemCount', { count: row.item_count })}
+                </Text>
               </View>
             </View>
           </Card>
