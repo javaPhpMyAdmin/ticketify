@@ -3,7 +3,9 @@
   "cancel": "Cancel",
   "back": "Back",
   "save": "Save",
+  "saveLoading": "Saving…",
   "loading": "Loading…",
+  "retry": "Retry",
   "subscription": {
     "daysRemaining_one": "1 day left",
     "daysRemaining_other": "{{count}} days left"

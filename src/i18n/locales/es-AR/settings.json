@@ -72,5 +72,14 @@
   "householdCreateProRequired": "Necesitás una suscripción PRO (o un trial activo) para crear un hogar.",
   "householdAlreadyInHousehold": "Ya pertenecés a un hogar. Salí del hogar actual para poder crear uno nuevo.",
   "householdCreateFallback": "No se pudo crear el hogar. Revisá tu conexión e intentá de nuevo. Si persiste, salí de tu hogar actual y volvé a intentar.",
-  "householdCreateMemberName": "Miembro"
+  "householdCreateMemberName": "Miembro",
+  "exportPdfTitle": "Exportación de tickets",
+  "exportGeneratedPrefix": "Generado el",
+  "usageKicker": "Escaneos gratuitos mensuales",
+  "usageLimitKicker": "LÍMITE DE USO",
+  "usageUnlimited": "Ilimitado",
+  "usageScansUsed": "Escaneos usados",
+  "usageResetPrefix": "Se restablece el 1º de",
+  "usageUpgradeLabel": "Actualiza para obtener escaneos ilimitados.",
+  "usageCtaLabel": "Mejorar a Pro"
 }
