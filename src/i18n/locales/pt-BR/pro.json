@@ -30,5 +30,9 @@
   "topCategoryDash": "—",
   "configureBudgetsA11y": "Configurar orçamentos por categoria",
   "editBudgets": "Editar",
-  "configureBudgets": "Configurar"
+  "configureBudgets": "Configurar",
+  "trialActiveDays_one": "Sua avaliação PRO está ativa — {{count}} dia restante",
+  "trialActiveDays_other": "Sua avaliação PRO está ativa — {{count}} dias restantes",
+  "trialBannerDays_one": "Avaliação PRO: {{count}} dia restante",
+  "trialBannerDays_other": "Avaliação PRO: {{count}} dias restantes"
 }

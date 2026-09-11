@@ -7,6 +7,7 @@
  */
 import { router } from 'expo-router';
 import { StyleSheet, View as RNView } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { Pressable, Text } from '@/components';
 import { useProEntitlement } from '@/features/pro/hooks/useProEntitlement';
@@ -14,13 +15,14 @@ import { colors, radii, spacing, typography } from '@/theme';
 
 export function TrialBanner() {
   const { isTrialing, daysRemaining } = useProEntitlement();
+  // PR 3 (`app-i18n` cleanup, W4): the countdown reads its pluralized
+  // copy from the `pro` namespace; the "see plans" hint reuses the
+  // existing `settings:seePlans` key.
+  const { t } = useTranslation(['pro', 'settings']);
 
   if (!isTrialing) return null;
 
-  const label =
-    daysRemaining === 1
-      ? 'Prueba PRO: 1 día restante'
-      : `Prueba PRO: ${daysRemaining} días restantes`;
+  const label = t('trialBannerDays', { count: daysRemaining });
 
   return (
     <Pressable
@@ -31,7 +33,7 @@ export function TrialBanner() {
     >
       <RNView style={styles.content}>
         <Text style={styles.label}>{label}</Text>
-        <Text style={styles.hint}>Ver planes</Text>
+        <Text style={styles.hint}>{t('settings:seePlans')}</Text>
       </RNView>
     </Pressable>
   );
