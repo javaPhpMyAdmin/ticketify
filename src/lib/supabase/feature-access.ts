@@ -14,13 +14,17 @@
  * functions that delegate to `i18next.t('errors:featureAccess.*')`. The
  * export NAME stays the same so every existing `import { X }` keeps
  * compiling, but the export is now a function returning the localized
- * string at call time (callers must invoke `READ_ERROR_MESSAGE()`). The
- * 6 migrated constants: `READ_ERROR_MESSAGE`,
- * `CREATE_HOUSEHOLD_FALLBACK_MESSAGE`, `TOO_MANY_INVITE_CODES_MESSAGE`,
- * `INVITE_PRO_REQUIRED_MESSAGE`, `JOIN_ALREADY_IN_HOUSEHOLD_MESSAGE`,
- * `JOIN_INVALID_CODE_MESSAGE`. The other 4 actionable household copies
- * stay as plain strings for PR 3 (the spec kept these as consts since
- * they don't appear in the user-facing migration scope).
+ * string at call time (callers must invoke `READ_ERROR_MESSAGE()`).
+ *
+ * PR 3 closes the loop — the 4 remaining actionable household copies
+ * (`CREATE_HOUSEHOLD_PRO_MESSAGE`, `ALREADY_IN_HOUSEHOLD_MESSAGE`,
+ * `INVITE_OWNER_ONLY_MESSAGE`, `INVITE_HOUSEHOLD_FULL_MESSAGE`) are now
+ * function-scoped too. The full migrated set is:
+ * `READ_ERROR_MESSAGE`, `CREATE_HOUSEHOLD_FALLBACK_MESSAGE`,
+ * `CREATE_HOUSEHOLD_PRO_MESSAGE`, `ALREADY_IN_HOUSEHOLD_MESSAGE`,
+ * `TOO_MANY_INVITE_CODES_MESSAGE`, `INVITE_PRO_REQUIRED_MESSAGE`,
+ * `INVITE_OWNER_ONLY_MESSAGE`, `INVITE_HOUSEHOLD_FULL_MESSAGE`,
+ * `JOIN_ALREADY_IN_HOUSEHOLD_MESSAGE`, `JOIN_INVALID_CODE_MESSAGE`.
  */
 import i18next from 'i18next';
 
@@ -514,9 +518,17 @@ export async function readActiveInviteCode(
 /**
  * User-safe copy shown when a free/expired user tries to create a
  * household (the create_household RPC requires Pro or an active trial).
+ *
+ * PR 3: function-scoped — returns `errors.featureAccess.createHouseholdProRequired`
+ * at call time. (PR 2 left this as a plain string constant; PR 3 closes
+ * the loop.)
  */
-const CREATE_HOUSEHOLD_PRO_MESSAGE =
-  'Necesitás una suscripción PRO (o un trial activo) para crear un hogar.';
+export function CREATE_HOUSEHOLD_PRO_MESSAGE(): string {
+  if (!i18next.isInitialized) {
+    return 'Necesitás una suscripción PRO (o un trial activo) para crear un hogar.';
+  }
+  return i18next.t('errors:featureAccess.createHouseholdProRequired');
+}
 
 /**
  * User-safe copy shown when the caller already belongs to a household (the
@@ -524,9 +536,16 @@ const CREATE_HOUSEHOLD_PRO_MESSAGE =
  * Actionable: the user is blocked from creating a second household until they
  * leave their current one — telling them why unblocks the confusion instead
  * of the dead-end generic read-error copy.
+ *
+ * PR 3: function-scoped — returns `errors.featureAccess.alreadyInHousehold`
+ * at call time.
  */
-const ALREADY_IN_HOUSEHOLD_MESSAGE =
-  'Ya pertenecés a un hogar. Salí del hogar actual para poder crear uno nuevo.';
+export function ALREADY_IN_HOUSEHOLD_MESSAGE(): string {
+  if (!i18next.isInitialized) {
+    return 'Ya pertenecés a un hogar. Salí del hogar actual para poder crear uno nuevo.';
+  }
+  return i18next.t('errors:featureAccess.alreadyInHousehold');
+}
 
 /**
  * User-safe catch-all copy for create_household failures. The raw PostgREST
@@ -568,10 +587,10 @@ export async function createHousehold(
     );
     const message = error.message ?? '';
     if (/pro subscription required/i.test(message)) {
-      return { status: 'error', message: CREATE_HOUSEHOLD_PRO_MESSAGE };
+      return { status: 'error', message: CREATE_HOUSEHOLD_PRO_MESSAGE() };
     }
     if (/already in a household/i.test(message)) {
-      return { status: 'error', message: ALREADY_IN_HOUSEHOLD_MESSAGE };
+      return { status: 'error', message: ALREADY_IN_HOUSEHOLD_MESSAGE() };
     }
     // Catch-all: return a FIXED user-safe message. The raw PostgREST
     // error.message/code (table/constraint/RLS-policy names from `raise
@@ -621,15 +640,29 @@ export function INVITE_PRO_REQUIRED_MESSAGE(): string {
  * User-safe copy shown when a non-owner calls generate_invite_code (the RPC
  * only lets the household owner create codes). A member reaching the invite
  * flow gets told why instead of a dead-end generic error.
+ *
+ * PR 3: function-scoped — returns `errors.featureAccess.inviteOwnerOnly`
+ * at call time.
  */
-const INVITE_OWNER_ONLY_MESSAGE =
-  'Solo el dueño del hogar puede generar códigos.';
+export function INVITE_OWNER_ONLY_MESSAGE(): string {
+  if (!i18next.isInitialized) {
+    return 'Solo el dueño del hogar puede generar códigos.';
+  }
+  return i18next.t('errors:featureAccess.inviteOwnerOnly');
+}
 
 /**
  * User-safe copy shown when the household is at capacity (max 5 members).
+ *
+ * PR 3: function-scoped — returns `errors.featureAccess.inviteHouseholdFull`
+ * at call time.
  */
-const INVITE_HOUSEHOLD_FULL_MESSAGE =
-  'El hogar está completo (máximo 5 miembros).';
+export function INVITE_HOUSEHOLD_FULL_MESSAGE(): string {
+  if (!i18next.isInitialized) {
+    return 'El hogar está completo (máximo 5 miembros).';
+  }
+  return i18next.t('errors:featureAccess.inviteHouseholdFull');
+}
 
 /**
  * User-safe copy shown when the caller already belongs to a household (the
@@ -695,10 +728,10 @@ export async function generateInviteCode(
       return { status: 'error', message: INVITE_PRO_REQUIRED_MESSAGE() };
     }
     if (/only the owner can generate invite codes/i.test(detail)) {
-      return { status: 'error', message: INVITE_OWNER_ONLY_MESSAGE };
+      return { status: 'error', message: INVITE_OWNER_ONLY_MESSAGE() };
     }
     if (/household is full \(max 5 members\)/i.test(detail)) {
-      return { status: 'error', message: INVITE_HOUSEHOLD_FULL_MESSAGE };
+      return { status: 'error', message: INVITE_HOUSEHOLD_FULL_MESSAGE() };
     }
     // 'household not found' and any unknown error keep the fixed
     // user-safe fallback — the raw PostgREST text never reaches the UI.
@@ -745,7 +778,7 @@ export async function joinHousehold(
       return { status: 'error', message: JOIN_INVALID_CODE_MESSAGE() };
     }
     if (/household is full/i.test(detail)) {
-      return { status: 'error', message: INVITE_HOUSEHOLD_FULL_MESSAGE };
+      return { status: 'error', message: INVITE_HOUSEHOLD_FULL_MESSAGE() };
     }
     // Anything else keeps the fixed user-safe fallback — the raw PostgREST
     // text (e.g. RLS/constraint names) never reaches the UI.

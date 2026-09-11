@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { BackHandler, Image, ScrollView, StyleSheet } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -30,7 +31,8 @@ import {
   purchaseToDraft,
 } from '@/features/tickets';
 import type { PurchaseWithItems } from '@/features/tickets';
-import { formatCurrency, formatShortDate } from '@/lib/format';
+import { useScreenTitle } from '@/i18n/hooks/useScreenTitle';
+import { formatCurrency, formatDate } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import {
   getSignedReceiptPhotoUrl,
@@ -98,6 +100,12 @@ export default function ReceiptDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { userId } = useSessionUser();
   const currency = useSettingsStore((s) => s.currency);
+  // PR 3 (`app-i18n`): every hardcoded string on this screen routes
+  // through `t()` so the receipt detail view reads localized in all
+  // three locales. `receipts:detailTitle` drives the Stack header.
+  const detailTitle = useScreenTitle('receipts:detailTitle');
+  const { t, i18n } = useTranslation(['receipts', 'common']);
+  const activeLocale = i18n.language as 'en' | 'es-AR' | 'pt-BR';
 
   // ── Primary data source: fetchPurchaseDetail by ID ────────────────────
   // This page is deep-linkable (receipts/:id) and must work on cold start
@@ -309,9 +317,9 @@ export default function ReceiptDetailScreen() {
     } catch (err) {
       if (mounted.current) {
         useDialogStore.getState().show({
-          title: 'No se pudo editar el ticket',
+          title: t('receipts:editFailedTitle'),
           message: err instanceof Error ? err.message : undefined,
-          primaryLabel: 'Aceptar',
+          primaryLabel: t('receipts:actionGenericErrorPrimary'),
         });
       }
     } finally {
@@ -337,9 +345,9 @@ export default function ReceiptDetailScreen() {
     } catch (err) {
       setDeleting(false);
       useDialogStore.getState().show({
-        title: 'No se pudo eliminar el ticket',
+        title: t('receipts:deleteFailedTitle'),
         message: err instanceof Error ? err.message : undefined,
-        primaryLabel: 'Aceptar',
+        primaryLabel: t('receipts:actionGenericErrorPrimary'),
       });
     }
   };
@@ -347,12 +355,11 @@ export default function ReceiptDetailScreen() {
   const handleDeletePress = () => {
     if (deleting || loading) return;
     useDialogStore.getState().show({
-      title: 'Eliminar ticket',
-      message:
-        'Se eliminará el ticket y su foto. Esta acción no se puede deshacer.',
-      primaryLabel: 'Eliminar',
+      title: t('receipts:deleteDialogTitle'),
+      message: t('receipts:deleteDialogBody'),
+      primaryLabel: t('receipts:deleteDialogPrimary'),
       tone: 'danger',
-      secondaryLabel: 'Cancelar',
+      secondaryLabel: t('receipts:deleteDialogSecondary'),
       onPrimary: () => void deleteAndBack(),
     });
   };
@@ -364,11 +371,11 @@ export default function ReceiptDetailScreen() {
         disabled={deleting}
         hitSlop={12}
         accessibilityRole="button"
-        accessibilityLabel="Volver"
+        accessibilityLabel={t('common:back')}
       >
         <Icon name="arrow.left" size={24} color={colors.textPrimary} />
       </Pressable>
-      <Text style={styles.title}>Detalle del ticket</Text>
+      <Text style={styles.title}>{detailTitle}</Text>
     </View>
   );
 
@@ -378,7 +385,7 @@ export default function ReceiptDetailScreen() {
         {header}
         <View style={styles.notFound}>
           <Spinner size="sm" color={colors.textSecondary} />
-          <Text style={styles.notFoundText}>Cargando ticket…</Text>
+          <Text style={styles.notFoundText}>{t('receipts:loadingTicket')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -391,15 +398,15 @@ export default function ReceiptDetailScreen() {
         <View style={styles.notFound}>
           <Icon name="exclamationmark.triangle.fill" size={32} color={colors.danger} />
           <Text style={styles.notFoundText}>
-            No se pudo cargar el ticket
+            {t('receipts:loadFailed')}
           </Text>
           <Pressable
             onPress={() => detailQuery.refetch()}
             style={styles.retryButton}
             accessibilityRole="button"
-            accessibilityLabel="Reintentar"
+            accessibilityLabel={t('common:retry')}
           >
-            <Text style={styles.retryLabel}>Reintentar</Text>
+            <Text style={styles.retryLabel}>{t('common:retry')}</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -411,7 +418,7 @@ export default function ReceiptDetailScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         {header}
         <View style={styles.notFound}>
-          <Text style={styles.notFoundText}>Ticket no encontrado</Text>
+          <Text style={styles.notFoundText}>{t('receipts:ticketNotFound')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -444,7 +451,7 @@ export default function ReceiptDetailScreen() {
           <Pressable
             onPress={() => setPhotoOpen(true)}
             accessibilityRole="button"
-            accessibilityLabel="Ver foto en pantalla completa"
+            accessibilityLabel={t('receipts:photoA11y')}
           >
             <Image
               source={{ uri: photoSource }}
@@ -456,36 +463,36 @@ export default function ReceiptDetailScreen() {
         ) : photoLoading || (receipt?.image_url && !photoFailed) ? (
           <View style={styles.photoPlaceholder}>
             <Spinner size="sm" color={colors.textSecondary} />
-            <Text style={styles.photoPlaceholderText}>Cargando ticket...</Text>
+            <Text style={styles.photoPlaceholderText}>{t('receipts:photoPlaceholderLoading')}</Text>
           </View>
         ) : (
           <View style={styles.photoPlaceholder}>
             <Icon name="doc.text" size={40} color={colors.textSecondary} />
-            <Text style={styles.photoPlaceholderText}>Sin foto del ticket</Text>
+            <Text style={styles.photoPlaceholderText}>{t('receipts:photoPlaceholderEmpty')}</Text>
           </View>
         )}
 
         <Card>
           {receipt.is_manual ? (
             <View style={styles.originRow}>
-              <Chip label="Ingreso manual" />
+              <Chip label={t('receipts:receiptManual')} />
             </View>
           ) : null}
           <View style={styles.metaRow}>
             <View style={styles.metaCol}>
-              <Text style={styles.kicker}>TIENDA</Text>
+              <Text style={styles.kicker}>{t('receipts:storeKicker')}</Text>
               <Text style={styles.metaValue}>{receipt.store_name}</Text>
             </View>
           </View>
           <View style={styles.metaRow}>
             <View style={styles.metaCol}>
-              <Text style={styles.kicker}>FECHA</Text>
+              <Text style={styles.kicker}>{t('receipts:dateKicker')}</Text>
               <Text style={styles.metaValue}>
-                {formatShortDate(receipt.purchase_date)}
+                {formatDate(activeLocale, receipt.purchase_date)}
               </Text>
             </View>
             <View style={styles.metaCol}>
-              <Text style={styles.kicker}>TOTAL</Text>
+              <Text style={styles.kicker}>{t('receipts:totalKicker')}</Text>
               <Text style={styles.metaValue}>
                 {formatCurrency(receipt.total, currency)}
               </Text>
@@ -495,14 +502,16 @@ export default function ReceiptDetailScreen() {
 
         {categoryEntries.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Categorías</Text>
+            <Text style={styles.sectionTitle}>{t('receipts:categoriesTitle')}</Text>
             <Card padding={spacing.lg}>
               {categoryEntries.map((entry, idx) => (
                 <View key={entry.key}>
                   <Pressable
                     onPress={() => setOpenCategory(entry.key)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Ver artículos de ${entry.def.label}`}
+                    accessibilityLabel={t('receipts:categoryItemsA11y_other', {
+                      category: entry.def.label,
+                    })}
                     style={({ pressed }) => pressed && styles.catRowPressed}
                   >
                     <View style={styles.catRow}>
@@ -529,7 +538,7 @@ export default function ReceiptDetailScreen() {
         ) : null}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Artículos</Text>
+          <Text style={styles.sectionTitle}>{t('receipts:itemsTitle')}</Text>
           <Card padding={spacing.lg}>
             {items.length > 0 ? (
               items.map((item, idx) => (
@@ -553,7 +562,7 @@ export default function ReceiptDetailScreen() {
                 </View>
               ))
             ) : (
-              <Text style={styles.empty}>Sin artículos detallados.</Text>
+              <Text style={styles.empty}>{t('receipts:itemsEmpty')}</Text>
             )}
           </Card>
         </View>
@@ -569,10 +578,10 @@ export default function ReceiptDetailScreen() {
             (loading || deleting) && styles.footerActionDisabled,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Editar ticket"
+          accessibilityLabel={t('receipts:editA11y')}
         >
           <Text style={styles.footerActionLabel}>
-            {loading ? 'Cargando…' : 'Editar'}
+            {loading ? t('receipts:editLoadingLabel') : t('receipts:editLabel')}
           </Text>
         </Pressable>
         <Pressable
@@ -584,10 +593,10 @@ export default function ReceiptDetailScreen() {
             (loading || deleting) && styles.footerActionDisabled,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Eliminar ticket"
+          accessibilityLabel={t('receipts:deleteA11y')}
         >
           <Text style={styles.footerActionLabel}>
-            {deleting ? 'Eliminando…' : 'Eliminar'}
+            {deleting ? t('receipts:deletingLabel') : t('receipts:deleteLabel')}
           </Text>
         </Pressable>
       </View>
@@ -604,7 +613,7 @@ export default function ReceiptDetailScreen() {
             style={StyleSheet.absoluteFill}
             onPress={handlePhotoBackdropPress}
             accessibilityRole="button"
-            accessibilityLabel="Cerrar foto"
+            accessibilityLabel={t('receipts:closePhotoA11y')}
           />
           {/* Visible close button: a real tappable `IconButton` (the
               backdrop press below still closes at 1× / resets the zoom
@@ -621,7 +630,7 @@ export default function ReceiptDetailScreen() {
               resetPhotoZoom();
               setPhotoOpen(false);
             }}
-            accessibilityLabel="Cerrar foto"
+            accessibilityLabel={t('receipts:closePhotoA11y')}
             style={styles.photoModalClose}
           />
           <Animated.View

@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { Fragment, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -12,7 +13,7 @@ import {
 } from '@/components';
 import { monthKeyToLabel, useItemDetail, normalizeItemName } from '@/features/home';
 import { RenameItemModal, useRenameItem } from '@/features/items';
-import { formatCurrency, formatShortDate } from '@/lib/format';
+import { formatCurrency, formatDate } from '@/lib/format';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -37,6 +38,12 @@ export default function ItemDetailScreen() {
     month?: string;
   }>();
   const currency = useSettingsStore((s) => s.currency);
+  // PR 3 (`app-i18n`): drill-down copy reads from the `analytics` +
+  // `common` namespaces — total label, empty state, purchase row a11y,
+  // receipt hint, edit-name a11y. Dates flow through
+  // `formatDate(locale, iso)` so the active locale wins.
+  const { t, i18n } = useTranslation(['analytics', 'common']);
+  const activeLocale = i18n.language as 'en' | 'es-AR' | 'pt-BR';
   const itemName = name ?? '';
   const { total, purchases } = useItemDetail(itemName, month);
 
@@ -74,7 +81,7 @@ export default function ItemDetailScreen() {
           onPress={() => router.back()}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Volver"
+          accessibilityLabel={t('common:back')}
         >
           <Icon name="arrow.left" size={24} color={colors.textPrimary} />
         </Pressable>
@@ -90,7 +97,7 @@ export default function ItemDetailScreen() {
           icon="pencil"
           iconSize={20}
           onPress={() => setRenameOpen(true)}
-          accessibilityLabel="Editar nombre del producto"
+          accessibilityLabel={t('analytics:itemEditNameA11y')}
         />
       </View>
 
@@ -102,7 +109,7 @@ export default function ItemDetailScreen() {
           <View style={styles.iconCircle}>
             <Icon name="cart.fill" size={24} color={colors.primary} />
           </View>
-          <Text style={styles.totalLabel}>Total del mes</Text>
+          <Text style={styles.totalLabel}>{t('analytics:itemTotalKicker')}</Text>
           <Text style={styles.totalAmount}>
             {formatCurrency(total, currency)}
           </Text>
@@ -111,19 +118,24 @@ export default function ItemDetailScreen() {
         <View style={styles.purchasesCard}>
           {purchases.length === 0 ? (
             <Text style={styles.empty}>
-              Sin compras de este producto este mes.
+              {t('analytics:itemEmpty')}
             </Text>
           ) : (
             purchases.map((purchase, idx) => (
               <Fragment key={`${purchase.receiptId}-${idx}`}>
                 {/* The label intentionally excludes the visible caption so
-                    VoiceOver doesn't double-announce "Toca para ver el
-                    ticket" (label + hint). */}
+                    VoiceOver doesn't double-announce the receipt hint
+                    (label + hint). The a11y label uses the locale-aware
+                    short date so VoiceOver reads the same string the
+                    visual row shows. */}
                 <Pressable
                   onPress={() => router.push(`/receipts/${purchase.receiptId}`)}
                   accessibilityRole="button"
-                  accessibilityHint="Toca para ver el ticket"
-                  accessibilityLabel={`${purchase.storeName}, ${formatShortDate(purchase.date)}`}
+                  accessibilityHint={t('analytics:itemReceiptHint')}
+                  accessibilityLabel={t('analytics:itemReceiptA11y', {
+                    storeName: purchase.storeName,
+                    date: formatDate(activeLocale, purchase.date),
+                  })}
                 >
                 {idx > 0 ? <Divider /> : null}
                 <View style={styles.purchaseRow}>
@@ -132,10 +144,10 @@ export default function ItemDetailScreen() {
                       {purchase.storeName}
                     </Text>
                     <Text style={styles.purchaseDate}>
-                      {formatShortDate(purchase.date)}
+                      {formatDate(activeLocale, purchase.date)}
                     </Text>
                     <Text style={styles.purchaseCaption} numberOfLines={1}>
-                      Toca para ver el ticket
+                      {t('analytics:itemReceiptCaption')}
                     </Text>
                   </View>
                   <Text style={styles.purchaseAmount}>

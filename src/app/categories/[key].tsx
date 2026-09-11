@@ -1,4 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -40,6 +41,10 @@ export default function CategoryDetailScreen() {
     scope?: string;
   }>();
   const currency = useSettingsStore((s) => s.currency);
+  // PR 3 (`app-i18n`): drill-down copy reads from the `analytics` +
+  // `common` namespaces — total label, pending/empty/error messages,
+  // back a11y.
+  const { t } = useTranslation(['analytics', 'common']);
   const householdScope = scope === 'household' ? 'household' : 'personal';
   const {
     category,
@@ -73,7 +78,7 @@ export default function CategoryDetailScreen() {
           onPress={() => router.back()}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Volver"
+          accessibilityLabel={t('common:back')}
         >
           <Icon name="arrow.left" size={24} color={colors.textPrimary} />
         </Pressable>
@@ -93,7 +98,7 @@ export default function CategoryDetailScreen() {
           <View style={styles.iconCircle}>
             <Icon name={category.icon} size={24} color={colors.primary} />
           </View>
-          <Text style={styles.totalLabel}>TOTAL DEL MES</Text>
+          <Text style={styles.totalLabel}>{t('analytics:totalKicker')}</Text>
           <Text style={styles.totalAmount}>
             {totalPlaceholder ? '—' : formatCurrency(total, currency)}
           </Text>
@@ -101,17 +106,17 @@ export default function CategoryDetailScreen() {
 
         <View style={styles.itemsCard}>
           {pending ? (
-            <Text style={styles.empty}>Cargando datos del hogar…</Text>
+            <Text style={styles.empty}>{t('analytics:loadingHousehold')}</Text>
           ) : household && isError ? (
             <EmptyState
               icon="exclamationmark.triangle.fill"
               title={errorMessage}
-              actionLabel="Reintentar"
+              actionLabel={t('common:retry')}
               onAction={retry}
             />
           ) : items.length === 0 ? (
             <Text style={styles.empty}>
-              Sin gastos en esta categoría este mes.
+              {t('analytics:drillDownItemEmpty')}
             </Text>
           ) : (
             items.map((item, idx) => (

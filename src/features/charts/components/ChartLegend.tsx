@@ -18,6 +18,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components';
+import { formatCurrency } from '@/lib/format';
 import { colors, radii, spacing } from '@/theme';
 
 import { CHART_PALETTE } from '../constants';
@@ -60,25 +61,10 @@ export interface ChartLegendProps {
 
 const DEFAULT_VISIBLE_BEFORE_SCROLL = 8;
 const MAX_HEIGHT_PX = 240;
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: '$',
-  EUR: '€',
-  ARS: '$',
-  GBP: '£',
-  BRL: 'R$',
-  MXN: 'MX$',
-  UYU: '$',
-};
 
-function formatAmount(value: number, currency: string): string {
-  const symbol = CURRENCY_SYMBOLS[currency.toUpperCase()] ?? `${currency} `;
-  // Thousands-separator formatting that doesn't pull Intl into the
-  // chart dependency graph (Hermes is still inconsistent there).
-  const fixed = Math.abs(value).toFixed(2);
-  const [intPart, decPart] = fixed.split('.');
-  const withSeparators = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${value < 0 ? '-' : ''}${symbol}${withSeparators}.${decPart}`;
-}
+// PR 3 (app-i18n): currency formatting consolidated onto `formatCurrency`
+// in `src/lib/format.ts`. The legend and the donut now render through the
+// same helper, so the symbol form / grouping policy stays in lockstep.
 
 export function ChartLegend({
   items,
@@ -129,7 +115,7 @@ export function ChartLegend({
           {item.name}
         </Text>
         <Text style={styles.pct}>{item.pct}%</Text>
-        <Text style={styles.amount}>{formatAmount(item.amount, currency)}</Text>
+        <Text style={styles.amount}>{formatCurrency(item.amount, currency)}</Text>
       </Pressable>
     );
   });

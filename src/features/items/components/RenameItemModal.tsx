@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { BottomSheet, FieldGroup, Text } from '@/components';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -55,6 +56,10 @@ export function RenameItemModal({
   onCancel,
   onSave,
 }: RenameItemModalProps) {
+  // PR 3 (`app-i18n`): modal chrome (kicker, title, field label, helper,
+  // button labels, a11y) reads from the `analytics` namespace; the
+  // input value is user-data.
+  const { t } = useTranslation(['analytics', 'common']);
   // The input keeps its own buffer so the parent's async write doesn't
   // yank the user's text out from under them. We sync from `currentName`
   // every time the modal OPENS (not on every prop change) — that way the
@@ -75,15 +80,18 @@ export function RenameItemModal({
     <BottomSheet
       visible={visible}
       onClose={onCancel}
-      kicker="EDITAR"
-      title="Editar nombre del producto"
+      kicker={t('analytics:renameKicker')}
+      title={t('analytics:renameTitle')}
       backdropColor="rgba(0, 0, 0, 0.5)"
       keyboardMode="listeners"
       scrollable
       divider
       contentContainerStyle={styles.body}
     >
-      <FieldGroup label="Nombre del producto" error={errorMessage ?? undefined}>
+      <FieldGroup
+        label={t('analytics:renameFieldLabel')}
+        error={errorMessage ?? undefined}
+      >
         <TextInput
           value={draft}
           onChangeText={(next) => {
@@ -91,17 +99,17 @@ export function RenameItemModal({
             onChange(next);
           }}
           style={styles.input}
-          placeholder="Ej. Café con leche"
+          placeholder={t('analytics:renamePlaceholder')}
           placeholderTextColor={colors.textSecondary}
           keyboardType="default"
           autoFocus
           maxLength={120}
           editable={!isLoading}
-          accessibilityLabel="Nombre del producto"
+          accessibilityLabel={t('analytics:renameFieldLabel')}
         />
       </FieldGroup>
       <Text style={styles.helper}>
-        El buscador ignora acentos.
+        {t('analytics:renameHelper')}
       </Text>
       <View style={styles.actions}>
         <Pressable
@@ -114,9 +122,9 @@ export function RenameItemModal({
             isLoading && styles.actionDisabled,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Cancelar"
+          accessibilityLabel={t('common:cancel')}
         >
-          <Text style={styles.cancelLabel}>Cancelar</Text>
+          <Text style={styles.cancelLabel}>{t('common:cancel')}</Text>
         </Pressable>
         <Pressable
           onPress={() => onSave(trimmed)}
@@ -128,11 +136,11 @@ export function RenameItemModal({
             !canSave && styles.actionDisabled,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Guardar"
+          accessibilityLabel={t('common:save')}
           accessibilityState={{ disabled: !canSave }}
         >
           <Text style={styles.saveLabel}>
-            {isLoading ? 'Guardando…' : 'Guardar'}
+            {isLoading ? t('common:saveLoading') : t('common:save')}
           </Text>
         </Pressable>
       </View>

@@ -24,7 +24,9 @@
  * analytics charts entry card, so back is the right action.
  */
 import { Stack, router } from 'expo-router';
+import i18next from 'i18next';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -60,7 +62,6 @@ import {
   categoryDetailHref,
   getMondayOfWeek,
   pickMaxSpendIndex,
-  WEEKDAY_NAMES,
 } from '@/features/charts';
 import { useSessionUser } from '@/features/auth';
 import { getExpenseCategory } from '@/features/home/categories';
@@ -74,7 +75,8 @@ import {
   useAvailableMonthKeys,
   useMonthNavigation,
 } from '@/features/home/hooks/useHomeFeed';
-import { formatCurrency, MONTHS_SHORT_ES, todayLocalISO, yearLabel } from '@/lib/format';
+import { useScreenTitle } from '@/i18n/hooks/useScreenTitle';
+import { formatCurrency, todayLocalISO, yearLabel } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { readMonthlyCacheRows } from '@/lib/supabase/feature-access';
 import { toQueryData } from '@/lib/supabase/query-adapters';
@@ -103,20 +105,37 @@ function lastNMonths(monthKey: string, count: number): string[] {
 /** Granularity of the capsule bar chart card. */
 type ChartPeriod = 'week' | 'month' | 'year';
 
-const PERIOD_OPTIONS: { key: ChartPeriod; label: string }[] = [
-  { key: 'week', label: 'Por día' },
-  { key: 'month', label: 'Por mes' },
-  { key: 'year', label: 'Por año' },
-];
-
 /**
- * Capitalized Spanish short month name for a `YYYY-MM` key (e.g.
- * `2026-08` → `Ago`), matching the chart label style of the reference.
+ * Capitalized short month name for a `YYYY-MM` key (e.g. `2026-08` → `Ago`).
+ * Reads the locale-aware `date` namespace via `i18next.t()` — the same
+ * source `calendar.ts` uses (per AD-12). Capitalization for chart label
+ * style (e.g. `Ago` vs `ago`) happens client-side so the JSON stays
+ * lowercase per the es-AR typography convention.
  */
 function shortMonthLabel(monthKey: string): string {
   const month = Number(monthKey.slice(5, 7));
-  const label = MONTHS_SHORT_ES[month - 1] ?? '';
+  if (!i18next.isInitialized) return '';
+  const label = i18next.t(`date:monthAbbr.${month - 1}` as 'date:monthAbbr.0');
+  if (!label) return '';
   return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+/**
+ * Full weekday + day-of-month label for a day ISO, e.g. "Lunes 11".
+ * Reads the locale-aware `date.weekdaySunFirstFull.<day>` from
+ * `i18next.t()` — single source of truth shared with the calendar
+ * header (per AD-12).
+ */
+function dayLabel(isoDate: string): string {
+  const date = new Date(`${isoDate}T00:00:00`);
+  const weekday = i18next.isInitialized
+    ? i18next.t(
+        `date:weekdaySunFirstFull.${date.getDay()}` as 'date:weekdaySunFirstFull.0',
+      )
+    : '';
+  return i18next.isInitialized
+    ? i18next.t('pro:dayLabel', { weekday, day: date.getDate() })
+    : `${weekday} ${date.getDate()}`;
 }
 
 /**
@@ -133,20 +152,20 @@ function weekDayISO(weekStartISO: string, index: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** Full weekday + day-of-month label for a day ISO, e.g. "Lunes 11". */
-function dayLabel(isoDate: string): string {
-  const date = new Date(`${isoDate}T00:00:00`);
-  return `${WEEKDAY_NAMES[date.getDay()]} ${date.getDate()}`;
-}
-
 export default function ChartsScreen() {
+  // Per-screen Stack title via `useScreenTitle` (AD-11) — keeps the
+  // header reactive to locale changes without a `useTranslation` import
+  // in every screen file. Falls back to the es-AR literal during the
+  // brief pre-init window.
+  const chartsTitle = useScreenTitle('pro:chartsTitle');
+  const { t } = useTranslation(['pro', 'analytics', 'common']);
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      <Stack.Screen options={{ title: 'Estadísticas Pro' }} />
+      <Stack.Screen options={{ title: chartsTitle }} />
       <ProRouteGuard
-        lockTitle="Estadísticas Pro"
-        lockBody="Las gráficas avanzadas están incluidas en Pro. Suscribite para desbloquearlas."
-        lockActionLabel="Conocer Pro"
+        lockTitle={t('pro:lockTitle')}
+        lockBody={t('pro:lockBody')}
+        lockActionLabel={t('pro:lockActionLabel')}
       >
         <ChartsBody />
       </ProRouteGuard>
@@ -160,6 +179,11 @@ export default function ChartsScreen() {
  * the only thing that swaps.
  */
 function ChartsBody() {
+  // PR 3 (`app-i18n`): single `useTranslation(['pro', 'analytics',
+  // 'common'])` call covers every hardcoded string the screen renders —
+  // trend copy, view toggle, period selector, summary cards, section
+  // headings, a11y labels.
+  const { t } = useTranslation(['pro', 'analytics', 'common']);
   // The home feed hook owns the `records` query and hydrates the
   // receipts store; reading the store directly is the same data path
   // the History tab takes, so all screens stay in sync.
@@ -503,7 +527,7 @@ function ChartsBody() {
       const weekPoints = aggregateWeeklySpend(monthList, weekStartISO, ['servicios']);
       const maxIndex = pickMaxSpendIndex(weekPoints.map((p) => p.amount));
       return {
-        title: 'Esta semana',
+        title: t('pro:periodThisWeek'),
         // Utility bills (servicios) stay out of the daily bars — the same
         // exclusion the day-detail sheet applies.
         items: weekPoints.map((point, index) => ({
@@ -516,7 +540,7 @@ function ChartsBody() {
     if (period === 'month') {
       const lastIndex = spendTrend.length - 1;
       return {
-        title: 'Últimos 6 meses',
+        title: t('pro:periodLast6Months'),
         items: spendTrend.map((point, index) => ({
           label: shortMonthLabel(point.month),
           value: point.total,
@@ -533,14 +557,14 @@ function ChartsBody() {
       ? yearlyPointsFromCache(yearlyQuery.data)
       : list;
     return {
-      title: 'Por año',
+      title: t('pro:periodByYear'),
       items: aggregateYearlySpend(yearlyPoints).map((point) => ({
         label: point.year,
         value: point.total,
         highlight: point.year === currentYear,
       })),
     };
-  }, [monthList, period, spendTrend, weekStartISO, yearlyQuery.data, list]);
+  }, [monthList, period, spendTrend, weekStartISO, yearlyQuery.data, list, t]);
 
   // `monthKeys` is newest-first. The selected month may not be in it (e.g.
   // the current month with no receipts yet): `useMonthNavigation` synthesizes
@@ -557,10 +581,8 @@ function ChartsBody() {
     <>
       <ScrollView contentContainerStyle={styles.scrollContent}>
       <View style={styles.header}>
-        <Text style={styles.title}>Tus tendencias</Text>
-        <Text style={styles.subtitle}>
-          Visualizá tu gasto a lo largo del tiempo, por categoría y por semana.
-        </Text>
+        <Text style={styles.title}>{t('pro:trendsTitle')}</Text>
+        <Text style={styles.subtitle}>{t('pro:trendsSubtitle')}</Text>
       </View>
 
       {/* Personal / Household toggle — only when the user has a household */}
@@ -582,7 +604,7 @@ function ChartsBody() {
                     active && styles.viewSegmentLabelActive,
                   ]}
                 >
-                  {mode === 'personal' ? 'Mi gasto' : 'Hogar'}
+                  {mode === 'personal' ? t('pro:viewPersonal') : t('pro:viewHousehold')}
                 </Text>
               </Pressable>
             );
@@ -596,7 +618,7 @@ function ChartsBody() {
           disabled={!canGoOlder}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Mes anterior"
+          accessibilityLabel={t('pro:previousMonthA11y')}
           accessibilityState={{ disabled: !canGoOlder }}
         >
           <Icon
@@ -611,7 +633,7 @@ function ChartsBody() {
           disabled={!canGoNewer}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Mes siguiente"
+          accessibilityLabel={t('pro:nextMonthA11y')}
           accessibilityState={{ disabled: !canGoNewer }}
         >
           <Icon
@@ -646,12 +668,12 @@ function ChartsBody() {
             {chartData.title}
           </Text>
           <View style={styles.segmentedControl}>
-            {PERIOD_OPTIONS.map((option) => {
-              const active = period === option.key;
+            {(['week', 'month', 'year'] as const).map((key) => {
+              const active = period === key;
               return (
                 <Pressable
-                  key={option.key}
-                  onPress={() => setPeriod(option.key)}
+                  key={key}
+                  onPress={() => setPeriod(key)}
                   accessibilityRole="button"
                   accessibilityState={{ selected: active }}
                   style={[styles.segment, active && styles.segmentActive]}
@@ -662,7 +684,11 @@ function ChartsBody() {
                       active && styles.segmentLabelActive,
                     ]}
                   >
-                    {option.label}
+                    {key === 'week'
+                      ? t('pro:periodDay')
+                      : key === 'month'
+                        ? t('pro:periodMonth')
+                        : t('pro:periodYear')}
                   </Text>
                 </Pressable>
               );
@@ -674,7 +700,7 @@ function ChartsBody() {
             spend. Month/year views include servicios, so the note only
             renders for the week period. */}
         {period === 'week' ? (
-          <Text style={styles.weeklyCaption}>Por día · sin servicios</Text>
+          <Text style={styles.weeklyCaption}>{t('pro:weeklyCaption')}</Text>
         ) : null}
         <CapsuleBarChart
           items={chartData.items}
@@ -691,19 +717,19 @@ function ChartsBody() {
       </Card>
       <View style={styles.summaryRow}>
         <MetricSummaryCard
-          label="Top categoría"
-          value={topCategory?.name ?? '—'}
+          label={t('pro:topCategory')}
+          value={topCategory?.name ?? t('pro:topCategoryDash')}
           subtext={
             topCategory
               ? formatCurrency(topCategory.amount, currency)
-              : 'Sin gastos'
+              : t('pro:noSpending')
           }
           icon="chart.pie.fill"
         />
         <MetricSummaryCard
-          label="Promedio diario"
+          label={t('pro:dailyAverage')}
           value={formatCurrency(dailyAverage, currency)}
-          subtext="Por día en el mes"
+          subtext={t('pro:dailyAverageSubtext')}
           icon="calendar"
         />
       </View>
@@ -716,7 +742,7 @@ function ChartsBody() {
             disabled={!canGoPrevYear}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Año anterior"
+            accessibilityLabel={t('pro:previousYearA11y')}
             accessibilityState={{ disabled: !canGoPrevYear }}
           >
             <Icon
@@ -731,7 +757,7 @@ function ChartsBody() {
             disabled={!canGoNextYear}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Año siguiente"
+            accessibilityLabel={t('pro:nextYearA11y')}
             accessibilityState={{ disabled: !canGoNextYear }}
           >
             <Icon
@@ -761,13 +787,13 @@ function ChartsBody() {
             />
           </ScrollView>
         ) : (
-          <Text style={styles.emptyYear}>Sin gastos este año</Text>
+          <Text style={styles.emptyYear}>{t('pro:noSpendingYear')}</Text>
         )}
       </Card>
 
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Por categoría</Text>
+          <Text style={styles.sectionTitle}>{t('pro:byCategory')}</Text>
           <Pressable
             onPress={() => router.push('/settings/category-budgets')}
             style={({ pressed }) => [
@@ -775,7 +801,7 @@ function ChartsBody() {
               pressed && styles.budgetLinkPressed,
             ]}
             accessibilityRole="button"
-            accessibilityLabel="Configurar presupuestos por categoría"
+            accessibilityLabel={t('pro:configureBudgetsA11y')}
           >
             <Icon
               name="pencil"
@@ -783,7 +809,7 @@ function ChartsBody() {
               color={colors.primary}
             />
             <Text style={styles.budgetLinkText}>
-              {hasAnyBudgets ? 'Editar' : 'Configurar'}
+              {hasAnyBudgets ? t('pro:editBudgets') : t('pro:configureBudgets')}
             </Text>
           </Pressable>
         </View>
@@ -801,13 +827,13 @@ function ChartsBody() {
             framed
             icon="exclamationmark.triangle.fill"
             title={error}
-            actionLabel="Reintentar"
+            actionLabel={t('common:retry')}
             onAction={() => refetch()}
           />
         ) : (
           <>
             {totals.length === 0 ? (
-              <EmptyState title="Sin categorías este mes." />
+              <EmptyState title={t('analytics:noCategories')} />
             ) : (
               <>
               <Card padding={spacing.lg}>
@@ -852,7 +878,7 @@ function ChartsBody() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Por tienda</Text>
+        <Text style={styles.sectionTitle}>{t('pro:byStore')}</Text>
         <Card padding={spacing.lg}>
           <StoreBars
             data={stores}
@@ -874,14 +900,14 @@ function ChartsBody() {
       <Pressable
         onPress={() => router.back()}
         accessibilityRole="button"
-        accessibilityLabel="Volver"
+        accessibilityLabel={t('common:back')}
         style={({ pressed }) => [
           styles.backButton,
           pressed && styles.backPressed,
         ]}
       >
         <Icon name="arrow.left" size={18} color={colors.primary} />
-        <Text style={styles.backText}>Volver</Text>
+        <Text style={styles.backText}>{t('common:back')}</Text>
       </Pressable>
       </ScrollView>
       <DayDetailModal
