@@ -48,7 +48,7 @@
   "donutEmpty": "Sem gastos neste mês",
   "donutPctSuffix": "% do mês",
   "percentOfSpending": "{{percent}} do gasto",
-  "runRateA11y": "Ritmo de gasto de {{monthLabel}}: {{mtd}} este mês, {{deltaPrefix}}{{deltaPct}}% vs {{source}}; no ritmo atual você fica sem em ~{{projection}}",
+  "runRateA11y": "Ritmo de gasto de {{monthLabel}}: {{mtd}} este mês, {{deltaPrefix}}{{deltaPct}}% vs {{source}}; no ritmo atual o mês fecha em ~{{projection}}",
   "runRateSourceMom": "mês anterior",
   "runRateSourceFallback": "sua média",
   "dayDetailTitle": "Detalhes do dia",
