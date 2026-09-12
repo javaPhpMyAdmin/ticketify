@@ -4,7 +4,7 @@
     "createHouseholdFallback": "Couldn't create the household. Check your connection and try again. If it persists, leave your current household and try again.",
     "createHouseholdProRequired": "You need a PRO subscription (or an active trial) to create a household.",
     "alreadyInHousehold": "You're already in a household. Leave it before creating a new one.",
-    "tooManyInviteCodes": "There are already 3 active codes. Use the active one or wait 24h.",
+    "tooManyInviteCodes": "There are already 3 active codes. Use the active one or wait 24 hours.",
     "inviteProRequired": "You need Pro to invite. Activate Pro from your profile.",
     "inviteOwnerOnly": "Only the household owner can generate codes.",
     "inviteHouseholdFull": "The household is full (maximum 5 members).",

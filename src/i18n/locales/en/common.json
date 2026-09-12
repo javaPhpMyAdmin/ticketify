@@ -11,8 +11,8 @@
     "daysRemaining_other": "{{count}} days left"
   },
   "userFallback": "User",
-  "yes": "yes",
-  "no": "no",
+  "yes": "Yes",
+  "no": "No",
   "paymentMethodCash": "Cash",
   "paymentMethodCard": "Card",
   "paymentMethodApplePay": "Apple Pay",
