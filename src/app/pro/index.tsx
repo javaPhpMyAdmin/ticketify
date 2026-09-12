@@ -34,6 +34,7 @@ import {
 } from '@/components';
 import { useProEntitlement } from '@/features/pro';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
+import { formatDayMonth } from '@/lib/format';
 import { startFreeTrial, syncSubscriptionStatus } from '@/lib/supabase/feature-access';
 import { useProStore } from '@/stores/use-pro-store';
 import {
@@ -208,13 +209,7 @@ export default function PaywallScreen() {
               {trialEndsAt ? (
                 <Text style={styles.expiredSubtitle}>
                   {t('trialExpiredSubtitle', {
-                    date: new Date(trialEndsAt).toLocaleDateString(
-                      activeLocale,
-                      {
-                        day: 'numeric',
-                        month: 'long',
-                      },
-                    ),
+                    date: formatDayMonth(activeLocale, trialEndsAt),
                   })}
                 </Text>
               ) : null}

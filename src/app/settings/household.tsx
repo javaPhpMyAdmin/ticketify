@@ -26,6 +26,7 @@ import { InviteCodeModal } from '@/features/household/components/InviteCodeModal
 import { JoinHouseholdModal } from '@/features/household/components/JoinHouseholdModal';
 import { useFrozenGuard } from '@/features/pro';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
+import { formatMonthYear } from '@/lib/format';
 import {
   disbandHousehold,
   leaveHousehold,
@@ -262,10 +263,7 @@ function HouseholdScreenContent({
                     ) : null}
                   </View>
                   <Text style={styles.memberDate}>
-                    {new Date(m.joined_at).toLocaleDateString(activeLocale, {
-                      month: 'short',
-                      year: 'numeric',
-                    })}
+                    {formatMonthYear(activeLocale, m.joined_at)}
                   </Text>
                 </View>
               );

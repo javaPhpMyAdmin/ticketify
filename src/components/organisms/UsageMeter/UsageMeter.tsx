@@ -67,7 +67,7 @@ export function UsageMeter({
   // The monthly quota resets on the 1st of the NEXT month. Compute the
   // upcoming month name dynamically via i18next.t('date:monthFull.<n>'),
   // e.g. today in August → "Se restablece el 1º de septiembre" (es-AR) /
-  // "Resets on September 1st" (en).
+  // "Resets on the 1st of September" (en).
   const nextMonthIndex = (new Date().getMonth() + 1) % 12;
   const nextMonthName = i18next.isInitialized
     ? (i18next.t as (k: string) => string)(
