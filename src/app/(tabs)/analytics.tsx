@@ -297,6 +297,9 @@ export default function AnalyticsScreen() {
             </Card>
           ) : (
             <Card padding={spacing.lg}>
+              {/* Category rows are item-level line-item sums, not the paid
+              total (discounts are not attributed per category — 0029 §3):
+              the headline above is the only net-paid surface. */}
               <View style={styles.categoryList}>
                 {monthTotals.map((t) => {
                   const category = getExpenseCategory(t.category_slug);
