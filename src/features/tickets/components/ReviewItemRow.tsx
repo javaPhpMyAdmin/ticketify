@@ -46,7 +46,8 @@ export function ReviewItemRow({
 }: ReviewItemRowProps) {
   // The rename affordance reads its a11y label + hint from the `a11y`
   // namespace (the keys shipped with the change but were never wired).
-  const { t } = useTranslation('a11y');
+  // Quantity, category fallback and the impulse switch read from `tickets`.
+  const { t } = useTranslation(['a11y', 'tickets']);
   const categoryId = item.category_id ?? item.ai_suggested_category_id;
   const category = categoryId ? getExpenseCategory(categoryId) : null;
 
@@ -79,7 +80,9 @@ export function ReviewItemRow({
               {item.name}
             </Text>
           )}
-          <Text style={styles.qty}>Cant. {item.quantity}</Text>
+          <Text style={styles.qty}>
+            {t('tickets:itemQtyLabel')} {item.quantity}
+          </Text>
         </View>
         <Text style={styles.price}>
           {formatCurrency(item.total_price, currency)}
@@ -87,13 +90,15 @@ export function ReviewItemRow({
       </View>
       <View style={styles.bottom}>
         <Chip
-          label={category?.label ?? 'SIN CATEGORÍA'}
+          label={category?.label ?? t('tickets:noCategory')}
           icon={category?.icon}
           selected={!!category}
           onPress={onPressCategory}
         />
         <View style={styles.impulseWrap}>
-          <Text style={styles.impulseLabel}>Compra impulsiva</Text>
+          <Text style={styles.impulseLabel}>
+            {t('tickets:impulseLabel')}
+          </Text>
           <Switch
             value={item.is_impulse}
             onValueChange={onToggleImpulse}

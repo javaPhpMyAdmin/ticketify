@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Divider, EmptyState, Icon, Text, View } from '@/components';
 import { monthKeyToLabel, useCategoryDetail } from '@/features/home';
+import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrency } from '@/lib/format';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -41,6 +42,9 @@ export default function CategoryDetailScreen() {
     scope?: string;
   }>();
   const currency = useSettingsStore((s) => s.currency);
+  // The active UI locale comes from the locale store (set before
+  // `changeLanguage` fires), so month labels re-render on locale swaps.
+  const locale = useLocaleStore((s) => s.activeLocale);
   // PR 3 (`app-i18n`): drill-down copy reads from the `analytics` +
   // `common` namespaces — total label, pending/empty/error messages,
   // back a11y.
@@ -85,7 +89,9 @@ export default function CategoryDetailScreen() {
         <View style={styles.headerText}>
           <Text style={styles.title}>{category.label}</Text>
           {month ? (
-            <Text style={styles.subtitle}>{monthKeyToLabel(month)}</Text>
+            <Text style={styles.subtitle}>
+              {monthKeyToLabel(locale, month)}
+            </Text>
           ) : null}
         </View>
       </View>

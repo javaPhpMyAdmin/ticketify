@@ -20,6 +20,12 @@ import {
   type HomeCategory,
   type ReceiptSpendRecord,
 } from '@/features/home/hooks/useHomeFeed';
+import {
+  fullWeekdayForLocale,
+  type FormatDateLocale,
+  weekdayInitialForLocale,
+  weekdayShortForLocale,
+} from '@/lib/format';
 
 export interface SpendTrendPoint {
   /** `YYYY-MM` month bucket, in the same order as the input `months` array. */
@@ -167,22 +173,6 @@ export function aggregateMonthlyDelta(
 }
 
 /**
- * Spanish weekday labels used by the weekly bar chart. The initial is a
- * single letter per day. Deliberate choice: Miércoles uses `M` (matching
- * Martes) per explicit product request — the duplicate is accepted for
- * readability over the traditional disambiguating `X`.
- */
-const WEEKDAY_LABELS: readonly { day: string; initial: string }[] = [
-  { day: 'Lun', initial: 'L' },
-  { day: 'Mar', initial: 'M' },
-  { day: 'Mié', initial: 'M' },
-  { day: 'Jue', initial: 'J' },
-  { day: 'Vie', initial: 'V' },
-  { day: 'Sáb', initial: 'S' },
-  { day: 'Dom', initial: 'D' },
-];
-
-/**
  * ISO date (`YYYY-MM-DD`) for the Monday of the week that contains
  * `isoDate`. Also exported so the day-detail sheet can compute the exact
  * week window the weekly aggregator uses by default.
@@ -221,9 +211,9 @@ function effectiveReceiptTotal(
 }
 
 export interface WeeklySpendPoint {
-  /** Full weekday label, e.g. "Lun". */
+  /** Locale-aware short weekday label, e.g. "Lun" (es-AR) / "Mon" (en). */
   day: string;
-  /** Single-letter weekday initial, e.g. "L". */
+  /** Locale-aware single-letter weekday initial, e.g. "L" (Lunes). */
   initial: string;
   /** Sum of receipt totals for that day. */
   amount: number;
@@ -241,11 +231,16 @@ export interface WeeklySpendPoint {
  * `excludeCategories` removes those categories' amounts from each receipt
  * before summing (see `effectiveReceiptTotal`) — used to keep utility
  * bills ("servicios") out of the daily bars.
+ *
+ * `locale` selects the day/initial labels (default `'es-AR'` keeps the
+ * pre-locale output byte-identical). Labels come from `src/lib/format`,
+ * which mirrors the `date` catalog (AD-12), so this module stays pure.
  */
 export function aggregateWeeklySpend(
   records: ReceiptSpendRecord[],
   weekStart?: string,
   excludeCategories: string[] = [],
+  locale: FormatDateLocale = 'es-AR',
 ): WeeklySpendPoint[] {
   const start = weekStart ?? getMondayOfWeek(new Date().toISOString().slice(0, 10));
   const excluded = new Set(excludeCategories);
@@ -258,13 +253,16 @@ export function aggregateWeeklySpend(
     );
   }
 
-  return WEEKDAY_LABELS.map((label, index) => {
+  // Iteration is Monday-first (index 0 = weekStart), so the JS day index is
+  // `(index + 1) % 7`: Monday = 1 .. Saturday = 6, Sunday = 0.
+  return Array.from({ length: 7 }, (_, index) => {
+    const jsDay = (1 + index) % 7;
     const date = new Date(`${start}T00:00:00`);
     date.setDate(date.getDate() + index);
     const iso = date.toISOString().slice(0, 10);
     return {
-      day: label.day,
-      initial: label.initial,
+      day: weekdayShortForLocale(locale, jsDay),
+      initial: weekdayInitialForLocale(locale, jsDay),
       amount: totalsByDay.get(iso) ?? 0,
     };
   });
@@ -445,19 +443,6 @@ export function buildVisibleDailySeries(
   };
 }
 
-// Single-letter Spanish initial for each JavaScript weekday index
-// (0 = Sunday .. 6 = Saturday). Matches the product decision that
-// Miércoles shares `M` with Martes (see WEEKDAY_LABELS).
-const WEEKDAY_INITIAL_BY_JS_DAY: readonly string[] = [
-  'D', // 0 Sunday
-  'L', // 1 Monday
-  'M', // 2 Tuesday
-  'M', // 3 Wednesday
-  'J', // 4 Thursday
-  'V', // 5 Friday
-  'S', // 6 Saturday
-];
-
 /**
  * One weekday initial per day of `monthKey` (1..days-in-month), indexed by
  * calendar position: `result[day - 1]` is the initial under the day number
@@ -465,10 +450,17 @@ const WEEKDAY_INITIAL_BY_JS_DAY: readonly string[] = [
  * → `['S', 'D', 'L', ...]`). Lets the user correlate the curve's bumps
  * with real calendar days at a glance.
  *
+ * `locale` selects the initial set (default `'es-AR'` keeps the previous
+ * output). Initials come from `src/lib/format`, which mirrors the `date`
+ * catalog (AD-12), so this module stays pure.
+ *
  * Deterministic: built from the explicit `YYYY-MM` month; a malformed key
  * returns an empty array.
  */
-export function weekdayInitialsForMonth(monthKey: string): string[] {
+export function weekdayInitialsForMonth(
+  monthKey: string,
+  locale: FormatDateLocale = 'es-AR',
+): string[] {
   const [year, month] = monthKey.split('-').map(Number);
   if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
     return [];
@@ -476,7 +468,7 @@ export function weekdayInitialsForMonth(monthKey: string): string[] {
   const daysInMonth = new Date(year, month, 0).getDate();
   return Array.from({ length: daysInMonth }, (_, index) => {
     const jsDay = new Date(year, month - 1, index + 1).getDay();
-    return WEEKDAY_INITIAL_BY_JS_DAY[jsDay];
+    return weekdayInitialForLocale(locale, jsDay);
   });
 }
 
@@ -634,22 +626,6 @@ export function pickMaxSpendIndex(amounts: readonly number[]): number {
 }
 
 /**
- * Full Spanish weekday names indexed by `Date.prototype.getDay()`
- * (0 = Sunday .. 6 = Saturday). Single source of truth for full-name
- * labels: the Pro charts screen imports it for the day-detail label
- * ("Lunes 11") and the hero insight reads its weekday from here.
- */
-export const WEEKDAY_NAMES: readonly string[] = [
-  'Domingo',
-  'Lunes',
-  'Martes',
-  'Miércoles',
-  'Jueves',
-  'Viernes',
-  'Sábado',
-];
-
-/**
  * Highest-spend day of a month, derived for the hero insight line.
  * `amount` uses the services-INCLUDED daily base (same numbers as the
  * hero bars); `multiple` compares that day against the monthly daily
@@ -658,7 +634,7 @@ export const WEEKDAY_NAMES: readonly string[] = [
 export interface DailyInsight {
   /** Day of the month of the highest-spend day (first max wins on ties). */
   day: number;
-  /** Full Spanish weekday name of that day, e.g. 'Lunes'. */
+  /** Locale-aware full weekday name of that day, e.g. 'Lunes' (es-AR). */
   weekday: string;
   /** That day's total (servicios included — the hero bars' base). */
   amount: number;
@@ -674,6 +650,10 @@ export interface DailyInsight {
  * the average (day-consistent with the numerator). The function is a pure
  * function of the card's own props.
  *
+ * `locale` selects the weekday name (default `'es-AR'` keeps the previous
+ * output). Names come from `src/lib/format`, which mirrors the `date`
+ * catalog (AD-12), so this module stays pure.
+ *
  * Returns `null` when no day has spend (all-zero month — `pickMaxSpendIndex`
  * yields -1), which also covers an empty series. The math notes:
  * max ≥ mean always, so `Math.round(max ÷ avg) ≥ 1` — `max(1, ·)` is
@@ -684,6 +664,7 @@ export interface DailyInsight {
 export function buildDailyInsight(
   dailyData: readonly DailySpendPoint[],
   monthKey: string,
+  locale: FormatDateLocale = 'es-AR',
 ): DailyInsight | null {
   // Strict `YYYY-MM` month key (zero-padded): an unpadded key ('2026-8') or
   // a full ISO date ('2026-08-15') is malformed for this function and must
@@ -711,7 +692,10 @@ export function buildDailyInsight(
   const multiple = Math.max(1, Math.round(maxPoint.total / average));
   return {
     day: maxPoint.day,
-    weekday: WEEKDAY_NAMES[new Date(year, month - 1, maxPoint.day).getDay()],
+    weekday: fullWeekdayForLocale(
+      locale,
+      new Date(year, month - 1, maxPoint.day).getDay(),
+    ),
     amount: maxPoint.total,
     multiple,
   };

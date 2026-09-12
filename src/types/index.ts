@@ -21,20 +21,6 @@ export type PaymentMethod =
   | 'transfer'
   | 'other';
 
-/**
- * Spanish display labels for each payment method. Single source shared by
- * the review screen's picker (`app/ticket/review/[id]`) and the export
- * builders (`features/export/normalize`) so the copy can never drift.
- */
-export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  cash: 'Efectivo',
-  card: 'Tarjeta',
-  apple_pay: 'Apple Pay',
-  google_pay: 'Google Pay',
-  transfer: 'Transferencia',
-  other: 'Otro',
-};
-
 /** Card kind detected on a receipt (matches the parse-ticket edge function). */
 export type CardType = 'debit' | 'credit';
 

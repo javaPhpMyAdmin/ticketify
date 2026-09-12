@@ -72,5 +72,14 @@
   "exportHeaderUnitPrice": "Precio unit.",
   "exportHeaderLineTotal": "Total línea",
   "exportHeaderImpulse": "Impulsivo",
-  "exportSummaryTotalLabel": "Total"
+  "exportSummaryTotalLabel": "Total",
+  "overviewKicker": "TOTAL GASTADO",
+  "overviewBadge": "vs {{month}}",
+  "insightMore": "Gastaste un {{pct}}% más que en {{month}}.",
+  "insightLess": "Gastaste un {{pct}}% menos que en {{month}}.",
+  "insightSame": "Gastaste lo mismo que en {{month}}.",
+  "heroMostExpensiveDay": "Tu día más caro fue el {{weekday}} {{day}} ({{amount}} · {{multiple}}x tu promedio)",
+  "runRateKicker": "RITMO DEL MES",
+  "runRateBadge": "vs {{source}}",
+  "runRateProjection": "Al ritmo actual cerrás en ~{{projection}}"
 }

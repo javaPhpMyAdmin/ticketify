@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { FlatList, StyleSheet, View, type ListRenderItem } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 
 import { BottomSheet, Divider, EmptyState, Spinner, Text } from '@/components';
@@ -36,6 +37,7 @@ export function SnacksBreakdownModal({
   onClose,
   monthKey,
 }: SnacksBreakdownModalProps) {
+  const { t } = useTranslation('settings');
   const currency = useSettingsStore((s) => s.currency);
   const { userId } = useSessionUser();
 
@@ -72,12 +74,12 @@ export function SnacksBreakdownModal({
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      kicker="Antojos/Snacks"
-      title="Desglose del mes"
-      backdropLabel="Cerrar desglose"
+      kicker={t('snacksModalKicker')}
+      title={t('snacksModalTitle')}
+      backdropLabel={t('snacksModalBackdropA11y')}
     >
       <View style={styles.totalRow}>
-        <Text style={styles.totalLabel}>Total del mes</Text>
+        <Text style={styles.totalLabel}>{t('snacksModalTotal')}</Text>
         <Text style={styles.totalAmount}>
           {formatCurrency(total, currency)}
         </Text>
@@ -93,8 +95,8 @@ export function SnacksBreakdownModal({
         <View style={styles.emptyWrap}>
           <EmptyState
             icon="bag.fill"
-            title="Sin antojos este mes."
-            body="Marcá un item como impulso al escanear un ticket para verlo acá."
+            title={t('snacksModalEmptyTitle')}
+            body={t('snacksModalEmptyBody')}
           />
         </View>
       ) : (

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 
 import { Icon, Text } from '@/components';
@@ -6,35 +7,36 @@ import { colors, radii, spacing, typography } from '@/theme';
 export interface InsightBannerProps {
   /** Month-over-month percentage change. */
   deltaPct: number | null;
-  /** Label of the comparison month, e.g. "Julio 2026". */
-  previousMonthLabel?: string | null;
+  /** Name of the comparison month, e.g. "Julio". */
+  previousMonthName?: string | null;
 }
 
 /**
  * Insight banner below the Analytics hero.
  *
- * Renders a light red/pink banner with an icon and Spanish copy that calls
+ * Renders a light red/pink banner with an icon and localized copy that calls
  * out the month-over-month spend change. Hidden when there is no previous-
- * month base (`deltaPct === null` or no label), per the spec edge case.
+ * month base (`deltaPct === null` or no name), per the spec edge case.
  */
 export function InsightBanner({
   deltaPct,
-  previousMonthLabel,
+  previousMonthName,
 }: InsightBannerProps) {
-  if (deltaPct === null || !previousMonthLabel) {
+  const { t } = useTranslation('analytics');
+  if (deltaPct === null || !previousMonthName) {
     return null;
   }
 
-  const previousMonthName = previousMonthLabel.split(' ')[0];
   const absPct = Math.abs(Math.round(deltaPct));
+  const month = previousMonthName;
 
   let message: string;
   if (deltaPct > 0) {
-    message = `Gastaste un ${absPct}% más que en ${previousMonthName}.`;
+    message = t('insightMore', { pct: absPct, month });
   } else if (deltaPct < 0) {
-    message = `Gastaste un ${absPct}% menos que en ${previousMonthName}.`;
+    message = t('insightLess', { pct: absPct, month });
   } else {
-    message = `Gastaste lo mismo que en ${previousMonthName}.`;
+    message = t('insightSame', { month });
   }
 
   return (
