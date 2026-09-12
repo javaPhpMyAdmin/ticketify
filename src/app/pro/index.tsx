@@ -33,6 +33,7 @@ import {
   View,
 } from '@/components';
 import { useProEntitlement } from '@/features/pro';
+import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { startFreeTrial, syncSubscriptionStatus } from '@/lib/supabase/feature-access';
 import { useProStore } from '@/stores/use-pro-store';
 import {
@@ -56,6 +57,10 @@ export default function PaywallScreen() {
   // The active-trial countdown reads its pluralized copy from the `pro`
   // namespace (`_one` / `_other`).
   const { t } = useTranslation('pro');
+  // The active UI locale comes from the locale store so the trial-expiry
+  // date renders in the active language (es-AR / en / pt-BR), not a
+  // hardcoded Spanish month name.
+  const activeLocale = useLocaleStore((s) => s.activeLocale);
   const setSubscriptionState = useProStore((s) => s.setSubscriptionState);
   const [state, setState] = useState<PaywallState>('loading');
   const [offerings, setOfferings] = useState<OfferingsView | null>(null);
@@ -199,15 +204,17 @@ export default function PaywallScreen() {
               color={colors.danger}
             />
             <View style={styles.expiredContent}>
-              <Text style={styles.expiredTitle}>
-                Tu prueba gratuita expiró
-              </Text>
+              <Text style={styles.expiredTitle}>{t('trialExpiredTitle')}</Text>
               {trialEndsAt ? (
                 <Text style={styles.expiredSubtitle}>
-                  Tu acceso finalizó el{' '}
-                  {new Date(trialEndsAt).toLocaleDateString('es-AR', {
-                    day: 'numeric',
-                    month: 'long',
+                  {t('trialExpiredSubtitle', {
+                    date: new Date(trialEndsAt).toLocaleDateString(
+                      activeLocale,
+                      {
+                        day: 'numeric',
+                        month: 'long',
+                      },
+                    ),
                   })}
                 </Text>
               ) : null}

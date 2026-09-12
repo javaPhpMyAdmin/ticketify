@@ -25,6 +25,7 @@ import { CreateHouseholdModal } from '@/features/household/components/CreateHous
 import { InviteCodeModal } from '@/features/household/components/InviteCodeModal';
 import { JoinHouseholdModal } from '@/features/household/components/JoinHouseholdModal';
 import { useFrozenGuard } from '@/features/pro';
+import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import {
   disbandHousehold,
   leaveHousehold,
@@ -58,6 +59,10 @@ function HouseholdScreenContent({
 }: HouseholdScreenContentProps) {
   const { t } = useTranslation(['settings', 'common', 'household']);
   const { userId } = useSessionUser();
+  // The active UI locale comes from the locale store so the member-joined
+  // date renders in the active language (es-AR / en / pt-BR), not a
+  // hardcoded Spanish month name.
+  const activeLocale = useLocaleStore((s) => s.activeLocale);
   const { household, members, role, isLoading } = useHousehold();
   const setHouseholdSharing = useSettingsStore((s) => s.setHouseholdSharing);
   const { guard } = useFrozenGuard();
@@ -257,7 +262,7 @@ function HouseholdScreenContent({
                     ) : null}
                   </View>
                   <Text style={styles.memberDate}>
-                    {new Date(m.joined_at).toLocaleDateString('es-AR', {
+                    {new Date(m.joined_at).toLocaleDateString(activeLocale, {
                       month: 'short',
                       year: 'numeric',
                     })}

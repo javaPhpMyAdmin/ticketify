@@ -34,5 +34,7 @@
   "trialActiveDays_one": "Tu prueba PRO está activa — {{count}} día restante",
   "trialActiveDays_other": "Tu prueba PRO está activa — {{count}} días restantes",
   "trialBannerDays_one": "Prueba PRO: {{count}} día restante",
-  "trialBannerDays_other": "Prueba PRO: {{count}} días restantes"
+  "trialBannerDays_other": "Prueba PRO: {{count}} días restantes",
+  "trialExpiredTitle": "Tu prueba gratuita expiró",
+  "trialExpiredSubtitle": "Tu acceso finalizó el {{date}}"
 }
