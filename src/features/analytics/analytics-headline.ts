@@ -2,10 +2,14 @@
  * Pure view-mode-scoped headline decision for the analytics overview card.
  *
  * In household view the "TOTAL GASTADO" headline must be the HOUSEHOLD total
- * (sum of the `monthly_category_totals` RPC rows), not the caller's personal
- * receipt sum — a personal figure sitting above the household category list
- * would contradict it. The change-% badge stays personal-scoped (it reads the
- * personal `monthly_user_totals` cache), so it is dropped in household mode.
+ * from the net-paid, confirmed-only `monthly_purchases_total` RPC — the same
+ * base as the personal headline (Σ `purchases.total`, post-discount) under
+ * the same query key Home's household card uses, so Personal and Household
+ * reconcile to the cent. (Previously the headline summed the gross
+ * `monthly_category_totals` rows, which over-counted discounts and leaked
+ * non-confirmed purchases.) The change-% badge stays personal-scoped (it
+ * reads the personal `monthly_user_totals` cache), so it is dropped in
+ * household mode.
  *
  * When household data has NOT resolved (still loading) or errored, the
  * headline must never state a false "$0.00" — that would assert no household
@@ -20,13 +24,17 @@
 export type OverviewViewMode = 'personal' | 'household';
 
 export interface OverviewHeadlineInput {
-  /** Sum of the household category totals (household RPC mode). */
+  /**
+   * Net final paid for the household month — Σ `purchases.total` of
+   * confirmed receipts via `monthly_purchases_total` (same base as
+   * personal; NOT the sum of the gross category rows).
+   */
   householdMonthTotal: number;
   /** Sum of the caller's own receipts for the month (personal mode). */
   overviewTotal: number;
   /** Personal month-over-month change % (personal cache); null = no badge. */
   personalChangePct: number | null;
-  /** Whether the household RPC has resolved (false while loading/errored). */
+  /** Whether the household queries have resolved (false while loading/errored). */
   hasHouseholdData: boolean;
 }
 
