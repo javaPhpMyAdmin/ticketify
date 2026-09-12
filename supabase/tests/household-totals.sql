@@ -39,7 +39,7 @@ declare
   v_user_a      uuid := 'a0000000-0000-0000-0000-00000000000a';
   v_user_b      uuid := 'b0000000-0000-0000-0000-00000000000b';
   v_stranger    uuid := 'f0000000-0000-0000-0000-00000000000f';
-  v_hid         uuid := 'h0000000-0000-0000-0000-00000000000h';
+  v_hid         uuid := 'd0000000-0000-0000-0000-00000000000d';
   v_store       uuid := 'c0000000-0000-0000-0000-0000000000aa';
 
   -- §1 catalog vars.
@@ -62,13 +62,37 @@ begin
   -- -------------------------------------------------------------------------
   -- 1. Catalog — migration 0031 contract
   -- -------------------------------------------------------------------------
-  -- The (text, uuid) signature must exist and no stray single-arg overload
-  -- may (a single-arg variant would make 0031 CREATE a NEW function with
-  -- fresh PUBLIC EXECUTE — the anon-trap).
+  -- The (text, uuid) signature is the SECURITY DEFINER household-mode entry
+  -- (0026/0031). The legacy single-arg monthly_category_totals(text) overload
+  -- legitimately EXISTS (0013 §3) and is what the client calls in personal
+  -- mode (feature-access.ts readCategoryTotals without p_household_id): it
+  -- stays `security invoker`, so purchases_select_own RLS keeps scoping it.
+  -- What 0031 must NOT have done is turn that single-arg overload into a
+  -- definer with fresh PUBLIC EXECUTE (the 0029 §4 trap). Check the contract:
+  -- the 2-arg definer exists + least-privileged; the 1-arg is either absent
+  -- or (when present, as here) stays `security invoker` — CRITICAL: RLS on
+  -- purchases/purchase_items is ACTIVE, so an invoker with default PUBLIC
+  -- EXECUTE leaks nothing (anon's auth.uid() is null -> purchases_select_own
+  -- matches nothing). A definer would bypass RLS and open the trap.
   assert to_regprocedure('public.monthly_category_totals(text, uuid)') is not null,
     'monthly_category_totals(text, uuid) is missing (expected from 0014/0026/0031)';
-  assert to_regprocedure('public.monthly_category_totals(text)') is null,
-    'stray single-arg monthly_category_totals(text) overload would open the anon-execute trap';
+  assert not (
+    to_regprocedure('public.monthly_category_totals(text)') is not null
+    and coalesce((
+      select p.prosecdef
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public'
+         and p.proname = 'monthly_category_totals'
+         and p.pronargs = 1
+       limit 1
+    ), false)
+  ), 'single-arg overload must stay invoker (definer would bypass RLS = anon-trap)';
+  assert (
+    select c.relrowsecurity
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public' and c.relname = 'purchases'
+  ), 'purchases RLS must be active for the invoker single-arg to be safe';
 
   select p.prosecdef, pg_get_userbyid(p.proowner)
     into v_secdef, v_owner
@@ -199,7 +223,13 @@ begin
     'household net headline must be 299.60 (100.00 + 199.60 final paid; discount excluded)';
 
   -- 3c. Personal == Household to the cent (single-contributor month).
-  select x.total into v_total_personal from public.monthly_purchases_total('2026-08') x;
+  -- NB: the 1-arg call would be ambiguous in raw SQL because the legacy
+  --     single-arg overload (0010) coexists with the (text, uuid DEFAULT)
+  --     overload (0014/0026). The app resolves by param name via PostgREST;
+  --     here we force the same 2-arg definer path with NULL household to
+  --     compare personal == household on the identical definition.
+  select x.total into v_total_personal
+    from public.monthly_purchases_total(p_year_month := '2026-08', p_household_id := null::uuid) x;
   assert v_total_personal = v_total_net,
     'personal and household headlines must reconcile to the cent on a single-contributor month';
 
