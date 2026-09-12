@@ -92,7 +92,7 @@ export function useMonthlyCache(
   // so per-member copying must not happen (R3-S1 — household unchanged).
   const { budgets } = useCategoryBudgets(yearMonth, !isHousehold);
 
-  // Both query keys must be stable regardless of mode (React hooks rules).
+  // All query keys must be stable regardless of mode (React hooks rules).
   const cacheKey = queryKeys.monthlyCache(userId ?? '', yearMonth);
   const householdKey = [
     ...queryKeys.monthlyTotals(userId ?? '', yearMonth),

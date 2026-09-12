@@ -38,7 +38,6 @@ declare
   -- Fixed test identities (deterministic, never collide with real rows).
   v_user_a      uuid := 'a0000000-0000-0000-0000-00000000000a';
   v_user_b      uuid := 'b0000000-0000-0000-0000-00000000000b';
-  v_stranger    uuid := 'f0000000-0000-0000-0000-00000000000f';
   v_hid         uuid := 'd0000000-0000-0000-0000-00000000000d';
   v_store       uuid := 'c0000000-0000-0000-0000-0000000000aa';
 
@@ -56,6 +55,7 @@ declare
   v_cat_items     bigint;
   v_cat_rows      int;
   v_lacteos_total numeric;
+  v_lacteos_pct   numeric;
   v_nonmember_rows int;
   v_nonmember_total numeric;
 begin
@@ -215,6 +215,14 @@ begin
 
   assert v_lacteos_total = 240.00,
     'lacteos total must be 240.00 (40 + 200 confirmed line items; the 300 pending item is excluded)';
+
+  -- percent_of_total is windowed over the confirmed-only grouped set: with
+  -- lacteos 240.00 / panaderia 60.00 on total 300.00, weights must be 80/20.
+  select coalesce(max(x.percent_of_total), 0) into v_lacteos_pct
+    from public.monthly_category_totals('2026-08', v_hid) x
+   where x.category_slug = 'lacteos';
+  assert v_lacteos_pct = 80.0,
+    'percent_of_total must be recomputed over the confirmed-only set (lacteos 80.0 = 240/300)';
 
   -- 3b. Net headline: Σ confirmed purchases.total — the discounted receipt
   --     counts 199.60 (final paid), NOT 200.00 (gross line-item sum).
