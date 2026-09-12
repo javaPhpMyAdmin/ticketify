@@ -440,17 +440,26 @@ async function run() {
     }
   });
 
-  // --- 5.2.3 Household mode: uses fetchMonthlyTotals, no recalc ---
-  await test('household mode: uses fetchMonthlyTotals, no recalc (real hook)', async () => {
+  // --- 5.2.3 Household mode: net headline + category rows, no recalc ---
+  await test('household mode: net headline source, no recalc (real hook)', async () => {
     faMock.__reset();
     const householdTotals = [
       {
         category_id: 'groceries',
         category_name: 'Groceries',
         category_slug: 'groceries',
-        total: 500,
+        total: 480,
         item_count: 3,
-        percent_of_total: 100,
+        percent_of_total: 96,
+        budget_limit: null,
+      },
+      {
+        category_id: 'foods',
+        category_name: 'Foods',
+        category_slug: 'foods',
+        total: 20,
+        item_count: 1,
+        percent_of_total: 4,
         budget_limit: null,
       },
     ];
@@ -462,10 +471,20 @@ async function run() {
     });
 
     // readCategoryTotals is used by the analytics api.ts module's
-    // fetchMonthlyTotals — control household data through this seam
+    // fetchMonthlyTotals — control household DATA (bars) through this seam.
     faMock.__setReadCategoryTotals(async (yearMonth, householdId) => {
       assert.equal(!!householdId, true, 'householdId should be truthy');
       return { status: 'ok', data: householdTotals };
+    });
+
+    // readMonthlyPurchasesTotal is the NEW headline source (D2): net + confirmed.
+    // Gross category rows sum 500.00; the net RPC says 499.60 (a 0.40
+    // end-of-receipt discount is not a line item — 0029 §3) — the headline
+    // MUST come from the net RPC, not the category reduce.
+    faMock.__setReadMonthlyPurchasesTotal(async (yearMonth, householdId) => {
+      assert.equal(!!householdId, true, 'net RPC must be household-scoped');
+      assert.equal(yearMonth, '2026-08', 'net RPC must receive the year-month');
+      return { status: 'ok', data: [{ total: 499.6 }] };
     });
 
     const { ref, unmount, waitFor } = mountHook(
@@ -475,10 +494,13 @@ async function run() {
 
     try {
       await waitFor(
-        (r) => !!r && r.hasData === true && r.totals.length === 1,
+        (r) => !!r && r.hasData === true && r.totals.length === 2,
       );
+      // Headline = net final paid via the shared household key's RPC.
+      assert.equal(ref.current.monthTotal, 499.6);
+      // Category rows stay item-level line-item sums (D3) — NOT the total.
       assert.equal(ref.current.totals[0].category_slug, 'groceries');
-      assert.equal(ref.current.monthTotal, 500);
+      assert.equal(ref.current.totals[0].total, 480);
       assert.equal(ref.current.hasData, true);
       // Household mode should NOT trigger recalc
       assert.equal(recalcCalled, false);
@@ -487,10 +509,16 @@ async function run() {
     }
   });
 
-  // --- 5.2.4 Household mode: empty data → monthTotal is 0 ---
+  // --- 5.2.4 Household mode: empty data → net headline is 0 (resolved) ---
   await test('household mode: empty data → monthTotal is 0 (real hook)', async () => {
     faMock.__reset();
     faMock.__setReadCategoryTotals(async () => ({
+      status: 'ok',
+      data: [],
+    }));
+    // Net seam armed explicitly: empty-but-resolved → 0, NOT a placeholder
+    // (hasData stays true — spec: empty-but-resolved household shows 0).
+    faMock.__setReadMonthlyPurchasesTotal(async () => ({
       status: 'ok',
       data: [],
     }));
