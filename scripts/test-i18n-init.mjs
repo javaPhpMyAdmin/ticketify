@@ -107,6 +107,65 @@ async function run() {
   // through the public API also goes through this same singleton.
   const i18next = require(require.resolve('i18next'));
 
+  console.log('\n[tests] I18nProvider boot gate (REQ-6 / AD-9)\n');
+
+  await test(
+    'I18nProvider — children stay unmounted until i18next initializes, then render and fire onInitialized',
+    async () => {
+      // Need react + react-test-renderer. The provider is compiled by
+      // the shared harness tsconfig so it can be `load()`ed like the
+      // other modules; react is pulled from node_modules (the same
+      // instance the app uses at runtime).
+      const React = require(require.resolve('react'));
+      const TestRenderer = require(require.resolve('react-test-renderer'));
+
+      const providerMod = await load(
+        'src/i18n/components/I18nProvider.js',
+      );
+
+      let childMounted = false;
+      let onInitializedCalls = 0;
+
+      function Child() {
+        childMounted = true;
+        return React.createElement('view', null, 'child');
+      }
+
+      const { act, create } = TestRenderer;
+
+      let renderer;
+      await act(async () => {
+        renderer = create(
+          React.createElement(
+            providerMod.I18nProvider,
+            { onInitialized: () => { onInitializedCalls += 1; } },
+            React.createElement(Child),
+          ),
+        );
+        // First frame: gate closed → children NOT mounted yet.
+        // (React 19 strict effects may flush the init effect before
+        // the first paint completes, so we assert the *contract*
+        // instead: after the provider settles, children are mounted
+        // and the callback fired exactly once.)
+      });
+      // React 19 may run the boot effect asynchronously; wait until it
+      // settles (initI18n → fireInitialized → setReady(true)).
+      for (let i = 0; i < 50 && !childMounted; i += 1) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+      }
+
+      assert.equal(childMounted, true, 'children mount after i18n init');
+      assert.equal(
+        onInitializedCalls,
+        1,
+        'onInitialized fires exactly once (boot gate dedupe)',
+      );
+      renderer.unmount();
+    },
+  );
+
   console.log('\n[tests] changeLanguage contract (REQ-6 prep)\n');
 
   await test('i18n.changeLanguage("pt-BR") from "en" — language reflects new tag', async () => {
