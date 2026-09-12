@@ -155,6 +155,15 @@ export const queryKeys = {
     yearMonth: string,
   ) => ['analytics', 'household-purchases-total', householdId, yearMonth] as const,
   /**
+   * Prefix of the householdMonthlyPurchasesTotal keys for a household, used
+   * to invalidate every month variant at once (e.g. after a receipt
+   * save/edit). Mirrors `monthlyPurchasesTotalPrefix` for the household
+   * scope — the Analytics household headline and the Home household card
+   * share this key, so one invalidation refreshes both.
+   */
+  householdMonthlyPurchasesTotalPrefix: (householdId: string) =>
+    ['analytics', 'household-purchases-total', householdId] as const,
+  /**
    * Household-scoped category totals. Distinct from the user-scoped key.
    */
   householdMonthlyTotals: (
