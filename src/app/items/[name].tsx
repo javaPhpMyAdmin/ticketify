@@ -13,6 +13,7 @@ import {
 } from '@/components';
 import { monthKeyToLabel, useItemDetail, normalizeItemName } from '@/features/home';
 import { RenameItemModal, useRenameItem } from '@/features/items';
+import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -42,8 +43,10 @@ export default function ItemDetailScreen() {
   // `common` namespaces — total label, empty state, purchase row a11y,
   // receipt hint, edit-name a11y. Dates flow through
   // `formatDate(locale, iso)` so the active locale wins.
-  const { t, i18n } = useTranslation(['analytics', 'common']);
-  const activeLocale = i18n.language as 'en' | 'es-AR' | 'pt-BR';
+  const { t } = useTranslation(['analytics', 'common']);
+  // The active UI locale comes from the locale store (set before
+  // `changeLanguage` fires), so month labels re-render on locale swaps.
+  const activeLocale = useLocaleStore((s) => s.activeLocale);
   const itemName = name ?? '';
   const { total, purchases } = useItemDetail(itemName, month);
 
@@ -90,7 +93,9 @@ export default function ItemDetailScreen() {
             {itemName}
           </Text>
           {month ? (
-            <Text style={styles.subtitle}>{monthKeyToLabel(month)}</Text>
+            <Text style={styles.subtitle}>
+              {monthKeyToLabel(activeLocale, month)}
+            </Text>
           ) : null}
         </View>
         <IconButton

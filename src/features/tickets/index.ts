@@ -53,8 +53,11 @@ export type { PurchaseItemInput } from './manual-receipt';
 // aggregates the edited draft through the same helpers the home reads use.
 export { buildFeedRow, reviewItemsToFeedItems } from '../home/feed-row';
 // Shared payment picker options for the ticket entry screens (review + manual).
+// Keys + catalog-key maps — labels resolve via `t()`/`i18next.t()` at render
+// or call time so they always match the active locale (REQ-10).
 export {
-  paymentMethods,
-  cardTypeLabels,
-  cardTypeOptions,
+  PAYMENT_METHOD_KEYS,
+  PAYMENT_METHOD_LABEL_KEYS,
+  CARD_TYPE_KEYS,
+  CARD_TYPE_LABEL_KEYS,
 } from './payment-options';

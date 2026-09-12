@@ -70,5 +70,18 @@
   "usageScansUsed": "Escaneamentos usados",
   "usageResetPrefix": "Renova em 1º de",
   "usageUpgradeLabel": "Atualize para escaneamentos ilimitados.",
-  "usageCtaLabel": "Atualizar para Pro"
+  "usageCtaLabel": "Atualizar para Pro",
+  "budgetCardKicker": "ORÇAMENTO MENSAL",
+  "budgetLimitLabel": "Limite:",
+  "budgetPercentUsed": "{{percent}}% usado",
+  "snacksCalloutKicker": "MICROGASTOS",
+  "snacksCalloutLabel": "Desejos/Impulsos",
+  "snacksThisMonth": "este mês",
+  "snacksBreakdownA11y": "Ver detalhamento de desejos/snacks",
+  "snacksModalKicker": "Desejos/Snacks",
+  "snacksModalTitle": "Detalhamento do mês",
+  "snacksModalBackdropA11y": "Fechar detalhamento",
+  "snacksModalTotal": "Total do mês",
+  "snacksModalEmptyTitle": "Sem desejos este mês.",
+  "snacksModalEmptyBody": "Marque um item como impulso ao escanear um ticket para vê-lo aqui."
 }

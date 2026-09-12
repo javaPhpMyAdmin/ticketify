@@ -4,7 +4,8 @@ import { useCallback, useMemo } from 'react';
 import type { IconName } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import { readHouseholdCategoryItems, readMonthlyPurchasesTotal } from '@/lib/supabase/feature-access';
-import { formatYearMonth } from '@/lib/format';
+import { formatYearMonth, fullMonthForLocale } from '@/lib/format';
+import type { FormatDateLocale } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters';
 import { useHouseholdStore } from '@/stores/use-household-store';
@@ -173,12 +174,33 @@ export function previousMonthKey(monthKey: string): string {
 }
 
 /**
- * Spanish display label for a `YYYY-MM` bucket, e.g. `2026-08` →
- * `Agosto 2026` (es-AR, full month name, capitalized for headings).
- * Malformed input is returned unchanged by the underlying formatter.
+ * Locale-aware display label for a `YYYY-MM` bucket, e.g. `2026-08` →
+ * `Agosto de 2026` (es-AR) / `August 2026` (en) / `Agosto de 2026`
+ * (pt-BR) — full month name, capitalized for headings. Malformed input is
+ * returned unchanged by the underlying formatter.
  */
-export function monthKeyToLabel(monthKey: string): string {
-  return formatYearMonth(monthKey, { full: true, capitalize: true });
+export function monthKeyToLabel(
+  locale: FormatDateLocale,
+  monthKey: string,
+): string {
+  return formatYearMonth(locale, monthKey, { full: true, capitalize: true });
+}
+
+/**
+ * Locale-aware bare month NAME for a `YYYY-MM` bucket, e.g. `2026-08` →
+ * `Agosto` / `August` / `Agosto`. Callers that interpolate the month into
+ * a sentence ("vs July") use this instead of `monthKeyToLabel` so they do
+ * not have to strip the year with a brittle `.split(' ')[0]`. Returns an
+ * empty string for malformed input.
+ */
+export function monthKeyToMonthName(
+  locale: FormatDateLocale,
+  monthKey: string,
+): string {
+  const month = Number(monthKey.slice(5, 7));
+  if (!Number.isInteger(month) || month < 1 || month > 12) return '';
+  const name = fullMonthForLocale(locale, month);
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 /**

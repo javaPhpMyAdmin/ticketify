@@ -46,5 +46,8 @@
   "inviteGenerateFallback": "Couldn't generate the code.",
   "inviteCopiedTitle": "Copied",
   "inviteCopiedBody": "Share the code with whoever you want to invite.",
-  "inviteShareMessage": "Join my household on Ticketify with this code: {{code}}"
+  "inviteShareMessage": "Join my household on Ticketify with this code: {{code}}",
+  "greeting": "Hi {{name}}!",
+  "homeEmptyTitle": "No tickets this month.",
+  "homeEmptyBody": "This month has no tickets."
 }

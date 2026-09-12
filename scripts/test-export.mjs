@@ -28,7 +28,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -107,8 +107,9 @@ let pdfMod;
  * Mirrors the harness tsconfig's `paths` at runtime: tsc type-checks against
  * the remapped files but emits the ORIGINAL specifier, so plain node cannot
  * resolve `@/…` in the compiled CommonJS output. The export modules keep a
- * runtime value import (`PAYMENT_METHOD_LABELS` from `@/types`), so the
- * hook passes every `@/…` specifier through to its compiled location.
+ * runtime value import (`PAYMENT_METHOD_LABEL_KEYS` from
+ * `@/features/tickets/payment-options`), so the hook passes every `@/…`
+ * specifier through to its compiled location.
  */
 function installRequireHook() {
   const originalResolve = Module._resolveFilename;
@@ -120,11 +121,43 @@ function installRequireHook() {
   };
 }
 
+/**
+ * Primes the direct `i18next` import that the export builders resolve copy
+ * with (`normalize.ts` payment labels, `pdf.ts` headers/summary). The
+ * builders call `i18next.t()` at build time (they run on user tap), so the
+ * instance must be initialized BEFORE the first CSV/HTML assertion with the
+ * REAL es-AR catalogs — the very resources production loads, keeping the
+ * harness honest about the shipped Spanish copy. `initImmediate: false`
+ * makes init synchronous — `t()` is safe immediately after.
+ *
+ * The instance MUST come from `require('i18next')`, NOT an ESM `import`:
+ * i18next ships dual builds (`dist/cjs` + `dist/esm`), so an ESM import in
+ * this harness and the compiled CommonJS modules' `require('i18next')`
+ * resolve to TWO DIFFERENT instances — initializing one never reaches the
+ * other (labels would stay missing).
+ */
+function initExportI18n() {
+  const i18next = require('i18next');
+  const localeDir = join(__dirname, '..', 'src', 'i18n', 'locales', 'es-AR');
+  const esAR = {};
+  for (const file of readdirSync(localeDir)) {
+    if (!file.endsWith('.json')) continue;
+    esAR[file.slice(0, -5)] = JSON.parse(readFileSync(join(localeDir, file), 'utf8'));
+  }
+  i18next.init({
+    lng: 'es-AR',
+    fallbackLng: 'es-AR',
+    initImmediate: false,
+    resources: { 'es-AR': esAR },
+  });
+}
+
 async function run() {
   console.log('\n[tests] compiling export modules…');
   await compile();
   console.log('[tests] loading compiled modules…');
   installRequireHook();
+  initExportI18n();
   csvMod = await load('src/features/export/csv.js');
   pdfMod = await load('src/features/export/pdf.js');
   const { buildExportCsv, EXPORT_CSV_HEADERS } = csvMod;

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native';
 
 import { Card, Icon, Text, View, type IconName } from '@/components';
@@ -8,8 +9,8 @@ import type { MonthOverview } from '../monthly-overview';
 export interface MonthlyOverviewCardProps {
   overview: MonthOverview;
   currency: string;
-  /** Label of the comparison month, e.g. "Julio 2026" — shown in the badge. */
-  previousMonthLabel: string;
+  /** Name of the comparison month, e.g. "Julio" — shown in the badge. */
+  previousMonthName: string;
   /**
    * When true, renders a neutral placeholder ("—") instead of the numeric
    * total. Used when the headline scope's data has not resolved yet (e.g.
@@ -29,9 +30,10 @@ export interface MonthlyOverviewCardProps {
 export function MonthlyOverviewCard({
   overview,
   currency,
-  previousMonthLabel,
+  previousMonthName,
   placeholder = false,
 }: MonthlyOverviewCardProps) {
+  const { t } = useTranslation('analytics');
   const { currentTotal, changePct } = overview;
   const hasChange = changePct !== null;
   const up = hasChange && changePct >= 0;
@@ -40,7 +42,7 @@ export function MonthlyOverviewCard({
   return (
     <Card>
       <View style={[styles.content, hasChange && styles.contentWithBadge]}>
-        <Text style={styles.kicker}>TOTAL GASTADO</Text>
+        <Text style={styles.kicker}>{t('overviewKicker')}</Text>
         <Text style={styles.total}>
           {placeholder
             ? '—'
@@ -66,7 +68,7 @@ export function MonthlyOverviewCard({
             ]}
           >
             {up ? '+' : ''}
-            {changePct}% vs {previousMonthLabel.split(' ')[0]}
+            {changePct}% {t('overviewBadge', { month: previousMonthName })}
           </Text>
         </View>
       ) : null}

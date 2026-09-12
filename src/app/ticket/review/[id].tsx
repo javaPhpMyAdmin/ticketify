@@ -33,6 +33,9 @@ import { RenameItemModal, sanitizeItemName } from '@/features/items';
 import {
   buildFeedRow,
   CategoryPickerModal,
+  CARD_TYPE_LABEL_KEYS,
+  PAYMENT_METHOD_KEYS,
+  PAYMENT_METHOD_LABEL_KEYS,
   QUOTA_ERROR_MESSAGE,
   QuotaExceededError,
   ReceiptItemsList,
@@ -43,8 +46,6 @@ import {
   useReceiptDraftActions,
   useReceiptDraftDraft,
   useScanTicket,
-  cardTypeLabels,
-  paymentMethods,
 } from '@/features/tickets';
 import { formatCurrency, todayLocalISO } from '@/lib/format';
 import {
@@ -257,7 +258,7 @@ export default function ReviewReceiptScreen() {
     draft?.payment_method === 'card'
       ? [
           draft.card_brand ? capitalize(draft.card_brand) : null,
-          draft.card_type ? cardTypeLabels[draft.card_type] : null,
+          draft.card_type ? t(CARD_TYPE_LABEL_KEYS[draft.card_type]) : null,
         ]
           .filter(Boolean)
           .join(' ')
@@ -583,21 +584,21 @@ export default function ReviewReceiptScreen() {
                   <View style={styles.metaCol}>
                     <Text style={styles.kicker}>{t('tickets:reviewPaymentKicker')}</Text>
                     <View style={styles.paymentRow}>
-                      {paymentMethods.map((m) => {
+                      {PAYMENT_METHOD_KEYS.map((method) => {
                         const label =
-                          m.key === 'card' &&
+                          method === 'card' &&
                           draft?.payment_method === 'card' &&
                           cardInfo
                             ? `${t('tickets:manualTarjetaPrefix')} ${cardInfo}`
-                            : m.label;
+                            : t(PAYMENT_METHOD_LABEL_KEYS[method]);
                         return (
                           <Pressable
-                            key={m.key}
-                            onPress={() => setPayment(m.key)}
+                            key={method}
+                            onPress={() => setPayment(method)}
                           >
                             <Chip
                               label={label}
-                              selected={draft?.payment_method === m.key}
+                              selected={draft?.payment_method === method}
                             />
                           </Pressable>
                         );

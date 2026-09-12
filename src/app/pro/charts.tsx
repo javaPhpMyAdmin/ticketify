@@ -71,11 +71,13 @@ import {
   currentMonthKey,
   getMonthKey,
   monthKeyToLabel,
+  monthKeyToMonthName,
   previousMonthKey,
   useAvailableMonthKeys,
   useMonthNavigation,
 } from '@/features/home/hooks/useHomeFeed';
 import { useScreenTitle } from '@/i18n/hooks/useScreenTitle';
+import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrency, todayLocalISO, yearLabel } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { readMonthlyCacheRows } from '@/lib/supabase/feature-access';
@@ -189,6 +191,10 @@ function ChartsBody() {
   // the History tab takes, so all screens stay in sync.
   const list = useReceiptsStore((s) => s.list);
   const currency = useSettingsStore((s) => s.currency);
+  // The active UI locale comes from the locale store (set before
+  // `changeLanguage` fires), so month/weekday labels re-render on locale
+  // swaps (`getState()` outside a selector would miss those renders).
+  const locale = useLocaleStore((s) => s.activeLocale);
   const [monthKey, setMonthKey] = useState(currentMonthKey);
   const [period, setPeriod] = useState<ChartPeriod>('week');
   // ISO date of the day whose detail sheet is open (`null` = closed).
@@ -524,14 +530,22 @@ function ChartsBody() {
       // wins when tied); when every day is $0 no bar is highlighted. The
       // week start comes from `weekStartISO` (local-derived, shared with
       // the tap→day mapping), so bars and the detail sheet stay aligned.
-      const weekPoints = aggregateWeeklySpend(monthList, weekStartISO, ['servicios']);
+      const weekPoints = aggregateWeeklySpend(
+        monthList,
+        weekStartISO,
+        ['servicios'],
+        locale,
+      );
       const maxIndex = pickMaxSpendIndex(weekPoints.map((p) => p.amount));
       return {
         title: t('pro:periodThisWeek'),
         // Utility bills (servicios) stay out of the daily bars — the same
         // exclusion the day-detail sheet applies.
         items: weekPoints.map((point, index) => ({
-          label: point.initial,
+          // Short day name (Lun/Tue/Seg…) rather than the single-letter
+          // initial: en/pt-BR initials collide (Sat+Sun `S S`, pt Wed+Thu
+          // `Q Q`) and the week-only view has room for the full short name.
+          label: point.day,
           value: point.amount,
           highlight: maxIndex === index,
         })),
@@ -564,7 +578,7 @@ function ChartsBody() {
         highlight: point.year === currentYear,
       })),
     };
-  }, [monthList, period, spendTrend, weekStartISO, yearlyQuery.data, list, t]);
+  }, [monthList, period, spendTrend, weekStartISO, yearlyQuery.data, list, locale, t]);
 
   // `monthKeys` is newest-first. The selected month may not be in it (e.g.
   // the current month with no receipts yet): `useMonthNavigation` synthesizes
@@ -575,7 +589,10 @@ function ChartsBody() {
     setMonthKey,
   );
 
-  const previousMonthLabel = monthKeyToLabel(previousMonthKey(monthKey));
+  const previousMonthName = monthKeyToMonthName(
+    locale,
+    previousMonthKey(monthKey),
+  );
 
   return (
     <>
@@ -627,7 +644,7 @@ function ChartsBody() {
             color={canGoOlder ? colors.textPrimary : colors.textSecondary}
           />
         </Pressable>
-        <Text style={styles.monthLabel}>{monthKeyToLabel(monthKey)}</Text>
+        <Text style={styles.monthLabel}>{monthKeyToLabel(locale, monthKey)}</Text>
         <Pressable
           onPress={goNewer}
           disabled={!canGoNewer}
@@ -645,11 +662,11 @@ function ChartsBody() {
       </View>
 
       <InsightHeroCard
-        monthLabel={monthKeyToLabel(monthKey)}
+        monthLabel={monthKeyToLabel(locale, monthKey)}
         monthKey={monthKey}
         total={overview.currentTotal}
         deltaPct={overview.changePct}
-        previousMonthLabel={previousMonthLabel}
+        previousMonthName={previousMonthName}
         dailyData={dailySpend}
         currency={currency}
         onDayPress={(dayIndex) => {
@@ -660,7 +677,7 @@ function ChartsBody() {
       />
       <InsightBanner
         deltaPct={overview.changePct}
-        previousMonthLabel={previousMonthLabel}
+        previousMonthName={previousMonthName}
       />
       <Card>
         <View style={styles.chartHeader}>

@@ -9,5 +9,14 @@
   "subscription": {
     "daysRemaining_one": "1 day left",
     "daysRemaining_other": "{{count}} days left"
-  }
+  },
+  "userFallback": "User",
+  "yes": "yes",
+  "no": "no",
+  "paymentMethodCash": "Cash",
+  "paymentMethodCard": "Card",
+  "paymentMethodApplePay": "Apple Pay",
+  "paymentMethodGooglePay": "Google Pay",
+  "paymentMethodTransfer": "Transfer",
+  "paymentMethodOther": "Other"
 }

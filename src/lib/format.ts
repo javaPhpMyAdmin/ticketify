@@ -197,6 +197,163 @@ const MONTHS_SHORT_BY_LOCALE: Record<FormatDateLocale, readonly string[]> = {
   'pt-BR': MONTHS_SHORT_PT_BR,
 };
 
+// ---------------------------------------------------------------------------
+// Weekday names / initials / short labels (AD-12 — mirrors the `date`
+// catalog: `weekdaySunFirstFull` / `weekdaySunFirst`; the short labels have
+// no catalog entry and are the weekly chart's tick forms). Values are kept
+// literal here so this module stays dependency-free — exactly like the
+// month arrays above.
+// ---------------------------------------------------------------------------
+
+/** Full weekday names, Sun-first (`index = Date.prototype.getDay()`, 0 = Sunday). */
+export const WEEKDAYS_FULL_ES: readonly string[] = [
+  'Domingo',
+  'Lunes',
+  'Martes',
+  'Miércoles',
+  'Jueves',
+  'Viernes',
+  'Sábado',
+];
+
+/** Full weekday names, Sun-first (`index = Date.prototype.getDay()`, 0 = Sunday). */
+export const WEEKDAYS_FULL_EN: readonly string[] = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+];
+
+/** Full weekday names, Sun-first (`index = Date.prototype.getDay()`, 0 = Sunday). */
+export const WEEKDAYS_FULL_PT_BR: readonly string[] = [
+  'Domingo',
+  'Segunda',
+  'Terça',
+  'Quarta',
+  'Quinta',
+  'Sexta',
+  'Sábado',
+];
+
+/**
+ * Single-letter weekday initials, Sun-first (0 = Sunday .. 6 = Saturday).
+ * es-AR uses `M` for both Martes and Miércoles — the deliberate product
+ * decision (readability over the traditional disambiguating `X`), matching
+ * `date:weekdaySunFirst`.
+ */
+export const WEEKDAYS_INITIAL_ES: readonly string[] = [
+  'D', // 0 Sunday
+  'L', // 1 Monday
+  'M', // 2 Tuesday
+  'M', // 3 Wednesday
+  'J', // 4 Thursday
+  'V', // 5 Friday
+  'S', // 6 Saturday
+];
+
+/** Single-letter weekday initials, Sun-first (0 = Sunday .. 6 = Saturday). */
+export const WEEKDAYS_INITIAL_EN: readonly string[] = [
+  'S', // 0 Sunday
+  'M', // 1 Monday
+  'T', // 2 Tuesday
+  'W', // 3 Wednesday
+  'T', // 4 Thursday
+  'F', // 5 Friday
+  'S', // 6 Saturday
+];
+
+/** Single-letter weekday initials, Sun-first (0 = Sunday .. 6 = Saturday). */
+export const WEEKDAYS_INITIAL_PT_BR: readonly string[] = [
+  'D', // 0 Sunday
+  'S', // 1 Monday
+  'T', // 2 Tuesday
+  'Q', // 3 Wednesday
+  'Q', // 4 Thursday
+  'S', // 5 Friday
+  'S', // 6 Saturday
+];
+
+/** Short weekday labels, Sun-first (0 = Sunday .. 6 = Saturday). */
+export const WEEKDAYS_SHORT_ES: readonly string[] = [
+  'Dom',
+  'Lun',
+  'Mar',
+  'Mié',
+  'Jue',
+  'Vie',
+  'Sáb',
+];
+
+/** Short weekday labels, Sun-first (0 = Sunday .. 6 = Saturday). */
+export const WEEKDAYS_SHORT_EN: readonly string[] = [
+  'Sun',
+  'Mon',
+  'Tue',
+  'Wed',
+  'Thu',
+  'Fri',
+  'Sat',
+];
+
+/** Short weekday labels, Sun-first (0 = Sunday .. 6 = Saturday). */
+export const WEEKDAYS_SHORT_PT_BR: readonly string[] = [
+  'Dom',
+  'Seg',
+  'Ter',
+  'Qua',
+  'Qui',
+  'Sex',
+  'Sáb',
+];
+
+/** Localized full-weekday lookup keyed by locale (Sun-first / JS-day order). */
+const WEEKDAYS_FULL_BY_LOCALE: Record<FormatDateLocale, readonly string[]> = {
+  en: WEEKDAYS_FULL_EN,
+  'es-AR': WEEKDAYS_FULL_ES,
+  'pt-BR': WEEKDAYS_FULL_PT_BR,
+};
+
+/** Localized weekday-initial lookup keyed by locale (Sun-first / JS-day order). */
+const WEEKDAYS_INITIAL_BY_LOCALE: Record<FormatDateLocale, readonly string[]> = {
+  en: WEEKDAYS_INITIAL_EN,
+  'es-AR': WEEKDAYS_INITIAL_ES,
+  'pt-BR': WEEKDAYS_INITIAL_PT_BR,
+};
+
+/** Localized short-weekday lookup keyed by locale (Sun-first / JS-day order). */
+const WEEKDAYS_SHORT_BY_LOCALE: Record<FormatDateLocale, readonly string[]> = {
+  en: WEEKDAYS_SHORT_EN,
+  'es-AR': WEEKDAYS_SHORT_ES,
+  'pt-BR': WEEKDAYS_SHORT_PT_BR,
+};
+
+/** Localized full weekday name for a JS day index (0 = Sunday); '' when out of range. */
+export function fullWeekdayForLocale(
+  locale: FormatDateLocale,
+  jsDay: number,
+): string {
+  return WEEKDAYS_FULL_BY_LOCALE[locale][jsDay] ?? '';
+}
+
+/** Localized single-letter weekday initial for a JS day index; '' when out of range. */
+export function weekdayInitialForLocale(
+  locale: FormatDateLocale,
+  jsDay: number,
+): string {
+  return WEEKDAYS_INITIAL_BY_LOCALE[locale][jsDay] ?? '';
+}
+
+/** Localized short weekday label ("Lun" / "Mon" / "Seg") for a JS day index; '' when out of range. */
+export function weekdayShortForLocale(
+  locale: FormatDateLocale,
+  jsDay: number,
+): string {
+  return WEEKDAYS_SHORT_BY_LOCALE[locale][jsDay] ?? '';
+}
+
 /**
  * Parses a date string in LOCAL calendar time. `new Date('YYYY-MM-DD')`
  * parses as UTC midnight, which shifts a day backward in UTC-x zones —
@@ -223,12 +380,29 @@ export function formatShortDate(iso: string): string {
 }
 
 /**
- * Formats a `YYYY-MM` year-month (as produced by `utcYearMonth`) for display,
- * e.g. `2026-08` → `ago 2026` (short, default) or `agosto 2026` (full).
+ * Full-month/year connector for languages that read "Month de Year".
+ * English has no connector, so it falls back to a plain space.
+ */
+const FULL_MONTH_YEAR_CONNECTOR: Record<FormatDateLocale, string> = {
+  en: ' ',
+  'es-AR': ' de ',
+  'pt-BR': ' de ',
+};
+
+/**
+ * Formats a `YYYY-MM` year-month (as produced by `utcYearMonth`) for display
+ * in the given locale, e.g. `2026-08` → `ago 2026` (short, default) or
+ * `Agosto de 2026` (full, es-AR) / `August 2026` (full, en).
+ *
+ * The locale argument is the ONLY knob that selects language; the formatter
+ * does NOT read `i18next.language` (callers wanting the active UI language
+ * can pass `i18next.language as FormatDateLocale`).
+ *
  * `capitalize` uppercases the first letter for heading positions (e.g.
- * `Agosto 2026`). Malformed input is returned unchanged.
+ * `Agosto de 2026`). Malformed input is returned unchanged.
  */
 export function formatYearMonth(
+  locale: FormatDateLocale,
   yearMonth: string,
   options: { full?: boolean; capitalize?: boolean } = {},
 ): string {
@@ -241,8 +415,9 @@ export function formatYearMonth(
   ) {
     return yearMonth;
   }
-  const names = options.full ? MONTHS_FULL_ES : MONTHS_SHORT_ES;
-  const label = `${names[month - 1]} ${year}`;
+  const names = options.full ? MONTHS_FULL_BY_LOCALE[locale] : MONTHS_SHORT_BY_LOCALE[locale];
+  const connector = options.full ? FULL_MONTH_YEAR_CONNECTOR[locale] : ' ';
+  const label = `${names[month - 1]}${connector}${year}`;
   return options.capitalize
     ? label.charAt(0).toUpperCase() + label.slice(1)
     : label;

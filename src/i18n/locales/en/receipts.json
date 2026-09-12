@@ -9,6 +9,7 @@
   "categoriesTitle": "Categories",
   "itemsTitle": "Items",
   "itemsEmpty": "No detailed items.",
+  "unknownCategory": "uncategorized",
   "categoryItemsA11y_one": "View item in {{category}}",
   "categoryItemsA11y_other": "View items in {{category}}",
   "photoA11y": "View photo fullscreen",
@@ -35,5 +36,12 @@
   "editLabel": "Edit",
   "editLoadingLabel": "Loading…",
   "deleteLabel": "Delete",
-  "deletingLabel": "Deleting…"
+  "deletingLabel": "Deleting…",
+  "scanA11y": "Scan ticket",
+  "countAll_one": "{{count}} ticket",
+  "countAll_other": "{{count}} tickets",
+  "countScanned_one": "{{count}} scanned ticket",
+  "countScanned_other": "{{count}} scanned tickets",
+  "countManual_one": "{{count}} manual",
+  "countManual_other": "{{count}} manual"
 }

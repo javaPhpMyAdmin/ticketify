@@ -6,6 +6,7 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 
 import {
   EmptyState,
@@ -41,6 +42,7 @@ import {
 } from '@/features/household';
 import { useFrozenGuard } from '@/features/pro';
 import { TrialBanner } from '@/features/pro/components/TrialBanner';
+import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 import { useSessionStore, useSessionUser } from '../../features/auth';
@@ -57,9 +59,13 @@ import { useSessionStore, useSessionUser } from '../../features/auth';
 const TAB_BAR_HEIGHT = Platform.select({ ios: 49, android: 80, default: 49 });
 
 export default function HomeScreen() {
+  const { t } = useTranslation(['household', 'receipts', 'tickets', 'common']);
   const [snacksOpen, setSnacksOpen] = useState(false);
   const [monthKey, setMonthKey] = useState(currentMonthKey);
   const currency = useSettingsStore((s) => s.currency);
+  // The active UI locale comes from the locale store (set before
+  // `changeLanguage` fires), so month labels re-render on locale swaps.
+  const locale = useLocaleStore((s) => s.activeLocale);
   // Budget limit is global (one `monthly_budget` profile value); only
   // `spent` is scoped to the selected month.
   const {
@@ -101,7 +107,7 @@ export default function HomeScreen() {
     session?.user?.user_metadata?.name ??
     '';
   const firstName = fullName.trim().split(' ')[0];
-  const displayName = firstName || 'Usuario';
+  const displayName = firstName || t('common:userFallback');
   const avatarUrl = session?.user?.user_metadata?.avatar_url;
 
   // ── Month selector (REQ-5) ──────────────────────────────────────────────
@@ -133,14 +139,22 @@ export default function HomeScreen() {
   // a manual ticket exists. Derived from the feed's required isManual flag.
   const totalCount = monthFeed.receipts.length;
   const manualCount = monthFeed.receipts.filter((r) => r.isManual).length;
+  const scannedCount = totalCount - manualCount;
   const counterCopy =
     manualCount === 0
-      ? `${totalCount} ${totalCount === 1 ? 'ticket' : 'tickets'}`
-      : `${totalCount - manualCount} ${
-          totalCount - manualCount === 1
-            ? 'ticket escaneado'
-            : 'tickets escaneados'
-        } · ${manualCount} ${manualCount === 1 ? 'manual' : 'manuales'}`;
+      ? t(
+          totalCount === 1 ? 'receipts:countAll_one' : 'receipts:countAll_other',
+          { count: totalCount },
+        )
+      : `${t(
+          scannedCount === 1
+            ? 'receipts:countScanned_one'
+            : 'receipts:countScanned_other',
+          { count: scannedCount },
+        )} · ${t(
+          manualCount === 1 ? 'receipts:countManual_one' : 'receipts:countManual_other',
+          { count: manualCount },
+        )}`;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -173,11 +187,13 @@ export default function HomeScreen() {
           <View style={styles.listHeader}>
             <View style={styles.greeting}>
               <View style={styles.greetingLeft}>
-                <Text style={styles.greetingText}>¡Hola {displayName}!</Text>
+                <Text style={styles.greetingText}>
+                  {t('household:greeting', { name: displayName })}
+                </Text>
               </View>
               <Pressable
                 onPress={() => router.push('/profile')}
-                accessibilityLabel="Abrir perfil"
+                accessibilityLabel={t('household:openProfile')}
                 accessibilityRole="button"
               >
                 {avatarUrl ? (
@@ -203,7 +219,7 @@ export default function HomeScreen() {
                 disabled={!canGoOlder}
                 hitSlop={12}
                 accessibilityRole="button"
-                accessibilityLabel="Mes anterior"
+                accessibilityLabel={t('household:previousMonth')}
                 accessibilityState={{ disabled: !canGoOlder }}
               >
                 <Icon
@@ -212,13 +228,15 @@ export default function HomeScreen() {
                   color={canGoOlder ? colors.textPrimary : colors.textSecondary}
                 />
               </Pressable>
-              <Text style={styles.monthLabel}>{monthKeyToLabel(monthKey)}</Text>
+              <Text style={styles.monthLabel}>
+                {monthKeyToLabel(locale, monthKey)}
+              </Text>
               <Pressable
                 onPress={goNewer}
                 disabled={!canGoNewer}
                 hitSlop={12}
                 accessibilityRole="button"
-                accessibilityLabel="Mes siguiente"
+                accessibilityLabel={t('household:nextMonth')}
                 accessibilityState={{ disabled: !canGoNewer }}
               >
                 <Icon
@@ -316,8 +334,8 @@ export default function HomeScreen() {
           ) : (
             <EmptyState
               icon="doc.text"
-              title="Sin tickets este mes."
-              body="Este mes no tiene tickets."
+              title={t('household:homeEmptyTitle')}
+              body={t('household:homeEmptyBody')}
             />
           )
         }
@@ -340,7 +358,7 @@ export default function HomeScreen() {
           icon="camera.fill"
           iconSize={32}
           onPress={() => guard(() => router.push('/ticket/camera'))}
-          accessibilityLabel="Escanear ticket"
+          accessibilityLabel={t('receipts:scanA11y')}
           style={styles.fabCircle}
         />
         <Fab
@@ -353,7 +371,7 @@ export default function HomeScreen() {
               router.push('/ticket/manual'),
             )
           }
-          accessibilityLabel="Cargar compra"
+          accessibilityLabel={t('tickets:manualTitle')}
           style={styles.fabCircle}
         />
       </View>
