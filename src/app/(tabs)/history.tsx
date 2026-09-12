@@ -43,6 +43,7 @@ import {
   useMonthNavigation,
 } from '@/features/home';
 import { getExpenseCategory } from '@/features/home/categories';
+import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrency } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { toQueryData } from '@/lib/supabase/query-adapters';
@@ -68,9 +69,12 @@ const TAB_BAR_HEIGHT = Platform.select({ ios: 49, android: 80, default: 49 });
  * even when it has no data yet ("Sin gastos este mes.").
  */
 export default function HistoryScreen() {
-  const { t } = useTranslation(['household']);
+  const { t } = useTranslation(['household', 'common']);
   const list = useReceiptsStore((s) => s.list);
   const currency = useSettingsStore((s) => s.currency);
+  // The active UI locale comes from the locale store (set before
+  // `changeLanguage` fires), so month labels re-render on locale swaps.
+  const locale = useLocaleStore((s) => s.activeLocale);
   const insets = useSafeAreaInsets();
   const [monthKey, setMonthKey] = useState(currentMonthKey);
   const { userId } = useSessionUser();
@@ -109,7 +113,7 @@ export default function HistoryScreen() {
     session?.user?.user_metadata?.name ??
     '';
   const firstName = fullName.trim().split(' ')[0];
-  const displayName = firstName || 'Usuario';
+  const displayName = firstName || t('common:userFallback');
   const avatarUrl = session?.user?.user_metadata?.avatar_url;
 
   // Personal vs household view toggle
@@ -221,7 +225,9 @@ export default function HistoryScreen() {
               color={canGoOlder ? colors.textPrimary : colors.textSecondary}
             />
           </Pressable>
-          <Text style={styles.monthLabel}>{monthKeyToLabel(monthKey)}</Text>
+          <Text style={styles.monthLabel}>
+            {monthKeyToLabel(locale, monthKey)}
+          </Text>
           <Pressable
             onPress={goNewer}
             disabled={!canGoNewer}

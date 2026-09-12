@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native';
 
 import { Text, View } from '@/components/atoms';
@@ -14,24 +15,28 @@ export interface BudgetCardProps {
   limit: number;
   /** ISO 4217 currency code. */
   currency: string;
-  /** Optional kicker label override. */
+  /** Optional kicker label override (defaults to the localized "monthly budget"). */
   kicker?: string;
-  /** Optional limit label override. */
+  /** Optional limit label override (defaults to the localized "Limit:"). */
   limitLabel?: string;
 }
 
 /**
- * The "MONTHLY TARGET BUDGET" card. Renders a kicker + limit label,
- * the spent amount as a big `AmountDisplay`, a percent-used indicator,
- * and a `ProgressBar` fill. The percent is clamped to 0..1.
+ * The "monthly budget" card. Renders a kicker + limit label, the spent
+ * amount as a big `AmountDisplay`, a percent-used indicator, and a
+ * `ProgressBar` fill. The percent is clamped to 0..1. All copy reads from
+ * the `settings` namespace (it owns the `monthlyBudget*` domain).
  */
 export function BudgetCard({
   spent,
   limit,
   currency,
-  kicker = 'PRESUPUESTO MENSUAL',
+  kicker,
   limitLabel,
 }: BudgetCardProps) {
+  const { t } = useTranslation('settings');
+  const kickerText = kicker ?? t('budgetCardKicker');
+  const limitLabelText = limitLabel ?? t('budgetLimitLabel');
   const percent = limit > 0 ? Math.min(1, spent / limit) : 0;
   return (
     <Card
@@ -51,15 +56,19 @@ export function BudgetCard({
         }}
       >
         <View style={styles.cardHeader}>
-          <Text style={styles.kicker}>{kicker}</Text>
+          <Text style={styles.kicker}>{kickerText}</Text>
           <AmountDisplay value={spent} currency={currency} />
         </View>
         <View style={styles.budgetMeta}>
-          <Text style={styles.limitLabel}>Límite:</Text>
+          <Text style={styles.limitLabel}>{limitLabelText}</Text>
           <Text style={styles.limitLabel}>
             {formatCurrency(limit, currency)}
           </Text>
-          <Text style={styles.percent}>{Math.round(percent * 100)}% usado</Text>
+          <Text style={styles.percent}>
+            {t('budgetPercentUsed', {
+              percent: Math.round(percent * 100),
+            })}
+          </Text>
         </View>
       </View>
       <View style={styles.progressWrap}>

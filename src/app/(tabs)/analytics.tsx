@@ -29,9 +29,11 @@ import {
   aggregateItemsByMonth,
   currentMonthKey,
   monthKeyToLabel,
+  monthKeyToMonthName,
   previousMonthKey,
 } from '@/features/home/hooks/useHomeFeed';
 import { useProEntitlement } from '@/features/pro';
+import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -57,7 +59,7 @@ const ANALYTICS_TAB_BAR_HEIGHT = Platform.select({
  * reachable even when it has no data yet ("Sin artículos este mes.").
  */
 export default function AnalyticsScreen() {
-  const { t } = useTranslation(['household', 'analytics']);
+  const { t } = useTranslation(['household', 'analytics', 'common']);
   const insets = useSafeAreaInsets();
   const currency = useSettingsStore((s) => s.currency);
   const { isPro } = useProEntitlement();
@@ -115,8 +117,11 @@ export default function AnalyticsScreen() {
     session?.user?.user_metadata?.full_name ??
     session?.user?.user_metadata?.name ??
     '';
+  // The active UI locale comes from the locale store (set before
+  // `changeLanguage` fires), so month labels re-render on locale swaps.
+  const locale = useLocaleStore((s) => s.activeLocale);
   const firstName = fullName.trim().split(' ')[0];
-  const displayName = firstName || 'Usuario';
+  const displayName = firstName || t('common:userFallback');
   const avatarUrl = session?.user?.user_metadata?.avatar_url;
 
   // Headline scope follows the view toggle. In household mode "TOTAL GASTADO"
@@ -156,7 +161,10 @@ export default function AnalyticsScreen() {
     setMonthKey,
   );
 
-  const previousMonthLabel = monthKeyToLabel(previousMonthKey(monthKey));
+  const previousMonthName = monthKeyToMonthName(
+    locale,
+    previousMonthKey(monthKey),
+  );
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -195,7 +203,7 @@ export default function AnalyticsScreen() {
               color={canGoOlder ? colors.textPrimary : colors.textSecondary}
             />
           </Pressable>
-          <Text style={styles.monthLabel}>{monthKeyToLabel(monthKey)}</Text>
+          <Text style={styles.monthLabel}>{monthKeyToLabel(locale, monthKey)}</Text>
           <Pressable
             onPress={goNewer}
             disabled={!canGoNewer}
@@ -264,7 +272,7 @@ export default function AnalyticsScreen() {
           }}
           placeholder={headline.headlineTotal === null}
           currency={currency}
-          previousMonthLabel={previousMonthLabel}
+          previousMonthName={previousMonthName}
         />
         <ChartsEntryCard isPro={isPro} />
         {alerts.map((alert) => (

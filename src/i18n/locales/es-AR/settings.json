@@ -70,5 +70,18 @@
   "usageScansUsed": "Escaneos usados",
   "usageResetPrefix": "Se restablece el 1º de",
   "usageUpgradeLabel": "Actualiza para obtener escaneos ilimitados.",
-  "usageCtaLabel": "Mejorar a Pro"
+  "usageCtaLabel": "Mejorar a Pro",
+  "budgetCardKicker": "PRESUPUESTO MENSUAL",
+  "budgetLimitLabel": "Límite:",
+  "budgetPercentUsed": "{{percent}}% usado",
+  "snacksCalloutKicker": "MICROGASTOS",
+  "snacksCalloutLabel": "Antojos/Impulsos",
+  "snacksThisMonth": "este mes",
+  "snacksBreakdownA11y": "Ver desglose de antojos/snacks",
+  "snacksModalKicker": "Antojos/Snacks",
+  "snacksModalTitle": "Desglose del mes",
+  "snacksModalBackdropA11y": "Cerrar desglose",
+  "snacksModalTotal": "Total del mes",
+  "snacksModalEmptyTitle": "Sin antojos este mes.",
+  "snacksModalEmptyBody": "Marcá un item como impulso al escanear un ticket para verlo acá."
 }

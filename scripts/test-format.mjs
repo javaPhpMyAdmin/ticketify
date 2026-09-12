@@ -13,7 +13,9 @@
  *     "31 jul" under UTC-x zones — the regression this pins),
  *   - formatTime: 12-hour "02:30 p. m." / "12:00 a. m.",
  *   - formatRelativeDay: Hoy / Ayer / short date against an explicit `now`,
- *   - formatYearMonth: "ago 2026" / "Agosto 2026" from a `YYYY-MM`,
+ *   - formatYearMonth: locale-first — "ago 2026" (es-AR/PT-BR) /
+ *     "Aug 2026" (en) short; "Agosto de 2026" full + capitalize
+ *     (es-AR/pt-BR connector " de ", en plain space).
  *   - todayLocalISO: today's local calendar date (compared against a
  *     locally-constructed date, never a UTC slice).
  *
@@ -131,23 +133,124 @@ async function run() {
     assert.equal(fmt.todayLocalISO(), expected);
   });
 
-  await test('formatYearMonth short → "ago 2026"', () => {
-    assert.equal(fmt.formatYearMonth('2026-08'), 'ago 2026');
+  await test('formatYearMonth short es-AR → "ago 2026"', () => {
+    assert.equal(fmt.formatYearMonth('es-AR', '2026-08'), 'ago 2026');
   });
 
-  await test('formatYearMonth full + capitalize → "Agosto 2026"', () => {
+  await test('formatYearMonth short en + capitalize → "Aug 2026"', () => {
     assert.equal(
-      fmt.formatYearMonth('2026-08', { full: true, capitalize: true }),
-      'Agosto 2026',
+      fmt.formatYearMonth('en', '2026-08', { capitalize: true }),
+      'Aug 2026',
     );
   });
 
-  await test('formatYearMonth full lowercase → "agosto 2026"', () => {
-    assert.equal(fmt.formatYearMonth('2026-08', { full: true }), 'agosto 2026');
+  await test('formatYearMonth short pt-BR → "ago 2026"', () => {
+    assert.equal(fmt.formatYearMonth('pt-BR', '2026-08'), 'ago 2026');
+  });
+
+  await test('formatYearMonth full + capitalize es-AR → "Agosto de 2026"', () => {
+    assert.equal(
+      fmt.formatYearMonth('es-AR', '2026-08', { full: true, capitalize: true }),
+      'Agosto de 2026',
+    );
+  });
+
+  await test('formatYearMonth full + capitalize en → "August 2026"', () => {
+    assert.equal(
+      fmt.formatYearMonth('en', '2026-08', { full: true, capitalize: true }),
+      'August 2026',
+    );
+  });
+
+  await test('formatYearMonth full + capitalize pt-BR → "Agosto de 2026"', () => {
+    assert.equal(
+      fmt.formatYearMonth('pt-BR', '2026-08', { full: true, capitalize: true }),
+      'Agosto de 2026',
+    );
+  });
+
+  await test('formatYearMonth full lowercase en → "august 2026"', () => {
+    assert.equal(fmt.formatYearMonth('en', '2026-08', { full: true }), 'august 2026');
+  });
+
+  // Array-edge coverage: month names index `date.getMonth()` (0-based), so
+  // January (index 0) and December (index 11) are the off-by-one corners.
+  // Pins both edges for all three locales, short and full + capitalize.
+
+  await test('formatYearMonth short es-AR January → "ene 2026"', () => {
+    assert.equal(fmt.formatYearMonth('es-AR', '2026-01'), 'ene 2026');
+  });
+
+  await test('formatYearMonth short es-AR December → "dic 2026"', () => {
+    assert.equal(fmt.formatYearMonth('es-AR', '2026-12'), 'dic 2026');
+  });
+
+  await test('formatYearMonth full + capitalize es-AR January → "Enero de 2026"', () => {
+    assert.equal(
+      fmt.formatYearMonth('es-AR', '2026-01', { full: true, capitalize: true }),
+      'Enero de 2026',
+    );
+  });
+
+  await test('formatYearMonth full + capitalize es-AR December → "Diciembre de 2026"', () => {
+    assert.equal(
+      fmt.formatYearMonth('es-AR', '2026-12', { full: true, capitalize: true }),
+      'Diciembre de 2026',
+    );
+  });
+
+  await test('formatYearMonth short + capitalize en January → "Jan 2026"', () => {
+    assert.equal(
+      fmt.formatYearMonth('en', '2026-01', { capitalize: true }),
+      'Jan 2026',
+    );
+  });
+
+  await test('formatYearMonth short + capitalize en December → "Dec 2026"', () => {
+    assert.equal(
+      fmt.formatYearMonth('en', '2026-12', { capitalize: true }),
+      'Dec 2026',
+    );
+  });
+
+  await test('formatYearMonth full + capitalize en January → "January 2026"', () => {
+    assert.equal(
+      fmt.formatYearMonth('en', '2026-01', { full: true, capitalize: true }),
+      'January 2026',
+    );
+  });
+
+  await test('formatYearMonth full + capitalize en December → "December 2026"', () => {
+    assert.equal(
+      fmt.formatYearMonth('en', '2026-12', { full: true, capitalize: true }),
+      'December 2026',
+    );
+  });
+
+  await test('formatYearMonth short pt-BR January → "jan 2026"', () => {
+    assert.equal(fmt.formatYearMonth('pt-BR', '2026-01'), 'jan 2026');
+  });
+
+  await test('formatYearMonth short pt-BR December → "dez 2026"', () => {
+    assert.equal(fmt.formatYearMonth('pt-BR', '2026-12'), 'dez 2026');
+  });
+
+  await test('formatYearMonth full + capitalize pt-BR January → "Janeiro de 2026"', () => {
+    assert.equal(
+      fmt.formatYearMonth('pt-BR', '2026-01', { full: true, capitalize: true }),
+      'Janeiro de 2026',
+    );
+  });
+
+  await test('formatYearMonth full + capitalize pt-BR December → "Dezembro de 2026"', () => {
+    assert.equal(
+      fmt.formatYearMonth('pt-BR', '2026-12', { full: true, capitalize: true }),
+      'Dezembro de 2026',
+    );
   });
 
   await test('formatYearMonth returns input on malformed year-month', () => {
-    assert.equal(fmt.formatYearMonth('2026-13'), '2026-13');
+    assert.equal(fmt.formatYearMonth('es-AR', '2026-13'), '2026-13');
   });
 
   if (failed > 0) {

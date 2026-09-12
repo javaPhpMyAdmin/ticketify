@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Bar, CartesianChart } from 'victory-native';
 
 import { Icon, Text } from '@/components';
+import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrency } from '@/lib/format';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -33,8 +34,8 @@ export interface InsightHeroCardProps {
   total: number;
   /** Month-over-month percentage change; null hides the delta chip. */
   deltaPct: number | null;
-  /** Label of the comparison month, e.g. "Julio 2026" — shown in the chip. */
-  previousMonthLabel?: string | null;
+  /** Name of the comparison month, e.g. "Julio" — shown in the chip. */
+  previousMonthName?: string | null;
   /**
    * One point per day of the selected month (1..days-in-month, zero-filled
    * by `aggregateDailySpend`) — the hero bars' x-axis.
@@ -80,7 +81,7 @@ export function InsightHeroCard({
   monthKey,
   total,
   deltaPct,
-  previousMonthLabel,
+  previousMonthName,
   dailyData,
   currency = 'UYU',
   chartHeight = 120,
@@ -90,6 +91,10 @@ export function InsightHeroCard({
   // the `analytics` namespace; the rest of the card (month label, totals,
   // weekday initials) is user-data or already localized.
   const { t } = useTranslation(['analytics']);
+  // Reactive locale for the locale-aware aggregates (weekday names and
+  // initials) — read from the store so the card re-renders on locale
+  // swaps, matching the pattern used across the app.
+  const locale = useLocaleStore((s) => s.activeLocale);
   const hasChange = deltaPct !== null;
   const isUp = hasChange && deltaPct >= 0;
 
@@ -107,8 +112,8 @@ export function InsightHeroCard({
   // function of the card's own props; null on all-zero months, so a
   // no-spend month hides BOTH the line and the chart consistently.
   const insight = useMemo(
-    () => buildDailyInsight(dailyData, monthKey),
-    [dailyData, monthKey],
+    () => buildDailyInsight(dailyData, monthKey, locale),
+    [dailyData, monthKey, locale],
   );
 
   // Cbrt-scale the daily totals (see `buildVisibleDailySeries`) so small
@@ -154,9 +159,10 @@ export function InsightHeroCard({
   // Day labels rendered manually below the chart — victory-native's own
   // axis labels proved unreliable here (they didn't render on device), so
   // we draw the numbers ourselves. EVERY day of the month is labeled,
-  // one per slot, with the weekday initial (L M M J V S D) under it.
+  // one per slot, with the locale-aware weekday initial under it
+  // (es-AR: L M M J V S D; en: S M T W T F S; pt-BR: D S T Q Q S S).
   const dayTicks = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  const weekdayInitials = weekdayInitialsForMonth(monthKey);
+  const weekdayInitials = weekdayInitialsForMonth(monthKey, locale);
 
   return (
     <View style={styles.card}>
@@ -185,8 +191,8 @@ export function InsightHeroCard({
               ]}
             >
               {isUp ? '+' : ''}
-              {Math.round(deltaPct)}% vs{' '}
-              {previousMonthLabel?.split(' ')[0] ?? ''}
+              {Math.round(deltaPct)}%{' '}
+              {t('analytics:overviewBadge', { month: previousMonthName ?? '' })}
             </Text>
           </View>
         ) : null}
@@ -199,7 +205,12 @@ export function InsightHeroCard({
           adjustsFontSizeToFit
           minimumFontScale={0.8}
         >
-          {`Tu día más caro fue el ${insight.weekday} ${insight.day} (${formatCurrency(insight.amount, currency)} · ${insight.multiple}x tu promedio)`}
+          {t('analytics:heroMostExpensiveDay', {
+            weekday: insight.weekday,
+            day: insight.day,
+            amount: formatCurrency(insight.amount, currency),
+            multiple: insight.multiple,
+          })}
         </Text>
       ) : null}
 
@@ -335,8 +346,8 @@ const styles = StyleSheet.create({
     color: colors.heroText,
     marginTop: spacing.sm,
   },
-  // Single-line daily-spend insight ("Tu día más caro fue el Lunes 3
-  // ($20,289.51 · 15x tu promedio)"). Shrinks to fit on narrow screens
+  // Single-line daily-spend insight ("Your most expensive day was Monday 3
+  // ($20,289.51 · 15x your average)"). Shrinks to fit on narrow screens
   // instead of wrapping — one line, per spec.
   insight: {
     ...typography.bodyMd,
