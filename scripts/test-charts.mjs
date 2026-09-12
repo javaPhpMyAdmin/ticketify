@@ -67,7 +67,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -177,7 +177,14 @@ async function run() {
     pathToFileURL(join(outDir, 'src/features/charts/categoryHref.js')).href
   );
   const { categoryDetailHref } = categoryHrefMod;
-  const { aggregateCategoriesByMonth: directAggregate } = homeFeedMod;
+  const { aggregateCategoriesByMonth: directAggregate, monthKeyToMonthName } =
+    homeFeedMod;
+  // The charts tsconfig compiles `src/lib/format.ts` too; reuse its
+  // currency formatter for the hero-template rendering tests below.
+  const formatMod = await import(
+    pathToFileURL(join(outDir, 'src/lib/format.js')).href
+  );
+  const { formatCurrency } = formatMod;
 
   console.log('\n[tests] aggregateSpendTrend\n');
 
@@ -1256,6 +1263,59 @@ async function run() {
     assert.deepEqual(weekdayInitialsForMonth('2026-13'), []);
   });
 
+  console.log('\n[tests] weekdayInitialsForMonth — locale-aware variants\n');
+
+  await test('en: august 2026 → S S M T W T F S …', () => {
+    const initials = weekdayInitialsForMonth('2026-08', 'en');
+    assert.equal(initials.length, 31);
+    assert.deepEqual(initials.slice(0, 8), ['S', 'S', 'M', 'T', 'W', 'T', 'F', 'S']);
+    assert.equal(initials[9], 'M', 'day 10 is Monday');
+    assert.equal(initials[12], 'T', 'day 13 is Thursday');
+    assert.equal(initials[14], 'S', 'day 15 is Saturday');
+    assert.equal(initials[15], 'S', 'day 16 is Sunday');
+  });
+
+  await test('pt-BR: august 2026 → S D S T Q Q S S …', () => {
+    const initials = weekdayInitialsForMonth('2026-08', 'pt-BR');
+    assert.equal(initials.length, 31);
+    assert.deepEqual(initials.slice(0, 8), ['S', 'D', 'S', 'T', 'Q', 'Q', 'S', 'S']);
+    assert.equal(initials[9], 'S', 'day 10 (Monday) is Segunda');
+    assert.equal(initials[14], 'S', 'day 15 is Sábado');
+    assert.equal(initials[15], 'D', 'day 16 is Domingo');
+  });
+
+  await test('en weekly bars: Mon-first labels + initials', () => {
+    const out = aggregateWeeklySpend([], '2026-08-10', [], 'en');
+    assert.deepEqual(
+      out.map((p) => ({ day: p.day, initial: p.initial })),
+      [
+        { day: 'Mon', initial: 'M' },
+        { day: 'Tue', initial: 'T' },
+        { day: 'Wed', initial: 'W' },
+        { day: 'Thu', initial: 'T' },
+        { day: 'Fri', initial: 'F' },
+        { day: 'Sat', initial: 'S' },
+        { day: 'Sun', initial: 'S' },
+      ],
+    );
+  });
+
+  await test('pt-BR weekly bars: Mon-first labels + initials', () => {
+    const out = aggregateWeeklySpend([], '2026-08-10', [], 'pt-BR');
+    assert.deepEqual(
+      out.map((p) => ({ day: p.day, initial: p.initial })),
+      [
+        { day: 'Seg', initial: 'S' },
+        { day: 'Ter', initial: 'T' },
+        { day: 'Qua', initial: 'Q' },
+        { day: 'Qui', initial: 'Q' },
+        { day: 'Sex', initial: 'S' },
+        { day: 'Sáb', initial: 'S' },
+        { day: 'Dom', initial: 'D' },
+      ],
+    );
+  });
+
   console.log('\n[tests] buildDailyInsight\n');
 
   // Real August 2026 fixture (same shape as the hero curve tests): day 3
@@ -1362,6 +1422,122 @@ async function run() {
 
   await test('empty daily data → null', () => {
     assert.equal(buildDailyInsight([], '2026-08'), null);
+  });
+
+  console.log('\n[tests] buildDailyInsight — locale-aware variants\n');
+
+  await test('real august fixture in en → weekday "Monday"', () => {
+    const insight = buildDailyInsight(AUGUST_2026, '2026-08', 'en');
+    assert.equal(insight.day, 3);
+    assert.equal(insight.weekday, 'Monday');
+    assert.equal(insight.amount, 20289.51);
+    assert.equal(insight.multiple, 6);
+  });
+
+  await test('real august fixture in pt-BR → weekday "Segunda"', () => {
+    const insight = buildDailyInsight(AUGUST_2026, '2026-08', 'pt-BR');
+    assert.equal(insight.day, 3);
+    assert.equal(insight.weekday, 'Segunda');
+    assert.equal(insight.amount, 20289.51);
+    assert.equal(insight.multiple, 6);
+  });
+
+  console.log('\n[tests] monthKeyToMonthName\n');
+
+  await test('es-AR → capitalized full names incl. array edges', () => {
+    assert.equal(monthKeyToMonthName('es-AR', '2026-01'), 'Enero');
+    assert.equal(monthKeyToMonthName('es-AR', '2026-08'), 'Agosto');
+    assert.equal(monthKeyToMonthName('es-AR', '2026-12'), 'Diciembre');
+  });
+
+  await test('en → capitalized full names incl. array edges', () => {
+    assert.equal(monthKeyToMonthName('en', '2026-01'), 'January');
+    assert.equal(monthKeyToMonthName('en', '2026-08'), 'August');
+    assert.equal(monthKeyToMonthName('en', '2026-12'), 'December');
+  });
+
+  await test('pt-BR → capitalized full names incl. array edges', () => {
+    assert.equal(monthKeyToMonthName('pt-BR', '2026-01'), 'Janeiro');
+    assert.equal(monthKeyToMonthName('pt-BR', '2026-08'), 'Agosto');
+    assert.equal(monthKeyToMonthName('pt-BR', '2026-12'), 'Dezembro');
+  });
+
+  await test('capitalizes the lowercase array entry ("agosto" → "Agosto")', () => {
+    // MONTHS_FULL_* store lowercase (es/pt-BR convention); the helper
+    // capitalizes the first letter, mirroring the catalog's display form.
+    assert.equal(monthKeyToMonthName('en', '2026-03'), 'March');
+    assert.equal(monthKeyToMonthName('es-AR', '2026-08'), 'Agosto');
+  });
+
+  await test('malformed month keys → empty string', () => {
+    assert.equal(monthKeyToMonthName('es-AR', 'garbage'), '');
+    assert.equal(monthKeyToMonthName('es-AR', '2026-13'), '');
+    assert.equal(monthKeyToMonthName('es-AR', '2026'), '');
+    assert.equal(monthKeyToMonthName('pt-BR', 'garbage'), '');
+  });
+
+  console.log('\n[tests] heroMostExpensiveDay template (Fix 1 CRITICAL)\n');
+
+  // Reads the REAL catalog from disk and interpolates the insight the way
+  // `InsightHeroCard` does (`t('analytics:heroMostExpensiveDay', {...})`),
+  // so a missing/mis-typed key or an unhandled interpolation var fails
+  // here instead of rendering the raw key in production.
+
+  await test('es-AR template renders the real august insight line', () => {
+    const insight = buildDailyInsight(AUGUST_2026, '2026-08', 'es-AR');
+    const catalog = JSON.parse(
+      readFileSync(
+        join(root, 'src', 'i18n', 'locales', 'es-AR', 'analytics.json'),
+        'utf8',
+      ),
+    );
+    const line = catalog.heroMostExpensiveDay
+      .replace(/\{\{weekday\}\}/g, insight.weekday)
+      .replace(/\{\{day\}\}/g, String(insight.day))
+      .replace(/\{\{amount\}\}/g, formatCurrency(insight.amount, 'USD'))
+      .replace(/\{\{multiple\}\}/g, String(insight.multiple));
+    assert.equal(
+      line,
+      'Tu día más caro fue el Lunes 3 (US$ 20,289.51 · 6x tu promedio)',
+    );
+  });
+
+  await test('en template renders the real august insight line', () => {
+    const insight = buildDailyInsight(AUGUST_2026, '2026-08', 'en');
+    const catalog = JSON.parse(
+      readFileSync(
+        join(root, 'src', 'i18n', 'locales', 'en', 'analytics.json'),
+        'utf8',
+      ),
+    );
+    const line = catalog.heroMostExpensiveDay
+      .replace(/\{\{weekday\}\}/g, insight.weekday)
+      .replace(/\{\{day\}\}/g, String(insight.day))
+      .replace(/\{\{amount\}\}/g, formatCurrency(insight.amount, 'USD'))
+      .replace(/\{\{multiple\}\}/g, String(insight.multiple));
+    assert.equal(
+      line,
+      'Your most expensive day was Monday 3 (US$ 20,289.51 · 6x your average)',
+    );
+  });
+
+  await test('pt-BR template renders the real august insight line', () => {
+    const insight = buildDailyInsight(AUGUST_2026, '2026-08', 'pt-BR');
+    const catalog = JSON.parse(
+      readFileSync(
+        join(root, 'src', 'i18n', 'locales', 'pt-BR', 'analytics.json'),
+        'utf8',
+      ),
+    );
+    const line = catalog.heroMostExpensiveDay
+      .replace(/\{\{weekday\}\}/g, insight.weekday)
+      .replace(/\{\{day\}\}/g, String(insight.day))
+      .replace(/\{\{amount\}\}/g, formatCurrency(insight.amount, 'USD'))
+      .replace(/\{\{multiple\}\}/g, String(insight.multiple));
+    assert.equal(
+      line,
+      'Seu dia mais caro foi Segunda 3 (US$ 20,289.51 · 6x sua média)',
+    );
   });
 
   console.log('\n[tests] categoryDetailHref\n');

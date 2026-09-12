@@ -72,5 +72,14 @@
   "exportHeaderUnitPrice": "Unit price",
   "exportHeaderLineTotal": "Line total",
   "exportHeaderImpulse": "Impulse",
-  "exportSummaryTotalLabel": "Total"
+  "exportSummaryTotalLabel": "Total",
+  "overviewKicker": "TOTAL SPENT",
+  "overviewBadge": "vs {{month}}",
+  "insightMore": "You spent {{pct}}% more than in {{month}}.",
+  "insightLess": "You spent {{pct}}% less than in {{month}}.",
+  "insightSame": "You spent the same as in {{month}}.",
+  "heroMostExpensiveDay": "Your most expensive day was {{weekday}} {{day}} ({{amount}} · {{multiple}}x your average)",
+  "runRateKicker": "MONTHLY PACE",
+  "runRateBadge": "vs {{source}}",
+  "runRateProjection": "At the current pace the month closes at ~{{projection}}"
 }

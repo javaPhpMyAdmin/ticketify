@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native';
 
 import { BudgetCard, Card, Pressable, Text, View } from '@/components';
@@ -27,7 +28,8 @@ export interface MonthlyBudgetCardProps {
  * the home screen. When `onPressSnacks` is provided the callout body
  * becomes a Pressable, preserving the existing Card chrome. The callout
  * stays a static `View` when no handler is wired so callers without the
- * breakdown modal still render unchanged.
+ * breakdown modal still render unchanged. Copy reads from the `settings`
+ * namespace (it owns the budget domain).
  */
 export function MonthlyBudgetCard({
   spent,
@@ -37,6 +39,7 @@ export function MonthlyBudgetCard({
   wantsSnacksTotal = 0,
   onPressSnacks,
 }: MonthlyBudgetCardProps) {
+  const { t } = useTranslation('settings');
   // The Card chrome (background, border, padding, radius) is provided by
   // the organism and shared by both branches. Only the body container
   // switches between a static View and a Pressable, so the layout is
@@ -44,8 +47,10 @@ export function MonthlyBudgetCard({
   const body = (
     <>
       <View style={{ height: 50, backgroundColor: colors.surface }}>
-        <Text style={styles.kicker}>MICROGASTOS</Text>
-        <Text style={styles.calloutLabel}>Antojos/Impulsos</Text>
+        <Text style={styles.kicker}>{t('snacksCalloutKicker')}</Text>
+        <Text style={styles.calloutLabel}>
+          {t('snacksCalloutLabel')}
+        </Text>
       </View>
       <View style={styles.calloutRow}>
         <View
@@ -65,7 +70,9 @@ export function MonthlyBudgetCard({
           >
             {formatCurrency(wantsSnacksTotal, currency)}
           </Text>
-          <Text style={styles.calloutAmount}>este mes</Text>
+          <Text style={styles.calloutAmount}>
+            {t('snacksThisMonth')}
+          </Text>
         </View>
       </View>
     </>
@@ -81,7 +88,7 @@ export function MonthlyBudgetCard({
               onPress={onPressSnacks}
               disabled={wantsSnacksTotal === 0}
               accessibilityRole="button"
-              accessibilityLabel="Ver desglose de antojos/snacks"
+              accessibilityLabel={t('snacksBreakdownA11y')}
               accessibilityState={{ disabled: wantsSnacksTotal === 0 }}
               style={({ pressed }) => [
                 styles.calloutPressable,

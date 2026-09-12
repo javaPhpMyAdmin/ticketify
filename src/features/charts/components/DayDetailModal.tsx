@@ -11,7 +11,7 @@ export interface DayDetailModalProps {
   visible: boolean;
   /** ISO date (`YYYY-MM-DD`) of the tapped day. */
   isoDate: string;
-  /** Header label for the tapped day, e.g. "Lunes 11". */
+  /** Header label for the tapped day, locale-aware (e.g. "Lunes 11" / "Segunda 11"). */
   dayLabel: string;
   /** Merged line items for that day, amount desc (see `aggregateDayItems`). */
   items: DayItemGroup[];

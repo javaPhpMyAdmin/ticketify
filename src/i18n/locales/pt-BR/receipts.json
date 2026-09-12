@@ -9,6 +9,7 @@
   "categoriesTitle": "Categorias",
   "itemsTitle": "Itens",
   "itemsEmpty": "Sem itens detalhados.",
+  "unknownCategory": "sem categoria",
   "categoryItemsA11y_one": "Ver item de {{category}}",
   "categoryItemsA11y_other": "Ver itens de {{category}}",
   "photoA11y": "Ver foto em tela cheia",
@@ -35,5 +36,12 @@
   "editLabel": "Editar",
   "editLoadingLabel": "Carregando…",
   "deleteLabel": "Excluir",
-  "deletingLabel": "Excluindo…"
+  "deletingLabel": "Excluindo…",
+  "scanA11y": "Escanear ticket",
+  "countAll_one": "{{count}} ticket",
+  "countAll_other": "{{count}} tickets",
+  "countScanned_one": "{{count}} ticket escaneado",
+  "countScanned_other": "{{count}} tickets escaneados",
+  "countManual_one": "{{count}} manual",
+  "countManual_other": "{{count}} manuais"
 }

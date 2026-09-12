@@ -70,5 +70,18 @@
   "usageScansUsed": "Scans used",
   "usageResetPrefix": "Resets on",
   "usageUpgradeLabel": "Upgrade to get unlimited scans.",
-  "usageCtaLabel": "Upgrade to Pro"
+  "usageCtaLabel": "Upgrade to Pro",
+  "budgetCardKicker": "MONTHLY BUDGET",
+  "budgetLimitLabel": "Limit:",
+  "budgetPercentUsed": "{{percent}}% used",
+  "snacksCalloutKicker": "MICRO SPENDING",
+  "snacksCalloutLabel": "Wants/Impulse",
+  "snacksThisMonth": "this month",
+  "snacksBreakdownA11y": "View snacks breakdown",
+  "snacksModalKicker": "Wants/Snacks",
+  "snacksModalTitle": "Month breakdown",
+  "snacksModalBackdropA11y": "Close breakdown",
+  "snacksModalTotal": "Month total",
+  "snacksModalEmptyTitle": "No wants this month.",
+  "snacksModalEmptyBody": "Mark an item as impulse when scanning a ticket to see it here."
 }

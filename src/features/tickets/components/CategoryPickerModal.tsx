@@ -1,4 +1,5 @@
 import { ScrollView, StyleSheet } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { BottomSheet, Icon, Pressable, Text, View } from '@/components';
 import { EXPENSE_CATEGORIES } from '@/features/home/categories';
@@ -54,12 +55,13 @@ export function CategoryPickerModal({
   onSelect,
   onClose,
 }: CategoryPickerModalProps) {
+  const { t } = useTranslation('tickets');
   const categories = Object.values(EXPENSE_CATEGORIES);
   return (
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      backdropLabel="Cerrar categorías"
+      backdropLabel={t('categoryPickerBackdropA11y')}
       backdropColor="rgba(0, 0, 0, 0.5)"
       surface
       radius="xl"
@@ -70,7 +72,7 @@ export function CategoryPickerModal({
       includeBottomInset={false}
     >
       <View style={styles.body}>
-        <Text style={styles.title}>Categoría</Text>
+        <Text style={styles.title}>{t('categoryPickerTitle')}</Text>
         <Text style={styles.itemName} numberOfLines={1}>
           {itemName}
         </Text>

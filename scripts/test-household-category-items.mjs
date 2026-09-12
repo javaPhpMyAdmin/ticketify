@@ -128,6 +128,13 @@ function installRequireHook() {
       // and the literal-string assertions would break. Route to the stub
       // that maps the keys the screen uses back to their es-AR values.
       request = join(outDir, 'scripts', 'test-stubs', 'react-i18next.js');
+    } else if (request === 'expo-localization' || request === 'expo-secure-store') {
+      // The drill-down screen reads the active locale from
+      // `useLocaleStore`, whose detection/storage chain imports the
+      // native-bound `expo-localization` + `expo-secure-store` — neither
+      // can load in plain node. Route both to the shared stubs (Node
+      // strips the erasable TS on require, mirroring test:i18n-init).
+      request = join(__dirname, 'test-stubs', request === 'expo-localization' ? 'expo-localization.ts' : 'expo-secure-store.ts');
     } else if (request.startsWith('@/')) {
       request = join(outDir, 'src', request.slice(2));
     }

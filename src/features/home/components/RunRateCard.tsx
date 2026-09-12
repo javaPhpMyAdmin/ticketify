@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Card, Icon, Pressable, Text, View, type IconName } from '@/components';
 import { monthKeyToLabel } from '@/features/home/hooks/useHomeFeed';
 import type { RunRateResult } from '@/features/home/lib/runRate';
+import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrencyWhole } from '@/lib/format';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -55,7 +56,10 @@ export function RunRateCard({ result, currency, monthKey }: RunRateCardProps) {
   // share the same `runRateSource*` keys (same figures on both surfaces).
   const sourceCopy =
     result.source === 'mom' ? t('runRateSourceMom') : t('runRateSourceFallback');
-  const monthLabel = monthKeyToLabel(monthKey);
+  // The active UI locale comes from the locale store (set before
+  // `changeLanguage` fires), so the month label re-renders on locale swaps.
+  const locale = useLocaleStore((s) => s.activeLocale);
+  const monthLabel = monthKeyToLabel(locale, monthKey);
   const mtd = formatCurrencyWhole(result.mtd, currency);
   const projection = formatCurrencyWhole(result.projection, currency);
 
@@ -77,7 +81,7 @@ export function RunRateCard({ result, currency, monthKey }: RunRateCardProps) {
     >
       <Card>
         <View style={[styles.content, styles.contentWithBadge]}>
-          <Text style={styles.kicker}>RITMO DEL MES</Text>
+          <Text style={styles.kicker}>{t('runRateKicker')}</Text>
           <Text style={styles.total}>{mtd}</Text>
         </View>
         <View
@@ -98,11 +102,11 @@ export function RunRateCard({ result, currency, monthKey }: RunRateCardProps) {
             ]}
           >
             {deltaPrefix}
-            {result.deltaPct}% vs {sourceCopy}
+            {result.deltaPct}% {t('runRateBadge', { source: sourceCopy })}
           </Text>
         </View>
         <Text style={styles.body}>
-          Al ritmo actual cerras en ~{projection}
+          {t('runRateProjection', { projection })}
         </Text>
       </Card>
     </Pressable>

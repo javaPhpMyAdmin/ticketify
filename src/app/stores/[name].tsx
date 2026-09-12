@@ -9,6 +9,7 @@ import {
   Text,
 } from '@/components';
 import { monthKeyToLabel, useStoreDetail } from '@/features/home';
+import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -37,8 +38,10 @@ export default function StoreDetailScreen() {
   // `common`. The Stack header keeps the raw store name (it's a
   // user-data value, not a UI literal). Dates flow through
   // `formatDate(locale, iso)` so the active locale wins.
-  const { t, i18n } = useTranslation(['analytics', 'common']);
-  const activeLocale = i18n.language as 'en' | 'es-AR' | 'pt-BR';
+  const { t } = useTranslation(['analytics', 'common']);
+  // The active UI locale comes from the locale store (set before
+  // `changeLanguage` fires), so month labels re-render on locale swaps.
+  const activeLocale = useLocaleStore((s) => s.activeLocale);
   const storeName = name ?? '';
   const { total, purchases } = useStoreDetail(storeName, month);
 
@@ -59,7 +62,9 @@ export default function StoreDetailScreen() {
             {storeName}
           </Text>
           {month ? (
-            <Text style={styles.subtitle}>{monthKeyToLabel(month)}</Text>
+            <Text style={styles.subtitle}>
+              {monthKeyToLabel(activeLocale, month)}
+            </Text>
           ) : null}
         </View>
       </View>

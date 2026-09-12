@@ -46,5 +46,8 @@
   "inviteGenerateFallback": "Não foi possível gerar o código.",
   "inviteCopiedTitle": "Copiado",
   "inviteCopiedBody": "Compartilhe o código com quem você quer convidar.",
-  "inviteShareMessage": "Entre na minha família no Ticketify com este código: {{code}}"
+  "inviteShareMessage": "Entre na minha família no Ticketify com este código: {{code}}",
+  "greeting": "Olá {{name}}!",
+  "homeEmptyTitle": "Sem tickets este mês.",
+  "homeEmptyBody": "Este mês não tem tickets."
 }

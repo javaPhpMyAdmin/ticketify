@@ -27,7 +27,6 @@ export {
   buildVisibleDailySeries,
   buildDailyInsight,
   weekdayInitialsForMonth,
-  WEEKDAY_NAMES,
 } from './aggregate';
 export type {
   SpendTrendPoint,

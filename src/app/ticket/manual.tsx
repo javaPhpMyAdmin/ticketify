@@ -22,7 +22,11 @@ import {
   emptyManualDraft,
   formatManualErrors,
   CategoryPickerModal,
+  CARD_TYPE_KEYS,
+  CARD_TYPE_LABEL_KEYS,
   ItemEditorModal,
+  PAYMENT_METHOD_KEYS,
+  PAYMENT_METHOD_LABEL_KEYS,
   QUOTA_ERROR_MESSAGE,
   QuotaExceededError,
   SAVE_ERROR_MESSAGE,
@@ -31,11 +35,9 @@ import {
   useReceiptDraftActions,
   useReceiptDraftDraft,
   buildManualDraft,
-  cardTypeLabels,
-  cardTypeOptions,
-  paymentMethods,
 } from '@/features/tickets';
 import { formatCurrency, formatDate, todayLocalISO } from '@/lib/format';
+import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { useToastStore } from '@/stores/use-toast-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -56,6 +58,9 @@ export default function ManualEntryScreen() {
   const { t } = useTranslation(['tickets', 'a11y', 'common']);
   const { userId } = useSessionUser();
   const currency = useSettingsStore((s) => s.currency);
+  // The active UI locale comes from the locale store (set before
+  // `changeLanguage` fires), so the date re-renders on locale swaps.
+  const locale = useLocaleStore((s) => s.activeLocale);
   const { draft } = useReceiptDraftDraft();
   const { startDraft, setStore, setDate, setPayment, upsertItem, removeItem, clear } =
     useReceiptDraftActions();
@@ -152,7 +157,7 @@ export default function ManualEntryScreen() {
       }
       await saveManualReceipt(userId, manualDraft);
       clear();
-      useToastStore.getState().show('Compra guardada.', 'success');
+      useToastStore.getState().show(t('tickets:manualSavedToast'), 'success');
       router.dismiss();
     } catch (err) {
       savingRef.current = false;
@@ -219,10 +224,10 @@ export default function ManualEntryScreen() {
                   <Icon name="calendar" size={18} color={colors.textPrimary} />
                   <Text style={styles.dateValue}>
                     {draft?.purchase_date
-                      ? formatDate('es-AR', draft.purchase_date, {
+                      ? formatDate(locale, draft.purchase_date, {
                           todayISO: todayLocalISO(),
                         })
-                      : 'Elegir fecha'}
+                      : t('tickets:manualDatePick')}
                   </Text>
                   <Icon
                     name="chevron.right"
@@ -238,22 +243,27 @@ export default function ManualEntryScreen() {
           <Card>
             <Text style={styles.kicker}>{t('tickets:manualPaymentKicker')}</Text>
             <View style={styles.paymentRow}>
-              {paymentMethods.map((m) => {
+              {PAYMENT_METHOD_KEYS.map((method) => {
                 const label =
-                  m.key === 'card' &&
+                  method === 'card' &&
                   draft?.payment_method === 'card' &&
                   cardType
-                    ? `${t('tickets:manualTarjetaPrefix')} ${cardTypeLabels[cardType]}`
-                    : m.label;
+                    ? `${t('tickets:manualTarjetaPrefix')} ${t(
+                        CARD_TYPE_LABEL_KEYS[cardType],
+                      )}`
+                    : t(PAYMENT_METHOD_LABEL_KEYS[method]);
                 return (
                   <Pressable
-                    key={m.key}
+                    key={method}
                     onPress={() => {
-                      setPayment(m.key);
-                      if (m.key !== 'card') setCardType(null);
+                      setPayment(method);
+                      if (method !== 'card') setCardType(null);
                     }}
                   >
-                    <Chip label={label} selected={draft?.payment_method === m.key} />
+                    <Chip
+                      label={label}
+                      selected={draft?.payment_method === method}
+                    />
                   </Pressable>
                 );
               })}
@@ -263,9 +273,12 @@ export default function ManualEntryScreen() {
             {draft?.payment_method === 'card' ? (
               <View style={styles.cardTypeRow}>
                 <Text style={styles.cardTypeLabel}>{t('tickets:manualCardType')}</Text>
-                {cardTypeOptions.map((opt) => (
-                  <Pressable key={opt.key} onPress={() => setCardType(opt.key)}>
-                    <Chip label={opt.label} selected={cardType === opt.key} />
+                {CARD_TYPE_KEYS.map((kind) => (
+                  <Pressable key={kind} onPress={() => setCardType(kind)}>
+                    <Chip
+                      label={t(CARD_TYPE_LABEL_KEYS[kind])}
+                      selected={cardType === kind}
+                    />
                   </Pressable>
                 ))}
               </View>
@@ -321,7 +334,9 @@ export default function ManualEntryScreen() {
                           onPress={() => openEditItem(item)}
                           hitSlop={8}
                           accessibilityRole="button"
-                          accessibilityLabel={`Editar ${item.name}`}
+                          accessibilityLabel={t('tickets:itemEditA11y', {
+                            name: item.name,
+                          })}
                           style={styles.itemAction}
                         >
                           <Icon name="pencil" size={18} color={colors.textSecondary} />
@@ -330,7 +345,9 @@ export default function ManualEntryScreen() {
                           onPress={() => removeItem(item.temp_id)}
                           hitSlop={8}
                           accessibilityRole="button"
-                          accessibilityLabel={`Eliminar ${item.name}`}
+                          accessibilityLabel={t('tickets:itemDeleteA11y', {
+                            name: item.name,
+                          })}
                           style={styles.itemAction}
                         >
                           <Icon name="trash" size={18} color={colors.danger} />

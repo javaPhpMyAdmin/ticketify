@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { BottomSheet, FieldGroup, Text } from '@/components';
 import { parseQuantity } from '@/features/tickets/manual-form';
@@ -48,6 +49,7 @@ export function ItemEditorModal({
   onSave,
   onClose,
 }: ItemEditorModalProps) {
+  const { t } = useTranslation(['tickets', 'common']);
   const [name, setName] = useState(initialValues?.name ?? '');
   const [quantityStr, setQuantityStr] = useState(
     initialValues != null ? String(initialValues.quantity) : '1',
@@ -94,29 +96,33 @@ export function ItemEditorModal({
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      kicker="AGREGAR ARTÍCULO"
-      title={initialValues ? 'Editar artículo' : 'Nuevo artículo'}
+      kicker={t('tickets:itemEditorKicker')}
+      title={
+        initialValues
+          ? t('tickets:itemEditorEditTitle')
+          : t('tickets:itemEditorNewTitle')
+      }
       backdropColor="rgba(0, 0, 0, 0.5)"
       keyboardMode="listeners"
       scrollable
       divider
       contentContainerStyle={styles.body}
     >
-      <FieldGroup label="Nombre del producto">
+      <FieldGroup label={t('tickets:itemNameFieldLabel')}>
         <TextInput
           value={name}
           onChangeText={setName}
           style={styles.input}
-          placeholder="Ej. Café con leche"
+          placeholder={t('tickets:itemNamePlaceholder')}
           placeholderTextColor={colors.textSecondary}
           keyboardType="default"
           autoFocus
           maxLength={120}
-          accessibilityLabel="Nombre del producto"
+          accessibilityLabel={t('tickets:itemNameFieldLabel')}
         />
       </FieldGroup>
       <View style={styles.row}>
-        <FieldGroup label="Cantidad" style={{ flex: 1 }}>
+        <FieldGroup label={t('tickets:itemQuantityLabel')} style={{ flex: 1 }}>
           <TextInput
             value={quantityStr}
             onChangeText={setQuantityStr}
@@ -124,11 +130,11 @@ export function ItemEditorModal({
             placeholder="1"
             placeholderTextColor={colors.textSecondary}
             keyboardType="number-pad"
-            accessibilityLabel="Cantidad"
+            accessibilityLabel={t('tickets:itemQuantityLabel')}
           />
         </FieldGroup>
         <View style={{ width: spacing.md }} />
-        <FieldGroup label="Precio unitario" style={{ flex: 1 }}>
+        <FieldGroup label={t('tickets:itemUnitPriceLabel')} style={{ flex: 1 }}>
           <TextInput
             value={priceStr}
             onChangeText={setPriceStr}
@@ -136,13 +142,11 @@ export function ItemEditorModal({
             placeholder="0.00"
             placeholderTextColor={colors.textSecondary}
             keyboardType="decimal-pad"
-            accessibilityLabel="Precio unitario"
+            accessibilityLabel={t('tickets:itemUnitPriceLabel')}
           />
         </FieldGroup>
       </View>
-      <Text style={styles.helper}>
-        El precio se calcula como cantidad × precio unitario
-      </Text>
+      <Text style={styles.helper}>{t('tickets:itemEditorHelper')}</Text>
       <View style={styles.actions}>
         <Pressable
           onPress={onClose}
@@ -152,9 +156,9 @@ export function ItemEditorModal({
             pressed && styles.actionPressed,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Cancelar"
+          accessibilityLabel={t('common:cancel')}
         >
-          <Text style={styles.cancelLabel}>Cancelar</Text>
+          <Text style={styles.cancelLabel}>{t('common:cancel')}</Text>
         </Pressable>
         <Pressable
           onPress={handleSave}
@@ -166,10 +170,10 @@ export function ItemEditorModal({
             !canSave && styles.actionDisabled,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Guardar"
+          accessibilityLabel={t('common:save')}
           accessibilityState={{ disabled: !canSave }}
         >
-          <Text style={styles.saveLabel}>Agregar</Text>
+          <Text style={styles.saveLabel}>{t('tickets:manualAddItemShort')}</Text>
         </Pressable>
       </View>
     </BottomSheet>
