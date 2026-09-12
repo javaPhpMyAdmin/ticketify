@@ -42,7 +42,7 @@ export function AmountDisplay({
 const styles = StyleSheet.create({
   large: {
     // ...typography.displayCurrency,
-    fontSize: 33,
+    fontSize: 23,
     fontWeight: '900',
     height: 30,
   },

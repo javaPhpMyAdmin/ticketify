@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
-import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { StyleSheet } from 'react-native';
 
 import { Card, Icon, Pressable, Text, View, type IconName } from '@/components';
 import { monthKeyToLabel } from '@/features/home/hooks/useHomeFeed';
@@ -55,7 +55,9 @@ export function RunRateCard({ result, currency, monthKey }: RunRateCardProps) {
   // Localized baseline label — the badge and the accessibility label below
   // share the same `runRateSource*` keys (same figures on both surfaces).
   const sourceCopy =
-    result.source === 'mom' ? t('runRateSourceMom') : t('runRateSourceFallback');
+    result.source === 'mom'
+      ? t('runRateSourceMom')
+      : t('runRateSourceFallback');
   // The active UI locale comes from the locale store (set before
   // `changeLanguage` fires), so the month label re-renders on locale swaps.
   const locale = useLocaleStore((s) => s.activeLocale);
@@ -129,9 +131,9 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   total: {
-    fontSize: 33,
+    fontSize: 25,
     fontWeight: '900',
-    lineHeight: 40,
+    // lineHeight: 40,
     color: colors.textPrimary,
     marginTop: spacing.xs + 15,
   },
