@@ -9,6 +9,7 @@ import { queryKeys } from '@/lib/query-keys';
 import { useCategoryBudgets } from './useCategoryBudgets';
 import {
   readMonthlyCacheRow,
+  readMonthlyPurchasesTotal,
   triggerMonthlyRecalc,
 } from '@/lib/supabase/feature-access';
 import {
@@ -56,8 +57,12 @@ export function transformCacheToCategoryTotals(
 
 /**
  * Reads the materialized monthly cache for personal mode. When a
- * `householdId` is provided, falls through to the `monthly_category_totals`
- * RPC directly (no cache — avoids cross-user invalidation complexity).
+ * `householdId` is provided, the category rows fall through to the
+ * `monthly_category_totals` RPC directly (no cache — avoids cross-user
+ * invalidation complexity) and the `monthTotal` headline reads the
+ * confirmed-only, net-paid `monthly_purchases_total` RPC under the SAME
+ * query key Home's household card uses (D2): both screens share one cache
+ * entry, so Personal and Household headlines reconcile to the cent.
  *
  * Cache-miss path: when the read returns no row, a one-time
  * `triggerMonthlyRecalc` mutation fires and refetches once complete.
@@ -93,6 +98,12 @@ export function useMonthlyCache(
     ...queryKeys.monthlyTotals(userId ?? '', yearMonth),
     householdId,
   ] as const;
+  // Shared with Home's `useHouseholdMonthTotal` (D2): the net headline key —
+  // one cache entry and one invalidation path for Analytics and Home.
+  const householdNetKey = queryKeys.householdMonthlyPurchasesTotal(
+    householdId ?? '',
+    yearMonth,
+  );
 
   // Personal mode: read from the materialized cache row.
   const cacheQuery = useQuery({
@@ -108,6 +119,17 @@ export function useMonthlyCache(
     enabled: !!userId && isHousehold,
     queryFn: () =>
       fetchMonthlyTotals(yearMonth, householdId).then(toQueryData),
+  });
+
+  // Household mode: net headline from the confirmed-only
+  // `monthly_purchases_total` RPC (D2). Personal mode stays cache-backed;
+  // the per-category rows stay gross line-item sums (D3 — discounts are not
+  // attributed per category, 0029 §3).
+  const netTotalQuery = useQuery({
+    queryKey: householdNetKey,
+    enabled: !!userId && isHousehold,
+    queryFn: () =>
+      readMonthlyPurchasesTotal(yearMonth, householdId).then(toQueryData),
   });
 
   // Cache miss (personal mode): trigger a one-time recalculation via RPC.
@@ -151,16 +173,20 @@ export function useMonthlyCache(
 
   if (isHousehold) {
     const hTotals = householdQuery.data ?? [];
-    const hMonthTotal = hTotals.reduce((acc, t) => acc + t.total, 0);
+    const hMonthTotal = netTotalQuery.data?.[0]?.total ?? 0;
     return {
       totals: hTotals,
       monthTotal: hMonthTotal,
-      isLoading: householdQuery.isLoading,
+      isLoading: householdQuery.isLoading || netTotalQuery.isLoading,
       error: householdQuery.error
         ? toQueryErrorMessage(householdQuery.error)
-        : null,
-      hasData: householdQuery.data !== undefined,
-      refetch: householdQuery.refetch,
+        : netTotalQuery.error
+          ? toQueryErrorMessage(netTotalQuery.error)
+          : null,
+      hasData:
+        householdQuery.data !== undefined && netTotalQuery.data !== undefined,
+      refetch: () =>
+        Promise.all([householdQuery.refetch(), netTotalQuery.refetch()]),
     };
   }
 
