@@ -159,13 +159,20 @@ export const RESOURCES = {
  * init (i18next no-ops the second call). We pull the active locale
  * from the store rather than from `getLocales()` directly so the
  * manual override (if any) wins at boot.
+ *
+ * `forceLocale` is the hard-failure fallback: the provider's catch
+ * path re-initializes with `'es-AR'` so the boot gate never opens
+ * with an un-initialized instance (which would paint raw keys).
  */
-export async function initI18n(): Promise<void> {
+export async function initI18n(
+  forceLocale?: SupportedLocaleTag,
+): Promise<void> {
   const { activeLocale } = useLocaleStore.getState();
+  const lng = forceLocale ?? activeLocale;
 
   await i18next.use(initReactI18next).init({
     resources: RESOURCES,
-    lng: activeLocale,
+    lng,
     fallbackLng: 'es-AR',
     supportedLngs: [...SUPPORTED_LOCALE_TAGS],
     ns: [...NAMESPACES],

@@ -130,77 +130,78 @@ export default function RootLayout() {
         <StatusBar style="dark" backgroundColor={colors.background} />
         {/* i18n boot (REQ-6 / AD-9): hydrates the locale store from
             secure-store, calls `i18next.init()` once, and fires the
-            `initialized` event so the boot gate above can advance.
-            The provider is mounted BEFORE the Stack so the first
-            painted frame already has catalogs loaded — never raw
-            keys. */}
+            `initialized` event so the boot gate above can advance. The
+            provider WRAPS the Stack and renders its children only after
+            i18next resolves — without the wrap, the Stack's screens
+            mount their first frame before `initReactI18next` registers
+            the instance and `useTranslation` paints raw keys (e.g.
+            `auth:email`) that never re-resolve (react-i18next
+            NO_I18NEXT_INSTANCE). */}
         <I18nProvider
           onInitialized={() => setBooted(true)}
           onError={(err) => {
             // eslint-disable-next-line no-console -- boot-path diagnostic only
             console.warn('[i18n] boot error', err);
           }}
-        />
-        {/* Configures RevenueCat once and pipes customerInfo into the pro
-            store (REQ-PRO-1). Renders null; safe to mount unconditionally
-            — the effect gates on a real session. */}
-        <ProBootstrap />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.background },
-          }}
         >
-          <Stack.Protected guard={session != null}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen
-              name="ticket/camera"
-              options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
-            />
-            <Stack.Screen
-              name="ticket/review/[id]"
-              options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-            />
-            {/* Manual entry: a modal form (like the review) reached from the
-                home "Cargar compra" FAB. Lives behind the session gate — it
-                writes the user's draft and calls save_receipt. */}
-            <Stack.Screen
-              name="ticket/manual"
-              options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-            />
-            <Stack.Screen name="categories/[key]" />
-            {/* The drill-downs render store data and are reached from the
-                Home/History drill-downs, so they must sit behind the same
-                session gate — without this they auto-register outside the
-                guard and render stale data via deep links when signed out. */}
-            <Stack.Screen name="receipts/[id]" />
-            <Stack.Screen name="items/[name]" />
-            {/* Store drill-down: reached from the Pro charts screen
-                (`/pro/charts` StoreBars tap). Reads the same user-scoped
-                receipts store, so it must live behind the session gate
-                alongside the item / receipt drill-downs. */}
-            <Stack.Screen name="stores/[name]" />
-    {/* Renders the user's current currency and writes their profile
-                 row, so it must sit behind the same session gate (same
-                 rationale as the drill-downs below). */}
-            <Stack.Screen name="settings/currency" />
-            {/* Same rationale as the currency screen: the budget editor
-                 writes the user's profile row and renders their current
-                 monthly cap, so it lives behind the session gate. */}
-            <Stack.Screen name="settings/budget" />
-            {/* Pro paywall + Pro-gated charts placeholder. The paywall is
-                session-gated only (free users reach it to upgrade); the
-                charts screen enforces its Pro gate inside the screen body
-                (ProRouteGuard). The per-screen titles are NOT declared here:
-                `pro/index` sets its own `<Stack.Screen options>` inline and
-                `pro/charts` uses `useScreenTitle('pro:chartsTitle')` (AD-11)
-                — the screen-level options win at runtime, so layout titles
-                would be dead code. */}
-            <Stack.Screen name="pro/index" />
-            <Stack.Screen name="pro/charts" />
-          </Stack.Protected>
-          <Stack.Screen name="(auth)" />
-        </Stack>
+          <ProBootstrap />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.background },
+            }}
+          >
+            <Stack.Protected guard={session != null}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen
+                name="ticket/camera"
+                options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
+              />
+              <Stack.Screen
+                name="ticket/review/[id]"
+                options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+              />
+              {/* Manual entry: a modal form (like the review) reached from the
+                  home "Cargar compra" FAB. Lives behind the session gate — it
+                  writes the user's draft and calls save_receipt. */}
+              <Stack.Screen
+                name="ticket/manual"
+                options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+              />
+              <Stack.Screen name="categories/[key]" />
+              {/* The drill-downs render store data and are reached from the
+                  Home/History drill-downs, so they must sit behind the same
+                  session gate — without this they auto-register outside the
+                  guard and render stale data via deep links when signed out. */}
+              <Stack.Screen name="receipts/[id]" />
+              <Stack.Screen name="items/[name]" />
+              {/* Store drill-down: reached from the Pro charts screen
+                  (`/pro/charts` StoreBars tap). Reads the same user-scoped
+                  receipts store, so it must live behind the session gate
+                  alongside the item / receipt drill-downs. */}
+              <Stack.Screen name="stores/[name]" />
+      {/* Renders the user's current currency and writes their profile
+                   row, so it must sit behind the same session gate (same
+                   rationale as the drill-downs below). */}
+              <Stack.Screen name="settings/currency" />
+              {/* Same rationale as the currency screen: the budget editor
+                   writes the user's profile row and renders their current
+                   monthly cap, so it lives behind the session gate. */}
+              <Stack.Screen name="settings/budget" />
+              {/* Pro paywall + Pro-gated charts placeholder. The paywall is
+                  session-gated only (free users reach it to upgrade); the
+                  charts screen enforces its Pro gate inside the screen body
+                  (ProRouteGuard). The per-screen titles are NOT declared here:
+                  `pro/index` sets its own `<Stack.Screen options>` inline and
+                  `pro/charts` uses `useScreenTitle('pro:chartsTitle')` (AD-11)
+                  — the screen-level options win at runtime, so layout titles
+                  would be dead code. */}
+              <Stack.Screen name="pro/index" />
+              <Stack.Screen name="pro/charts" />
+            </Stack.Protected>
+            <Stack.Screen name="(auth)" />
+          </Stack>
+        </I18nProvider>
         {/* Mounted at the root so it survives route navigation: a
             `show()` call from a screen about to `router.back()` keeps the
             toast visible on the destination screen instead of dying with
