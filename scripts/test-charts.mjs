@@ -1536,7 +1536,9 @@ async function run() {
       .replace(/\{\{multiple\}\}/g, String(insight.multiple));
     assert.equal(
       line,
-      'Seu dia mais caro foi Segunda 3 (US$ 20,289.51 · 6x sua média)',
+      // pt-BR native-speaker pass (B3): "{{weekday}}, dia {{day}}" — the
+      // comma + "dia" disambiguate the weekday from the day number.
+      'Seu dia mais caro foi Segunda, dia 3 (US$ 20,289.51 · 6x sua média)',
     );
   });
 

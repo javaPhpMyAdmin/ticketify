@@ -1,5 +1,5 @@
 {
-  "topItems": "Top itens",
+  "topItems": "Itens mais comprados",
   "categories": "Categorias",
   "categoryItemCount_one": "{{count}} item",
   "categoryItemCount_other": "{{count}} itens",
@@ -17,7 +17,7 @@
   "proPill": "Pro",
   "priceAlertTitle": "Alerta de preço",
   "priceAlertA11y": "Ver ticket do alerta de preço",
-  "priceAlertProA11y": "Desbloquear Alerta de Preço Pro",
+  "priceAlertProA11y": "Desbloquear alerta de preço Pro",
   "priceAlertA11yHint": "Toque para ver o ticket",
   "priceAlertProA11yHint": "Abrir plano Pro",
   "priceAlertUp": "subiu",
@@ -48,7 +48,7 @@
   "donutEmpty": "Sem gastos neste mês",
   "donutPctSuffix": "% do mês",
   "percentOfSpending": "{{percent}} do gasto",
-  "runRateA11y": "Ritmo de gasto de {{monthLabel}}: {{mtd}} este mês, {{deltaPrefix}}{{deltaPct}}% vs {{source}}; no ritmo atual o mês fecha em ~{{projection}}",
+  "runRateA11y": "Ritmo de gasto de {{monthLabel}}: {{mtd}} este mês, {{deltaPrefix}}{{deltaPct}}% vs {{source}}; no ritmo atual, o mês deve fechar em ~{{projection}}",
   "runRateSourceMom": "mês anterior",
   "runRateSourceFallback": "sua média",
   "dayDetailTitle": "Detalhes do dia",
@@ -78,8 +78,8 @@
   "insightMore": "Você gastou {{pct}}% a mais do que em {{month}}.",
   "insightLess": "Você gastou {{pct}}% a menos do que em {{month}}.",
   "insightSame": "Você gastou o mesmo que em {{month}}.",
-  "heroMostExpensiveDay": "Seu dia mais caro foi {{weekday}} {{day}} ({{amount}} · {{multiple}}x sua média)",
+  "heroMostExpensiveDay": "Seu dia mais caro foi {{weekday}}, dia {{day}} ({{amount}} · {{multiple}}x sua média)",
   "runRateKicker": "RITMO DO MÊS",
   "runRateBadge": "vs {{source}}",
-  "runRateProjection": "No ritmo atual o mês fecha em ~{{projection}}"
+  "runRateProjection": "No ritmo atual, o mês deve fechar em ~{{projection}}"
 }
