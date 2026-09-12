@@ -2,9 +2,9 @@
  * Controllable mock for @/lib/supabase/feature-access.
  *
  * The monthly-cache hook test needs to control readMonthlyCacheRow,
- * triggerMonthlyRecalc, and readCategoryTotals per scenario. This mock
- * replaces the real feature-access module at require time via the
- * require-hook redirect.
+ * triggerMonthlyRecalc, readCategoryTotals, and readMonthlyPurchasesTotal
+ * per scenario. This mock replaces the real feature-access module at
+ * require time via the require-hook redirect.
  *
  * Pattern: default implementations return safe no-ops; tests override
  * per scenario via __set* seam functions.
@@ -26,6 +26,11 @@ let _triggerMonthlyRecalc = async (userId, yearMonth) => ({
 });
 
 let _readCategoryTotals = async (yearMonth, householdId) => ({
+  status: 'ok',
+  data: [],
+});
+
+let _readMonthlyPurchasesTotal = async (yearMonth, householdId) => ({
   status: 'ok',
   data: [],
 });
@@ -66,6 +71,10 @@ exports.__setTriggerMonthlyRecalc = function (fn) {
 
 exports.__setReadCategoryTotals = function (fn) {
   _readCategoryTotals = fn;
+};
+
+exports.__setReadMonthlyPurchasesTotal = function (fn) {
+  _readMonthlyPurchasesTotal = fn;
 };
 
 exports.__setReadCategoryBudgets = function (fn) {
@@ -118,6 +127,7 @@ exports.__reset = function () {
   _readMonthlyCacheRows = async () => ({ status: 'ok', data: [] });
   _triggerMonthlyRecalc = async () => ({ status: 'ok', data: undefined });
   _readCategoryTotals = async () => ({ status: 'ok', data: [] });
+  _readMonthlyPurchasesTotal = async () => ({ status: 'ok', data: [] });
   _readCategoryBudgets = async () => ({ status: 'ok', data: [] });
   _upsertCategoryBudgets = async () => ({ status: 'ok', data: null });
   _markCategoryBudgetRollover = async () => ({ status: 'ok', data: null });
@@ -155,6 +165,13 @@ exports.readCategoryTotals = async function readCategoryTotals(
   householdId,
 ) {
   return _readCategoryTotals(yearMonth, householdId);
+};
+
+exports.readMonthlyPurchasesTotal = async function readMonthlyPurchasesTotal(
+  yearMonth,
+  householdId,
+) {
+  return _readMonthlyPurchasesTotal(yearMonth, householdId);
 };
 
 exports.readCategoryBudgets = async function readCategoryBudgets(
