@@ -65,3 +65,8 @@ jobs:
         # pgTAP) against the local catalog. Any raised assertion fails the
         # query and, because steps stop on error, the whole job.
         run: supabase db query --local --file supabase/tests/pro-subscription.sql
+
+      - name: Run household-totals SQL smoke test
+        # Pins the 0031 contract (confirmed-only household totals, net
+        # reconcile personal == household, non-member zero rows, anon denied).
+        run: supabase db query --local --file supabase/tests/household-totals.sql
