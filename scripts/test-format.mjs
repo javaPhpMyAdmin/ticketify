@@ -16,6 +16,12 @@
  *   - formatYearMonth: locale-first — "ago 2026" (es-AR/PT-BR) /
  *     "Aug 2026" (en) short; "Agosto de 2026" full + capitalize
  *     (es-AR/pt-BR connector " de ", en plain space).
+ *   - formatDayMonth: day + full month per locale — "3 de agosto"
+ *     (es-AR/pt-BR), "August 3" (en),
+ *   - formatMonthYear: short month + year from the LOCAL calendar month
+ *     (a UTC string slice of a full timestamptz would render the wrong
+ *     month); the es-AR September pin "sep 2026" documents the deliberate
+ *     sep-vs-Intl-"sept" choice,
  *   - todayLocalISO: today's local calendar date (compared against a
  *     locally-constructed date, never a UTC slice).
  *
@@ -251,6 +257,60 @@ async function run() {
 
   await test('formatYearMonth returns input on malformed year-month', () => {
     assert.equal(fmt.formatYearMonth('es-AR', '2026-13'), '2026-13');
+  });
+
+  // formatDayMonth — day + full month, locale tables only (no Intl).
+
+  await test('formatDayMonth es-AR → "3 de agosto" (day-first, lowercase month)', () => {
+    assert.equal(fmt.formatDayMonth('es-AR', '2026-08-03'), '3 de agosto');
+  });
+
+  await test('formatDayMonth en → "August 3" (month-first, title-cased)', () => {
+    assert.equal(fmt.formatDayMonth('en', '2026-08-03'), 'August 3');
+  });
+
+  await test('formatDayMonth pt-BR → "3 de agosto" (day-first, lowercase month)', () => {
+    assert.equal(fmt.formatDayMonth('pt-BR', '2026-08-03'), '3 de agosto');
+  });
+
+  // formatMonthYear — short month + year derived from LOCAL calendar fields.
+
+  await test('formatMonthYear es-AR date-only → "ago 2026"', () => {
+    assert.equal(fmt.formatMonthYear('es-AR', '2026-08-01'), 'ago 2026');
+  });
+
+  await test('formatMonthYear en date-only → "Aug 2026"', () => {
+    assert.equal(fmt.formatMonthYear('en', '2026-08-01'), 'Aug 2026');
+  });
+
+  await test('formatMonthYear pt-BR date-only → "ago 2026"', () => {
+    assert.equal(fmt.formatMonthYear('pt-BR', '2026-08-01'), 'ago 2026');
+  });
+
+  await test('formatMonthYear renders the LOCAL month of a full timestamptz, never the UTC month', () => {
+    // TZ=America/Montevideo (UTC-3): 2026-08-01T01:30:00Z is Jul 31 22:30
+    // local. A raw `iso.slice(0, 7)` regression read the ISO month and
+    // rendered "ago 2026"; the local parse must keep "jul 2026" (same
+    // calendar fields the old `toLocaleDateString` call read).
+    assert.equal(
+      fmt.formatMonthYear('es-AR', '2026-08-01T01:30:00Z'),
+      'jul 2026',
+    );
+  });
+
+  await test('formatMonthYear es-AR September → "sep 2026" (deliberate sep vs Intl sept)', () => {
+    // Pins the sept→sep normalization: MONTHS_SHORT_ES[8] = 'sep' is
+    // shorter than Intl's 'sept' and matches the `date:monthShort`
+    // catalog convention — deliberate, not a drift.
+    assert.equal(fmt.formatMonthYear('es-AR', '2026-09-11'), 'sep 2026');
+  });
+
+  await test('formatDayMonth returns input on malformed iso', () => {
+    assert.equal(fmt.formatDayMonth('es-AR', 'not-a-date'), 'not-a-date');
+  });
+
+  await test('formatMonthYear returns input on malformed iso', () => {
+    assert.equal(fmt.formatMonthYear('es-AR', 'not-a-date'), 'not-a-date');
   });
 
   if (failed > 0) {
