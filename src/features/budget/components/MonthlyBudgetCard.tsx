@@ -48,9 +48,7 @@ export function MonthlyBudgetCard({
     <>
       <View style={{ height: 50, backgroundColor: colors.surface }}>
         <Text style={styles.kicker}>{t('snacksCalloutKicker')}</Text>
-        <Text style={styles.calloutLabel}>
-          {t('snacksCalloutLabel')}
-        </Text>
+        <Text style={styles.calloutLabel}>{t('snacksCalloutLabel')}</Text>
       </View>
       <View style={styles.calloutRow}>
         <View
@@ -70,9 +68,7 @@ export function MonthlyBudgetCard({
           >
             {formatCurrency(wantsSnacksTotal, currency)}
           </Text>
-          <Text style={styles.calloutAmount}>
-            {t('snacksThisMonth')}
-          </Text>
+          <Text style={styles.calloutAmount}>{t('snacksThisMonth')}</Text>
         </View>
       </View>
     </>

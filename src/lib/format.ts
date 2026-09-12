@@ -317,11 +317,12 @@ const WEEKDAYS_FULL_BY_LOCALE: Record<FormatDateLocale, readonly string[]> = {
 };
 
 /** Localized weekday-initial lookup keyed by locale (Sun-first / JS-day order). */
-const WEEKDAYS_INITIAL_BY_LOCALE: Record<FormatDateLocale, readonly string[]> = {
-  en: WEEKDAYS_INITIAL_EN,
-  'es-AR': WEEKDAYS_INITIAL_ES,
-  'pt-BR': WEEKDAYS_INITIAL_PT_BR,
-};
+const WEEKDAYS_INITIAL_BY_LOCALE: Record<FormatDateLocale, readonly string[]> =
+  {
+    en: WEEKDAYS_INITIAL_EN,
+    'es-AR': WEEKDAYS_INITIAL_ES,
+    'pt-BR': WEEKDAYS_INITIAL_PT_BR,
+  };
 
 /** Localized short-weekday lookup keyed by locale (Sun-first / JS-day order). */
 const WEEKDAYS_SHORT_BY_LOCALE: Record<FormatDateLocale, readonly string[]> = {
@@ -415,7 +416,9 @@ export function formatYearMonth(
   ) {
     return yearMonth;
   }
-  const names = options.full ? MONTHS_FULL_BY_LOCALE[locale] : MONTHS_SHORT_BY_LOCALE[locale];
+  const names = options.full
+    ? MONTHS_FULL_BY_LOCALE[locale]
+    : MONTHS_SHORT_BY_LOCALE[locale];
   const connector = options.full ? FULL_MONTH_YEAR_CONNECTOR[locale] : ' ';
   const label = `${names[month - 1]}${connector}${year}`;
   return options.capitalize
@@ -450,10 +453,7 @@ export function formatTime(iso: string): string {
   return `${String(hour12).padStart(2, '0')}:${minutes} ${meridiem}`;
 }
 
-export function formatRelativeDay(
-  iso: string,
-  now: Date = new Date(),
-): string {
+export function formatRelativeDay(iso: string, now: Date = new Date()): string {
   const date = parseLocalDate(iso);
   if (Number.isNaN(date.getTime())) return iso;
   const sameDay =
@@ -505,7 +505,9 @@ export function formatDate(
   if (!todayDate || Number.isNaN(todayDate.getTime())) {
     // Same-day check needs a valid today; fall back to the short
     // `DD MMM YYYY` form.
-    return `${pad2(parsed.getDate())} ${monthsShort[parsed.getMonth()]} ${parsed.getFullYear()}`;
+    return `${pad2(parsed.getDate())} ${
+      monthsShort[parsed.getMonth()]
+    } ${parsed.getFullYear()}`;
   }
   const sameDay =
     parsed.getFullYear() === todayDate.getFullYear() &&
@@ -519,7 +521,9 @@ export function formatDate(
     parsed.getMonth() === yesterday.getMonth() &&
     parsed.getDate() === yesterday.getDate();
   if (isYesterday) return RELATIVE_YESTERDAY[locale];
-  return `${pad2(parsed.getDate())} ${monthsShort[parsed.getMonth()]} ${parsed.getFullYear()}`;
+  return `${pad2(parsed.getDate())} ${
+    monthsShort[parsed.getMonth()]
+  } ${parsed.getFullYear()}`;
 }
 
 /** Locale-keyed "today" label used by `formatDate` and friends. */

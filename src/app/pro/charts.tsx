@@ -43,6 +43,7 @@ import {
   CategoryBudgetRow,
   InsightBanner,
   MetricSummaryCard,
+  buildOverviewHeadline,
   useMonthlyCacheData,
   useMonthlyOverview,
   useMonthlyTotals,
@@ -236,6 +237,7 @@ function ChartsBody() {
 
   const {
     totals,
+    monthTotal: householdMonthTotal,
     isLoading: totalsLoading,
     error,
     hasData: totalsHasData,
@@ -594,6 +596,19 @@ function ChartsBody() {
     previousMonthKey(monthKey),
   );
 
+  // Hero headline decision shared with the analytics overview card: in
+  // household mode the hero total is the household RPC total (not the
+  // personal cache row), the change-% badge is dropped (it has no
+  // household baseline), and while the RPC has not resolved (loading) or
+  // errored the headline is null → the card renders a neutral placeholder
+  // instead of a false "$0.00" (pinned by test:analytics-headline).
+  const headline = buildOverviewHeadline(viewMode, {
+    householdMonthTotal,
+    overviewTotal: overview.currentTotal,
+    personalChangePct: overview.changePct,
+    hasHouseholdData: totalsHasData,
+  });
+
   return (
     <>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -664,8 +679,9 @@ function ChartsBody() {
       <InsightHeroCard
         monthLabel={monthKeyToLabel(locale, monthKey)}
         monthKey={monthKey}
-        total={overview.currentTotal}
-        deltaPct={overview.changePct}
+        total={headline.headlineTotal ?? 0}
+        placeholder={headline.headlineTotal === null}
+        deltaPct={headline.headlineChangePct}
         previousMonthName={previousMonthName}
         dailyData={dailySpend}
         currency={currency}
@@ -676,7 +692,7 @@ function ChartsBody() {
         }}
       />
       <InsightBanner
-        deltaPct={overview.changePct}
+        deltaPct={headline.headlineChangePct}
         previousMonthName={previousMonthName}
       />
       <Card>

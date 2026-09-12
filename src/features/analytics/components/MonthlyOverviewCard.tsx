@@ -44,9 +44,7 @@ export function MonthlyOverviewCard({
       <View style={[styles.content, hasChange && styles.contentWithBadge]}>
         <Text style={styles.kicker}>{t('overviewKicker')}</Text>
         <Text style={styles.total}>
-          {placeholder
-            ? '—'
-            : formatCurrency(currentTotal, currency)}
+          {placeholder ? '—' : formatCurrency(currentTotal, currency)}
         </Text>
       </View>
       {hasChange ? (
@@ -92,7 +90,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   total: {
-    fontSize: 33,
+    fontSize: 25,
     fontWeight: 900,
     lineHeight: 40,
     color: colors.textPrimary,
