@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Bar, CartesianChart } from 'victory-native';
 
 import { Icon, Text } from '@/components';
@@ -32,6 +32,13 @@ export interface InsightHeroCardProps {
   monthKey: string;
   /** Total spent in the selected month. */
   total: number;
+  /**
+   * When true, renders a neutral placeholder ("—") instead of the numeric
+   * total. Used when the headline scope's data has not resolved yet (e.g.
+   * the household RPC still loading), so the card never states a false
+   * "$0.00" — mirrors `MonthlyOverviewCard`'s placeholder contract.
+   */
+  placeholder?: boolean;
   /** Month-over-month percentage change; null hides the delta chip. */
   deltaPct: number | null;
   /** Name of the comparison month, e.g. "Julio" — shown in the chip. */
@@ -80,6 +87,7 @@ export function InsightHeroCard({
   monthLabel,
   monthKey,
   total,
+  placeholder = false,
   deltaPct,
   previousMonthName,
   dailyData,
@@ -154,7 +162,9 @@ export function InsightHeroCard({
   const baselineY = chartHeight - spacing.sm;
   // Pixel y of a bar whose plotted (cbrt-scaled) value is `scaledValue`.
   const barTop = (scaledValue: number) =>
-    chartHeight - spacing.sm - (scaledValue / yMax) * (chartHeight - spacing.sm);
+    chartHeight -
+    spacing.sm -
+    (scaledValue / yMax) * (chartHeight - spacing.sm);
 
   // Day labels rendered manually below the chart — victory-native's own
   // axis labels proved unreliable here (they didn't render on device), so
@@ -170,7 +180,9 @@ export function InsightHeroCard({
         <View>
           <Text style={styles.kicker}>{t('analytics:heroKicker')}</Text>
           <Text style={styles.month}>{monthLabel}</Text>
-          <Text style={styles.total}>{formatCurrency(total, currency)}</Text>
+          <Text style={styles.total}>
+            {placeholder ? '—' : formatCurrency(total, currency)}
+          </Text>
         </View>
         {hasChange ? (
           <View
@@ -250,9 +262,7 @@ export function InsightHeroCard({
                     roundedCorners={{ topLeft: 3, topRight: 3 }}
                     innerPadding={0.25}
                     animate={
-                      hasMounted
-                        ? undefined
-                        : { type: 'timing', duration: 600 }
+                      hasMounted ? undefined : { type: 'timing', duration: 600 }
                     }
                   />
                 )}
@@ -288,27 +298,27 @@ export function InsightHeroCard({
                 : null}
             </View>
             <View style={styles.dayAxis}>
-                {dayTicks.map((day, index) => {
-                  // Center each label on its bar's slot — the same derived
-                  // x the bars use, so numbers stay under their bars.
-                  const center = barCenterX[index];
-                  return (
-                    <View
-                      key={day}
-                      style={[
-                        styles.daySlot,
-                        { left: center - DAY_SLOT_WIDTH / 2 },
-                      ]}
-                    >
-                      <Text style={styles.dayTick}>{day}</Text>
-                      <Text style={styles.weekdayTick}>
-                        {weekdayInitials[day - 1] ?? ''}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
+              {dayTicks.map((day, index) => {
+                // Center each label on its bar's slot — the same derived
+                // x the bars use, so numbers stay under their bars.
+                const center = barCenterX[index];
+                return (
+                  <View
+                    key={day}
+                    style={[
+                      styles.daySlot,
+                      { left: center - DAY_SLOT_WIDTH / 2 },
+                    ]}
+                  >
+                    <Text style={styles.dayTick}>{day}</Text>
+                    <Text style={styles.weekdayTick}>
+                      {weekdayInitials[day - 1] ?? ''}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
+          </View>
         </ScrollView>
       ) : (
         <View style={[styles.emptyChart, { height: chartHeight }]}>
@@ -361,6 +371,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: radii.full,
+    right: spacing.xl + spacing.sm,
   },
   chipText: {
     ...typography.labelSm,
