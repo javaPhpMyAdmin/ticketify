@@ -23,6 +23,7 @@ import { queryClient } from '@/lib/query-client';
 import { queryKeys, utcYearMonth } from '@/lib/query-keys';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { resolveReceiptPhotoPath } from '@/lib/supabase/receipt-photo';
+import { useHouseholdStore } from '@/stores/use-household-store';
 import type {
   CardType,
   Category,
@@ -808,6 +809,25 @@ function invalidateReceiptFeeds(userId: string): void {
     queryKey: queryKeys.monthReceiptsPrefix(userId),
   });
   void queryClient.invalidateQueries({ queryKey: queryKeys.monthKeys(userId) });
+  invalidateHouseholdNetTotal();
+}
+
+/**
+ * Best-effort household net-total invalidation (D4): the Analytics household
+ * headline and Home's household card read `monthly_purchases_total` under
+ * the household-scoped `householdMonthlyPurchasesTotal` key — a write
+ * changes that total, so the key must be invalidated or both screens keep
+ * the pre-write figure until the next AppState foreground refetch. Reads the
+ * household id from the Zustand store (the same non-React source the hooks
+ * read, profile/settings pattern) — no-op when the user is not in a
+ * household.
+ */
+function invalidateHouseholdNetTotal(): void {
+  const householdId = useHouseholdStore.getState().household?.id;
+  if (!householdId) return;
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.householdMonthlyPurchasesTotalPrefix(householdId),
+  });
 }
 
 /**
@@ -841,6 +861,7 @@ function invalidateEditFeeds(userId: string): void {
     queryKey: queryKeys.monthReceiptsPrefix(userId),
   });
   void queryClient.invalidateQueries({ queryKey: queryKeys.monthKeys(userId) });
+  invalidateHouseholdNetTotal();
 }
 
 /**

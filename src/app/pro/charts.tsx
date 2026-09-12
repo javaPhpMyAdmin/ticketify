@@ -870,6 +870,9 @@ function ChartsBody() {
             ) : (
               <>
               <Card padding={spacing.lg}>
+                {/* Category rows are item-level line-item sums, not the
+                paid total (discounts are not attributed per category —
+                0029 §3): the hero headline is the only net-paid surface. */}
                 <View style={styles.categoryList}>
                   {totals.map((t) => {
                     const category = getExpenseCategory(t.category_slug);

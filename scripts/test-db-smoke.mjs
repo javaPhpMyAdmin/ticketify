@@ -1,5 +1,6 @@
 /**
- * Local runner for the pro-subscription SQL smoke test (supabase/tests/pro-subscription.sql).
+ * Local runner for the SQL smoke tests (supabase/tests/pro-subscription.sql
+ * and supabase/tests/household-totals.sql).
  *
  * This is intentionally NOT part of the `pnpm test` chain. The Node test suite
  * (test:*) is 100% dependency-free of Docker and runs anywhere. This script
@@ -76,4 +77,7 @@ run(['db', 'reset', '--local']);
 console.log('\n== Running pro-subscription SQL smoke test ==\n');
 run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'pro-subscription.sql')]);
 
-console.log('\n[ticketify test:sql] pro-subscription smoke test passed.\n');
+console.log('\n== Running household-totals SQL smoke test ==\n');
+run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'household-totals.sql')]);
+
+console.log('\n[ticketify test:sql] SQL smoke tests passed.\n');

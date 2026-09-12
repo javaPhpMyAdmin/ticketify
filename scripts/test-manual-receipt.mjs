@@ -78,6 +78,7 @@ const API_REWRITES = [
   [/from ['"]@\/lib\/query-keys['"]/g, "from '../lib-stubs/query-keys'"],
   [/from ['"]@\/lib\/supabase\/receipt-photo['"]/g, "from '../lib-stubs/receipt-photo'"],
   [/from ['"]@\/types['"]/g, "from '../lib-stubs/types'"],
+  [/from ['"]@\/stores\/use-household-store['"]/g, "from '../lib-stubs/use-household-store'"],
   // readLocalImage dynamic-imports expo-file-system at runtime; point it at a
   // lib stub so a LOCAL photo draft can exercise the upload seam (needed for
   // the save-failure orphan-cleanup contract, section E).
@@ -277,6 +278,8 @@ function compile() {
       budget: p('budget'),
       monthlyTotalsPrefix: p('monthly-totals'),
       monthlyPurchasesTotalPrefix: p('monthly-purchases-total'),
+      householdMonthlyPurchasesTotal: p('household-purchases-total'),
+      householdMonthlyPurchasesTotalPrefix: p('household-purchases-total'),
       monthlyImpulseTotalPrefix: p('monthly-impulse-total'),
       monthlyImpulseItemsPrefix: p('monthly-impulse-items'),
       monthlyCachePrefix: p('monthly-cache'),
@@ -313,6 +316,18 @@ function compile() {
         return 'AAAA'; // 3 zero bytes — enough for the storage-upload stub
       }
     }
+  `,
+  );
+
+  writeFileSync(
+    join(workdir, 'lib-stubs/use-household-store.ts'),
+    `
+    // Minimal Zustand-shaped stub: api.ts only reads getState().household?.id
+    // via invalidateHouseholdNetTotal (no-op when not in a household).
+    type Household = { id: string } | null;
+    export const useHouseholdStore = {
+      getState: (): { household: Household } => ({ household: null }),
+    };
   `,
   );
 

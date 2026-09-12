@@ -104,6 +104,11 @@ function compile() {
     .replace(
       /from ['"]@\/types['"]/g,
       "from '../lib-stubs/types'",
+    )
+    // Household store → local stub (api.ts reads the household id from it)
+    .replace(
+      /from ['"]@\/stores\/use-household-store['"]/g,
+      "from '../lib-stubs/use-household-store'",
     );
   writeFileSync(join(srcDir, 'api.ts'), apiSource);
 
@@ -209,6 +214,8 @@ function compile() {
       budget: p('budget'),
       monthlyTotalsPrefix: p('monthly-totals'),
       monthlyPurchasesTotalPrefix: p('monthly-purchases-total'),
+      householdMonthlyPurchasesTotal: p('household-purchases-total'),
+      householdMonthlyPurchasesTotalPrefix: p('household-purchases-total'),
       monthlyImpulseTotalPrefix: p('monthly-impulse-total'),
       monthlyImpulseItemsPrefix: p('monthly-impulse-items'),
       monthlyCachePrefix: p('monthly-cache'),
@@ -256,6 +263,18 @@ function compile() {
     },
     include: ['./src/*.ts', './lib-stubs/*.ts'],
   };
+  writeFileSync(
+    join(workdir, 'lib-stubs/use-household-store.ts'),
+    `
+    // Minimal Zustand-shaped stub: api.ts only reads getState().household?.id
+    // via invalidateHouseholdNetTotal (no-op when not in a household).
+    type Household = { id: string } | null;
+    export const useHouseholdStore = {
+      getState: (): { household: Household } => ({ household: null }),
+    };
+  `,
+  );
+
   writeFileSync(
     join(workdir, 'tsconfig.json'),
     JSON.stringify(tsconfig, null, 2),
