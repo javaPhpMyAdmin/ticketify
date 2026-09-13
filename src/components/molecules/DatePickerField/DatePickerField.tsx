@@ -13,15 +13,19 @@ import {
   monthGrid,
   pad2,
   partsFromISO,
+  seedMonthFromISO,
   weekdayLabels,
 } from './calendar';
 
 /**
  * Tiny inline alias for `fullMonthForLocale(locale, month)`. Kept short so
  * the JSX below reads cleanly (`fullMonthFor(activeLocale, month)`).
+ *
+ * Component state month is 0-based (matches `monthGrid` / `Date#getMonth`);
+ * the locale helper expects a 1-based month, so this adds 1.
  */
 function fullMonthFor(locale: FormatDateLocale, month: number): string {
-  return fullMonthForLocale(locale, month);
+  return fullMonthForLocale(locale, month + 1);
 }
 
 export interface DatePickerFieldProps {
@@ -62,7 +66,10 @@ export function DatePickerField({
   const todayParts = partsFromISO(today)!;
   const initial = partsFromISO(value) ?? todayParts;
   const [year, setYear] = useState(initial.year);
-  const [month, setMonth] = useState(initial.month); // 0-based
+  // `seedMonthFromISO` owns the 1-based → 0-based month conversion (the
+  // ISO month is 1-based, the component state matches `monthGrid` /
+  // `Date#getMonth`), with today as the fallback seed.
+  const [month, setMonth] = useState(seedMonthFromISO(value, today));
   const [day, setDay] = useState<number | null>(initial.day);
 
   // Re-seed the internal buffer whenever the sheet opens (value may change
@@ -72,7 +79,7 @@ export function DatePickerField({
     if (!visible) return;
     const seed = partsFromISO(value) ?? partsFromISO(today)!;
     setYear(seed.year);
-    setMonth(seed.month);
+    setMonth(seedMonthFromISO(value, today));
     if (seed.day != null) setDay(seed.day);
   }, [visible, value, today]);
 
@@ -95,10 +102,16 @@ export function DatePickerField({
   };
   const nextMonth = () => {
     const next = new Date(year, month + 1, 1);
-    if (next.getFullYear() > new Date(today).getFullYear()) return;
+    // Compare against the already-computed LOCAL parts of today
+    // (`todayParts`, 1-based month). Never re-parse `today` with
+    // `new Date(today)`: that reads the LOCAL ISO string as UTC midnight,
+    // so on the 1st of a month in UTC-x zones (es-AR/pt-BR are UTC-3) the
+    // guard would see the PREVIOUS month and block returning to the
+    // current one until the 2nd (same class as the user-reported bug).
+    if (next.getFullYear() > todayParts.year) return;
     if (
-      next.getFullYear() === new Date(today).getFullYear() &&
-      next.getMonth() > new Date(today).getMonth()
+      next.getFullYear() === todayParts.year &&
+      next.getMonth() > todayParts.month - 1
     )
       return; // never allow navigation past the current month
     setYear(next.getFullYear());
@@ -107,8 +120,8 @@ export function DatePickerField({
   };
 
   const canGoNext =
-    year < new Date(today).getFullYear() ||
-    (year === new Date(today).getFullYear() && month < new Date(today).getMonth());
+    year < todayParts.year ||
+    (year === todayParts.year && month < todayParts.month - 1);
 
   return (
     <BottomSheet

@@ -142,6 +142,17 @@ function compile() {
     const MONTHS_ABBR_ES_AR = [
       'ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic',
     ];
+    const MONTHS_FULL_ES_AR = [
+      'enero','febrero','marzo','abril','mayo','junio','julio','agosto',
+      'septiembre','octubre','noviembre','diciembre',
+    ];
+    // Mirrors fullMonthForLocale in src/lib/format.ts: 1-BASED month
+    // argument (September = 9). The date-picker component state and
+    // monthGrid are 0-based (September = 8) — the two conventions coexist
+    // and are pinned together by the convention test below.
+    export function fullMonthForLocale(locale: string, month: number): string {
+      return MONTHS_FULL_ES_AR[month - 1] ?? '';
+    }
     function pad2(n: number) { return String(n).padStart(2, '0'); }
     export function formatDate(
       locale: 'en' | 'es-AR' | 'pt-BR',
@@ -299,6 +310,7 @@ async function calendarTests(calendar) {
     isFutureSelection,
     weekdayLabels,
     fullMonthES,
+    seedMonthFromISO,
     pad2,
   } = calendar;
 
@@ -394,6 +406,26 @@ async function calendarTests(calendar) {
     // (no leaf for "12"); the production behavior mirrors this — the
     // calendar never passes an out-of-range index.
     assert.equal(fullMonthES(12), 'date:monthFull.12');
+  });
+
+  await test('seedMonthFromISO: 1-based ISO month → 0-based component month', () => {
+    // Component state is 0-based (matches monthGrid / Date#getMonth); the
+    // seed parses the 1-based ISO month and subtracts 1. Pins the exact
+    // regression that previously read `initial.month - 1` inline.
+    assert.equal(seedMonthFromISO('2026-09-07', '2026-09-07'), 8);
+    assert.equal(seedMonthFromISO('2026-12-31', '2026-09-07'), 11);
+    assert.equal(seedMonthFromISO('2026-01-15', '2026-09-07'), 0);
+  });
+
+  await test('seedMonthFromISO: null/malformed iso falls back to fallbackISO', () => {
+    // Fallback is TODAY (2026-09-07) → 1-based month 9 → 0-based 8.
+    assert.equal(seedMonthFromISO(null, '2026-09-07'), 8);
+    assert.equal(seedMonthFromISO(undefined, '2026-09-07'), 8);
+    assert.equal(seedMonthFromISO('not-a-date', '2026-09-07'), 8);
+  });
+
+  await test('seedMonthFromISO: no parseable input falls back to now', () => {
+    assert.equal(seedMonthFromISO(null, null), new Date().getMonth());
   });
 }
 
@@ -524,8 +556,9 @@ async function manualFormTests(form) {
   });
 }
 
-async function formatTests(format) {
-  const { formatDate } = format;
+async function formatTests(format, calendar) {
+  const { formatDate, fullMonthForLocale } = format;
+  const { monthGrid, daysInMonth } = calendar;
   // PR 3: the legacy `formatDateES` wrapper is GONE — `formatDate` is the
   // canonical es-AR formatter. The manual-screen harness verifies the
   // same trigger output the screen relies on (today / yesterday / older).
@@ -540,6 +573,21 @@ async function formatTests(format) {
       formatDate('es-AR', '2026-08-15', { todayISO: TODAY }),
       '15 ago 2026',
     );
+  });
+  await test('convention pin: fullMonthForLocale 1-based vs monthGrid 0-based', () => {
+    // Freezes the two coexisting month conventions: fullMonthForLocale
+    // takes a 1-based month (September = 9) while monthGrid / daysInMonth
+    // take 0-based (September = 8). Both must describe the same real
+    // month: a 30-day September starting Tuesday (lead 1 Monday-first).
+    assert.equal(fullMonthForLocale('es-AR', 9), 'septiembre');
+    assert.equal(fullMonthForLocale('es-AR', 1), 'enero');
+    assert.equal(fullMonthForLocale('es-AR', 12), 'diciembre');
+    assert.equal(daysInMonth(2026, 8), 30);
+    const grid = monthGrid(2026, 8, true);
+    assert.equal(grid.length, 31); // lead 1 + 30 days
+    assert.equal(grid[0], null);
+    assert.equal(grid[1], 1);
+    assert.equal(grid[30], 30);
   });
 }
 
@@ -558,7 +606,7 @@ async function run() {
   const form = await importOut('manual-form.js');
   await manualFormTests(form);
   const format = await importOut('../lib-stubs/format.js');
-  await formatTests(format);
+  await formatTests(format, calendar);
 
   console.log('');
   if (failed > 0) {
