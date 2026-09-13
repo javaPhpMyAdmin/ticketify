@@ -68,6 +68,7 @@ export type QueryOp =
   | { op: 'ilike'; column: string; pattern: string }
   | { op: 'gte'; column: string; value: unknown }
   | { op: 'lt'; column: string; value: unknown }
+  | { op: 'or'; filter: string }
   | { op: 'order'; column: string; opts?: { ascending?: boolean; referencedTable?: string } }
   | { op: 'range'; from: number; to: number }
   | { op: 'limit'; count: number };
@@ -117,6 +118,7 @@ export interface QueryBuilder extends PromiseLike<{ data: unknown; error: StubEr
   ilike: (column: string, pattern: string) => QueryBuilder;
   gte: (column: string, value: unknown) => QueryBuilder;
   lt: (column: string, value: unknown) => QueryBuilder;
+  or: (filter: string) => QueryBuilder;
   order: (column: string, opts?: { ascending?: boolean; referencedTable?: string }) => QueryBuilder;
   range: (from: number, to: number) => QueryBuilder;
   limit: (count: number) => QueryBuilder;
@@ -314,6 +316,10 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
     },
     lt: (column: string, value: unknown) => {
       ops.push({ op: 'lt', column, value });
+      return builder;
+    },
+    or: (filter: string) => {
+      ops.push({ op: 'or', filter });
       return builder;
     },
     order: (column: string, opts?: { ascending?: boolean }) => {

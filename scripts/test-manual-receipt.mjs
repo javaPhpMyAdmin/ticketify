@@ -118,43 +118,113 @@ function compile() {
     //     globalThis.__rpcResult (default { data: null, error: null }).
     //   - From path (.from(table).select()...) → resolves per-table fixtures:
     //     'stores' → a resolvable store row (override with globalThis.__storeResult),
-    //     'categories' → the slug map fixtures ('otros', 'lacteos').
+    //     'categories' → the slug map fixtures (global rows; override the full
+    //       set with globalThis.__categoriesResult — rows may carry a user_id
+    //       to simulate custom ownership).
     //     resolveStoreId / fetchCategoryIdsBySlug are module-private (T-202),
     //     so this is where their behavior is stubbed.
+    //
+    //    fetchCategoryIdsBySlug(userId) emits a scoped chain
+    //    (.or('user_id.is.null,user_id.eq.<uid>').order(...).limit(...)) — the
+    //    stub SIMULATES the PostgREST or-filter: when an .or() call is present
+    //    it returns only global rows (user_id null/undefined) plus the caller's
+    //    own rows; without an .or() call (the legacy unfiltered fetch) it
+    //    returns every fixture row. Every chain call is recorded in
+    //    globalThis.__fromCalls so tests can assert the query SHAPE (scope +
+    //    explicit ordering + cap) the save seam emits.
     const globalObj: any = globalThis;
+
+    const defaultCategories = [
+      { id: 'cat-otros', slug: 'otros' },
+      { id: 'cat-lacteos', slug: 'lacteos' },
+    ];
 
     const fromResults: Record<string, unknown> = {
       stores: { data: { id: 'store-111' }, error: null },
-      categories: {
-        data: [
-          { id: 'cat-otros', slug: 'otros' },
-          { id: 'cat-lacteos', slug: 'lacteos' },
-        ],
-        error: null,
-      },
     };
 
-    function tableResult(table: string) {
+    function recordCall(table: string, method: string, args: unknown[]) {
+      if (!Array.isArray(globalObj.__fromCalls)) globalObj.__fromCalls = [];
+      globalObj.__fromCalls.push({ table, method, args });
+    }
+
+    function categoriesResult(calls: Array<{ method: string; args: unknown[] }>) {
+      const fixture = (
+        globalObj.__categoriesResult !== undefined
+          ? globalObj.__categoriesResult
+          : defaultCategories
+      ) as Array<{ id: string; slug: string; user_id?: string | null; sort_order?: number }>;
+      const orCall = calls.find((c) => c.method === 'or');
+      let rows = fixture;
+      if (orCall) {
+        // Simulate the PostgREST or-filter user_id.is.null,user_id.eq.<uid>:
+        // global rows (user_id null/undefined) + the caller's own rows only.
+        const filter = String(orCall.args[0] ?? '');
+        const uidMatch = filter.match(/user_id\.eq\.([^,)]+)/);
+        const uid = uidMatch ? uidMatch[1] : null;
+        rows = uid
+          ? fixture.filter((r) => r.user_id == null || r.user_id === uid)
+          : fixture;
+      }
+      // Simulate the server-side ordering the seam requests (e.g.
+      // order('sort_order,slug')): PostgREST sorts BEFORE the client builds
+      // the slug map, so the LAST row per slug is the map winner. Custom
+      // rows (sort_order >= 100, 0032 flooring) sort after every global row
+      // (< 100) — that is what makes the caller's own row deterministically
+      // shadow a same-slug global row (user-first by construction).
+      const orderCols = calls
+        .filter((c) => c.method === 'order')
+        .flatMap((c) => String(c.args[0]).split(','));
+      if (orderCols.length > 0) {
+        rows = [...rows].sort((a, b) => {
+          for (const col of orderCols) {
+            const av: string | number =
+              col === 'sort_order'
+                ? (a.sort_order ?? 0)
+                : String((a as Record<string, unknown>)[col] ?? '');
+            const bv: string | number =
+              col === 'sort_order'
+                ? (b.sort_order ?? 0)
+                : String((b as Record<string, unknown>)[col] ?? '');
+            if (av < bv) return -1;
+            if (av > bv) return 1;
+          }
+          return 0;
+        });
+      }
+      return { data: rows, error: null };
+    }
+
+    function tableResult(table: string, calls: Array<{ method: string; args: unknown[] }>) {
       if (table === 'stores' && globalObj.__storeResult !== undefined) {
         return globalObj.__storeResult;
       }
-      return fromResults[table] ?? { data: null, error: null };
+      if (table === 'stores') return fromResults.stores;
+      if (table === 'categories') return categoriesResult(calls);
+      return { data: null, error: null };
     }
 
-    function makeFromBuilder(table: string): any {
+    function makeFromBuilder(table: string, sharedCalls?: Array<{ method: string; args: unknown[] }>): any {
+      const calls = sharedCalls ?? [];
       const builder: any = function () { return builder; };
       return new Proxy(builder, {
         get(_t, prop) {
           if (prop === 'then') {
             return (resolve: any, _reject?: any) =>
-              Promise.resolve(tableResult(table)).then(resolve);
+              Promise.resolve(tableResult(table, calls)).then(resolve);
           }
           if (prop === Symbol.toPrimitive) {
             return function () { return '[FromBuilder:' + table + ']'; };
           }
-          return function () { return makeFromBuilder(table); };
+          // Chain links SHARE the same calls array so the awaited link can
+          // still see the whole chain (.or/.order/.limit…).
+          return function (...args: unknown[]) {
+            calls.push({ method: String(prop), args });
+            recordCall(table, String(prop), args);
+            return makeFromBuilder(table, calls);
+          };
         },
-        apply() { return makeFromBuilder(table); },
+        apply() { return makeFromBuilder(table, calls); },
       });
     }
 
@@ -229,6 +299,8 @@ function compile() {
     export function __resetResults() {
       globalObj.__rpcResult = undefined;
       globalObj.__storeResult = undefined;
+      globalObj.__categoriesResult = undefined;
+      globalObj.__fromCalls = [];
       globalObj.__invalidateCalls = [];
       globalObj.__storageUploads = [];
       globalObj.__storageRemovals = [];
@@ -805,6 +877,125 @@ async function run() {
       }
       assert.ok(threw, 'must throw when the RPC returns no data');
       assert.equal(globalThis.__storageRemovals.length, 1, 'orphaned object removed');
+    });
+
+    // ------------------------------------------------------------------
+    // F. fetchCategoryIdsBySlug(userId) — user-scoped slug resolution (PR1)
+    // ------------------------------------------------------------------
+
+    console.log('\n[tests] F. fetchCategoryIdsBySlug — user-scoped category resolution\n');
+
+    await test('save seam fetches categories scoped to global + caller (or-filter with the userId)', async () => {
+      globalThis.__fromCalls = [];
+      await buildSaveReceiptArgs('user-1', draft());
+      const catCalls = globalThis.__fromCalls.filter((c) => c.table === 'categories');
+      const orCall = catCalls.find((c) => c.method === 'or');
+      assert.ok(orCall, 'categories fetch must use .or(...) to scope global + own rows');
+      assert.equal(
+        orCall.args[0],
+        'user_id.is.null,user_id.eq.user-1',
+        'or-filter must be user_id.is.null,user_id.eq.<userId> (other users’ custom rows are invisible)',
+      );
+      const orderArgs = catCalls.filter((c) => c.method === 'order').map((c) => c.args[0]);
+      const ordered = orderArgs.join(',');
+      assert.ok(
+        ordered.includes('sort_order') && ordered.includes('slug'),
+        'categories fetch must sort by sort_order then slug (map-winner determinism), got: ' + ordered,
+      );
+      const limitCall = catCalls.find((c) => c.method === 'limit');
+      assert.ok(limitCall, 'categories fetch must keep a cap');
+      assert.equal(limitCall.args[0], 500, 'cap must be 500 (the old .limit(200) is gone)');
+    });
+
+    await test("another user's custom slug does NOT resolve for the caller (scoped rows)", async () => {
+      globalThis.__categoriesResult = [
+        { id: 'cat-otros', slug: 'otros' },
+        { id: 'cat-delivery-b', slug: 'delivery', user_id: 'user-b' },
+      ];
+      const res = await buildSaveReceiptArgs(
+        'user-1',
+        draft({ items: [item({ category_id: 'delivery' })] }),
+      );
+      assert.equal(
+        res.args.p_items[0].category_id,
+        'cat-otros',
+        'a custom slug owned by ANOTHER user must not resolve for the caller — falls back to canonical otros',
+      );
+      globalThis.__categoriesResult = undefined;
+    });
+
+    await test("the caller's OWN custom slug resolves to its uuid at save", async () => {
+      globalThis.__categoriesResult = [
+        { id: 'cat-otros', slug: 'otros' },
+        { id: 'cat-delivery', slug: 'delivery', user_id: 'user-1' },
+      ];
+      const res = await buildSaveReceiptArgs(
+        'user-1',
+        draft({ items: [item({ category_id: 'delivery' })] }),
+      );
+      assert.equal(res.args.p_items[0].category_id, 'cat-delivery');
+      globalThis.__categoriesResult = undefined;
+    });
+
+    await test("same-caller collision: the caller's OWN 'farmacia' wins over the global one (user-first by construction)", async () => {
+      // Global canonical 'farmacia' (0005, sort_order 80) AND the caller's
+      // own 'farmacia' (sort_order 140, above the 0032 floor of 100) both
+      // match the or-filter. The stub simulates the server sort
+      // (sort_order, slug): global rows (< 100) sort first, the own row
+      // (>= 100) last — so `map[row.slug] = row.id` deterministically ends
+      // with the OWN uuid, never an accident of row order.
+      globalThis.__categoriesResult = [
+        { id: 'cat-global-farm', slug: 'farmacia', sort_order: 80 },
+        { id: 'cat-own-farm', slug: 'farmacia', user_id: 'user-1', sort_order: 140 },
+      ];
+      const res = await buildSaveReceiptArgs(
+        'user-1',
+        draft({ items: [item({ category_id: 'farmacia' })] }),
+      );
+      assert.equal(
+        res.args.p_items[0].category_id,
+        'cat-own-farm',
+        'the caller’s own row must win the same-slug collision (user-first by construction)',
+      );
+      // Same outcome when the stub fixture happens to list the own row first:
+      // the server-side sort determines the winner, NOT the fixture order.
+      globalThis.__categoriesResult = [
+        { id: 'cat-own-farm', slug: 'farmacia', user_id: 'user-1', sort_order: 140 },
+        { id: 'cat-global-farm', slug: 'farmacia', sort_order: 80 },
+      ];
+      const res2 = await buildSaveReceiptArgs(
+        'user-1',
+        draft({ items: [item({ category_id: 'farmacia' })] }),
+      );
+      assert.equal(res2.args.p_items[0].category_id, 'cat-own-farm');
+      globalThis.__categoriesResult = undefined;
+    });
+
+    await test('fallback chain preserved: unknown slug still maps to canonical otros', async () => {
+      globalThis.__fromCalls = [];
+      const res = await buildSaveReceiptArgs(
+        'user-1',
+        draft({ items: [item({ category_id: 'no-such-slug', ai_suggested_category_id: null })] }),
+      );
+      assert.equal(res.args.p_items[0].category_id, 'cat-otros');
+    });
+
+    await test('seam preference unchanged: user pick wins over the AI suggestion', async () => {
+      globalThis.__fromCalls = [];
+      const res = await buildSaveReceiptArgs(
+        'user-1',
+        draft({ items: [item({ category_id: 'lacteos', ai_suggested_category_id: 'snacks' })] }),
+      );
+      assert.equal(res.args.p_items[0].category_id, 'cat-lacteos');
+    });
+
+    await test('updateReceipt passes userId to fetchCategoryIdsBySlug (source contract)', async () => {
+      const src = readFileSync(join(root, 'src/features/tickets/api.ts'), 'utf8');
+      const block = src.slice(src.indexOf('export async function updateReceipt'));
+      assert.ok(
+        block.includes('fetchCategoryIdsBySlug(userId)'),
+        'updateReceipt must call fetchCategoryIdsBySlug(userId) so edits fetch the caller-scoped map too',
+      );
     });
   } else {
     console.log(

@@ -127,6 +127,9 @@ function compile() {
     //     fetchCategoryIdsBySlug / resolveStoreId use; keeping it null (never
     //     the injected rpc result) stops category fetching from misreading
     //     the save_receipt payload as category rows.
+    //     Every chain call is recorded in globalThis.__fromCalls so tests can
+    //     assert the query SHAPE fetchCategoryIdsBySlug(userId) emits (the
+    //     user-scoped or-filter from migration 0032).
     const globalObj: any = globalThis;
     function rpcResult() {
       return Promise.resolve(globalObj.__rpcResult ?? { data: null, error: null });
@@ -134,15 +137,27 @@ function compile() {
     // from-builder: chainable; awaiting it (or .then) resolves to a null
     // result so category/store reads never misread the injected rpc payload.
     const nullResult = () => Promise.resolve({ data: null, error: null });
-    function makeFromBuilder(): any {
+    function makeFromBuilder(table: string, sharedCalls?: Array<{ method: string; args: unknown[] }>): any {
+      const calls = sharedCalls ?? [];
       const builder: any = function () { return builder(); };
       return new Proxy(builder, {
         get(_t, prop) {
-          if (prop === 'then') return (resolve: any, _reject?: any) => resolve({ data: null, error: null });
+          if (prop === 'then') {
+            return (resolve: any, _reject?: any) => {
+              if (!Array.isArray(globalObj.__fromCalls)) globalObj.__fromCalls = [];
+              for (const c of calls) globalObj.__fromCalls.push({ table, method: c.method, args: c.args });
+              return resolve({ data: null, error: null });
+            };
+          }
           if (prop === Symbol.toPrimitive) return function () { return '[FromBuilder]'; };
-          return function () { return makeFromBuilder(); };
+          // Chain links SHARE the same calls array so the awaited link can
+          // still see the whole chain (.or/.order/.limit…).
+          return function (...args: unknown[]) {
+            calls.push({ method: String(prop), args });
+            return makeFromBuilder(table, calls);
+          };
         },
-        apply() { return makeFromBuilder(); },
+        apply() { return makeFromBuilder(table, calls); },
       });
     }
     // top-level client: .rpc() enters the RPC path; .from() enters the from path;
@@ -169,14 +184,14 @@ function compile() {
             });
           };
         }
-        if (prop === 'from') return makeFromBuilder;
+        if (prop === 'from') return function (table: string) { return makeFromBuilder(table); };
         return function () { return nullResult(); };
       },
       apply() { return makeChain(); },
     });
     function makeChain(): any { return supabaseProxy; }
     export const supabase: any = supabaseProxy;
-    export function __resetResults() { globalObj.__rpcResult = undefined; }
+    export function __resetResults() { globalObj.__rpcResult = undefined; globalObj.__fromCalls = []; }
     export const isSupabaseConfigured = true;
   `,
   );
@@ -794,6 +809,25 @@ async function run() {
         // The arg is emitted even when the draft omits the field (always the
         // 7-param RPC call — the overload resolves by explicit named arg).
         assert.ok('p_is_manual' in res.args);
+      },
+    );
+
+    await test(
+      'scan save seam fetches categories scoped to global + caller (or-filter, PR1)',
+      async () => {
+        // The scan flow shares the save seam, so its categories read must
+        // carry the same user-scoped or-filter as the manual flow (migration
+        // 0032): another user's custom slug can never collide into the map.
+        globalThis.__fromCalls = [];
+        await buildSaveReceiptArgs('user-uuid', minDraft);
+        const catCalls = globalThis.__fromCalls.filter((c) => c.table === 'categories');
+        const orCall = catCalls.find((c) => c.method === 'or');
+        assert.ok(orCall, 'categories fetch must use .or(...) to scope global + own rows');
+        assert.equal(
+          orCall.args[0],
+          'user_id.is.null,user_id.eq.user-uuid',
+          'or-filter must be user_id.is.null,user_id.eq.<userId>',
+        );
       },
     );
   } else {
