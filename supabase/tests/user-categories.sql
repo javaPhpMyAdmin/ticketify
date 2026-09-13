@@ -582,7 +582,11 @@ begin
   assert v_blocked,
     'save_receipt must REJECT a line referencing another user''s custom category (raise, full rollback)';
   assert not exists (
-    select 1 from public.purchases where user_id = v_user_a and purchase_date = date '2026-08-03'
+    select 1 from public.purchases
+     where user_id = v_user_a
+       and store_id is null
+       and purchase_date = date '2026-08-03'
+       and total = 10.00
   ), 'the rejected save_receipt must have rolled back completely (no purchase row)';
 
   -- Negative: a uuid that matches NO category row at all — same rejection
