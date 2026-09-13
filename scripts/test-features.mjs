@@ -1312,12 +1312,15 @@ async function run() {
       'cat-otros',
       'an unresolved slug (no user pick, no AI suggestion) passes the otros id — never NULL',
     );
-    // Deterministic category map (review fix): the fetch is ordered by slug,
-    // so the 200-row cap truncates by a stable key and cannot exclude
-    // 'otros' through arbitrary physical row order.
+    // Deterministic, user-scoped category map (0032): the fetch carries the
+    // or-filter (global rows + the caller's own custom categories) and the
+    // explicit sort_order,slug ordering, so neither another user's custom
+    // slug nor arbitrary physical row order can displace 'otros'; the 500-row
+    // cap sits well above the catalog size.
     assert.deepEqual(stubMod.__getQueryCalls('categories'), [
-      { op: 'order', column: 'slug', opts: undefined },
-      { op: 'limit', count: 200 },
+      { op: 'or', filter: 'user_id.is.null,user_id.eq.u1' },
+      { op: 'order', column: 'sort_order,slug', opts: undefined },
+      { op: 'limit', count: 500 },
     ]);
   });
 

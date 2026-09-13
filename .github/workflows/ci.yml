@@ -70,3 +70,10 @@ jobs:
         # Pins the 0031 contract (confirmed-only household totals, net
         # reconcile personal == household, non-member zero rows, anon denied).
         run: supabase db query --local --file supabase/tests/household-totals.sql
+
+      - name: Run user-categories SQL smoke test
+        # Pins the 0032 contract (public + user categories, per-scope slug
+        # uniqueness, global/own coexistence + sort floor, RLS write policies
+        # incl. purchase_items category ownership, save_receipt server-side
+        # category validation, FK RESTRICT backstop, anon denied last).
+        run: supabase db query --local --file supabase/tests/user-categories.sql
