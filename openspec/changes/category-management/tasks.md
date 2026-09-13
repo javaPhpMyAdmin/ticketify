@@ -34,9 +34,9 @@ TDD RED→GREEN; gate: `pnpm test` + `pnpm typecheck` + `pnpm lint`.
 
 ## Phase 3: Picker Create (PR 3)
 
-- [ ] 3.1 RED `scripts/test-manual-screen.mjs`: picker lists catalog rows, create affordance, canonical/own collision blocked with feedback
-- [ ] 3.2 GREEN `CategoryPickerModal.tsx`: render merged catalog; create form (name ≤40, palette color, need/want required); `slugify`+`slugCollides`; map 23505 → friendly error; row created before selectable
-- [ ] 3.3 i18n: es-AR source keys (tickets/settings) + pt-BR/en
+- [x] 3.1 RED `scripts/test-manual-screen.mjs`: picker lists catalog rows, create affordance, canonical/own collision blocked with feedback
+- [x] 3.2 GREEN `CategoryPickerModal.tsx`: render merged catalog; create form (name ≤40, palette color, need/want required); `slugify`+`slugCollides`; map 23505 → friendly error; row created before selectable
+- [x] 3.3 i18n: es-AR source keys (tickets/settings) + pt-BR/en
 
 ## Phase 4: Picker Delete (PR 4)
 
