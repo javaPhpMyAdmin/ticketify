@@ -469,17 +469,30 @@ async function resolveStoreId(userId: string, name: string): Promise<string | nu
 /**
  * Fetches the category slug → id map once per save so each line item can
  * resolve its chosen slug (user pick preferred over the AI suggestion) to a
- * real uuid FK. Categories are seeded by migration and rarely change, so
- * this is one small read. The fetch is ordered by slug so the 200-row cap
- * truncates deterministically — 'otros' (sort_order 99, last in the seed)
- * can never be excluded by arbitrary physical row order.
+ * real uuid FK.
+ *
+ * When a custom slug shadows a canonical one (e.g. a user's own 'farmacia'),
+ * the WINNER IS USER-FIRST BY CONSTRUCTION, never a row-order accident:
+ * migration 0032 enforces a sort floor (CHECK user_id IS NULL OR
+ * sort_order >= 100) while every canonical row sorts < 100 (0001 max 99
+ * 'otros', 0005 max 90). The explicit `.order('sort_order,slug')` below
+ * therefore places all global rows BEFORE the user's rows, and the map
+ * assignment `map[row.slug] = row.id` ends with the caller's own uuid —
+ * PostgREST's physical row order cannot flip that.
+ *
+ * The cap is deliberately generous: at most 13 canonical + the caller's own
+ * rows are fetched, and 500 sits far above any realistic catalog, so the
+ * last canonical row ('otros', 99) can never be cut mid-order. If a catalog
+ * were ever to exceed 500 rows, ordering would keep the canonical set first
+ * and truncate custom rows — never the reverse.
  */
-async function fetchCategoryIdsBySlug(): Promise<Record<string, string>> {
+async function fetchCategoryIdsBySlug(userId: string): Promise<Record<string, string>> {
   const { data, error } = await supabase
     .from('categories')
     .select('id, slug')
-    .order('slug')
-    .limit(200);
+    .or(`user_id.is.null,user_id.eq.${userId}`)
+    .order('sort_order,slug')
+    .limit(500);
   if (error) return {};
   const map: Record<string, string> = {};
   const rows = (data as Array<{ id: string; slug: string }> | null) ?? [];
@@ -646,7 +659,8 @@ export async function buildSaveReceiptArgs(
   }
 
   // Resolve category slug → uuid FK map once, before building item rows.
-  const categoryIds = await fetchCategoryIdsBySlug();
+  // Scoped to the caller: global rows + their own custom categories (0032).
+  const categoryIds = await fetchCategoryIdsBySlug(userId);
   const itemRows = draft.items.map((item, index) => ({
     purchase_id: '', // placeholder — the RPC provides the real purchase_id
     name: item.name,
@@ -659,8 +673,8 @@ export async function buildSaveReceiptArgs(
     // the 'otros' category so NULLs never persist — the backfill in
     // 0009_fix_null_category_items.sql only fixes rows already in the DB.
     // The trailing `?? null` guards the pathological case where 'otros' is
-    // missing from the map (fetchCategoryIdsBySlug caps at 200 rows, ordered
-    // by slug so the cap can never skip 'otros').
+    // missing from the map (fetchCategoryIdsBySlug caps at 500 rows, ordered
+    // by sort_order then slug so the cap can never skip 'otros').
     category_id:
       categoryIds[item.category_id ?? ''] ??
       categoryIds[item.ai_suggested_category_id ?? ''] ??
@@ -1194,7 +1208,7 @@ export async function updateReceipt(
     throw new Error(SAVE_ERROR_MESSAGE);
   }
 
-  const categoryIds = await fetchCategoryIdsBySlug();
+  const categoryIds = await fetchCategoryIdsBySlug(userId);
   const itemRows = draft.items.map((item, index) => ({
     purchase_id: purchaseId,
     name: item.name,
