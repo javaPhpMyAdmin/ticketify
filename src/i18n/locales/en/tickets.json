@@ -55,5 +55,20 @@
   "noCategory": "NO CATEGORY",
   "impulseLabel": "Impulse purchase",
   "categoryPickerTitle": "Category",
-  "categoryPickerBackdropA11y": "Close categories"
+  "categoryPickerBackdropA11y": "Close categories",
+  "categoryCreateTitle": "New category",
+  "categoryCreateNameLabel": "Name",
+  "categoryCreateNamePlaceholder": "E.g. Delivery",
+  "categoryCreateColorLabel": "Color",
+  "categoryCreateKindLabel": "Type",
+  "categoryCreateKindNeed": "Need",
+  "categoryCreateKindWant": "Want",
+  "categoryCreateNameRequired": "Enter a name",
+  "categoryCreateNameTooLong": "The name can't be longer than 40 characters",
+  "categoryCreateNameInvalid": "That name can't be used. Try letters and numbers.",
+  "categoryCreateKindRequired": "Choose need or want",
+  "categoryCreateColorRequired": "Choose a color",
+  "categoryCreateExists": "That category already exists.",
+  "categoryCreateError": "Couldn't create the category. Try again.",
+  "categoryCreateAction": "Create"
 }
