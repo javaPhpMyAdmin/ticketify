@@ -21,11 +21,27 @@
  * directly via the `format` stub (which already implements the es-AR
  * contract).
  *
+ * PR 7 (`category-management`, slice 3/7): the category PICKER create
+ * path. Pure logic from `src/features/tickets/category-picker-form.ts`
+ * (list rows from the merged catalog, canonical fallback rows, create
+ * validation with the 40-char guardrail + palette + kind, collision
+ * pre-block, error-key bridge) plus the i18n parity contract: the three
+ * `tickets.json` catalogs must carry IDENTICAL key sets and every
+ * category-create error key must resolve in all three locales, with the
+ * es-AR collision copy converging on the API seam message
+ * (`CATEGORY_ALREADY_EXISTS_MESSAGE`).
+ *
+ * The taxonomy + catalog modules are pure (catalog.ts has no imports;
+ * home/categories.ts only imports a TYPE), so the harness compiles the
+ * REAL sources into the workdir — no hand-rolled fixtures for the row
+ * shape, the palette, or the canonical slug list.
+ *
  * Usage: pnpm test:manual-screen
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -98,6 +114,27 @@ const FORM_REWRITES = [
     "from './manual-receipt'",
   ],
 ];
+// PR 7 (`category-management`, slice 3/7): catalog + taxonomy compile as
+// compiled REAL sources — catalog.ts is import-free, home/categories.ts
+// only imports a TYPE (`IconName`), so the rewrites are one-liners.
+const CATALOG_REWRITES = [
+  [/from ['"]@\/types['"]/g, "from '../lib-stubs/types'"],
+];
+const HOME_CATEGORIES_REWRITES = [
+  [/from ['"]@\/components['"]/g, "from '../lib-stubs/types'"],
+];
+const PICKER_FORM_REWRITES = [
+  [/from ['"]@\/types['"]/g, "from '../lib-stubs/types'"],
+  [/from ['"]@\/components['"]/g, "from '../lib-stubs/types'"],
+  [
+    /from ['"]@\/features\/categories\/catalog['"]/g,
+    "from './catalog'",
+  ],
+  [
+    /from ['"]@\/features\/home\/categories['"]/g,
+    "from './categories'",
+  ],
+];
 
 function compile() {
   mkdirSync(srcDir, { recursive: true });
@@ -127,6 +164,35 @@ function compile() {
     FORM_REWRITES,
   );
   writeFileSync(join(srcDir, 'manual-form.ts'), formSource);
+
+  // --- catalog.ts — pure (change `category-management`); only @/types ---
+  const catalogSource = patchImports(
+    readFileSync(join(root, 'src/features/categories/catalog.ts'), 'utf8'),
+    CATALOG_REWRITES,
+  );
+  writeFileSync(join(srcDir, 'catalog.ts'), catalogSource);
+
+  // --- home taxonomy — the canonical 13 (type-only @/components import) ---
+  const homeCategoriesSource = patchImports(
+    readFileSync(join(root, 'src/features/home/categories.ts'), 'utf8'),
+    HOME_CATEGORIES_REWRITES,
+  );
+  writeFileSync(join(srcDir, 'categories.ts'), homeCategoriesSource);
+
+  // --- category-picker-form.ts — NEW in slice 3/7; guarded so the RED
+  // phase runs cleanly before the module lands (ERR_MODULE_NOT_FOUND is
+  // the expected RED signal, not a compile failure).
+  const pickerFormPath = join(
+    root,
+    'src/features/tickets/category-picker-form.ts',
+  );
+  if (existsSync(pickerFormPath)) {
+    const pickerFormSource = patchImports(
+      readFileSync(pickerFormPath, 'utf8'),
+      PICKER_FORM_REWRITES,
+    );
+    writeFileSync(join(srcDir, 'category-picker-form.ts'), pickerFormSource);
+  }
 
   // --- Stub modules ---
   writeFileSync(
@@ -201,6 +267,21 @@ function compile() {
       card_brand?: string | null;
       card_type?: CardType | null;
       items: ReviewItem[];
+    }
+    // PR 7 (category-management): the compiled catalog.ts +
+    // category-picker-form.ts need the app-wide Category shape; the
+    // home taxonomy needs an IconName stand-in (string, since the real
+    // union is a component-type import the harness cannot resolve).
+    export type IconName = string;
+    export type CategoryKind = 'need' | 'want';
+    export interface Category {
+      id: string;
+      slug: string;
+      name: string;
+      kind: CategoryKind;
+      icon: string;
+      color: string;
+      sort_order: number;
     }
   `,
   );
@@ -591,6 +672,598 @@ async function formatTests(format, calendar) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Category-picker create logic (PR 7, slice 3/7 — category-picker-form.ts)
+// ---------------------------------------------------------------------------
+
+async function categoryPickerFormTests(picker, catalog) {
+  const {
+    MAX_CATEGORY_NAME_LENGTH,
+    CATEGORY_CREATE_DEFAULT_ICON,
+    CATEGORY_PALETTE_COLORS,
+    validateCategoryCreateInput,
+    categoryCollisionSlugs,
+    pickerRowsFromCatalog,
+    canonicalFallbackRows,
+    CATEGORY_CREATE_ERROR_KEYS,
+    seamCreateErrorKey,
+    categoryCreateFormError,
+    categoryCreateNameFieldError,
+    canDismissCategoryPicker,
+    isCurrentCategoryCreateSession,
+  } = picker;
+  const { mergeCategoryCatalog } = catalog;
+
+  const paletteColor = CATEGORY_PALETTE_COLORS[0];
+
+  await test('picker: 40-char name guardrail pinned', () => {
+    assert.equal(MAX_CATEGORY_NAME_LENGTH, 40);
+  });
+
+  await test('picker: create icon is the canonical sparkles (custom rows)', () => {
+    assert.equal(CATEGORY_CREATE_DEFAULT_ICON, 'sparkles');
+  });
+
+  await test('picker: palette is the 13 canonical colors, all distinct', () => {
+    assert.equal(CATEGORY_PALETTE_COLORS.length, 13);
+    assert.ok(CATEGORY_PALETTE_COLORS.includes('#2563EB')); // bebidas
+    assert.ok(CATEGORY_PALETTE_COLORS.includes('#4B5563')); // otros
+    assert.equal(new Set(CATEGORY_PALETTE_COLORS).size, 13);
+  });
+
+  await test('create: valid input ok with the derived slug', () => {
+    assert.deepEqual(
+      validateCategoryCreateInput(
+        'Delivery',
+        'want',
+        paletteColor,
+        ['bebidas', 'lacteos'],
+      ),
+      { ok: true, reason: null, slug: 'delivery' },
+    );
+  });
+
+  await test('create: 40 chars ok, 41 chars blocked (name_too_long)', () => {
+    const ok = validateCategoryCreateInput(
+      'a'.repeat(40),
+      'need',
+      paletteColor,
+      [],
+    );
+    assert.equal(ok.ok, true);
+    const long = validateCategoryCreateInput(
+      'a'.repeat(41),
+      'need',
+      paletteColor,
+      [],
+    );
+    assert.deepEqual(long, {
+      ok: false,
+      reason: 'name_too_long',
+      slug: '',
+    });
+  });
+
+  await test('create: empty/whitespace name blocked (name_required)', () => {
+    assert.deepEqual(
+      validateCategoryCreateInput('   ', 'need', paletteColor, []),
+      { ok: false, reason: 'name_required', slug: '' },
+    );
+  });
+
+  await test('create: emoji-only name blocked (slug_empty)', () => {
+    assert.deepEqual(
+      validateCategoryCreateInput('😀', 'need', paletteColor, []),
+      { ok: false, reason: 'slug_empty', slug: '' },
+    );
+  });
+
+  await test('create: canonical collision blocked (Lácteos → lacteos)', () => {
+    // Real canonical slug — NOT the spec's illustrative 'Supermercado',
+    // which is not in the actual 13-key taxonomy.
+    assert.deepEqual(
+      validateCategoryCreateInput('Lácteos', 'want', paletteColor, [
+        'bebidas',
+        'lacteos',
+      ]),
+      { ok: false, reason: 'slug_collides', slug: 'lacteos' },
+    );
+  });
+
+  await test('create: own custom collision blocked (Delivery twice)', () => {
+    assert.deepEqual(
+      validateCategoryCreateInput('Delivery', 'want', paletteColor, [
+        'bebidas',
+        'delivery',
+      ]),
+      { ok: false, reason: 'slug_collides', slug: 'delivery' },
+    );
+  });
+
+  await test('create: spec scenario — Supermercado vs own supermercado blocked', () => {
+    assert.deepEqual(
+      validateCategoryCreateInput('Supermercado', 'want', paletteColor, [
+        'bebidas',
+        'supermercado',
+      ]),
+      { ok: false, reason: 'slug_collides', slug: 'supermercado' },
+    );
+  });
+
+  await test('create: collision reported before missing kind (precedence)', () => {
+    // A colliding name is name-blocked even when the kind is still unset —
+    // the category exists, kind is moot.
+    const result = validateCategoryCreateInput(
+      'Lácteos',
+      undefined,
+      paletteColor,
+      ['lacteos'],
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'slug_collides');
+  });
+
+  await test('create: missing kind blocked (kind_required)', () => {
+    assert.deepEqual(
+      validateCategoryCreateInput('Delivery', undefined, paletteColor, []),
+      { ok: false, reason: 'kind_required', slug: 'delivery' },
+    );
+    assert.equal(
+      validateCategoryCreateInput('Delivery', null, paletteColor, []).reason,
+      'kind_required',
+    );
+  });
+
+  await test('create: invalid kind value blocked (kind_required)', () => {
+    const result = validateCategoryCreateInput(
+      'Delivery',
+      'other',
+      paletteColor,
+      [],
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'kind_required');
+  });
+
+  await test('create: color outside palette blocked (color_required)', () => {
+    assert.deepEqual(
+      validateCategoryCreateInput('Delivery', 'want', '#FFFFFF', []),
+      { ok: false, reason: 'color_required', slug: 'delivery' },
+    );
+    assert.equal(
+      validateCategoryCreateInput('Delivery', 'want', '', []).reason,
+      'color_required',
+    );
+    assert.equal(
+      validateCategoryCreateInput('Delivery', 'want', null, []).reason,
+      'color_required',
+    );
+  });
+
+  await test('collisionSlugs: canonical 13 ∪ own catalog slugs', () => {
+    const ownCatalog = mergeCategoryCatalog(
+      [],
+      [
+        {
+          id: 'c1',
+          slug: 'delivery',
+          name: 'Delivery',
+          kind: 'want',
+          icon: 'sparkles',
+          color: '#2563EB',
+          sort_order: 100,
+          user_id: 'u1',
+        },
+      ],
+    );
+    const slugs = categoryCollisionSlugs(ownCatalog);
+    assert.equal(slugs.size, 13 + 1);
+    assert.equal(slugs.has('bebidas'), true); // canonical
+    assert.equal(slugs.has('lacteos'), true); // canonical
+    assert.equal(slugs.has('otros'), true); // throwaway fallback
+    assert.equal(slugs.has('delivery'), true); // own custom
+  });
+
+  await test('pickerRows: merged catalog rows in catalog order, real shape', () => {
+    const merged = mergeCategoryCatalog(
+      [
+        {
+          id: 'g1',
+          slug: 'bebidas',
+          name: 'Bebidas',
+          kind: 'need',
+          icon: 'waterbottle.fill',
+          color: '#2563EB',
+          sort_order: 0,
+          user_id: null,
+        },
+        {
+          id: 'g2',
+          slug: 'lacteos',
+          name: 'Lácteos',
+          kind: 'need',
+          icon: 'drop.fill',
+          color: '#0284C7',
+          sort_order: 1,
+          user_id: null,
+        },
+      ],
+      [
+        {
+          id: 'c1',
+          slug: 'delivery',
+          name: 'Delivery',
+          kind: 'want',
+          icon: 'sparkles',
+          color: '#4F46E5',
+          sort_order: 100,
+          user_id: 'u1',
+        },
+      ],
+    );
+    const rows = pickerRowsFromCatalog(merged);
+    assert.deepEqual(rows, [
+      { slug: 'bebidas', label: 'Bebidas', icon: 'waterbottle.fill', color: '#2563EB' },
+      { slug: 'lacteos', label: 'Lácteos', icon: 'drop.fill', color: '#0284C7' },
+      { slug: 'delivery', label: 'Delivery', icon: 'sparkles', color: '#4F46E5' },
+    ]);
+  });
+
+  await test('pickerRows: empty catalog → empty rows', () => {
+    assert.deepEqual(pickerRowsFromCatalog(mergeCategoryCatalog([], [])), []);
+  });
+
+  await test('pickerRows: canonical fallback keeps the grid alive pre-load', () => {
+    const rows = canonicalFallbackRows();
+    assert.equal(rows.length, 13);
+    assert.deepEqual(rows[0], {
+      slug: 'bebidas',
+      label: 'Bebidas',
+      icon: 'waterbottle.fill',
+      color: '#2563EB',
+    });
+    const lacteos = rows.find((row) => row.slug === 'lacteos');
+    assert.deepEqual(lacteos, {
+      slug: 'lacteos',
+      label: 'Lácteos',
+      icon: 'drop.fill',
+      color: '#0284C7',
+    });
+  });
+
+  await test('error keys: each failure reason bridges to a tickets key', () => {
+    assert.equal(
+      CATEGORY_CREATE_ERROR_KEYS.slug_collides,
+      'tickets:categoryCreateExists',
+    );
+    assert.equal(
+      CATEGORY_CREATE_ERROR_KEYS.name_too_long,
+      'tickets:categoryCreateNameTooLong',
+    );
+    assert.equal(
+      CATEGORY_CREATE_ERROR_KEYS.name_required,
+      'tickets:categoryCreateNameRequired',
+    );
+    assert.equal(
+      CATEGORY_CREATE_ERROR_KEYS.slug_empty,
+      'tickets:categoryCreateNameInvalid',
+    );
+    assert.equal(
+      CATEGORY_CREATE_ERROR_KEYS.kind_required,
+      'tickets:categoryCreateKindRequired',
+    );
+    assert.equal(
+      CATEGORY_CREATE_ERROR_KEYS.color_required,
+      'tickets:categoryCreateColorRequired',
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // Gate fixes (reliability/risk REQUIRED): localized seam display, cancel
+  // must cancel, stale createError gating, list-mode title restore.
+  // ---------------------------------------------------------------------------
+  const COLLISION_LITERAL = 'Esa categoría ya existe.';
+  const GENERIC_LITERAL = 'No se pudo crear la categoría. Inténtalo de nuevo.';
+  const okValidation = validateCategoryCreateInput(
+    'Delivery',
+    'want',
+    paletteColor,
+    [],
+  );
+  const kindValidation = validateCategoryCreateInput(
+    'Delivery',
+    undefined,
+    paletteColor,
+    [],
+  );
+  const colorValidation = validateCategoryCreateInput(
+    'Delivery',
+    'want',
+    '#FFFFFF',
+    [],
+  );
+  const nameRequiredValidation = validateCategoryCreateInput(
+    '   ',
+    'want',
+    paletteColor,
+    [],
+  );
+  const tooLongValidation = validateCategoryCreateInput(
+    'a'.repeat(41),
+    'want',
+    paletteColor,
+    [],
+  );
+  const slugEmptyValidation = validateCategoryCreateInput(
+    '😀',
+    'want',
+    paletteColor,
+    [],
+  );
+  const collisionValidation = validateCategoryCreateInput(
+    'Delivery',
+    'want',
+    paletteColor,
+    ['delivery'],
+  );
+
+  await test('seam: createError resolves to localized keys, never raw seam text', () => {
+    assert.equal(seamCreateErrorKey(null, COLLISION_LITERAL), null);
+    assert.equal(seamCreateErrorKey(undefined, COLLISION_LITERAL), null);
+    assert.equal(seamCreateErrorKey('', COLLISION_LITERAL), null);
+    // 23505 duplicate → the SAME friendly copy as the client pre-block.
+    assert.equal(
+      seamCreateErrorKey(COLLISION_LITERAL, COLLISION_LITERAL),
+      'tickets:categoryCreateExists',
+    );
+    // Any other seam failure (network/timeout/fail-closed) → generic key.
+    assert.equal(
+      seamCreateErrorKey(GENERIC_LITERAL, COLLISION_LITERAL),
+      'tickets:categoryCreateError',
+    );
+    assert.equal(
+      seamCreateErrorKey('network error', COLLISION_LITERAL),
+      'tickets:categoryCreateError',
+    );
+    // The derivation NEVER returns a raw Spanish constant — always a key.
+    for (const out of [
+      seamCreateErrorKey(COLLISION_LITERAL, COLLISION_LITERAL),
+      seamCreateErrorKey(GENERIC_LITERAL, COLLISION_LITERAL),
+      seamCreateErrorKey('anything else', COLLISION_LITERAL),
+    ]) {
+      assert.ok(out.startsWith('tickets:'), out + ' must be a key, not copy');
+      assert.notEqual(out, COLLISION_LITERAL, out + ' is raw seam copy');
+      assert.notEqual(out, GENERIC_LITERAL, out + ' is raw seam copy');
+    }
+  });
+
+  await test('form error: pristine/reopened form shows NO error (stale createError gated)', () => {
+    // (a) Even with a seam error pending, an un-attempted form stays clean.
+    assert.equal(
+      categoryCreateFormError(okValidation, false, 'tickets:categoryCreateError'),
+      null,
+    );
+    assert.equal(categoryCreateFormError(okValidation, false, null), null);
+    assert.equal(
+      categoryCreateFormError(collisionValidation, false, 'tickets:categoryCreateExists'),
+      null,
+    );
+  });
+
+  await test('form error: attempted gates kind/color, then falls through to the seam key', () => {
+    assert.equal(
+      categoryCreateFormError(okValidation, true, 'tickets:categoryCreateError'),
+      'tickets:categoryCreateError',
+    );
+    assert.equal(
+      categoryCreateFormError(kindValidation, true, 'tickets:categoryCreateError'),
+      'tickets:categoryCreateKindRequired',
+    );
+    assert.equal(
+      categoryCreateFormError(colorValidation, true, 'tickets:categoryCreateError'),
+      'tickets:categoryCreateColorRequired',
+    );
+    // Name-family reasons live in the field; the form area falls through
+    // to the seam key, matching the original IIFE on submit.
+    assert.equal(
+      categoryCreateFormError(nameRequiredValidation, true, 'tickets:categoryCreateError'),
+      'tickets:categoryCreateError',
+    );
+  });
+
+  await test('name error: live collision shows regardless of attempted (copy exactly once)', () => {
+    // (c) After a failed create + name edit, the collision copy surfaces
+    // ONLY in the field (live) — the form-level gate stays silent while
+    // un-attempted, so the seam copy is never shown twice.
+    assert.equal(
+      categoryCreateNameFieldError(collisionValidation, false),
+      'tickets:categoryCreateExists',
+    );
+    assert.equal(
+      categoryCreateNameFieldError(collisionValidation, true),
+      'tickets:categoryCreateExists',
+    );
+    assert.equal(
+      categoryCreateFormError(collisionValidation, false, 'tickets:categoryCreateExists'),
+      null,
+    );
+  });
+
+  await test('name error: required/too-long/unusable surface only when attempted', () => {
+    assert.equal(categoryCreateNameFieldError(nameRequiredValidation, false), null);
+    assert.equal(
+      categoryCreateNameFieldError(nameRequiredValidation, true),
+      'tickets:categoryCreateNameRequired',
+    );
+    assert.equal(
+      categoryCreateNameFieldError(tooLongValidation, true),
+      'tickets:categoryCreateNameTooLong',
+    );
+    assert.equal(
+      categoryCreateNameFieldError(slugEmptyValidation, true),
+      'tickets:categoryCreateNameInvalid',
+    );
+    assert.equal(categoryCreateNameFieldError(okValidation, true), null);
+  });
+
+  await test('dismissal: sheet cannot close while a create is in flight', () => {
+    assert.equal(canDismissCategoryPicker(false), true);
+    assert.equal(canDismissCategoryPicker(true), false);
+  });
+
+  await test('session: success selects only when the submit session is still current', () => {
+    assert.equal(isCurrentCategoryCreateSession(3, 3), true);
+    // Sheet dismissed (or dismissed + reopened) mid-flight → drop.
+    assert.equal(isCurrentCategoryCreateSession(3, 4), false);
+    assert.equal(isCurrentCategoryCreateSession(7, 0), false);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// i18n parity (PR 7, slice 3/7 — task 3.3 acceptance)
+// ---------------------------------------------------------------------------
+
+const LOCALES_ROOT = join(__dirname, '..', 'src', 'i18n', 'locales');
+
+async function i18nParityTests(picker) {
+  const { CATEGORY_CREATE_ERROR_KEYS } = picker;
+  const readTickets = (locale) =>
+    JSON.parse(
+      readFileSync(join(LOCALES_ROOT, locale, 'tickets.json'), 'utf8'),
+    );
+  const esAr = readTickets('es-AR');
+  const en = readTickets('en');
+  const ptBr = readTickets('pt-BR');
+  const keySet = (ns) => Object.keys(ns).sort().join(',');
+
+  await test('i18n: the three tickets namespaces keep identical key sets', () => {
+    assert.equal(keySet(en), keySet(esAr));
+    assert.equal(keySet(ptBr), keySet(esAr));
+  });
+
+  await test('i18n: every category-create error key resolves in all locales', () => {
+    // The seam's generic failure copy is NOT part of CATEGORY_CREATE_ERROR_KEYS
+    // (it is a display-path key, not a validation-reason key) — pinned here so
+    // it can never silently drop out of any locale.
+    const errorKeys = [
+      ...Object.values(CATEGORY_CREATE_ERROR_KEYS),
+      'tickets:categoryCreateError',
+    ];
+    for (const fullKey of errorKeys) {
+      const key = fullKey.replace(/^tickets:/, '');
+      assert.ok(key in esAr, `es-AR missing ${fullKey}`);
+      assert.ok(key in en, `en missing ${fullKey}`);
+      assert.ok(key in ptBr, `pt-BR missing ${fullKey}`);
+    }
+  });
+
+  await test('i18n: all picker create labels exist across locales', () => {
+    const labels = [
+      'categoryPickerTitle',
+      'categoryCreateTitle',
+      'categoryCreateNameLabel',
+      'categoryCreateNamePlaceholder',
+      'categoryCreateColorLabel',
+      'categoryCreateKindLabel',
+      'categoryCreateKindNeed',
+      'categoryCreateKindWant',
+      'categoryCreateAction',
+    ];
+    for (const key of labels) {
+      assert.ok(key in esAr, `es-AR missing ${key}`);
+      assert.ok(key in en, `en missing ${key}`);
+      assert.ok(key in ptBr, `pt-BR missing ${key}`);
+    }
+  });
+
+  await test('i18n: es-AR collision copy converges with the API seam message', () => {
+    // D4: the picker's pre-block and the 23505 backstop share one copy.
+    assert.equal(esAr.categoryCreateExists, 'Esa categoría ya existe.');
+    assert.equal(
+      esAr.categoryCreateNameRequired,
+      'Ingresá un nombre',
+      'es-AR validation copy must stay rioplatense voseo',
+    );
+  });
+
+  await test('i18n: generic create-failure key is localized in all three locales', () => {
+    // Fix 1: the display path looks up tickets:categoryCreateError — the
+    // es-AR value mirrors the seam constant byte-for-byte, while en/pt-BR
+    // MUST NOT show the es-AR seam copy (that is the gate that failed).
+    const GENERIC_LITERAL = 'No se pudo crear la categoría. Inténtalo de nuevo.';
+    assert.ok('categoryCreateError' in esAr, 'es-AR missing categoryCreateError');
+    assert.ok('categoryCreateError' in en, 'en missing categoryCreateError');
+    assert.ok('categoryCreateError' in ptBr, 'pt-BR missing categoryCreateError');
+    assert.equal(esAr.categoryCreateError, GENERIC_LITERAL);
+    assert.notEqual(en.categoryCreateError, GENERIC_LITERAL);
+    assert.notEqual(ptBr.categoryCreateError, GENERIC_LITERAL);
+  });
+
+  await test('i18n: api.ts seam constants stay byte-identical (display path converges)', () => {
+    // The modal compares createError against CATEGORY_ALREADY_EXISTS_MESSAGE;
+    // if the constant text drifts, the 23505 path silently stops converging.
+    const apiSource = readFileSync(
+      join(root, 'src/features/categories/api.ts'),
+      'utf8',
+    );
+    assert.ok(
+      apiSource.includes("CATEGORY_ALREADY_EXISTS_MESSAGE = 'Esa categoría ya existe.'"),
+      'collision literal drifted from the pinned copy',
+    );
+    assert.ok(
+      apiSource.includes(
+        "CREATE_CATEGORY_ERROR_MESSAGE =\n  'No se pudo crear la categoría. Inténtalo de nuevo.'",
+      ),
+      'generic literal drifted from the pinned copy',
+    );
+  });
+
+  await test('modal: list-mode title restored to categoryPickerTitle (create label kept)', () => {
+    // Fix 4: the list-mode sheet title must be categoryPickerTitle — NOT
+    // the create title, which stays on the create screen AND the "+ Nueva
+    // categoría" affordance. This pins categoryPickerTitle as USED (a
+    // key-set parity test alone lets dead keys pass).
+    const modalSource = readFileSync(
+      join(root, 'src/features/tickets/components/CategoryPickerModal.tsx'),
+      'utf8',
+    );
+    assert.ok(
+      modalSource.includes("t('categoryPickerTitle')"),
+      'list-mode title must use categoryPickerTitle',
+    );
+    assert.ok(
+      modalSource.includes("createLabel={t('categoryCreateTitle')}"),
+      'create affordance label must stay categoryCreateTitle',
+    );
+    assert.ok(
+      modalSource.includes("t('categoryCreateTitle')"),
+      'create screen title must stay categoryCreateTitle',
+    );
+  });
+
+  await test('modal: dismissal gated on isCreating + session guard wired (cancel must cancel)', () => {
+    // Fix 2: BottomSheet.dismissable=false suppresses system back, backdrop
+    // tap and the close button mid-create; handleCreate must session-guard
+    // onSelect so a dismissed create never categorizes the item.
+    const modalSource = readFileSync(
+      join(root, 'src/features/tickets/components/CategoryPickerModal.tsx'),
+      'utf8',
+    );
+    assert.ok(
+      modalSource.includes('dismissable={canDismissCategoryPicker(isCreating)}') ||
+        modalSource.includes('dismissable={!isCreating}'),
+      'sheet must not dismiss while a create is in flight',
+    );
+    assert.ok(
+      modalSource.includes('isCurrentCategoryCreateSession('),
+      'handleCreate must session-guard onSelect',
+    );
+  });
+}
+  // ---------------------------------------------------------------------------
+// Runner
+// ---------------------------------------------------------------------------
+
 async function run() {
   try {
     compile();
@@ -607,6 +1280,23 @@ async function run() {
   await manualFormTests(form);
   const format = await importOut('../lib-stubs/format.js');
   await formatTests(format, calendar);
+
+  // PR 7 (slice 3/7): the picker form module is compiled only once it
+  // exists — RED manifests as a clean ERR_MODULE_NOT_FOUND FAIL, GREEN
+  // runs the section.
+  const picker = await importOut('category-picker-form.js').catch(() => null);
+  if (picker) {
+    const catalog = await importOut('catalog.js');
+    await categoryPickerFormTests(picker, catalog);
+    await i18nParityTests(picker);
+  } else {
+    await test(
+      'RED: category-picker-form.ts module not compiled yet (slice 3/7)',
+      () => {
+        throw new Error('ERR_MODULE_NOT_FOUND — create the module for GREEN');
+      },
+    );
+  }
 
   console.log('');
   if (failed > 0) {

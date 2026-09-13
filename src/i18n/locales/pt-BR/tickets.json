@@ -55,5 +55,20 @@
   "noCategory": "SEM CATEGORIA",
   "impulseLabel": "Compra por impulso",
   "categoryPickerTitle": "Categoria",
-  "categoryPickerBackdropA11y": "Fechar categorias"
+  "categoryPickerBackdropA11y": "Fechar categorias",
+  "categoryCreateTitle": "Nova categoria",
+  "categoryCreateNameLabel": "Nome",
+  "categoryCreateNamePlaceholder": "Ex.: Delivery",
+  "categoryCreateColorLabel": "Cor",
+  "categoryCreateKindLabel": "Tipo",
+  "categoryCreateKindNeed": "Necessidade",
+  "categoryCreateKindWant": "Desejo",
+  "categoryCreateNameRequired": "Digite um nome",
+  "categoryCreateNameTooLong": "O nome não pode ter mais de 40 caracteres",
+  "categoryCreateNameInvalid": "Esse nome não pode ser usado. Tente com letras e números.",
+  "categoryCreateKindRequired": "Escolha entre necessidade e desejo",
+  "categoryCreateColorRequired": "Escolha uma cor",
+  "categoryCreateExists": "Essa categoria já existe.",
+  "categoryCreateError": "Não foi possível criar a categoria. Tente novamente.",
+  "categoryCreateAction": "Criar"
 }
