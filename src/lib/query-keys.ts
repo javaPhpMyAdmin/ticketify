@@ -127,6 +127,14 @@ export const queryKeys = {
   receiptDetail: (userId: string, purchaseId: string) =>
     ['receipt-detail', userId, purchaseId] as const,
 
+  /**
+   * The user's category catalog: global rows + their own custom rows, merged
+   * (change `category-management` — D3). Every display surface that resolves
+   * slugs (`resolveCategory`) converges on this cache; it is invalidated
+   * after createCustomCategory / deleteCustomCategory / reassignCategoryItems.
+   */
+  categories: (userId: string) => ['categories', userId] as const,
+
   /** Per-category budget limits for a month. */
   categoryBudgets: (userId: string, yearMonth: string) =>
     ['category-budgets', userId, yearMonth] as const,
