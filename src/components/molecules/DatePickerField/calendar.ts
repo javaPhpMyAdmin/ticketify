@@ -85,6 +85,25 @@ export function monthGrid(year: number, month: number, mondayFirst: boolean) {
   return blanks.concat(days);
 }
 
+/**
+ * 0-based month seed for the picker's internal state, derived from an ISO
+ * date. `partsFromISO` returns a 1-based month (September = 9); the
+ * component state is 0-based (matches `monthGrid` / `Date#getMonth`), so
+ * this subtracts 1 — the single source of that conversion.
+ *
+ * Fallback chain: parse `iso` → parse `fallbackISO` (the caller passes
+ * today) → `new Date().getMonth()` as the last resort. Because
+ * `partsFromISO` validates month ∈ 1..12, the `- 1` is always safe.
+ */
+export function seedMonthFromISO(
+  iso: string | null | undefined,
+  fallbackISO: string | null | undefined,
+): number {
+  const parts = partsFromISO(iso) ?? partsFromISO(fallbackISO);
+  if (parts) return parts.month - 1;
+  return new Date().getMonth();
+}
+
 // ---------------------------------------------------------------------------
 // Range guards (REQ-004: future dates blocked)
 // ---------------------------------------------------------------------------
