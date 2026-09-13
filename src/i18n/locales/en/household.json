@@ -35,8 +35,8 @@
   "joinHouseholdCodeLabel": "Code",
   "joinHouseholdCodePlaceholder": "ABC123",
   "joinHouseholdAction": "Join",
-  "inviteGenerating": "Generating code...",
-  "inviteExpiresIn": "Expires in 72h",
+  "inviteGenerating": "Generating code…",
+  "inviteExpiresIn": "Expires in 3 days",
   "inviteCopy": "Copy",
   "inviteShare": "Share",
   "householdJoinCodeLengthError": "The code must be 6 characters.",
@@ -48,6 +48,6 @@
   "inviteCopiedBody": "Share the code with whoever you want to invite.",
   "inviteShareMessage": "Join my household on Ticketify with this code: {{code}}",
   "greeting": "Hi {{name}}!",
-  "homeEmptyTitle": "No tickets this month.",
-  "homeEmptyBody": "This month has no tickets."
+  "homeEmptyTitle": "No receipts this month.",
+  "homeEmptyBody": "This month has no receipts."
 }
