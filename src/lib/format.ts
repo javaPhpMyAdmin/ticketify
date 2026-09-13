@@ -540,6 +540,50 @@ const RELATIVE_YESTERDAY: Record<FormatDateLocale, string> = {
   'pt-BR': 'Ontem',
 };
 
+/**
+ * Formats an ISO date as `day + full month name` for the given locale,
+ * e.g. `2026-08-03` → `3 de agosto` (es-AR / pt-BR) / `August 3` (en).
+ * Canonical counterpart of the raw `toLocaleDateString()` calls that the
+ * paywall-expiry and household-member dates used to make — the locale
+ * argument is the ONLY knob (does not read `i18next.language`). English
+ * reads month-first, title-cased; es-AR / pt-BR read day-first with the
+ * `de` connector, lowercase. Malformed input is returned unchanged.
+ */
+export function formatDayMonth(locale: FormatDateLocale, iso: string): string {
+  const date = parseLocalDate(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const day = date.getDate();
+  const month = MONTHS_FULL_BY_LOCALE[locale][date.getMonth()];
+  if (locale === 'en') {
+    return `${month.charAt(0).toUpperCase()}${month.slice(1)} ${day}`;
+  }
+  return `${day} de ${month}`;
+}
+
+/**
+ * Formats an ISO date as `short month + year` for the given locale,
+ * e.g. `2026-08-03` → `ago 2026` (es-AR / pt-BR) / `Aug 2026` (en).
+ * Thin wrapper over `formatYearMonth` (which owns the month tables and
+ * the short-form connector); the `YYYY-MM` input is derived from the
+ * LOCAL calendar fields of `parseLocalDate`, so a full `timestamptz`
+ * like `2026-08-01T01:30:00Z` renders the local month (`jul 2026` under
+ * UTC-3) — never the UTC month a raw string slice would read. Malformed
+ * input is returned unchanged (same contract as `formatDayMonth`).
+ *
+ * Note: es-AR September renders `sep 2026` — `MONTHS_SHORT_ES[8] = 'sep'`
+ * is shorter than Intl's `'sept'`, matching the `date:monthShort` catalog
+ * convention. Deliberate, not a drift.
+ */
+export function formatMonthYear(locale: FormatDateLocale, iso: string): string {
+  const date = parseLocalDate(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return formatYearMonth(
+    locale,
+    `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`,
+    { capitalize: locale === 'en' },
+  );
+}
+
 /** Localized full-month name for a 1-based `month` argument. */
 export function fullMonthForLocale(
   locale: FormatDateLocale,

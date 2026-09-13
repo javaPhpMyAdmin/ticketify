@@ -34,5 +34,7 @@
   "trialActiveDays_one": "Your PRO trial is active — {{count}} day left",
   "trialActiveDays_other": "Your PRO trial is active — {{count}} days left",
   "trialBannerDays_one": "PRO trial: {{count}} day left",
-  "trialBannerDays_other": "PRO trial: {{count}} days left"
+  "trialBannerDays_other": "PRO trial: {{count}} days left",
+  "trialExpiredTitle": "Your free trial expired",
+  "trialExpiredSubtitle": "Your access ended on {{date}}"
 }

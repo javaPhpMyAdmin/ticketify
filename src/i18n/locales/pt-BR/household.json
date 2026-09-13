@@ -48,6 +48,6 @@
   "inviteCopiedBody": "Compartilhe o código com quem você quer convidar.",
   "inviteShareMessage": "Entre na minha família no Ticketify com este código: {{code}}",
   "greeting": "Olá {{name}}!",
-  "homeEmptyTitle": "Sem tickets este mês.",
-  "homeEmptyBody": "Este mês não tem tickets."
+  "homeEmptyTitle": "Sem comprovantes este mês.",
+  "homeEmptyBody": "Este mês não tem comprovantes."
 }
