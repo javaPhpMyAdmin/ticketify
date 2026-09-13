@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020", "dom"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "..",
+    "paths": {
+      "@/lib/supabase": ["./scripts/test-stubs/supabase.ts"],
+      "@/features/auth": ["./scripts/test-stubs/auth.ts"],
+      "react-native": ["./scripts/test-stubs/react-native.ts"],
+      "@/*": ["./src/*"]
+    },
+    "rootDir": ".."
+  },
+  "include": [
+    "../src/features/categories/catalog.ts",
+    "../src/features/categories/api.ts",
+    "../src/features/categories/hooks/useCategoryCatalog.ts",
+    "../src/lib/query-keys.ts",
+    "../src/lib/supabase/config-status.ts",
+    "../src/lib/supabase/feature-access.ts",
+    "../src/lib/supabase/query-adapters.ts",
+    "../src/types/index.ts",
+    "../scripts/test-stubs/globals.d.ts",
+    "../scripts/test-stubs/auth.ts",
+    "../scripts/test-stubs/supabase.ts",
+    "../scripts/test-stubs/react-native.ts"
+  ]
+}
