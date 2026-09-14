@@ -21,6 +21,14 @@ export {
   budgetProgressColor,
   mergeBudgetLimits,
 } from './category-budget-progress';
+export {
+  budgetKeysFromCatalog,
+  budgetSavePayload,
+  mergeBudgetDraftSeeds,
+  parseBudgetAmount,
+  seedBudgetDrafts,
+} from './category-budget-form';
+export type { CategoryBudgetDraft } from './category-budget-form';
 export type { CategoryBudgetRowProps } from './components/CategoryBudgetRow';
 export { fetchMonthlyTotals, fetchCategoryBreakdown } from './api';
 export { computePriceAlerts } from './price-alerts';

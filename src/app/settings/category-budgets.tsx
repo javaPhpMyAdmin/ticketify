@@ -11,11 +11,18 @@ import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Card, Icon, Pressable, Spinner, Text, View } from '@/components';
-import { useCategoryBudgets } from '@/features/analytics';
+import {
+  budgetKeysFromCatalog,
+  budgetSavePayload,
+  mergeBudgetDraftSeeds,
+  seedBudgetDrafts,
+  useCategoryBudgets,
+} from '@/features/analytics';
+import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
 import { currentMonthKey } from '@/features/home';
 import {
   EXPENSE_CATEGORIES,
-  type ExpenseCategoryKey,
+  resolveCategoryDisplay,
 } from '@/features/home/categories';
 import { useFrozenGuard } from '@/features/pro';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -24,10 +31,23 @@ import { colors, radii, spacing, typography } from '@/theme';
  * Full-screen per-category budget editor reached from the profile screen's
  * "Presupuestos por categoría" row (`/settings/category-budgets`).
  *
- * Lists all 13 canonical categories from `EXPENSE_CATEGORIES` with numeric
- * inputs. "Guardar" upserts non-zero amounts for the current month and
- * deletes zero amounts (clearing the budget). Pre-filled with existing
- * budget amounts from the `category_budgets` table.
+ * PR 7 (category-management): lists the rows of the MERGED catalog — the 13
+ * canonical categories plus the user's OWN custom categories (custom rows
+ * render their own label/color via `resolveCategoryDisplay`, D3/D4). While
+ * the catalog is still loading the list falls back to the 13 canonical keys
+ * (identical to the pre-PR7 shape), then the custom rows join in.
+ *
+ * "Guardar" upserts non-zero amounts for the current month (keyed by the
+ * single `currentMonthKey()` — NFR-2 device-local month) and deletes zero
+ * amounts (clearing the budget = delete-on-zero). The batch is built by the
+ * pure `budgetSavePayload` form helper; pre-filled with existing budget
+ * amounts via `seedBudgetDrafts`.
+ *
+ * CRITICAL-1 (PR 7 re-gate): delete-on-zero is only safe when the payload
+ * covers exactly the keys the user was SHOWN. Save is therefore blocked
+ * while either read is incomplete (loading OR failed — a failed budgets
+ * read renders the error instead of an editable all-empty form), and a
+ * catalog that expands mid-draft merges its new keys into the drafts.
  */
 export default function CategoryBudgetsScreen() {
   const { t } = useTranslation(['settings', 'common']);
@@ -36,17 +56,25 @@ export default function CategoryBudgetsScreen() {
   // month — a UTC-derived month key diverges in UTC-x timezones at
   // month boundaries.
   const yearMonth = currentMonthKey();
-  const { budgets, isLoading, save, isSaving } = useCategoryBudgets(yearMonth);
+  const {
+    budgets,
+    isLoading,
+    error: budgetsError,
+    save,
+    isSaving,
+  } = useCategoryBudgets(yearMonth);
+  // PR 7: the editable key set is the same DYNAMIC catalog the budgets hook
+  // consumes for rollover validKeys — one shared query key, so this second
+  // mount resolves from cache without an extra network read.
+  const { catalog, isLoading: catalogLoading } = useCategoryCatalog();
   const { guard } = useFrozenGuard();
 
-  // Build a map of category_slug → existing amount
-  const existingMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const b of budgets) {
-      map[b.category_slug] = b.amount;
-    }
-    return map;
-  }, [budgets]);
+  // Editable rows: merged catalog keys once loaded, canonical keys while
+  // unknown (pre-PR7 shape during the load window).
+  const categoryKeys = useMemo(
+    () => budgetKeysFromCatalog(catalog, Object.keys(EXPENSE_CATEGORIES)),
+    [catalog],
+  );
 
   // Local draft state: one string per category
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -54,19 +82,29 @@ export default function CategoryBudgetsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Sync drafts with server data until user touches the form
+  // Sync drafts with server data until user input diverges. Persisted
+  // amounts prefill; every catalog key (incl. freshly created custom rows)
+  // starts empty.
+  //
+  // CRITICAL-1 (PR 7 re-gate): while the form is DIRTY the seed must not be
+  // skipped wholesale — when the catalog expands mid-draft (a failed catalog
+  // read fell back to the 13 canonical keys, the user typed, then a
+  // background refetch healed and added custom keys this screen never
+  // seeded), the NEW keys are merged into the drafts via
+  // `mergeBudgetDraftSeeds`. A budget that already exists server-side must
+  // be SEEN (seeded with its amount), never silently deleted by a zero
+  // payload on save. Existing drafts are never overwritten.
   useEffect(() => {
-    if (dirty || submitting) return;
-    const initial: Record<string, string> = {};
-    for (const key of Object.keys(EXPENSE_CATEGORIES)) {
-      const existing = existingMap[key];
-      initial[key] = existing !== undefined ? String(existing) : '';
-    }
+    if (submitting) return;
+    const initial = seedBudgetDrafts(categoryKeys, budgets);
     // Only replace the drafts object when the computed values actually
     // differ from the previous ones. Returning `prev` (same reference)
     // when unchanged prevents a fresh-object setState on every effect run,
     // which previously caused "Maximum update depth exceeded".
     setDrafts((prev) => {
+      if (dirty) {
+        return mergeBudgetDraftSeeds(prev, initial);
+      }
       const prevKeys = Object.keys(prev);
       const nextKeys = Object.keys(initial);
       const same =
@@ -74,28 +112,34 @@ export default function CategoryBudgetsScreen() {
         prevKeys.every((k) => prev[k] === initial[k]);
       return same ? prev : initial;
     });
-  }, [existingMap, dirty, submitting]);
-
-  const categoryKeys = useMemo(
-    () => Object.keys(EXPENSE_CATEGORIES) as ExpenseCategoryKey[],
-    [],
-  );
+  }, [budgets, categoryKeys, dirty, submitting]);
 
   const handleSave = async () => {
-    if (isSaving || submitting) return;
+    // CRITICAL-1 (PR 7 re-gate): never build the save payload while a read
+    // is incomplete. `budgetSavePayload` is pure and correct for its inputs,
+    // but incomplete inputs map unseen keys to 0, and the API layer turns
+    // amount <= 0 into delete-on-zero — a silent mass delete. The form hides
+    // behind the spinner during loads but Guardar stays rendered, and a
+    // FAILED budgets read would otherwise show an all-empty editable form;
+    // both states must make the payload unmakable.
+    //
+    // Deliberate divergence from the visible `disabled` prop below:
+    // `isLoading`/`catalogLoading` are intentionally NOT in the button's
+    // disabled style — the spinner replaces the form during loads and
+    // disabling the button for those two states would flash it during the
+    // brief load window. This guard is the source of truth for loading;
+    // DO NOT "simplify" disabled to include them without also keeping this
+    // early return (a tap during load must remain a no-op, not a save).
+    if (isLoading || catalogLoading || !!budgetsError || isSaving || submitting) {
+      return;
+    }
     return guard(async () => {
       setSubmitting(true);
       setError(null);
 
-      const budgetsToSave = categoryKeys.map((key) => {
-        const raw = drafts[key] ?? '';
-        const parsed = Number.parseInt(raw, 10);
-        const amount =
-          raw.trim() !== '' && Number.isFinite(parsed) && parsed >= 0
-            ? parsed
-            : 0;
-        return { category_slug: key, amount };
-      });
+      // Every catalog row mapped to its parsed amount; empty/invalid inputs
+      // become 0, which the API layer converts into delete-on-zero.
+      const budgetsToSave = budgetSavePayload(categoryKeys, drafts);
 
       try {
         await save(budgetsToSave);
@@ -130,14 +174,16 @@ export default function CategoryBudgetsScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {isLoading ? (
+          {isLoading || catalogLoading ? (
             <View style={styles.loadingWrap}>
               <Spinner size="sm" color={colors.primary} />
             </View>
+          ) : budgetsError ? (
+            <Text style={styles.error}>{budgetsError}</Text>
           ) : (
             <Card>
               {categoryKeys.map((key, index) => {
-                const cat = EXPENSE_CATEGORIES[key];
+                const visual = resolveCategoryDisplay(catalog, key);
                 return (
                   <View
                     key={key}
@@ -150,10 +196,10 @@ export default function CategoryBudgetsScreen() {
                       <View
                         style={[
                           styles.iconDot,
-                          { backgroundColor: cat.background },
+                          { backgroundColor: visual.background },
                         ]}
                       />
-                      <Text style={styles.rowLabel}>{cat.label}</Text>
+                      <Text style={styles.rowLabel}>{visual.label}</Text>
                     </View>
                     <TextInput
                       value={drafts[key] ?? ''}
@@ -171,7 +217,7 @@ export default function CategoryBudgetsScreen() {
                       placeholderTextColor={colors.textSecondary}
                       editable={!isSaving && !submitting}
                       style={styles.input}
-                      accessibilityLabel={`${t('settings:categoryBudgetLabel')} ${cat.label}`}
+                      accessibilityLabel={`${t('settings:categoryBudgetLabel')} ${visual.label}`}
                     />
                   </View>
                 );
@@ -183,12 +229,13 @@ export default function CategoryBudgetsScreen() {
 
           <Pressable
             onPress={handleSave}
-            disabled={isSaving || submitting}
+            disabled={isSaving || submitting || !!budgetsError}
             accessibilityRole="button"
             accessibilityLabel={t('settings:saveCategoryBudgets')}
             style={({ pressed }) => [
               styles.saveButton,
-              (isSaving || submitting) && styles.saveButtonDisabled,
+              (isSaving || submitting || !!budgetsError) &&
+                styles.saveButtonDisabled,
               pressed && styles.saveButtonPressed,
             ]}
           >
