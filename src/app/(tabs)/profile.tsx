@@ -303,9 +303,6 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('settings:sectionTitle')}</Text>
           <AccountSettingsList rows={settings} />
-          {!isPro && !proLoading ? (
-            <Text style={styles.proNote}>{t('settings:premiumFeature')}</Text>
-          ) : null}
         </View>
 
         <View style={styles.section}>
@@ -351,10 +348,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: '900',
-    color: colors.textSecondary,
-  },
-  proNote: {
-    ...typography.labelSm,
     color: colors.textSecondary,
   },
   error: {
