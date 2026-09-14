@@ -24,7 +24,8 @@ import {
   useMonthNavigation,
   useMonthReceipts,
 } from '@/features/home';
-import { getExpenseCategory } from '@/features/home/categories';
+import { resolveCategoryDisplay, resolveHouseholdCategoryVisuals } from '@/features/home/categories';
+import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
 import {
   aggregateItemsByMonth,
   currentMonthKey,
@@ -70,6 +71,9 @@ export default function AnalyticsScreen() {
   );
   const householdId = useHouseholdStore((s) => s.household?.id);
   const hasHousehold = !!householdId;
+  // Display convergence (REQ-008): the merged catalog resolves custom
+  // category visuals (icon/color) at every display site on this screen.
+  const { catalog } = useCategoryCatalog();
 
   // Full-month receipts for the selected month (personal scope). The store
   // list is used ONLY as a loading fallback inside the hook; once the query
@@ -302,7 +306,15 @@ export default function AnalyticsScreen() {
               the headline above is the only net-paid surface. */}
               <View style={styles.categoryList}>
                 {monthTotals.map((t) => {
-                  const category = getExpenseCategory(t.category_slug);
+                  // W-5: RPC rows carry the SPENDING member's category_id
+                  // with no ownership marker — resolve only viewer-owned
+                  // rows through the catalog; the rest stay static under
+                  // the DB-provided name.
+                  const visual = resolveHouseholdCategoryVisuals(
+                    catalog,
+                    t.category_id,
+                    t.category_slug,
+                  );
                   return (
                     <CategoryBudgetRow
                       key={t.category_id}
@@ -310,7 +322,9 @@ export default function AnalyticsScreen() {
                       name={t.category_name}
                       amount={t.total}
                       percent={t.percent_of_total}
-                      icon={category.icon}
+                      icon={visual.icon}
+                      backgroundColor={visual.background}
+                      foregroundColor={visual.foreground}
                       limit={t.budget_limit ?? undefined}
                       currency={currency}
                       onPress={() =>
@@ -377,7 +391,7 @@ export default function AnalyticsScreen() {
                   <Card padding={spacing.lg}>
                     <View style={styles.categoryList}>
                       {monthTotals.map((t) => {
-                        const category = getExpenseCategory(t.category_slug);
+                        const visual = resolveCategoryDisplay(catalog, t.category_slug);
                         return (
                           <CategoryBudgetRow
                             key={t.category_id}
@@ -385,7 +399,9 @@ export default function AnalyticsScreen() {
                             name={t.category_name}
                             amount={t.total}
                             percent={t.percent_of_total}
-                            icon={category.icon}
+                            icon={visual.icon}
+                            backgroundColor={visual.background}
+                            foregroundColor={visual.foreground}
                             limit={t.budget_limit ?? undefined}
                             currency={currency}
                             onPress={() =>

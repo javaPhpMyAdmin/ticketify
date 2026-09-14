@@ -29,6 +29,18 @@ export interface CategoryBudgetCardProps {
   itemCount?: number;
   /** Optional per-category budget limit; when set, renders a progress bar. */
   limit?: number;
+  /**
+   * Display-convergence override (REQ-008): background for custom rows,
+   * derived from the merged catalog. When omitted the card falls back to
+   * the stable `getCategoryColor(categoryKey)` registry lookup (canonical
+   * rows render exactly as today).
+   */
+  backgroundColor?: string;
+  /**
+   * Display-convergence override (REQ-008): foreground for custom rows.
+   * When omitted, falls back to the registry's foreground for the key.
+   */
+  foregroundColor?: string;
   onPress?: () => void;
 }
 
@@ -50,12 +62,19 @@ export function CategoryBudgetCard({
   currency = 'UYU',
   itemCount,
   limit,
+  backgroundColor,
+  foregroundColor,
   onPress,
 }: CategoryBudgetCardProps) {
   // The "of spending" suffix after the percent token and the item-count
   // line are localized via the `analytics` namespace.
   const { t } = useTranslation('analytics');
-  const color = getCategoryColor(categoryKey);
+  // Catalog-resolved colors win (custom rows carry their own palette color);
+  // canonical rows fall back to the stable registry — byte-identical.
+  const color =
+    backgroundColor && foregroundColor
+      ? { background: backgroundColor, foreground: foregroundColor }
+      : getCategoryColor(categoryKey);
 
   // Shared bar color (spec NFR-4: identical thresholds/colors in every
   // consumer). Only reached when `limit > 0` (the render gate below), so

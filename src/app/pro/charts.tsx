@@ -65,7 +65,8 @@ import {
   pickMaxSpendIndex,
 } from '@/features/charts';
 import { useSessionUser } from '@/features/auth';
-import { getExpenseCategory } from '@/features/home/categories';
+import { resolveCategoryDisplay, resolveHouseholdCategoryVisuals } from '@/features/home/categories';
+import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
 import { readPurchaseListByMonth } from '@/features/home/api';
 import {
   aggregateCategoriesByMonth,
@@ -209,6 +210,11 @@ function ChartsBody() {
   const householdId = useHouseholdStore((s) => s.household?.id);
   const hasHousehold = !!householdId;
   const { userId } = useSessionUser();
+  // Display convergence (REQ-008): the merged catalog resolves custom
+  // category visuals (label/icon/color) at every display site on this
+  // screen. The hook returns `{}` before the first load, which keeps
+  // this screen byte-identical until the catalog arrives.
+  const { catalog } = useCategoryCatalog();
 
   // ── Month-scoped full receipt list ────────────────────────────────
   // Home no longer paginates: it renders from the same shared full-month
@@ -433,7 +439,7 @@ function ChartsBody() {
       if (entries.length === 0) return null;
       const sorted = entries.sort(([, a], [, b]) => b.total - a.total);
       const [slug, { total }] = sorted[0];
-      const cat = getExpenseCategory(slug);
+      const cat = resolveCategoryDisplay(catalog, slug);
       return {
         key: slug,
         name: cat.label,
@@ -441,9 +447,9 @@ function ChartsBody() {
         icon: cat.icon,
       };
     }
-    const categories = aggregateCategoriesByMonth(monthList, monthKey);
+    const categories = aggregateCategoriesByMonth(monthList, monthKey, catalog);
     return categories[0] ?? null;
-  }, [cacheRow, monthList, monthKey]);
+  }, [cacheRow, monthList, monthKey, catalog]);
 
   // Check if any budgets are configured for the selected month
   const hasAnyBudgets = useMemo(
@@ -875,7 +881,13 @@ function ChartsBody() {
                 0029 §3): the hero headline is the only net-paid surface. */}
                 <View style={styles.categoryList}>
                   {totals.map((t) => {
-                    const category = getExpenseCategory(t.category_slug);
+                    // W-5: RPC rows belong to the SPENDING member — never
+                    // resolve them through the viewer's personal catalog.
+                    const visual = resolveHouseholdCategoryVisuals(
+                      catalog,
+                      t.category_id,
+                      t.category_slug,
+                    );
                     return (
                       <CategoryBudgetRow
                         key={t.category_id}
@@ -883,7 +895,9 @@ function ChartsBody() {
                         name={t.category_name}
                         amount={t.total}
                         percent={t.percent_of_total}
-                        icon={category.icon}
+                        icon={visual.icon}
+                        backgroundColor={visual.background}
+                        foregroundColor={visual.foreground}
                         limit={t.budget_limit ?? undefined}
                         currency={currency}
                         // Drill into the existing category detail screen
