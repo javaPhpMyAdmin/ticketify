@@ -46,10 +46,10 @@ TDD RED→GREEN; gate: `pnpm test` + `pnpm typecheck` + `pnpm lint`.
 
 ## Phase 5: Editor Wiring (PR 5)
 
-- [ ] 5.1 GREEN `ItemEditorModal.tsx`: category row (label via `resolveCategory`), `initialValues.category_id` (slug|null), `onSave` round-trip
-- [ ] 5.2 GREEN `src/app/ticket/manual.tsx`: stack picker over editor; save `category_id` add + edit
-- [ ] 5.3 GREEN review flow: `ReviewItemRow.tsx` chip → enhanced picker, create+assign; null default kept
-- [ ] 5.4 Update `test-manual-receipt.mjs` + `test-scan-contract.mjs`: add/edit round-trip, canonical unchanged, null default
+- [x] 5.1 GREEN `ItemEditorModal.tsx`: category row (label via `resolveCategory`), `initialValues.category_id` (slug|null), `onSave` round-trip
+- [x] 5.2 GREEN `src/app/ticket/manual.tsx`: stack picker over editor; save `category_id` add + edit
+- [x] 5.3 GREEN review flow: `ReviewItemRow.tsx` chip → enhanced picker, create+assign; null default kept
+- [x] 5.4 Update `test-manual-receipt.mjs` + `test-scan-contract.mjs`: add/edit round-trip, canonical unchanged, null default
 
 ## Phase 6: Display Convergence (PR 6)
 
