@@ -122,6 +122,16 @@ const CATALOG_REWRITES = [
 ];
 const HOME_CATEGORIES_REWRITES = [
   [/from ['"]@\/components['"]/g, "from '../lib-stubs/types'"],
+  // PR 6 (`category-management`): home/categories.ts imports the
+  // `CategoryCatalog` TYPE from @/features/categories/catalog. The workdir
+  // compiles the REAL catalog.ts above (no paths in the harness tsconfig),
+  // so the type-only specifier rewrites to the same './catalog' target the
+  // PICKER_FORM_REWRITES use — the compile resolves, and the CJS emit
+  // erases the type-only import.
+  [
+    /from ['"]@\/features\/categories\/catalog['"]/g,
+    "from './catalog'",
+  ],
 ];
 const PICKER_FORM_REWRITES = [
   [/from ['"]@\/types['"]/g, "from '../lib-stubs/types'"],
@@ -696,7 +706,7 @@ async function formatTests(format, calendar) {
 // Category-picker create logic (PR 7, slice 3/7 — category-picker-form.ts)
 // ---------------------------------------------------------------------------
 
-async function categoryPickerFormTests(picker, catalog) {
+async function categoryPickerFormTests(picker, catalog, taxonomy) {
   const {
     MAX_CATEGORY_NAME_LENGTH,
     CATEGORY_CREATE_DEFAULT_ICON,
@@ -1183,6 +1193,46 @@ async function categoryPickerFormTests(picker, catalog) {
 
   await test('chip row: empty catalog (pre-load) resolves nothing — caller falls back to static', () => {
     assert.equal(picker.pickerRowForCategory(undefined, 'lacteos'), null);
+  });
+
+  // ── W-3 parity pins (display convergence) ──────────────────────────────
+  // Canonical slugs must always render STATIC taxonomy visuals in BOTH the
+  // chip resolver and the grid — the DB mirror rows for canonical slugs
+  // carry LEGACY visuals (migration 0001: 'Snacks / Galletas'/popcorn
+  // vs static 'Snacks'/bag.fill) that must never leak through.
+
+  const legacyCatalog = mergeCategoryCatalog(
+    [
+      { id: 'g-snacks', slug: 'snacks', name: 'Snacks / Galletas', kind: 'want', icon: 'popcorn', color: '#F59E0B', sort_order: 20, user_id: null },
+      { id: 'g-carnes', slug: 'carnes', name: 'Carnes', kind: 'need', icon: 'fish', color: '#DC2626', sort_order: 50, user_id: null },
+      { id: 'g-otros', slug: 'otros', name: 'Otros (DB)', kind: 'need', icon: 'square.grid.2x2', color: '#6B7280', sort_order: 99, user_id: null },
+    ],
+    [
+      { id: 'c-delivery', slug: 'delivery', name: 'Delivery', kind: 'want', icon: 'sparkles', color: '#2563EB', sort_order: 100, user_id: 'u-1' },
+    ],
+  );
+
+  await test('W-3 parity: pickerRowForCategory visuals DEEP EQUAL resolveCategoryDisplay for the canonical 13', () => {
+    for (const key of Object.keys(taxonomy.EXPENSE_CATEGORIES)) {
+      const display = taxonomy.resolveCategoryDisplay(legacyCatalog, key);
+      const row = picker.pickerRowForCategory(legacyCatalog, key);
+      assert.ok(row, `canonical slug ${key} must resolve a picker row`);
+      assert.deepEqual(
+        { label: row.label, icon: row.icon, color: row.color },
+        { label: display.label, icon: display.icon, color: display.background },
+        `canonical slug ${key}: picker row must match display visuals`,
+      );
+    }
+  });
+
+  await test('W-3 parity: picker grid renders static canonical visuals (catalog row only for custom)', () => {
+    const rows = picker.pickerRowsFromCatalog(legacyCatalog);
+    // Canonical snack row: static label + icon + color (NOT the DB mirror 'popcorn')
+    const snacks = rows.find((r) => r.slug === 'snacks');
+    assert.deepEqual(snacks, { slug: 'snacks', label: 'Snacks', icon: 'bag.fill', color: '#7C3AED' });
+    // Custom delivery row: catalog visuals preserved
+    const delivery = rows.find((r) => r.slug === 'delivery');
+    assert.deepEqual(delivery, { slug: 'delivery', label: 'Delivery', icon: 'sparkles', color: '#2563EB' });
   });
 }
 
@@ -2055,7 +2105,8 @@ async function run() {
   const picker = await importOut('category-picker-form.js').catch(() => null);
   if (picker) {
     const catalog = await importOut('catalog.js');
-    await categoryPickerFormTests(picker, catalog);
+    const taxonomy = await importOut('categories.js');
+    await categoryPickerFormTests(picker, catalog, taxonomy);
     await categoryPickerDeleteTests(picker, catalog);
     await i18nParityTests(picker);
   } else {

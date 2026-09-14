@@ -349,6 +349,43 @@ async function run() {
     assert.deepEqual(result.data, []);
   });
 
+  await test('readPurchaseList preserves custom category slugs verbatim (display convergence contract)', async () => {
+    // Phase 6 contract: the read layer must NOT coerce unknown slugs to
+    // 'otros' — the display layer resolves custom visuals from the merged
+    // catalog downstream. A custom slug in the DB must surface as-is.
+    resetAll();
+    const P_CUSTOM = {
+      id: 'p-custom',
+      store_id: 's1',
+      purchase_date: '2026-08-05',
+      created_at: '2026-08-05T14:30:00.000Z',
+      total: 12,
+      payment_method: 'card',
+      image_url: null,
+      status: 'confirmed',
+      is_manual: false,
+      stores: { name: 'Coto Hipermercado' },
+      purchase_items: [
+        {
+          id: 'i-custom',
+          name: 'Hamburguesas',
+          quantity: 1,
+          unit_price: 12,
+          total_price: 12,
+          is_impulse: false,
+          sort_order: 0,
+          categories: { slug: 'delivery' },
+        },
+      ],
+    };
+    stubMod.__setTableRead('purchases', { rows: [P_CUSTOM] });
+    const result = await homeApiMod.readPurchaseList('u1');
+    assert.equal(result.status, 'ok');
+    const [row] = result.data;
+    assert.equal(row.items[0].category, 'delivery');
+    assert.deepEqual(row.category_totals, { delivery: 12 });
+  });
+
   await test('readPurchaseList error resolves to the user-safe message, never throws', async () => {
     resetAll();
     stubMod.__setTableRead('purchases', {
