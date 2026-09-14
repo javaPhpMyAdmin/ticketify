@@ -830,6 +830,36 @@ async function run() {
         );
       },
     );
+
+    await test(
+      'scan save seams map item categories user-pick → AI → otros (round-trip, PR 5)',
+      async () => {
+        // The scan review flow saves through buildSaveReceiptArgs (fresh
+        // scan) AND updateReceipt (edit). Both resolve the draft's SLUG-level
+        // category to a uuid FK with the same preference order: the user's
+        // pick first, then the AI suggestion, then the canonical 'otros'
+        // (NULLs never persist — null default → otros; canonical unchanged).
+        // The from-path stub resolves category rows to null on purpose, so
+        // this contract is pinned at the source level.
+        const apiSrc = readFileSync(
+          join(root, 'src/features/tickets/api.ts'),
+          'utf8',
+        );
+        assert.ok(
+          apiSrc.includes("categoryIds[item.category_id ?? '']"),
+          'the save seam must prefer the user-picked category slug',
+        );
+        assert.ok(
+          apiSrc.includes("categoryIds[item.ai_suggested_category_id ?? '']"),
+          'the save seam must fall back to the AI suggestion',
+        );
+        assert.equal(
+          (apiSrc.match(/categoryIds\['otros'\]/g) ?? []).length,
+          2,
+          'BOTH buildSaveReceiptArgs AND updateReceipt must end on the canonical otros fallback (null default -> otros, canonical unchanged)',
+        );
+      },
+    );
   } else {
     console.log(
       '\n[tests] B-D SKIPPED: api.ts failed to import (see FATAL warning above)\n',
