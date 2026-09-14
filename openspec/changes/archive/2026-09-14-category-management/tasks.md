@@ -20,17 +20,17 @@ TDD RED→GREEN; gate: `pnpm test` + `pnpm typecheck` + `pnpm lint`.
 
 ## Phase 1: Storage & Save Seam (PR 1)
 
-- [ ] 1.1 RED `supabase/tests/user-categories.sql`: partial unique idxs, RLS write policies block cross-user, kind CHECK, FK RESTRICT; register in `scripts/test-db-smoke.mjs` (CI; no local CLI)
-- [ ] 1.2 GREEN `supabase/migrations/0032_user_categories.sql`: add `user_id uuid references profiles(id) on delete cascade`; drop `categories_slug_key`; `categories_global_slug_idx`/`categories_user_slug_idx`/`categories_user_sort_idx`; RLS insert/update/delete own-row policies; FK `purchase_items_category_id_fkey` → RESTRICT
-- [ ] 1.3 RED `scripts/test-manual-receipt.mjs`: `fetchCategoryIdsBySlug(userId)` resolves own custom + canonical; 'otros' fallback kept
-- [ ] 1.4 GREEN `src/features/tickets/api.ts`: `fetchCategoryIdsBySlug(userId)` — `.or('user_id.is.null,user_id.eq.<uid>')`, `order('sort_order,slug')`, no `.limit(200)`; update callers (buildSaveReceiptArgs, updateReceipt)
+- [x] 1.1 RED `supabase/tests/user-categories.sql`: partial unique idxs, RLS write policies block cross-user, kind CHECK, FK RESTRICT; register in `scripts/test-db-smoke.mjs` (CI; no local CLI)
+- [x] 1.2 GREEN `supabase/migrations/0032_user_categories.sql`: add `user_id uuid references profiles(id) on delete cascade`; drop `categories_slug_key`; `categories_global_slug_idx`/`categories_user_slug_idx`/`categories_user_sort_idx`; RLS insert/update/delete own-row policies; FK `purchase_items_category_id_fkey` → RESTRICT
+- [x] 1.3 RED `scripts/test-manual-receipt.mjs`: `fetchCategoryIdsBySlug(userId)` resolves own custom + canonical; 'otros' fallback kept
+- [x] 1.4 GREEN `src/features/tickets/api.ts`: `fetchCategoryIdsBySlug(userId)` — `.or('user_id.is.null,user_id.eq.<uid>')`, `order('sort_order,slug')`, no `.limit(200)`; update callers (buildSaveReceiptArgs, updateReceipt)
 
 ## Phase 2: Feature Module (PR 2)
 
-- [ ] 2.1 RED `scripts/test-categories.mjs` + `tsconfig.categories-test.json` (chained into `pnpm test`): slugify accents/collapse, `slugCollides`, `mergeCategoryCatalog` canonical-first, `resolveCategory` 'otros' fallback
-- [ ] 2.2 GREEN `src/features/categories/catalog.ts` (pure): `slugify`, `slugCollides`, `mergeCategoryCatalog`, `resolveCategory`
-- [ ] 2.3 GREEN `src/features/categories/api.ts`: `readCategoryCatalog(userId)` (global ∨ own), `createCustomCategory`, `deleteCustomCategory`, `reassignCategoryItems` bulk UPDATE
-- [ ] 2.4 GREEN `src/features/categories/hooks/useCategoryCatalog.ts` + barrel; `queryKeys.categories(userId)` in `src/lib/query-keys.ts`; invalidate after mutations
+- [x] 2.1 RED `scripts/test-categories.mjs` + `tsconfig.categories-test.json` (chained into `pnpm test`): slugify accents/collapse, `slugCollides`, `mergeCategoryCatalog` canonical-first, `resolveCategory` 'otros' fallback
+- [x] 2.2 GREEN `src/features/categories/catalog.ts` (pure): `slugify`, `slugCollides`, `mergeCategoryCatalog`, `resolveCategory`
+- [x] 2.3 GREEN `src/features/categories/api.ts`: `readCategoryCatalog(userId)` (global ∨ own), `createCustomCategory`, `deleteCustomCategory`, `reassignCategoryItems` bulk UPDATE
+- [x] 2.4 GREEN `src/features/categories/hooks/useCategoryCatalog.ts` + barrel; `queryKeys.categories(userId)` in `src/lib/query-keys.ts`; invalidate after mutations
 
 ## Phase 3: Picker Create (PR 3)
 
