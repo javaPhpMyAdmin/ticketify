@@ -21,6 +21,12 @@
  *     (never red), and `BUDGET_COLOR.green` is the same token as
  *     `colors.primary` (Correction 3 identity)
  *   - `budgetBySlug`: month filter + amount > 0 filter
+ *   - `mergeBudgetDraftSeeds` (PR 7 re-gate, CRITICAL-1): dirty + catalog
+ *     expansion seeds NEW keys (server amount when one exists, else '')
+ *     without ever overwriting user drafts; nothing missing → same reference
+ *   - CRITICAL-1 source pins over the compiled screen: handleSave's guard
+ *     (no save while either read is incomplete) and the dirty-mode merge
+ *     wiring (a node harness cannot mount the screen lifecycle)
  *
  * Near-dependency-free: type-only imports plus one runtime import
  * (`@/theme/colors`, itself self-contained). The require-hook below remaps
@@ -32,7 +38,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -120,10 +126,17 @@ async function run() {
 
   const mod = await load('src/features/analytics/category-budget-progress.js');
   const colorsMod = await load('src/theme/colors.js');
+  const formMod = await load('src/features/analytics/category-budget-form.js');
   const compute = (totals, budgets, monthKey) =>
     mod.mergeBudgetLimits(totals, budgets, monthKey);
   const color = (ratio) => mod.budgetProgressColor(ratio);
   const bySlug = (budgets, monthKey) => mod.budgetBySlug(budgets, monthKey);
+  const formKeys = (catalog, fallbackKeys) =>
+    formMod.budgetKeysFromCatalog(catalog, fallbackKeys);
+  const parse = (raw) => formMod.parseBudgetAmount(raw);
+  const toPayload = (keys, drafts) => formMod.budgetSavePayload(keys, drafts);
+  const seed = (keys, existing) => formMod.seedBudgetDrafts(keys, existing);
+  const merge = (current, next) => formMod.mergeBudgetDraftSeeds(current, next);
 
   console.log('\n[tests] merge contract\n');
 
@@ -180,6 +193,24 @@ async function run() {
       budget('transporte', -5, '2026-09'),
     ];
     assert.equal(compute(totals, budgets, '2026-09')[0].budget_limit, null);
+  });
+
+  await test('PR 7: custom-slug budget fills the custom total (budgets follow the catalog)', () => {
+    const totals = [
+      total('alimentos', 'Alimentos', 30000),
+      total('delivery', 'Delivery', 15000),
+    ];
+    const budgets = [
+      budget('alimentos', 50000, '2026-09'),
+      budget('delivery', 10000, '2026-09'),
+    ];
+    const result = compute(totals, budgets, '2026-09');
+    assert.equal(result[0].budget_limit, 50000);
+    assert.equal(
+      result[1].budget_limit,
+      10000,
+      'custom slug limit merges exactly like a canonical one',
+    );
   });
 
   console.log('\n[tests] purity and order\n');
@@ -274,6 +305,143 @@ async function run() {
       ['supermercado', 50000],
       ['transporte', 12000],
     ]);
+  });
+
+  console.log('\n[tests] budget form derivation (PR 7 screen contract)\n');
+
+  await test('budgetKeysFromCatalog: merged catalog keys win over the fallback', () => {
+    // The catalog record arrives already merged (canonical-first + own custom
+    // tail, merge order pinned by test-categories): the helper just mirrors
+    // its keys — canonical 13 ∪ own custom, exactly like the rollover key set.
+    const catalog = {
+      bebidas: { id: 'cat-bebidas', slug: 'bebidas', name: 'Bebidas', user_id: null },
+      delivery: { id: 'cat-delivery', slug: 'delivery', name: 'Delivery', user_id: 'test-user-id' },
+    };
+    assert.deepEqual(formKeys(catalog, ['bebidas']), ['bebidas', 'delivery']);
+  });
+
+  await test('budgetKeysFromCatalog: canonical fallback while catalog unknown/empty', () => {
+    assert.deepEqual(formKeys({}, ['bebidas', 'otros']), ['bebidas', 'otros']);
+    assert.deepEqual(formKeys(null, ['bebidas']), ['bebidas']);
+    assert.deepEqual(formKeys(undefined, ['bebidas']), ['bebidas']);
+    assert.deepEqual(formKeys({}, []), []);
+  });
+
+  await test('parseBudgetAmount: canonical + degenerate inputs', () => {
+    assert.equal(parse('50000'), 50000);
+    assert.equal(parse(' 42000 '), 42000, 'whitespace trimmed');
+    assert.equal(parse(''), 0);
+    assert.equal(parse('   '), 0);
+    assert.equal(parse('abc'), 0, 'non-numeric → 0');
+    assert.equal(parse('-5'), 0, 'negative → 0, never persisted (delete-on-zero)');
+    assert.equal(parse('0'), 0);
+    assert.equal(parse('5.9'), 5, 'parseInt truncation — same as the screen today');
+  });
+
+  await test('budgetSavePayload: keys + drafts → parsed rows, zero for empty/invalid', () => {
+    const keys = ['alimentos', 'delivery', 'snacks'];
+    const drafts = { alimentos: '50000', delivery: '', snacks: 'abc' };
+    assert.deepEqual(toPayload(keys, drafts), [
+      { category_slug: 'alimentos', amount: 50000 },
+      { category_slug: 'delivery', amount: 0 },
+      { category_slug: 'snacks', amount: 0 },
+    ]);
+  });
+
+  await test('seedBudgetDrafts: prefill existing amounts, empty for missing keys', () => {
+    const keys = ['alimentos', 'delivery', 'snacks'];
+    const existing = [
+      budget('alimentos', 50000, '2026-09'),
+      budget('delivery', 10000, '2026-09'),
+    ];
+    assert.deepEqual(seed(keys, existing), {
+      alimentos: '50000',
+      delivery: '10000',
+      snacks: '',
+    });
+  });
+
+  await test('mergeBudgetDraftSeeds: dirty + catalog expansion seeds NEW keys, never overwrites', () => {
+    // CRITICAL-1 (PR 7 re-gate, Path A): a failed catalog read falls back to
+    // the 13 canonical keys while the user types; when the catalog heals in
+    // the background the key set EXPANDS mid-draft. The merge must seed the
+    // new keys — with their server amount when one exists (an existing budget
+    // must be SEEN, not silently deleted on save), else '' — and must never
+    // touch any draft the user typed.
+    const dirtyDrafts = { alimentos: '100', bebidas: '200' }; // user typed
+    const expandedSeed = {
+      alimentos: '50000', // server amount — must NOT overwrite the user's 100
+      bebidas: '200',
+      delivery: '8000', // new custom key WITH an existing server budget
+      snacks: '', // truly new key without a budget (no-budget default)
+    };
+    assert.deepEqual(merge(dirtyDrafts, expandedSeed), {
+      alimentos: '100',
+      bebidas: '200',
+      delivery: '8000',
+      snacks: '',
+    });
+  });
+
+  await test('mergeBudgetDraftSeeds: nothing missing → same reference (no re-render)', () => {
+    const drafts = { alimentos: '100', bebidas: '' };
+    assert.equal(
+      merge(drafts, { alimentos: '999', bebidas: '' }),
+      drafts,
+      'returns the EXACT same reference so React bails out of setState',
+    );
+  });
+
+  console.log(
+    '\n[tests] CRITICAL-1 resilience pins (source-level — the screen lifecycle' +
+      ' cannot be mounted in a node harness)\n',
+  );
+
+  await test('CRITICAL-1 pin: handleSave guard blocks while either read is incomplete', () => {
+    // The Guardar button stays RENDERED during the loading spinner, so a
+    // save can fire while categoryKeys is mid-refetch (a fallback key set
+    // about to expand) or while the budgets read failed (all-empty form =
+    // delete-on-zero for every unseen key). The guard is the mechanism that
+    // makes those payloads unmakable.
+    const src = readFileSync(
+      join(root, 'src/app/settings/category-budgets.tsx'),
+      'utf8',
+    );
+    assert.ok(
+      src.includes(
+        'isLoading || catalogLoading || !!budgetsError || isSaving || submitting',
+      ),
+      'handleSave must no-op while either read is loading OR failed (CRITICAL-1)',
+    );
+  });
+
+  await test('CRITICAL-1 pin: dirty form still merges newly expanded keys into drafts', () => {
+    const src = readFileSync(
+      join(root, 'src/app/settings/category-budgets.tsx'),
+      'utf8',
+    );
+    // Fix (b): the seed effect must not skip seeding when dirty — it merges
+    // only keys missing from the drafts (via mergeBudgetDraftSeeds), so a
+    // save can never carry delete-on-zero for a key the screen never showed.
+    assert.ok(
+      src.includes('mergeBudgetDraftSeeds(prev, initial)'),
+      'dirty mode must merge the expanded seed into the drafts (CRITICAL-1)',
+    );
+    assert.ok(
+      src.includes('if (dirty)'),
+      'the merge must be the dirty branch of the seed effect',
+    );
+  });
+
+  await test('CRITICAL-1 pin: failed budgets read renders an error, not an editable empty form', () => {
+    const src = readFileSync(
+      join(root, 'src/app/settings/category-budgets.tsx'),
+      'utf8',
+    );
+    assert.ok(
+      src.includes(') : budgetsError ? ('),
+      'a failed budgets read must replace the editable rows with the error copy',
+    );
   });
 
   console.log(`\n[tests] ${passed} passed, ${failed} failed`);
