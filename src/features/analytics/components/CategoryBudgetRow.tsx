@@ -28,6 +28,17 @@ export interface CategoryBudgetRowProps {
    * row stays a plain non-interactive View (byte-identical output).
    */
   onPress?: () => void;
+  /**
+   * Display-convergence override (REQ-008): background for custom rows,
+   * resolved from the merged catalog. When omitted the row falls back to
+   * the stable `getCategoryColor(categoryKey)` registry lookup.
+   */
+  backgroundColor?: string;
+  /**
+   * Display-convergence override (REQ-008): foreground for custom rows.
+   * When omitted, falls back to the registry's foreground for the key.
+   */
+  foregroundColor?: string;
 }
 
 /**
@@ -51,11 +62,18 @@ export function CategoryBudgetRow({
   limit,
   currency = 'UYU',
   onPress,
+  backgroundColor,
+  foregroundColor,
 }: CategoryBudgetRowProps) {
   // The "of spending" suffix after the percent token is localized via
   // the `analytics` namespace.
   const { t } = useTranslation('analytics');
-  const color = getCategoryColor(categoryKey);
+  // Catalog-resolved colors win (custom rows carry their own palette color);
+  // canonical rows fall back to the stable registry — byte-identical.
+  const color =
+    backgroundColor && foregroundColor
+      ? { background: backgroundColor, foreground: foregroundColor }
+      : getCategoryColor(categoryKey);
 
   const rowContent = (
     <>

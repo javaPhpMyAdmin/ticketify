@@ -185,6 +185,9 @@ async function run() {
     pathToFileURL(join(outDir, 'src/lib/format.js')).href
   );
   const { formatCurrency } = formatMod;
+  const catsMod = await import(
+    pathToFileURL(join(outDir, 'src/features/home/categories.js')).href
+  );
 
   console.log('\n[tests] aggregateSpendTrend\n');
 
@@ -1152,6 +1155,117 @@ async function run() {
     const viaHome = directAggregate(records, '2026-08');
     assert.deepEqual(viaCharts, viaHome);
     assert.equal(viaCharts.find((c) => c.key === 'lacteos')?.amount, 5);
+  });
+
+  console.log('\n[tests] catalog-aware display parity (6.1/6.2, REQ-008)\n');
+
+  const stubCatalog = {
+    refrescos: {
+      id: 'r1',
+      slug: 'refrescos',
+      name: 'Refrescos',
+      kind: 'need',
+      icon: 'cup.and.saucer.fill',
+      color: '#10B981',
+      sort_order: 0,
+    },
+    delivery: {
+      id: 'c1',
+      slug: 'delivery',
+      name: 'Delivery',
+      kind: 'want',
+      icon: 'car.fill',
+      color: '#EA580C',
+      sort_order: 100,
+    },
+  };
+
+  await test('re-export parity: catalog param honored on both paths', () => {
+    const records = [
+      receipt({
+        id: 'r1',
+        purchase_date: '2026-08-05',
+        category_totals: cats({ delivery: 40, refrescos: 25 }),
+      }),
+    ];
+    const viaCharts = aggregateCategoriesByMonth(records, '2026-08', stubCatalog);
+    const viaHome = directAggregate(records, '2026-08', stubCatalog);
+    assert.deepEqual(viaCharts, viaHome, 'same catalog → same output on both paths');
+  });
+
+  await test('charts path: custom slug renders own name+icon with catalog', () => {
+    const records = [
+      receipt({
+        id: 'r1',
+        purchase_date: '2026-08-05',
+        category_totals: cats({ delivery: 40 }),
+      }),
+    ];
+    const viaCharts = aggregateCategoriesByMonth(records, '2026-08', stubCatalog);
+    assert.equal(viaCharts[0].name, 'Delivery');
+    assert.equal(viaCharts[0].icon, 'car.fill');
+  });
+
+  await test('charts path: canonical slug stays byte-identical with catalog', () => {
+    const records = [
+      receipt({
+        id: 'r1',
+        purchase_date: '2026-08-05',
+        category_totals: cats({ refrescos: 25 }),
+      }),
+    ];
+    const viaCharts = aggregateCategoriesByMonth(records, '2026-08', stubCatalog);
+    assert.equal(viaCharts[0].name, 'Refrescos');
+    assert.equal(
+      viaCharts[0].icon,
+      'takeoutbag.and.cup.and.straw.fill',
+      'static icon, not the DB row icon',
+    );
+  });
+
+  await test('resolveCategoryDisplay: custom/canonical/unknown contract (unit)', () => {
+    const custom = catsMod.resolveCategoryDisplay(stubCatalog, 'delivery');
+    assert.equal(custom.label, 'Delivery');
+    assert.equal(custom.icon, 'car.fill');
+    assert.equal(custom.background, '#EA580C');
+    const canonical = catsMod.resolveCategoryDisplay(stubCatalog, 'lacteos');
+    assert.equal(canonical.label, 'Lácteos');
+    assert.equal(canonical.icon, 'drop.fill');
+    const unknown = catsMod.resolveCategoryDisplay(stubCatalog, 'nope');
+    assert.equal(unknown.label, 'Otros');
+    assert.equal(unknown.icon, 'sparkles');
+  });
+
+  await test('resolveCategoryDisplay: prototype-key slug (constructor) → static otros, never garbage', () => {
+    // Proto-key trap: 'constructor' is inherited on both the plain-object
+    // registry and the stub catalog — the static-first branch must return
+    // 'otros', never the Object constructor masquerading as a category.
+    const out = catsMod.resolveCategoryDisplay(stubCatalog, 'constructor');
+    assert.equal(out.key, 'otros');
+    assert.equal(out.label, 'Otros');
+    assert.equal(out.icon, 'sparkles');
+    assert.equal(out.background, '#4B5563');
+    assert.equal(out.foreground, '#FFFFFF');
+  });
+
+  await test('resolveCategoryDisplay: custom catalog row keyed constructor → its own visuals (own property)', () => {
+    const withConstructor = {
+      ...stubCatalog,
+      constructor: {
+        id: 'c2',
+        slug: 'constructor',
+        name: 'Constructor',
+        kind: 'want',
+        icon: 'hammer.fill',
+        color: '#2563EB',
+        sort_order: 100,
+      },
+    };
+    const out = catsMod.resolveCategoryDisplay(withConstructor, 'constructor');
+    assert.equal(out.key, 'constructor');
+    assert.equal(out.label, 'Constructor');
+    assert.equal(out.icon, 'hammer.fill');
+    assert.equal(out.background, '#2563EB');
   });
 
   console.log('\n[tests] pickMaxSpendIndex\n');

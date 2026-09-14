@@ -30,7 +30,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -102,6 +102,7 @@ function load(mod) {
 }
 
 let homeMod;
+let catsMod;
 
 async function run() {
   console.log('\n[tests] compiling home-feed modules…');
@@ -115,6 +116,7 @@ async function run() {
   console.log('[tests] loading compiled modules…');
 
   homeMod = await load('src/features/home/hooks/useHomeFeed.js');
+  catsMod = await load('src/features/home/categories.js');
 
   console.log('\n[tests] normalizeItemName diacritic folding\n');
 
@@ -567,6 +569,216 @@ async function run() {
     );
     assert.equal(feed.receipts.length, 1);
     assert.equal(feed.receipts[0].isManual, false);
+  });
+
+  console.log('\n[tests] catalog-aware display resolution (6.1/6.2, REQ-008)\n');
+
+  // Stub merged catalog: canonical rows whose DB visuals DIFFER from the
+  // static registry (the spec requires canonical rows render EXACTLY as
+  // today — static-first), plus a user-scoped custom row, and no 'otros'
+  // entry (the resolver falls back to the static taxonomy).
+  const stubCatalog = {
+    refrescos: {
+      id: 'r1',
+      slug: 'refrescos',
+      name: 'Refrescos',
+      kind: 'need',
+      icon: 'cup.and.saucer.fill',
+      color: '#10B981',
+      sort_order: 0,
+    },
+    delivery: {
+      id: 'c1',
+      slug: 'delivery',
+      name: 'Delivery',
+      kind: 'want',
+      icon: 'car.fill',
+      color: '#EA580C',
+      sort_order: 100,
+    },
+  };
+
+  await test('resolveCategoryDisplay: canonical slug → static taxonomy (NOT the DB row)', () => {
+    // The merged catalog carries a DIFFERENT icon/color for 'refrescos'
+    // than the static registry; canonical rows must render as today.
+    const out = catsMod.resolveCategoryDisplay(stubCatalog, 'refrescos');
+    assert.equal(out.key, 'refrescos');
+    assert.equal(out.label, 'Refrescos');
+    assert.equal(out.icon, 'takeoutbag.and.cup.and.straw.fill');
+    assert.equal(out.background, '#EA580C');
+    assert.equal(out.foreground, '#FFFFFF');
+  });
+
+  await test('resolveCategoryDisplay: custom slug → own visuals from the catalog', () => {
+    const out = catsMod.resolveCategoryDisplay(stubCatalog, 'delivery');
+    assert.equal(out.key, 'delivery');
+    assert.equal(out.label, 'Delivery');
+    assert.equal(out.icon, 'car.fill');
+    assert.equal(out.background, '#EA580C');
+    assert.equal(out.foreground, '#FFFFFF');
+  });
+
+  await test('resolveCategoryDisplay: unknown slug → static otros taxonomy', () => {
+    const out = catsMod.resolveCategoryDisplay(stubCatalog, 'zzz-nope');
+    assert.equal(out.key, 'otros');
+    assert.equal(out.label, 'Otros');
+    assert.equal(out.icon, 'sparkles');
+    assert.equal(out.background, '#4B5563');
+    assert.equal(out.foreground, '#FFFFFF');
+  });
+
+  await test('resolveCategoryDisplay: absent catalog → falls back to static taxonomy', () => {
+    const custom = catsMod.resolveCategoryDisplay(undefined, 'delivery');
+    assert.equal(custom.label, 'Otros', 'no catalog → custom slug buckets to otros');
+    const canonical = catsMod.resolveCategoryDisplay(undefined, 'lacteos');
+    assert.equal(canonical.label, 'Lácteos', 'no catalog → canonical stays static');
+  });
+
+  await test('resolveCategoryDisplay: prototype-key slug (constructor) → static otros, never garbage', () => {
+    // 'constructor' is NOT an own key of the plain-object registry, and a
+    // plain-literal catalog must not leak Object.prototype members either
+    // (proto-key trap: EXPENSE_CATEGORIES['constructor'] / catalog['constructor']
+    // are truthy inherited functions, not category rows).
+    const out = catsMod.resolveCategoryDisplay(stubCatalog, 'constructor');
+    assert.equal(out.key, 'otros');
+    assert.equal(out.label, 'Otros');
+    assert.equal(out.icon, 'sparkles');
+    assert.equal(out.background, '#4B5563');
+    const emptyCatalogOut = catsMod.resolveCategoryDisplay({}, 'constructor');
+    assert.equal(emptyCatalogOut.label, 'Otros', 'empty catalog + prototype key → otros');
+  });
+
+  await test('resolveCategoryDisplay: custom catalog row keyed constructor → its own visuals (own property)', () => {
+    // A user MAY create a custom category whose slugify output is
+    // 'constructor' (slugify only strips non-[a-z0-9]): the own-property
+    // guard must let that row resolve through — while __proto__-style
+    // inherited members never do.
+    const withConstructor = {
+      ...stubCatalog,
+      constructor: {
+        id: 'c2',
+        slug: 'constructor',
+        name: 'Constructor',
+        kind: 'want',
+        icon: 'hammer.fill',
+        color: '#2563EB',
+        sort_order: 100,
+      },
+    };
+    const out = catsMod.resolveCategoryDisplay(withConstructor, 'constructor');
+    assert.equal(out.key, 'constructor');
+    assert.equal(out.label, 'Constructor');
+    assert.equal(out.icon, 'hammer.fill');
+    assert.equal(out.background, '#2563EB');
+    assert.equal(out.foreground, '#FFFFFF');
+  });
+
+  await test('aggregateCategoriesByMonth: custom slug renders own name+icon with catalog', () => {
+    const list = [
+      {
+        id: 'r1',
+        purchase_date: '2026-08-05',
+        category_totals: { delivery: 100 },
+      },
+    ];
+    const out = homeMod.aggregateCategoriesByMonth(list, '2026-08', stubCatalog);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].key, 'delivery');
+    assert.equal(out[0].name, 'Delivery');
+    assert.equal(out[0].icon, 'car.fill');
+    assert.equal(out[0].amount, 100);
+  });
+
+  await test('aggregateCategoriesByMonth: canonical slug stays byte-identical with catalog', () => {
+    const list = [
+      {
+        id: 'r1',
+        purchase_date: '2026-08-05',
+        category_totals: { refrescos: 50 },
+      },
+    ];
+    const out = homeMod.aggregateCategoriesByMonth(list, '2026-08', stubCatalog);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].key, 'refrescos');
+    assert.equal(out[0].name, 'Refrescos');
+    assert.equal(out[0].icon, 'takeoutbag.and.cup.and.straw.fill', 'static icon, not the DB row icon');
+  });
+
+  await test('aggregateCategoriesByMonth: unknown slug buckets to otros', () => {
+    const list = [
+      {
+        id: 'r1',
+        purchase_date: '2026-08-05',
+        category_totals: { 'zzz-nope': 30 },
+      },
+    ];
+    const out = homeMod.aggregateCategoriesByMonth(list, '2026-08', stubCatalog);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].name, 'Otros');
+    assert.equal(out[0].icon, 'sparkles');
+  });
+
+  await test('aggregateCategoriesByMonth: no catalog → unchanged output (approval)', () => {
+    const list = [
+      {
+        id: 'r1',
+        purchase_date: '2026-08-05',
+        category_totals: { lacteos: 50, delivery: 20 },
+      },
+    ];
+    const out = homeMod.aggregateCategoriesByMonth(list, '2026-08');
+    const lacteos = out.find((c) => c.key === 'lacteos');
+    const custom = out.find((c) => c.key === 'delivery');
+    assert.equal(lacteos.name, 'Lácteos');
+    assert.equal(custom.name, 'Otros', 'no catalog → custom slug renders otros label');
+  });
+
+  await test('mapPurchaseRowsToHomeFeed: catalog forwarded to home-feed categories', () => {
+    const feed = homeMod.mapPurchaseRowsToHomeFeed(
+      [
+        {
+          id: 'p1',
+          store_name: 'PedidosYa',
+          purchase_date: '2026-08-05',
+          scanned_at: '2026-08-05T10:00:00.000Z',
+          total: 100,
+          image_url: null,
+          status: 'confirmed',
+          payment_method: 'card',
+          is_manual: false,
+          wants_snacks_total: 0,
+          category_totals: { delivery: 100 },
+          items: [],
+        },
+      ],
+      null,
+      '2026-08',
+      stubCatalog,
+    );
+    assert.equal(feed.categories.length, 1);
+    assert.equal(feed.categories[0].name, 'Delivery');
+    assert.equal(feed.categories[0].icon, 'car.fill');
+  });
+
+  // ── W-2 (display convergence) ─────────────────────────────────────────
+  // The Home tab must CONVERGE like the other tabs: the container mounts
+  // `useCategoryCatalog` and forwards the merged catalog into the feed
+  // derivation — otherwise the strip/chips fall back to 'otros' visuals
+  // for custom categories while history/analytics/charts show the row.
+  await test('home screen wires the merged catalog into mapPurchaseRowsToHomeFeed (source pin)', () => {
+    const src = readFileSync(join(root, 'src/app/(tabs)/index.tsx'), 'utf8');
+    assert.ok(
+      src.includes('useCategoryCatalog'),
+      'the Home container must mount the category catalog hook',
+    );
+    assert.ok(
+      /mapPurchaseRowsToHomeFeed\([\s\S]*?catalog/.test(src),
+      'the feed derivation must forward the catalog',
+    );
+    assert.ok(
+      /\[monthList,\s*householdTotal,\s*monthKey,\s*catalog\]/.test(src),
+      'the feed memo must depend on the catalog',
+    );
   });
 
   console.log('');

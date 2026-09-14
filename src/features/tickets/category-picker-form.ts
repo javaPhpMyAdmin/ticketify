@@ -32,12 +32,14 @@ import type { IconName } from '@/components';
 import type { CategoryKind } from '@/types';
 
 import {
-  resolveCategory,
   slugCollides,
   slugify,
   type CategoryCatalog,
 } from '@/features/categories/catalog';
-import { EXPENSE_CATEGORIES } from '@/features/home/categories';
+import {
+  EXPENSE_CATEGORIES,
+  resolveCategoryDisplay,
+} from '@/features/home/categories';
 
 /** DB guardrail (migration 0032): category names are VARCHAR(40). */
 export const MAX_CATEGORY_NAME_LENGTH = 40;
@@ -68,16 +70,26 @@ export interface CategoryPickerRow {
 /**
  * Grid rows from the merged catalog: `Object.values` preserves the
  * canonical-first + own-appended deterministic order the merge builds.
+ *
+ * Display convergence (REQ-008 — W-3): canonical slugs render the STATIC
+ * taxonomy visuals (label/icon/color) — the DB mirror rows carry legacy
+ * visuals that must NEVER leak into the picker, or the same canonical slug
+ * would show one look in the grid and another on every display surface.
+ * The catalog row is used for custom slugs only, matching
+ * `resolveCategoryDisplay`'s contract exactly.
  */
 export function pickerRowsFromCatalog(
   catalog: CategoryCatalog,
 ): CategoryPickerRow[] {
-  return Object.values(catalog).map((entry) => ({
-    slug: entry.slug,
-    label: entry.name,
-    icon: entry.icon as IconName,
-    color: entry.color,
-  }));
+  return Object.values(catalog).map((entry) => {
+    const visual = resolveCategoryDisplay(catalog, entry.slug);
+    return {
+      slug: visual.key,
+      label: visual.label,
+      icon: visual.icon,
+      color: visual.background,
+    };
+  });
 }
 
 /**
@@ -96,11 +108,13 @@ export function canonicalFallbackRows(): CategoryPickerRow[] {
 
 /**
  * PR 5 (editor wiring): the single catalog-aware row a chip/editor label
- * resolves to for a slug. This is the `resolveCategory` contract mapped to
- * the picker row shape the Chip renders (label + icon):
+ * resolves to for a slug. Static-first, mapping `resolveCategoryDisplay`'s
+ * contract onto the picker row shape the Chip renders (label + icon):
  *
+ * - a canonical slug → the STATIC taxonomy row (byte-identical with every
+ *   display surface; the DB mirror row's legacy visuals never leak — W-3),
  * - a custom slug → its own row (label/icon render the user's category),
- * - an unknown slug → the deterministic 'otros' row (catalog present),
+ * - an unknown slug → the deterministic static 'otros' row,
  * - a null/empty selection → null (the editor default renders
  *   SIN CATEGORÍA — "No category chosen → category_id = null" never
  *   displays as the otros fallback),
@@ -113,13 +127,12 @@ export function pickerRowForCategory(
   slug: string | null | undefined,
 ): CategoryPickerRow | null {
   if (!slug || !catalog) return null;
-  const entry = resolveCategory(catalog, slug);
-  if (!entry) return null;
+  const visual = resolveCategoryDisplay(catalog, slug);
   return {
-    slug: entry.slug,
-    label: entry.name,
-    icon: entry.icon as IconName,
-    color: entry.color,
+    slug: visual.key,
+    label: visual.label,
+    icon: visual.icon,
+    color: visual.background,
   };
 }
 

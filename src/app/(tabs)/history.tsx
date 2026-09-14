@@ -42,7 +42,8 @@ import {
   useItemSearch,
   useMonthNavigation,
 } from '@/features/home';
-import { getExpenseCategory } from '@/features/home/categories';
+import { resolveCategoryDisplay, resolveHouseholdCategoryVisuals } from '@/features/home/categories';
+import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrency } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
@@ -78,6 +79,12 @@ export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const [monthKey, setMonthKey] = useState(currentMonthKey);
   const { userId } = useSessionUser();
+  // Display convergence (REQ-008): the merged catalog resolves custom
+  // category visuals (name/icon/color) at every display site on this
+  // screen. The hook is gated on the signed-in user and returns `{}`
+  // before the first load, which keeps this screen byte-identical until
+  // the catalog arrives.
+  const { catalog } = useCategoryCatalog();
 
   // Fetch ALL receipts for the current month (not paginated) so category
   // totals are accurate regardless of infinite scroll position.
@@ -157,9 +164,19 @@ export default function HistoryScreen() {
 
   const monthKeys = useAvailableMonthKeys(userId);
   const categories = useMemo(
-    () => aggregateCategoriesByMonth(fullList, monthKey),
-    [fullList, monthKey],
+    () => aggregateCategoriesByMonth(fullList, monthKey, catalog),
+    [fullList, monthKey, catalog],
   );
+  // Custom rows carry their own palette color from the merged catalog —
+  // the segmented bar must paint those segments with the resolved color,
+  // falling back to the registry for canonical/unknown slugs.
+  const categoryColors = useMemo(() => {
+    const bySlug: Record<string, string> = {};
+    for (const category of categories) {
+      bySlug[category.key] = resolveCategoryDisplay(catalog, category.key).background;
+    }
+    return bySlug;
+  }, [categories, catalog]);
   const categoryItemCounts = useMemo(
     () => aggregateCategoryItemCounts(fullList, monthKey),
     [fullList, monthKey],
@@ -443,7 +460,18 @@ export default function HistoryScreen() {
           ) : (
             <View style={styles.categoryList}>
               {householdTotals.map((t) => {
-                const category = getExpenseCategory(t.category_slug);
+                // W-5: household RPC rows carry the SPENDING member's
+                // category_id with no ownership marker — never resolve them
+                // through the viewer's personal catalog (slug collisions
+                // would contaminate the other member's visuals). Only rows
+                // whose category_id IS the viewer's catalog entry converge;
+                // everything else renders the static taxonomy under the
+                // DB-provided name.
+                const visual = resolveHouseholdCategoryVisuals(
+                  catalog,
+                  t.category_id,
+                  t.category_slug,
+                );
                 return (
                   <CategoryBudgetCard
                     key={t.category_id}
@@ -452,7 +480,9 @@ export default function HistoryScreen() {
                     amount={t.total}
                     percent={t.percent_of_total}
                     currency={currency}
-                    icon={category.icon}
+                    icon={visual.icon}
+                    backgroundColor={visual.background}
+                    foregroundColor={visual.foreground}
                     itemCount={t.item_count}
                     onPress={() =>
                       router.push(
@@ -473,10 +503,11 @@ export default function HistoryScreen() {
           <Text style={styles.empty}>{t('household:emptyNoData')}</Text>
         ) : (
           <View style={styles.categoryList}>
-            <SegmentedBudgetBar categories={categories} />
+            <SegmentedBudgetBar categories={categories} categoryColors={categoryColors} />
             {categories.map((category) => {
               const percent =
                 monthTotal === 0 ? 0 : (category.amount / monthTotal) * 100;
+              const visual = resolveCategoryDisplay(catalog, category.key);
               return (
                 <CategoryBudgetCard
                   key={category.key}
@@ -486,6 +517,8 @@ export default function HistoryScreen() {
                   percent={percent}
                   currency={currency}
                   icon={category.icon}
+                  backgroundColor={visual.background}
+                  foregroundColor={visual.foreground}
                   itemCount={categoryItemCounts[category.key]}
                   limit={budgetLimitBySlug.get(category.key)}
                   onPress={() =>

@@ -53,8 +53,8 @@ TDD RED→GREEN; gate: `pnpm test` + `pnpm typecheck` + `pnpm lint`.
 
 ## Phase 6: Display Convergence (PR 6)
 
-- [ ] 6.1 RED update `test-home.mjs`, `test-charts.mjs`, `test-home-api.mjs`, `test-household-category-items.mjs`: stub catalog; custom slug renders own visuals; unknown → 'otros'
-- [ ] 6.2 GREEN `resolveCategory(catalog)` at `useHomeFeed.ts` (strip/chips), `(tabs)/history.tsx`, `receipts/[id].tsx`, `(tabs)/analytics.tsx`, `pro/charts.tsx`, donut; remove bare `getExpenseCategory` display sites
+- [x] 6.1 RED update `test-home.mjs`, `test-charts.mjs`, `test-home-api.mjs`, `test-household-category-items.mjs`: stub catalog; custom slug renders own visuals; unknown → 'otros'
+- [x] 6.2 GREEN `resolveCategoryDisplay` (STATIC-FIRST: canonical 13 always render the static taxonomy — byte-identical with today; custom slugs render the catalog row) at `useHomeFeed.ts` (strip/chips), `(tabs)/history.tsx`, `receipts/[id].tsx` (chip resolver), `(tabs)/analytics.tsx`, `pro/charts.tsx`; remove bare `getExpenseCategory` display sites. Household RPC rows converge via `resolveHouseholdCategoryVisuals` (de-owned: static taxonomy unless the row's category_id IS the viewer's entry). `CategoryDonut.tsx` stays exported-but-unused: the charts surface's donut visual is covered by pro/charts.tsx row resolution, and `CategorySlice.color` remains a backward-compatible optional prop (no consumers) — documented here rather than removed so a future consumer keeps the prop contract. `mapPurchaseRowsToHomeFeed` receives the catalog from the Home container (`useCategoryCatalog` mounted once, same query key) — Home strip rows converge with the other tabs.
 
 ## Phase 7: Budgets + Rollover (PR 7)
 
