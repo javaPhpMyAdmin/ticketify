@@ -12,6 +12,12 @@ export interface SegmentedBudgetBarSegment {
 export interface SegmentedBudgetBarProps {
   categories: SegmentedBudgetBarSegment[];
   height?: number;
+  /**
+   * Display-convergence override (REQ-008): slug → segment background for
+   * custom rows, resolved from the merged catalog. Canonical slugs and
+   * slugs absent from the map fall back to the stable registry lookup.
+   */
+  categoryColors?: Record<string, string>;
 }
 
 /**
@@ -30,6 +36,7 @@ export interface SegmentedBudgetBarProps {
 export function SegmentedBudgetBar({
   categories,
   height = 12,
+  categoryColors,
 }: SegmentedBudgetBarProps) {
   const total = categories.reduce((sum, c) => sum + c.amount, 0);
 
@@ -46,7 +53,9 @@ export function SegmentedBudgetBar({
             styles.segment,
             {
               flex: category.amount,
-              backgroundColor: getCategoryColor(category.key).background,
+              backgroundColor:
+                categoryColors?.[category.key] ??
+                getCategoryColor(category.key).background,
             },
           ]}
         />

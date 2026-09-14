@@ -48,6 +48,12 @@ export interface CategorySlice {
   name: string;
   /** Sum of line-item amounts for this category. */
   amount: number;
+  /**
+   * Display-convergence override (REQ-008): pre-resolved slice color for
+   * custom rows (from the merged catalog). When omitted (or null), the
+   * slice falls back to the stable registry lookup + chart palette.
+   */
+  color?: string;
 }
 
 export interface CategoryDonutProps {
@@ -113,10 +119,16 @@ export function CategoryDonut({
   const donutData = useMemo<DonutDatum[]>(
     () =>
       data.map((slice, index) => {
-        const categoryColor = getCategoryColor(slice.id).background;
-        const isKnown = slice.id && categoryColor !== getCategoryColor('otros').background;
+        // REQ-008: catalog-resolved color wins (custom rows carry their
+        // own palette color); canonical rows fall back to the stable
+        // registry + chart-palette cascade — byte-identical.
+        const registryColor = getCategoryColor(slice.id).background;
+        const isKnown =
+          slice.id && registryColor !== getCategoryColor('otros').background;
         return {
-          color: isKnown ? categoryColor : CHART_PALETTE[index % CHART_PALETTE.length],
+          color:
+            slice.color ??
+            (isKnown ? registryColor : CHART_PALETTE[index % CHART_PALETTE.length]),
           label: slice.name,
           value: slice.amount,
         };

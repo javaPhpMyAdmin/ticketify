@@ -24,7 +24,8 @@ import {
   View,
 } from '@/components';
 import { useSessionUser } from '@/features/auth';
-import { getExpenseCategory } from '@/features/home/categories';
+import { resolveCategoryDisplay } from '@/features/home/categories';
+import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
 import {
   deleteReceipt,
   fetchPurchaseDetail,
@@ -99,6 +100,11 @@ function purchaseToFeedRow(p: PurchaseWithItems) {
 export default function ReceiptDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { userId } = useSessionUser();
+  // Display convergence (REQ-008): the merged catalog resolves custom
+  // category visuals (name/icon/color) at every display site on this
+  // screen. The hook returns `{}` before the first load, which keeps
+  // this screen byte-identical until the catalog arrives.
+  const { catalog } = useCategoryCatalog();
   const currency = useSettingsStore((s) => s.currency);
   // PR 3 (`app-i18n`): every hardcoded string on this screen routes
   // through `t()` so the receipt detail view reads localized in all
@@ -427,7 +433,7 @@ export default function ReceiptDetailScreen() {
   const items = receipt.items ?? [];
   const categoryTotals = receipt.category_totals ?? {};
   const categoryEntries = Object.entries(categoryTotals)
-    .map(([key, amount]) => ({ key, amount, def: getExpenseCategory(key) }))
+    .map(([key, amount]) => ({ key, amount, def: resolveCategoryDisplay(catalog, key) }))
     .sort((a, b) => b.amount - a.amount);
   // Items of the open category sheet: THIS receipt's lines filtered by the
   // tapped category slug, plus the category's total from this receipt.
@@ -436,7 +442,7 @@ export default function ReceiptDetailScreen() {
     : [];
   const openCategoryTotal = openCategory ? (categoryTotals[openCategory] ?? 0) : 0;
   const openCategoryLabel = openCategory
-    ? getExpenseCategory(openCategory).label
+    ? resolveCategoryDisplay(catalog, openCategory).label
     : '';
 
   return (
