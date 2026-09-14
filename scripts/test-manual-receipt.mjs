@@ -997,6 +997,103 @@ async function run() {
         'updateReceipt must call fetchCategoryIdsBySlug(userId) so edits fetch the caller-scoped map too',
       );
     });
+
+    // ------------------------------------------------------------------
+    // G. purchaseToDraft — EDIT round-trip (PR 5, task 5.4). The read path
+    // returns each item with its embedded categories join (uuid FK + slug);
+    // the edit draft must normalize item categories BACK to slugs so the
+    // picker/rows key off slugs exactly like a fresh scan. A custom row
+    // round-trips its own slug, canonical slugs stay unchanged, and a null
+    // join stays null (no category chosen → category_id = null).
+    // ------------------------------------------------------------------
+
+    console.log('\n[tests] G. purchaseToDraft — edit round-trip (PR 5)\n');
+
+    const { purchaseToDraft } = apiMod;
+
+    const purchaseWith = (item) => ({
+      id: 'p-1',
+      store_id: null,
+      store_name: 'Coto',
+      purchase_date: '2026-09-01',
+      total: 100,
+      payment_method: 'cash',
+      is_manual: false,
+      image_url: 'u',
+      status: 'confirmed',
+      items: [item],
+    });
+
+    await test('edit round-trip: own custom slug survives the purchase → draft hop', () => {
+      const draft = purchaseToDraft(
+        purchaseWith({
+          id: 'i-1',
+          name: 'Delivery',
+          quantity: 1,
+          unit_price: 100,
+          total_price: 100,
+          category_id: 'cat-delivery',
+          is_impulse: false,
+          category: {
+            id: 'cat-delivery',
+            slug: 'delivery',
+            name: 'Delivery',
+            kind: 'want',
+            icon: 'sparkles',
+            color: '#2563EB',
+            sort_order: 100,
+          },
+          sort_order: 0,
+        }),
+      );
+      assert.equal(
+        draft.items[0].category_id,
+        'delivery',
+        'the edit draft must carry the custom SLUG, not the persisted uuid FK',
+      );
+    });
+
+    await test('edit round-trip: canonical slug unchanged', () => {
+      const draft = purchaseToDraft(
+        purchaseWith({
+          id: 'i-1',
+          name: 'Leche',
+          quantity: 1,
+          unit_price: 88,
+          total_price: 88,
+          category_id: 'cat-lacteos',
+          is_impulse: false,
+          category: {
+            id: 'cat-lacteos',
+            slug: 'lacteos',
+            name: 'Lácteos',
+            kind: 'need',
+            icon: 'cart',
+            color: '#f56c6c',
+            sort_order: 20,
+          },
+          sort_order: 0,
+        }),
+      );
+      assert.equal(draft.items[0].category_id, 'lacteos');
+    });
+
+    await test('edit round-trip: null category join stays null (null default kept)', () => {
+      const draft = purchaseToDraft(
+        purchaseWith({
+          id: 'i-1',
+          name: 'Sueltos',
+          quantity: 1,
+          unit_price: 50,
+          total_price: 50,
+          category_id: null,
+          is_impulse: false,
+          category: null,
+          sort_order: 0,
+        }),
+      );
+      assert.equal(draft.items[0].category_id, null);
+    });
   } else {
     console.log(
       '\n[tests] D-E SKIPPED: api.ts failed to import (see FATAL warning above)',
