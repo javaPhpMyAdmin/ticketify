@@ -2,23 +2,43 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import { BottomSheet, FieldGroup, Text } from '@/components';
+import { BottomSheet, FieldGroup, Icon, Text } from '@/components';
+import { useCategoryCatalog } from '@/features/categories';
+import { getExpenseCategory } from '@/features/home/categories';
 import { parseQuantity } from '@/features/tickets/manual-form';
 import { colors, radii, spacing, typography } from '@/theme';
+
+import {
+  categoryAfterDelete,
+  pickerRowForCategory,
+} from '../category-picker-form';
+import { CategoryPickerModal } from './CategoryPickerModal';
+
+/** The values the editor collects: the line fields plus the chosen category
+ * (app-level SLUG, or null — "No category chosen → category_id = null"). */
+export interface ItemEditorValues {
+  name: string;
+  quantity: number;
+  unit_price: number;
+  category_id: string | null;
+}
 
 export interface ItemEditorModalProps {
   /** Whether the sheet is open. Kept mounted so closing animates. */
   visible: boolean;
   /** Pre-populated values for editing an existing item (null = adding). */
-  initialValues: {
-    name: string;
-    quantity: number;
-    unit_price: number;
-  } | null;
+  initialValues: ItemEditorValues | null;
   /** Called when the user taps save with validated values. */
-  onSave: (values: { name: string; quantity: number; unit_price: number }) => void;
+  onSave: (values: ItemEditorValues) => void;
   /** Called when the user dismisses without saving. */
   onClose: () => void;
+  /**
+   * PR 5 (category-management): a delete/reassign RESOLVED inside the
+   * stacked picker. The editor rebuckets its own buffer AND forwards the
+   * resolution so the parent sweeps the WHOLE draft (W1) — every sibling
+   * referencing the deleted slug resolves to the same explicit fallback.
+   */
+  onCategoryDeleted?: (deletedSlug: string, fallbackSlug: string) => void;
 }
 
 /**
@@ -48,8 +68,10 @@ export function ItemEditorModal({
   initialValues,
   onSave,
   onClose,
+  onCategoryDeleted,
 }: ItemEditorModalProps) {
-  const { t } = useTranslation(['tickets', 'common']);
+  const { t } = useTranslation(['tickets', 'a11y', 'common']);
+  const { catalog } = useCategoryCatalog();
   const [name, setName] = useState(initialValues?.name ?? '');
   const [quantityStr, setQuantityStr] = useState(
     initialValues != null ? String(initialValues.quantity) : '1',
@@ -57,6 +79,14 @@ export function ItemEditorModal({
   const [priceStr, setPriceStr] = useState(
     initialValues != null ? String(initialValues.unit_price) : '',
   );
+  // PR 5: the buffered category choice (app-level slug or null). Seeded
+  // from initialValues so EDITING an item opens on its current category.
+  const [categoryId, setCategoryId] = useState<string | null>(
+    initialValues?.category_id ?? null,
+  );
+  // PR 5 (D6 sheet-on-sheet): the shared picker stacks OVER the editor —
+  // its own open state keeps the two sheets independent.
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
 
   // Latch the latest initialValues into a ref so the seed effect can depend
   // ONLY on `visible`. The parent passes an inline object for initialValues,
@@ -76,6 +106,7 @@ export function ItemEditorModal({
     setName(initial?.name ?? '');
     setQuantityStr(initial != null ? String(initial.quantity) : '1');
     setPriceStr(initial != null ? String(initial.unit_price) : '');
+    setCategoryId(initial?.category_id ?? null);
   }, [visible]);
 
   const trimmed = name.trim();
@@ -89,14 +120,40 @@ export function ItemEditorModal({
 
   const handleSave = () => {
     if (!canSave || quantity === null) return;
-    onSave({ name: trimmed, quantity, unit_price });
+    onSave({ name: trimmed, quantity, unit_price, category_id: categoryId });
+  };
+
+  // The category row label: same consumer pattern as every other chip —
+  // custom slugs render their own name via the catalog; the static registry
+  // fallback covers the pre-load beat while the catalog is still empty; null
+  // (no choice) stays SIN CATEGORÍA, never the 'otros' fallback.
+  const categoryRow = categoryId
+    ? (pickerRowForCategory(catalog, categoryId) ??
+      getExpenseCategory(categoryId))
+    : null;
+  const categoryLabel =
+    categoryRow?.label ?? t('tickets:noCategory');
+
+  // W1: a delete/reassign resolved inside the stacked picker must (1)
+  // rebucket THIS editor's buffer if its own selection was deleted, and
+  // (2) forward the resolution so the parent sweeps the whole draft.
+  // Rebucketing delegates to the shared `categoryAfterDelete` helper.
+  const handleForwardDelete = (
+    deletedSlug: string,
+    fallbackSlug: string,
+  ) => {
+    setCategoryId((current) =>
+      categoryAfterDelete(current, deletedSlug, fallbackSlug),
+    );
+    onCategoryDeleted?.(deletedSlug, fallbackSlug);
   };
 
   return (
-    <BottomSheet
-      visible={visible}
-      onClose={onClose}
-      kicker={t('tickets:itemEditorKicker')}
+    <>
+      <BottomSheet
+        visible={visible}
+        onClose={onClose}
+        kicker={t('tickets:itemEditorKicker')}
       title={
         initialValues
           ? t('tickets:itemEditorEditTitle')
@@ -146,6 +203,24 @@ export function ItemEditorModal({
           />
         </FieldGroup>
       </View>
+      {/* PR 5 (D6): the category row — opens the stacked picker. The
+          label resolves through the merged catalog (custom slugs render
+          their own name); a null choice renders SIN CATEGORÍA, never the
+          'otros' fallback. */}
+      <FieldGroup label={t('tickets:categoryPickerTitle')}>
+        <Pressable
+          onPress={() => setCategoryPickerOpen(true)}
+          style={({ pressed }) => [
+            styles.categoryRow,
+            pressed && styles.categoryRowPressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={`${t('a11y:categoryOfItem')} ${trimmed || t('tickets:itemNamePlaceholder')}`}
+        >
+          <Text style={styles.categoryValue}>{categoryLabel}</Text>
+          <Icon name="chevron.right" size={16} color={colors.textSecondary} />
+        </Pressable>
+      </FieldGroup>
       <Text style={styles.helper}>{t('tickets:itemEditorHelper')}</Text>
       <View style={styles.actions}>
         <Pressable
@@ -177,7 +252,25 @@ export function ItemEditorModal({
         </Pressable>
       </View>
     </BottomSheet>
-  );
+
+    {/* PR 5 (D6 sheet-on-sheet): the shared picker stacks OVER the editor.
+        Both are Modal-backed sheets; the later-mounted picker renders on
+        top when its own `visible` flips. It reuses the identical enhanced
+        picker the chip path uses — create+assign and delete/reassign are
+        one code path. */}
+    <CategoryPickerModal
+      visible={categoryPickerOpen}
+      itemName={trimmed || t('tickets:itemNamePlaceholder')}
+      selectedKey={categoryId}
+      onSelect={(key) => {
+        setCategoryId(key);
+        setCategoryPickerOpen(false);
+      }}
+      onCategoryDeleted={handleForwardDelete}
+      onClose={() => setCategoryPickerOpen(false)}
+    />
+  </>
+);
 }
 
 const styles = StyleSheet.create({
@@ -203,6 +296,26 @@ const styles = StyleSheet.create({
   helper: {
     ...typography.labelSm,
     color: colors.textSecondary,
+  },
+  // PR 5: the category row — a tappable strip that opens the stacked
+  // picker; mirrors the date-trigger visual language (label + chevron).
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+  },
+  categoryRowPressed: {
+    opacity: 0.6,
+  },
+  categoryValue: {
+    ...typography.bodyLg,
+    color: colors.textPrimary,
   },
   actions: {
     flexDirection: 'row',

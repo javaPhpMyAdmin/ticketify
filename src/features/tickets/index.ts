@@ -10,7 +10,9 @@ export type { CategoryPickerModalProps } from './components/CategoryPickerModal'
 // the draft sweep resolves every sibling reference to a deleted slug (W1).
 export {
   sweepDraftAfterDelete,
+  createCategoryDeleteHandler,
   hasReassignTarget,
+  pickerRowForCategory,
 } from './category-picker-form';
 export { ReviewItemRow } from './components/ReviewItemRow';
 export type { ReviewItemRowProps } from './components/ReviewItemRow';

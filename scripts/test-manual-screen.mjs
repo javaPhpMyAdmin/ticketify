@@ -613,6 +613,26 @@ async function manualFormTests(form) {
     assert.equal(built.name, 'Sin nombre');
   });
 
+  await test('buildEditorReviewItem: category_id round-trips an explicit slug (add mode, PR 5)', () => {
+    // Task 5.1: the editor's onSave carries the chosen category; the pure
+    // builder must put it on the ReviewItem so the save seam persists it.
+    const custom = buildEditorReviewItem({
+      name: 'Delivery',
+      quantity: 1,
+      unit_price: 99,
+      category_id: 'delivery',
+    });
+    assert.equal(custom.category_id, 'delivery');
+    // Canonical slugs pass through unchanged.
+    const canonical = buildEditorReviewItem({
+      name: 'Leche',
+      quantity: 1,
+      unit_price: 88,
+      category_id: 'lacteos',
+    });
+    assert.equal(canonical.category_id, 'lacteos');
+  });
+
   await test('parseQuantity: rejects non-integers, empty and garbage', () => {
     // parseInt('2.5') would silently coerce → 2; the helper must reject it.
     assert.equal(parseQuantity('2.5'), null);
@@ -1116,6 +1136,53 @@ async function categoryPickerFormTests(picker, catalog) {
     // Sheet dismissed (or dismissed + reopened) mid-flight → drop.
     assert.equal(isCurrentCategoryCreateSession(3, 4), false);
     assert.equal(isCurrentCategoryCreateSession(7, 0), false);
+  });
+
+  // PR 5 (slice 5/7): the chip-row resolver the editor + review rows use.
+  // One catalog-aware row for a slug: custom rows render their own label,
+  // unknown slugs bucket to the deterministic 'otros' row, and a null/empty
+  // selection stays null — the editor default (spec: "No category chosen →
+  // category_id = null") NEVER renders as 'otros'.
+  await test('chip row: custom slug resolves to its own row (label/icon)', () => {
+    const catalog = mergeCategoryCatalog(
+      [
+        { id: 'c-otros', slug: 'otros', name: 'Otros', kind: 'want', icon: 'ellipsis', color: '#4B5563', sort_order: 99, user_id: null },
+      ],
+      [
+        { id: 'c-delivery', slug: 'delivery', name: 'Delivery', kind: 'want', icon: 'sparkles', color: '#2563EB', sort_order: 100, user_id: 'u-1' },
+      ],
+    );
+    const row = picker.pickerRowForCategory(catalog, 'delivery');
+    assert.equal(row?.slug, 'delivery');
+    assert.equal(row?.label, 'Delivery');
+    assert.equal(row?.icon, 'sparkles');
+  });
+
+  await test('chip row: unknown slug buckets to the canonical otros row (catalog present)', () => {
+    const catalog = mergeCategoryCatalog(
+      [
+        { id: 'c-otros', slug: 'otros', name: 'Otros', kind: 'want', icon: 'ellipsis', color: '#4B5563', sort_order: 99, user_id: null },
+      ],
+      [],
+    );
+    const row = picker.pickerRowForCategory(catalog, 'no-such-slug');
+    assert.equal(row?.slug, 'otros');
+    assert.equal(row?.label, 'Otros');
+  });
+
+  await test('chip row: null/empty selection stays null (null default kept, never otros)', () => {
+    const catalog = mergeCategoryCatalog(
+      [
+        { id: 'c-otros', slug: 'otros', name: 'Otros', kind: 'want', icon: 'ellipsis', color: '#4B5563', sort_order: 99, user_id: null },
+      ],
+      [],
+    );
+    assert.equal(picker.pickerRowForCategory(catalog, null), null);
+    assert.equal(picker.pickerRowForCategory(catalog, ''), null);
+  });
+
+  await test('chip row: empty catalog (pre-load) resolves nothing — caller falls back to static', () => {
+    assert.equal(picker.pickerRowForCategory(undefined, 'lacteos'), null);
   });
 }
 
@@ -1797,7 +1864,171 @@ async function i18nParityTests(picker) {
     }
   });
 }
-  // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// PR 5 (slice 5/7): EDITOR WIRING — source pins for the screen/module wiring
+// the node harness cannot mount (React). These pin the D6 contract:
+//
+//  - ItemEditorModal gains a category row that STACKS CategoryPickerModal
+//    over it (sheet-on-sheet). initialValues gains category_id (slug|null);
+//    onSave round-trips it so the item saves with the chosen category.
+//  - manual.tsx writes category_id on BOTH add and edit, seeds the editor
+//    with the item's current category, and routes the picker's delete
+//    resolution (W1) through the same whole-draft sweep.
+//  - The review flow rows resolve custom slugs through the merged catalog;
+//    a null selection keeps rendering SIN CATEGORÍA (null default kept).
+// ---------------------------------------------------------------------------
+
+async function editorWiringTests() {
+  // ── ItemEditorModal (5.1): category row + round-trip ──────────────────
+  const editorSource = readFileSync(
+    join(root, 'src/features/tickets/components/ItemEditorModal.tsx'),
+    'utf8',
+  );
+
+  await test('editor: category_id (slug|null) is part of initialValues AND onSave values', () => {
+    assert.ok(
+      editorSource.includes('category_id: string | null'),
+      'the editor values shape must carry category_id (slug|null)',
+    );
+  });
+
+  await test('editor: category buffer seeds from initialValues on open (edit shows current)', () => {
+    assert.ok(
+      /useState(?:<[^>]+>)?\(\s*initialValues\?\.category_id \?\? null/.test(
+        editorSource,
+      ),
+      'the category state must seed from initialValues.category_id',
+    );
+    assert.ok(
+      editorSource.includes('setCategoryId(initial?.category_id ?? null)'),
+      'the visible-flip effect must re-seed the category buffer',
+    );
+  });
+
+  await test('editor: category row opens the stacked picker and renders the fallback label', () => {
+    assert.ok(
+      editorSource.includes('setCategoryPickerOpen(true)'),
+      'the category row must open the picker',
+    );
+    assert.ok(
+      editorSource.includes("t('tickets:noCategory')"),
+      'null selection must render SIN CATEGORÍA (never the otros fallback)',
+    );
+  });
+
+  await test('editor: stacks CategoryPickerModal over the sheet (D6 sheet-on-sheet)', () => {
+    assert.ok(
+      editorSource.includes('CategoryPickerModal') &&
+        editorSource.includes('visible={categoryPickerOpen}'),
+      'the picker must be stacked over the editor with its own open state',
+    );
+    assert.ok(
+      editorSource.includes('selectedKey={categoryId}'),
+      'the stacked picker must reflect the editor buffer',
+    );
+  });
+
+  await test('editor: onSave round-trips category_id with the other values', () => {
+    assert.ok(
+      editorSource.includes('category_id: categoryId'),
+      'the save payload must carry the buffered category slug',
+    );
+  });
+
+  await test('editor: onCategoryDeleted forwards the sweep AND rebuckets the buffer (W1)', () => {
+    assert.ok(
+      /onCategoryDeleted\?\.\(deletedSlug,\s*fallbackSlug\)/.test(editorSource),
+      'a delete resolution must be forwarded so the parent sweeps the whole draft',
+    );
+    assert.ok(
+      editorSource.includes('setCategoryId((current) =>'),
+      'the editor buffer must rebucket when its own selection was deleted',
+    );
+  });
+
+  // ── manual.tsx (5.2): write category_id on add + edit ──────────────────
+  const manualSource = readFileSync(
+    join(root, 'src/app/ticket/manual.tsx'),
+    'utf8',
+  );
+
+  await test('manual: editor initialValues carry the target category (edit round-trip)', () => {
+    assert.ok(
+      manualSource.includes('category_id: editorTarget.category_id ?? null'),
+      'editing an item must open the editor with its current category',
+    );
+  });
+
+  await test('manual: handleSaveItem writes values.category_id on BOTH add and edit', () => {
+    const matches = manualSource.match(/category_id: values\.category_id/g);
+    assert.ok(
+      matches && matches.length >= 2,
+      'add (buildEditorReviewItem) AND edit (spread) must both write the round-tripped category, got: ' +
+        (matches?.length ?? 0),
+    );
+  });
+
+  await test("manual: W1 delete sweep wired into the editor (onCategoryDeleted)", () => {
+    const matches = manualSource.match(/onCategoryDeleted=\{handleCategoryDeleted\}/g);
+    assert.ok(
+      matches && matches.length >= 2,
+      "BOTH the standalone picker AND the stacked editor picker must route delete resolutions through the whole-draft sweep, got: " +
+        (matches?.length ?? 0),
+    );
+  });
+
+  await test('manual: list chips resolve custom slugs through the catalog', () => {
+    assert.ok(
+      manualSource.includes('useCategoryCatalog'),
+      'the screen must read the merged catalog for chip labels',
+    );
+  });
+
+  // ── Review flow (5.3): catalog-aware chip, null default kept ───────────
+  const rowSource = readFileSync(
+    join(root, 'src/features/tickets/components/ReviewItemRow.tsx'),
+    'utf8',
+  );
+
+  await test('review: ReviewItemRow resolves chips through the catalog (custom slugs render)', () => {
+    assert.ok(
+      rowSource.includes('pickerRowForCategory('),
+      'the chip must resolve custom slugs against the merged catalog',
+    );
+    assert.ok(
+      rowSource.includes("t('tickets:noCategory')"),
+      'a null selection must keep rendering SIN CATEGORÍA',
+    );
+  });
+
+  const listSource = readFileSync(
+    join(root, 'src/features/tickets/components/ReceiptItemsList.tsx'),
+    'utf8',
+  );
+
+  await test('review: ReceiptItemsList threads the catalog to the rows', () => {
+    assert.ok(
+      listSource.includes('catalog') && listSource.includes('catalog={catalog}'),
+      'the list must pass the container catalog down to each row',
+    );
+  });
+
+  const reviewSource = readFileSync(
+    join(root, 'src/app/ticket/review/[id].tsx'),
+    'utf8',
+  );
+
+  await test('review: container wires the catalog into the list', () => {
+    assert.ok(
+      reviewSource.includes('useCategoryCatalog') &&
+        reviewSource.includes('catalog={catalog}'),
+      'the review screen must supply the merged catalog for chip labels',
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------
 
@@ -1835,6 +2066,10 @@ async function run() {
       },
     );
   }
+
+  // PR 5 (slice 5/7): source pins for the editor wiring (ItemEditorModal,
+  // manual.tsx, ReviewItemRow / ReceiptItemsList, review container).
+  await editorWiringTests();
 
   console.log('');
   if (failed > 0) {

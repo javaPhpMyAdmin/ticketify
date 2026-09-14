@@ -16,6 +16,7 @@ import {
 } from '@/components';
 import { useSessionUser } from '@/features/auth';
 import { getExpenseCategory } from '@/features/home/categories';
+import { useCategoryCatalog } from '@/features/categories';
 import {
   buildEditorReviewItem,
   autoTotal,
@@ -31,11 +32,12 @@ import {
   QuotaExceededError,
   SAVE_ERROR_MESSAGE,
   saveManualReceipt,
-  sweepDraftAfterDelete,
+  createCategoryDeleteHandler,
   validateManualForm,
   useReceiptDraftActions,
   useReceiptDraftDraft,
   buildManualDraft,
+  pickerRowForCategory,
 } from '@/features/tickets';
 import { formatCurrency, formatDate, todayLocalISO } from '@/lib/format';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
@@ -65,6 +67,9 @@ export default function ManualEntryScreen() {
   const { draft } = useReceiptDraftDraft();
   const { startDraft, setStore, setDate, setPayment, upsertItem, removeItem, clear, setItems } =
     useReceiptDraftActions();
+  // PR 5: the merged catalog lets the list chips render CUSTOM slugs too
+  // (custom → own row; unknown → 'otros'; empty catalog → static fallback).
+  const { catalog } = useCategoryCatalog();
 
   // Display-only card type (never persisted).
   const [cardType, setCardType] = useState<CardType | null>(null);
@@ -100,6 +105,7 @@ export default function ManualEntryScreen() {
     name: string;
     quantity: number;
     unit_price: number;
+    category_id: string | null;
   }) => {
     const next: ReviewItem = editorTarget
       ? {
@@ -108,11 +114,15 @@ export default function ManualEntryScreen() {
           quantity: values.quantity,
           unit_price: values.unit_price,
           total_price: values.quantity * values.unit_price,
+          // PR 5: the editor's category choice is part of the edit round-trip.
+          category_id: values.category_id,
         }
       : buildEditorReviewItem({
           name: values.name,
           quantity: values.quantity,
           unit_price: values.unit_price,
+          // PR 5: fresh items carry the editor's pick (or the null default).
+          category_id: values.category_id,
         });
     upsertItem(next);
     setEditorOpen(false);
@@ -126,20 +136,13 @@ export default function ManualEntryScreen() {
     upsertItem({ ...categoryTarget, category_id: key });
     setCategoryTarget(null);
   };
-  // W1: a resolved delete/reassign sweeps the WHOLE draft — every item whose
-  // category (user pick OR AI suggestion) references the deleted slug
-  // resolves to the SAME explicit resolution: the reassignment target
-  // (blocked) or the EXPLICIT 'otros' slug (empty — the app-wide persisted
-  // fallback, NULLs never persist), never per-item silent drift. The
-  // picker's target item is part of the sweep, exactly like every sibling.
-  const handleCategoryDeleted = (
-    deletedSlug: string,
-    fallbackSlug: string,
-  ) => {
-    const items = draft?.items ?? [];
-    setItems(sweepDraftAfterDelete(items, deletedSlug, fallbackSlug));
-    setCategoryTarget(null);
-  };
+  // W1: the whole-draft delete sweep is shared with the review screen —
+  // see `createCategoryDeleteHandler` in category-picker-form.ts.
+  const handleCategoryDeleted = createCategoryDeleteHandler(
+    draft?.items ?? [],
+    setItems,
+    () => setCategoryTarget(null),
+  );
 
   // ── Submission ────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
@@ -322,14 +325,18 @@ export default function ManualEntryScreen() {
             {draft?.items?.length ? (
               <Card padding={spacing.sm}>
                 {draft.items.map((item, idx) => {
-                  // Resolve the chip label through the expense-category
-                  // registry (same as ReviewItemRow): slug → label ('lacteos'
-                  // → 'Lácteos'). Unknown slugs bucket into 'otros' → 'Otros'.
+                  // Resolve the chip label through the merged catalog (PR 5):
+                  // same consumer pattern as every chip — the static registry
+                  // fallback only covers the pre-load beat while the catalog
+                  // is still empty; a choice of NO category always renders
+                  // SIN CATEGORÍA (tickets:noCategory), never 'otros'.
                   const effectiveCategoryId =
                     item.category_id ?? item.ai_suggested_category_id;
-                  const categoryLabel = getExpenseCategory(
-                    effectiveCategoryId ?? 'otros',
-                  ).label;
+                  const categoryLabel = effectiveCategoryId
+                    ? (pickerRowForCategory(catalog, effectiveCategoryId)
+                        ?.label ??
+                      getExpenseCategory(effectiveCategoryId).label)
+                    : t('tickets:noCategory');
                   return (
                     <View key={item.temp_id}>
                       {idx > 0 ? <View style={styles.rowDivider} /> : null}
@@ -430,10 +437,14 @@ export default function ManualEntryScreen() {
                 name: editorTarget.name,
                 quantity: editorTarget.quantity,
                 unit_price: editorTarget.unit_price,
+                // PR 5: editing opens on the item's current category (or the
+                // null default — never the otros fallback).
+                category_id: editorTarget.category_id ?? null,
               }
             : null
         }
         onSave={handleSaveItem}
+        onCategoryDeleted={handleCategoryDeleted}
         onClose={() => {
           setEditorOpen(false);
           setEditorTarget(null);
