@@ -39,7 +39,12 @@ import {
   buildManualDraft,
   pickerRowForCategory,
 } from '@/features/tickets';
-import { formatCurrency, formatDate, todayLocalISO } from '@/lib/format';
+import {
+  formatCurrency,
+  formatDate,
+  todayLocalISO,
+  truncateCategoryName,
+} from '@/lib/format';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { useToastStore } from '@/stores/use-toast-store';
@@ -330,12 +335,17 @@ export default function ManualEntryScreen() {
                   // fallback only covers the pre-load beat while the catalog
                   // is still empty; a choice of NO category always renders
                   // SIN CATEGORÍA (tickets:noCategory), never 'otros'.
+                  // Display-only truncation: caps long names like the picker
+                  // grid and the review rows; the stored name is untouched
+                  // and the pressable a11y label keeps the item name.
                   const effectiveCategoryId =
                     item.category_id ?? item.ai_suggested_category_id;
                   const categoryLabel = effectiveCategoryId
-                    ? (pickerRowForCategory(catalog, effectiveCategoryId)
-                        ?.label ??
-                      getExpenseCategory(effectiveCategoryId).label)
+                    ? truncateCategoryName(
+                        pickerRowForCategory(catalog, effectiveCategoryId)
+                          ?.label ??
+                          getExpenseCategory(effectiveCategoryId).label,
+                      )
                     : t('tickets:noCategory');
                   return (
                     <View key={item.temp_id}>

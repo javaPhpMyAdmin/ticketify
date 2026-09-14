@@ -2,7 +2,11 @@ import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { Icon, Pressable, ProgressBar, Text, type IconName } from '@/components';
-import { formatCurrency, formatPercentLabel } from '@/lib/format';
+import {
+  formatCurrency,
+  formatPercentLabel,
+  truncateCategoryName,
+} from '@/lib/format';
 import { colors, spacing, typography } from '@/theme';
 import { getCategoryColor } from '@/features/home/categories';
 import { budgetProgressColor } from '../category-budget-progress';
@@ -87,7 +91,7 @@ export function CategoryBudgetRow({
       </View>
       <View style={styles.body}>
         <Text style={styles.name} numberOfLines={1}>
-          {name}
+          {truncateCategoryName(name)}
         </Text>
         <Text style={styles.percent}>
           {t('percentOfSpending', { percent: formatPercentLabel(percent) })}

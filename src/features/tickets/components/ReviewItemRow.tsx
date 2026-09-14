@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Chip, Icon, Text, View } from '@/components';
 import { getExpenseCategory } from '@/features/home/categories';
 import type { CategoryCatalog } from '@/features/categories/catalog';
-import { formatCurrency } from '@/lib/format';
+import { formatCurrency, truncateCategoryName } from '@/lib/format';
 import { colors, spacing, typography } from '@/theme';
 import type { ReviewItem } from '@/types';
 
@@ -107,10 +107,21 @@ export function ReviewItemRow({
       </View>
       <View style={styles.bottom}>
         <Chip
-          label={category?.label ?? t('tickets:noCategory')}
+          // Display-only truncation (same `DISPLAY_MAX_CATEGORY_NAME_LENGTH`
+          // cap as the picker grid / analytics / home): a raw long label
+          // would widen the chip past the row's right edge and push the
+          // impulse toggle off-screen. The FULL name stays in the
+          // accessibility label so screen readers never lose it.
+          label={
+            category?.label
+              ? truncateCategoryName(category.label)
+              : t('tickets:noCategory')
+          }
           icon={category?.icon}
           selected={!!category}
           onPress={onPressCategory}
+          accessibilityLabel={category?.label}
+          style={styles.categoryChip}
         />
         <View style={styles.impulseWrap}>
           <Text style={styles.impulseLabel}>
@@ -170,6 +181,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  // Last-resort guard for the impulse toggle: the chip yields its space
+  // before the row can overflow, so a font-scaled/extreme label can never
+  // push the switch off the right edge (the JS truncation caps the label
+  // at 14 chars — this only engages when even that doesn't fit).
+  categoryChip: {
+    flexShrink: 1,
   },
   impulseWrap: {
     flexDirection: 'row',
