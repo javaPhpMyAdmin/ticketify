@@ -40,9 +40,9 @@ TDD RED→GREEN; gate: `pnpm test` + `pnpm typecheck` + `pnpm lint`.
 
 ## Phase 4: Picker Delete (PR 4)
 
-- [ ] 4.1 RED `scripts/test-manual-screen.mjs` extend: in-use delete blocked, no re-bucket; empty delete succeeds
-- [ ] 4.2 GREEN delete flow: long-press own row → count `purchase_items` (RLS-scoped); blocked + reassignment picker; `reassignCategoryItems(fromId,toId)`; empty → `deleteCustomCategory`
-- [ ] 4.3 Invalidations (catalog/feed/totals); i18n blocked/reassign copy
+- [x] 4.1 RED `scripts/test-manual-screen.mjs` extend: in-use delete blocked, no re-bucket; empty delete succeeds
+- [x] 4.2 GREEN delete flow: long-press own row → count `purchase_items` (RLS-scoped); blocked + reassignment picker; `reassignCategoryItems(fromId,toId)`; empty → `deleteCustomCategory`
+- [x] 4.3 Invalidations (catalog/feed/totals); i18n blocked/reassign copy
 
 ## Phase 5: Editor Wiring (PR 5)
 

@@ -77,3 +77,10 @@ jobs:
         # incl. purchase_items category ownership, save_receipt server-side
         # category validation, FK RESTRICT backstop, anon denied last).
         run: supabase db query --local --file supabase/tests/user-categories.sql
+
+      - name: Run recalculate-on-purchase-items-update SQL smoke test
+        # Pins the 0033 contract: an UPDATE that re-points purchase_items
+        # category_id (the reassign/delete picker seam) recalculates the
+        # affected month server-side, so the materialized
+        # monthly_user_totals cache reflects the move immediately.
+        run: supabase db query --local --file supabase/tests/recalculate-on-purchase-items-update.sql

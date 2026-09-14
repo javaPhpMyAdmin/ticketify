@@ -6,6 +6,12 @@ export { ReceiptItemsList } from './components/ReceiptItemsList';
 export type { ReceiptItemsListProps } from './components/ReceiptItemsList';
 export { CategoryPickerModal } from './components/CategoryPickerModal';
 export type { CategoryPickerModalProps } from './components/CategoryPickerModal';
+// Pure picker helpers the category-picker screens consume (node-loadable):
+// the draft sweep resolves every sibling reference to a deleted slug (W1).
+export {
+  sweepDraftAfterDelete,
+  hasReassignTarget,
+} from './category-picker-form';
 export { ReviewItemRow } from './components/ReviewItemRow';
 export type { ReviewItemRowProps } from './components/ReviewItemRow';
 export { ItemEditorModal } from './components/ItemEditorModal';

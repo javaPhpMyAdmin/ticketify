@@ -42,6 +42,7 @@ import {
   reviewItemsToFeedItems,
   SAVE_ERROR_MESSAGE,
   saveReceipt,
+  sweepDraftAfterDelete,
   updateReceipt,
   useReceiptDraftActions,
   useReceiptDraftDraft,
@@ -99,7 +100,7 @@ export default function ReviewReceiptScreen() {
   // UYU), the same store Home/History read — never a hardcoded code.
   const currency = useSettingsStore((s) => s.currency);
   const { draft } = useReceiptDraftDraft();
-  const { setStore, setPayment, upsertItem, clear } = useReceiptDraftActions();
+  const { setStore, setPayment, upsertItem, clear, setItems } = useReceiptDraftActions();
   // The scan flow is the single entry point for parsing: `scan()` runs
   // the upload + parse pipeline and seeds the store with the draft. A
   // failure leaves the store untouched, so the screen shows a retry state
@@ -340,9 +341,23 @@ export default function ReviewReceiptScreen() {
   if (categoryTarget) lastCategoryTarget.current = categoryTarget;
   const sheetTarget = categoryTarget ?? lastCategoryTarget.current;
 
-  const handleSelectCategory = (categoryKey: string) => {
+  const handleSelectCategory = (categoryKey: string | null) => {
     if (!sheetTarget) return;
     upsertItem({ ...sheetTarget, category_id: categoryKey });
+    setCategoryTarget(null);
+  };
+  // W1: a resolved delete/reassign sweeps the WHOLE draft — every item whose
+  // category (user pick OR AI suggestion) references the deleted slug
+  // resolves to the SAME explicit resolution: the reassignment target
+  // (blocked) or the EXPLICIT 'otros' slug (empty — the app-wide persisted
+  // fallback, NULLs never persist), never per-item silent drift. The
+  // picker's target item is part of the sweep, exactly like every sibling.
+  const handleCategoryDeleted = (
+    deletedSlug: string,
+    fallbackSlug: string,
+  ) => {
+    const items = draft?.items ?? [];
+    setItems(sweepDraftAfterDelete(items, deletedSlug, fallbackSlug));
     setCategoryTarget(null);
   };
   // Synchronous double-tap guard: the `saving` state is async, so two taps
@@ -700,6 +715,7 @@ export default function ReviewReceiptScreen() {
             : null
         }
         onSelect={handleSelectCategory}
+        onCategoryDeleted={handleCategoryDeleted}
         onClose={() => setCategoryTarget(null)}
       />
 

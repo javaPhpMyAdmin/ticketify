@@ -71,7 +71,8 @@ export type QueryOp =
   | { op: 'or'; filter: string }
   | { op: 'order'; column: string; opts?: { ascending?: boolean; referencedTable?: string } }
   | { op: 'range'; from: number; to: number }
-  | { op: 'limit'; count: number };
+  | { op: 'limit'; count: number }
+  | { op: 'count-exact'; columns: string };
 
 /** One builder chain: the table it queried and the ops applied to it. */
 export interface QueryCall {
@@ -80,12 +81,23 @@ export interface QueryCall {
 }
 
 /**
+ * Select terminal options mirroring supabase-js's `select(columns, opts)`
+ * HEAD/count surface — `{ count: 'exact', head: true }` returns only the
+ * row count (no rows travel the wire) and is how `countCategoryItems`
+ * implements the D1 block-delete check.
+ */
+export interface SelectOptions {
+  count?: 'exact' | 'planned' | 'estimated';
+  head?: boolean;
+}
+
+/**
  * The `from(table)` surface: upserts (auth), the select chain (reads), and
  * insert/update/delete (purchase writes, Phase 5).
  */
 export interface FromBuilder {
   upsert: (row: unknown, opts?: unknown) => Promise<{ error: StubError }>;
-  select: (columns?: string) => QueryBuilder;
+  select: (columns?: string, opts?: SelectOptions) => QueryBuilder;
   insert: (rows: unknown, opts?: unknown) => QueryBuilder;
   update: (columns: Record<string, unknown>, opts?: unknown) => QueryBuilder;
   delete: (opts?: unknown) => QueryBuilder;
@@ -108,9 +120,10 @@ export interface RpcQueryBuilder extends PromiseLike<{ data: unknown[] | null; e
  * `.maybeSingle` are explicit terminals, and the builder itself is
  * thenable, so `await`-ing an unterminated chain resolves the PostgREST
  * response `{ data, error }` (deletes/updates resolve `data: null` unless
- * `.select()` was chained, like the real client).
+ * `.select()` was chained, like the real client). HEAD `count=exact` selects
+ * resolve an extra `count` (supabase-js's `count` response field).
  */
-export interface QueryBuilder extends PromiseLike<{ data: unknown; error: StubError }> {
+export interface QueryBuilder extends PromiseLike<{ data: unknown; error: StubError; count?: number | null }> {
   eq: (column: string, value: unknown) => QueryBuilder;
   in: (column: string, values: unknown[]) => QueryBuilder;
   is: (column: string, value: unknown) => QueryBuilder;
@@ -122,7 +135,7 @@ export interface QueryBuilder extends PromiseLike<{ data: unknown; error: StubEr
   order: (column: string, opts?: { ascending?: boolean; referencedTable?: string }) => QueryBuilder;
   range: (from: number, to: number) => QueryBuilder;
   limit: (count: number) => QueryBuilder;
-  select: (columns?: string) => QueryBuilder;
+  select: (columns?: string, opts?: SelectOptions) => QueryBuilder;
   maybeSingle: () => Promise<{ data: unknown | null; error: StubError }>;
   single: () => Promise<{ data: unknown | null; error: StubError }>;
 }
@@ -192,6 +205,9 @@ export type SupabaseBehavior = {
 
 /** Per-table read results (harness seam, see `__setTableRead`). */
 const tableReads = new Map<string, TableReadState>();
+
+/** Per-table HEAD `count=exact` results (harness seam, see `__setTableCount`). */
+const tableCounts = new Map<string, number>();
 
 /** Per-function RPC results (harness seam, see `__setRpcResult`). */
 const rpcResults = new Map<string, RpcResultState>();
@@ -288,6 +304,9 @@ type BuilderSource =
 function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' }): QueryBuilder {
   const ops: QueryOp[] = [];
   let selected = false;
+  // HEAD select (`{ count: 'exact', head: true }`): the terminal resolves
+  // `{ data: null, count }` — no rows travel the wire (D1 count check).
+  let headMode = false;
   queryLog.push({ table, ops });
   const builder = {
     eq: (column: string, value: unknown) => {
@@ -334,11 +353,17 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
       ops.push({ op: 'limit', count });
       return builder;
     },
-    select: () => {
+    select: (columns?: string, opts?: SelectOptions) => {
       // `delete().select()` / `update().select()` return the affected rows
       // in the real client (Prefer: return=representation); the terminal
-      // below resolves the armed deleteReads for a selected write chain.
+      // below resolves the armed deleteReads for a selected write chain. A
+      // HEAD `count=exact` select (the countCategoryItems seam) records the
+      // query and makes the terminal resolve the armed table count instead.
       selected = true;
+      if (opts && opts.head && opts.count === 'exact') {
+        headMode = true;
+        ops.push({ op: 'count-exact', columns: columns ?? '' });
+      }
       return builder;
     },
     async maybeSingle() {
@@ -406,7 +431,15 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
       ) {
         error = source.error;
       }
-      return Promise.resolve({ data, error }).then(onfulfilled, onrejected);
+      const result: { data: unknown; error: StubError; count?: number | null } = { data, error };
+      if (headMode) {
+        // HEAD count: rows never travel; the count comes from the armed
+        // table count (unarmed resolves null, mirroring supabase-js when no
+        // count was requested — the API maps `count ?? 0`).
+        result.data = null;
+        result.count = tableCounts.get(table) ?? null;
+      }
+      return Promise.resolve(result).then(onfulfilled, onrejected);
     },
   };
   return builder as QueryBuilder;
@@ -477,7 +510,16 @@ const defaultBehavior = (): SupabaseBehavior => ({
         callLog.push({ kind: 'upsert', table });
         return Promise.resolve({ error: null as StubError, row });
       },
-      select: () => makeQueryBuilder(table, { kind: 'read' }),
+      select: (columns?: string, opts?: SelectOptions) => {
+        const builder = makeQueryBuilder(table, { kind: 'read' });
+        // A HEAD `count=exact` select (the D1 `countCategoryItems` seam)
+        // records the query and arms the builder's count resolution; the
+        // plain `select('*')` read chains stay op-free exactly as before.
+        if (opts && opts.head && opts.count === 'exact') {
+          builder.select(columns, opts);
+        }
+        return builder;
+      },
       insert: (rows: unknown) => {
         callLog.push({ kind: 'insert', table });
         // One-shot armed failure (see `__failNextInsert`): the insert errors
@@ -647,6 +689,7 @@ export function __listenerStats(): { active: number; unsubscribed: number } {
 export function __resetSupabaseBehavior(): void {
   behavior = defaultBehavior();
   tableReads.clear();
+  tableCounts.clear();
   rpcResults.clear();
   functionInvokes.clear();
   callLog.length = 0;
@@ -687,6 +730,15 @@ export function __setTableRead(
   state: Partial<TableReadState>,
 ): void {
   tableReads.set(table, { rows: state.rows ?? null, error: state.error ?? null });
+}
+
+/**
+ * Arms the count a HEAD `select(…, { count: 'exact', head: true })` chain on
+ * `table` resolves to (harness seam). An unarmed HEAD select resolves
+ * `count: null` — mirroring supabase-js — and the API maps it fail-safe to 0.
+ */
+export function __setTableCount(table: string, count: number): void {
+  tableCounts.set(table, count);
 }
 
 /** Arms the rows (or the error) `rpc(fn)` resolves to. */
