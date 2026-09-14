@@ -14,6 +14,7 @@ export {
   CUSTOM_CATEGORY_SORT_ORDER,
   DELETE_CATEGORY_ERROR_MESSAGE,
   REASSIGN_CATEGORY_ERROR_MESSAGE,
+  countCategoryItems,
   createCustomCategory,
   deleteCustomCategory,
   readCategoryCatalog,

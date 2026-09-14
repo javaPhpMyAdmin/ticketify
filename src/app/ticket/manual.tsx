@@ -31,6 +31,7 @@ import {
   QuotaExceededError,
   SAVE_ERROR_MESSAGE,
   saveManualReceipt,
+  sweepDraftAfterDelete,
   validateManualForm,
   useReceiptDraftActions,
   useReceiptDraftDraft,
@@ -62,7 +63,7 @@ export default function ManualEntryScreen() {
   // `changeLanguage` fires), so the date re-renders on locale swaps.
   const locale = useLocaleStore((s) => s.activeLocale);
   const { draft } = useReceiptDraftDraft();
-  const { startDraft, setStore, setDate, setPayment, upsertItem, removeItem, clear } =
+  const { startDraft, setStore, setDate, setPayment, upsertItem, removeItem, clear, setItems } =
     useReceiptDraftActions();
 
   // Display-only card type (never persisted).
@@ -120,9 +121,23 @@ export default function ManualEntryScreen() {
 
   // ── Category picker for an item ───────────────────────────────────────
   const [categoryTarget, setCategoryTarget] = useState<ReviewItem | null>(null);
-  const handleSelectCategory = (key: string) => {
+  const handleSelectCategory = (key: string | null) => {
     if (!categoryTarget) return;
     upsertItem({ ...categoryTarget, category_id: key });
+    setCategoryTarget(null);
+  };
+  // W1: a resolved delete/reassign sweeps the WHOLE draft — every item whose
+  // category (user pick OR AI suggestion) references the deleted slug
+  // resolves to the SAME explicit resolution: the reassignment target
+  // (blocked) or the EXPLICIT 'otros' slug (empty — the app-wide persisted
+  // fallback, NULLs never persist), never per-item silent drift. The
+  // picker's target item is part of the sweep, exactly like every sibling.
+  const handleCategoryDeleted = (
+    deletedSlug: string,
+    fallbackSlug: string,
+  ) => {
+    const items = draft?.items ?? [];
+    setItems(sweepDraftAfterDelete(items, deletedSlug, fallbackSlug));
     setCategoryTarget(null);
   };
 
@@ -432,6 +447,7 @@ export default function ManualEntryScreen() {
           categoryTarget?.category_id ?? categoryTarget?.ai_suggested_category_id ?? null
         }
         onSelect={handleSelectCategory}
+        onCategoryDeleted={handleCategoryDeleted}
         onClose={() => setCategoryTarget(null)}
       />
     </>

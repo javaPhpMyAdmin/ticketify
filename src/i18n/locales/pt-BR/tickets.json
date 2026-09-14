@@ -70,5 +70,12 @@
   "categoryCreateColorRequired": "Escolha uma cor",
   "categoryCreateExists": "Essa categoria já existe.",
   "categoryCreateError": "Não foi possível criar a categoria. Tente novamente.",
-  "categoryCreateAction": "Criar"
+  "categoryCreateAction": "Criar",
+  "categoryDeleteInUse_one": "Esta categoria tem 1 compra associada. Mova-a para outra categoria antes de excluir.",
+  "categoryDeleteInUse_other": "Esta categoria tem {{count}} compras associadas. Mova-as para outra categoria antes de excluir.",
+  "categoryReassignTitle": "Mover compras para outra categoria",
+  "categoryReassignToLabel": "Mover para",
+  "categoryDeleteConfirm": "Excluir categoria",
+  "categoryDeleteError": "Não foi possível excluir a categoria. Tente novamente.",
+  "categoryReassignError": "Não foi possível mover os gastos. Tente novamente."
 }
