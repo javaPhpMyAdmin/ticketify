@@ -6,6 +6,7 @@ import { BottomSheet, FieldGroup, Icon, Text } from '@/components';
 import { useCategoryCatalog } from '@/features/categories';
 import { getExpenseCategory } from '@/features/home/categories';
 import { parseQuantity } from '@/features/tickets/manual-form';
+import { truncateCategoryName } from '@/lib/format';
 import { colors, radii, spacing, typography } from '@/theme';
 
 import {
@@ -131,8 +132,12 @@ export function ItemEditorModal({
     ? (pickerRowForCategory(catalog, categoryId) ??
       getExpenseCategory(categoryId))
     : null;
-  const categoryLabel =
-    categoryRow?.label ?? t('tickets:noCategory');
+  // Display-only truncation like every other rendered category name (picker
+  // grid, review rows, manual list): the sheet's category row stays one line
+  // and never pushes the chevron off the right edge.
+  const categoryLabel = categoryRow?.label
+    ? truncateCategoryName(categoryRow.label)
+    : t('tickets:noCategory');
 
   // W1: a delete/reassign resolved inside the stacked picker must (1)
   // rebucket THIS editor's buffer if its own selection was deleted, and

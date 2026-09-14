@@ -1,7 +1,7 @@
 import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Icon, Pressable, Text, View, type IconName } from '@/components/atoms';
-import { formatCurrency } from '@/lib/format';
+import { formatCurrency, truncateCategoryName } from '@/lib/format';
 import { colors, radii, spacing } from '@/theme';
 
 export interface CategoryCardProps {
@@ -60,7 +60,7 @@ export function CategoryCard({
       </View>
       <View style={styles.body}>
         <Text style={styles.name} numberOfLines={1}>
-          {name}
+          {truncateCategoryName(name)}
         </Text>
       </View>
       <Text style={styles.amount}>{formatCurrency(amount, currency)}</Text>

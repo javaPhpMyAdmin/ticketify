@@ -722,3 +722,36 @@ export function tempId(): string {
     ).join('');
   return `${random(8)}-${random(4)}-${random(4)}-${random(4)}-${random(12)}`;
 }
+
+// ---------------------------------------------------------------------------
+// Display-only category name truncation
+// ---------------------------------------------------------------------------
+
+/**
+ * Default display cap for category names (device-testing feedback): names
+ * created through the picker may be up to 40 chars
+ * (`MAX_CATEGORY_NAME_LENGTH`), but the picker grid cells and the category
+ * rows/cards render a 14-char guarantee. Character-based ON PURPOSE — React
+ * Native's `numberOfLines={1}` truncates by WIDTH, which does not cut a
+ * 25-char name that fits inside a wide cell.
+ */
+export const DISPLAY_MAX_CATEGORY_NAME_LENGTH = 14;
+
+/**
+ * Display-only truncation for long category names. NEVER mutates the stored
+ * name — it returns a new display string and the full name keeps being
+ * saved/persisted; callers apply it only where the name is RENDERED.
+ *
+ * A name that fits (`length <= maxLength`) is returned unchanged; a longer
+ * name becomes `name.slice(0, maxLength - 1) + '…'` — the single-char
+ * ellipsis `…` (U+2026), the same ellipsis the i18n catalogs use
+ * ("Cargando…", "Loading…"), so the visible result is exactly `maxLength`
+ * chars.
+ */
+export function truncateCategoryName(
+  name: string,
+  maxLength: number = DISPLAY_MAX_CATEGORY_NAME_LENGTH,
+): string {
+  if (name.length <= maxLength) return name;
+  return `${name.slice(0, maxLength - 1)}…`;
+}

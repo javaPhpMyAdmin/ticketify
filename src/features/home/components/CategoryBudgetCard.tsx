@@ -10,7 +10,11 @@ import {
   type IconName,
 } from '@/components';
 import { budgetProgressColor } from '@/features/analytics/category-budget-progress';
-import { formatCurrency, formatPercentLabel } from '@/lib/format';
+import {
+  formatCurrency,
+  formatPercentLabel,
+  truncateCategoryName,
+} from '@/lib/format';
 import { radii, spacing, typography } from '@/theme';
 
 import { getCategoryColor } from '../categories';
@@ -109,7 +113,7 @@ export function CategoryBudgetCard({
           style={[styles.name, { color: color.foreground }]}
           numberOfLines={1}
         >
-          {name}
+          {truncateCategoryName(name)}
         </Text>
         <View style={styles.metaRow}>
           <Text style={[styles.percent, { color: color.foreground }]}>

@@ -10,6 +10,7 @@ import {
   useCategoryCatalog,
 } from '@/features/categories';
 import { colors, radii, spacing, typography } from '@/theme';
+import { truncateCategoryName } from '@/lib/format';
 import type { CategoryKind } from '@/types';
 
 import {
@@ -661,7 +662,7 @@ function ListMode({
                 ]}
                 numberOfLines={1}
               >
-                {row.label}
+                {truncateCategoryName(row.label)}
               </Text>
             </Pressable>
           );
@@ -760,7 +761,7 @@ function BlockedDeleteView({
                 ]}
                 numberOfLines={1}
               >
-                {row.label}
+                {truncateCategoryName(row.label)}
               </Text>
             </Pressable>
           );

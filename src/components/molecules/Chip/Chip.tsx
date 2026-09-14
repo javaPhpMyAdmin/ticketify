@@ -21,6 +21,13 @@ export interface ChipProps {
   iconColor?: string;
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
+  /**
+   * Explicit accessible name for the pressable pill. When omitted the
+   * pressable announces its child label text — pass the FULL, untruncated
+   * label when the visible label is display-truncated (`truncateCategoryName`)
+   * so screen readers keep the real name.
+   */
+  accessibilityLabel?: string;
 }
 
 const selectedBg = colors.primaryContainer;
@@ -42,6 +49,7 @@ export function Chip({
   iconColor = colors.primary,
   style,
   textStyle,
+  accessibilityLabel,
 }: ChipProps) {
   const bg = selected ? selectedBg : unselectedBg;
   const color = selected ? selectedColor : unselectedColor;
@@ -60,6 +68,7 @@ export function Chip({
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
         style={[styles.base, { backgroundColor: bg }, style]}
       >
         {content}
