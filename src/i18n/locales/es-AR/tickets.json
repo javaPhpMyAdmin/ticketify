@@ -70,5 +70,12 @@
   "categoryCreateColorRequired": "Elegí un color",
   "categoryCreateExists": "Esa categoría ya existe.",
   "categoryCreateError": "No se pudo crear la categoría. Inténtalo de nuevo.",
-  "categoryCreateAction": "Crear"
+  "categoryCreateAction": "Crear",
+  "categoryDeleteInUse_one": "Esta categoría tiene 1 compra asociada. Movela a otra categoría antes de eliminar.",
+  "categoryDeleteInUse_other": "Esta categoría tiene {{count}} compras asociadas. Movelas a otra categoría antes de eliminar.",
+  "categoryReassignTitle": "Mover compras a otra categoría",
+  "categoryReassignToLabel": "Mover a",
+  "categoryDeleteConfirm": "Eliminar categoría",
+  "categoryDeleteError": "No se pudo eliminar la categoría. Inténtalo de nuevo.",
+  "categoryReassignError": "No se pudieron reasignar los gastos. Inténtalo de nuevo."
 }

@@ -70,5 +70,12 @@
   "categoryCreateColorRequired": "Choose a color",
   "categoryCreateExists": "That category already exists.",
   "categoryCreateError": "Couldn't create the category. Try again.",
-  "categoryCreateAction": "Create"
+  "categoryCreateAction": "Create",
+  "categoryDeleteInUse_one": "This category has 1 purchase attached. Move it to another category before deleting.",
+  "categoryDeleteInUse_other": "This category has {{count}} purchases attached. Move them to another category before deleting.",
+  "categoryReassignTitle": "Move purchases to another category",
+  "categoryReassignToLabel": "Move to",
+  "categoryDeleteConfirm": "Delete category",
+  "categoryDeleteError": "Couldn't delete the category. Try again.",
+  "categoryReassignError": "Couldn't move the purchases. Try again."
 }

@@ -183,3 +183,45 @@ export async function reassignCategoryItems(
   const moved = (data as unknown[] | null) ?? [];
   return { status: 'ok', data: { moved: moved.length } };
 }
+
+/**
+ * Count the caller's purchase items referencing a category — the D1
+ * block-delete UX check. One HEAD-only `count=exact` query (no rows travel
+ * the wire).
+ *
+ * Scoping (W2): `purchase_items` has NO `user_id` column (migration 0001) —
+ * it is parent-scoped via the `purchase_id → purchases(id)` join. The count
+ * therefore scopes at BOTH levels: the query filters `purchases.user_id`
+ * through the to-one join (user_id lives on the parent) AND RLS enforces the
+ * same parent-scope server-side (defense in depth — the same query-level RLS
+ * parity `deleteCustomCategory` applies). A forged cross-user category id
+ * returns only the caller's rows.
+ *
+ * Fail-closed (W2): a backend error (including 42501 on a stale RLS schema),
+ * an unconfigured client, OR an ABSENT count (no Content-Range header →
+ * unknown) all yield the delete-flow error copy — the UI never fabricates a
+ * count. Only a REAL 0 (an empty response WITH its count header) means
+ * "empty" and allows the delete to proceed.
+ */
+export async function countCategoryItems(
+  userId: string,
+  categoryId: string,
+): Promise<FeatureReadResult<number>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  const { count, error } = await supabase
+    .from('purchase_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('category_id', categoryId)
+    .eq('purchases.user_id', userId);
+  if (error) {
+    console.warn('[read] category item count failed:', error.code, error.message);
+    return { status: 'error', message: DELETE_CATEGORY_ERROR_MESSAGE };
+  }
+  // `== null` covers null AND undefined: supabase-js may type the HEAD
+  // count as `number | undefined` for untagged queries, and an undefined
+  // count is just as unknown as a missing Content-Range header.
+  if (count == null) {
+    return { status: 'error', message: DELETE_CATEGORY_ERROR_MESSAGE };
+  }
+  return { status: 'ok', data: count };
+}

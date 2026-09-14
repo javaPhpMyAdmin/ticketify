@@ -89,6 +89,33 @@ export function useCategoryCatalog(): UseCategoryCatalogResult {
     },
   });
 
+  // Reassigning a category's items rewrites their category_id, so every
+  // purchase-item-derived cache for the user must refetch: the home feed
+  // (list rows), the analytics month totals / full month receipts (category
+  // breakdowns), and the materialized monthly cache the Analytics
+  // monthly-cache consumers + Home run-rate card read. The materialized row
+  // is rebuilt SERVER-SIDE by migration 0033: the trigger
+  // `trg_monthly_totals_recalculate_on_item` fires on any purchase_items
+  // UPDATE that re-points category_id and recalculates the affected month, so
+  // this invalidation always refetches a genuinely FRESH row — exactly like
+  // the save path (tickets api.ts `invalidateReceiptFeeds`), closing the
+  // stale-cache seam that made the deleted category keep its old name and
+  // figures until the next purchases write. Household caches are NOT
+  // invalidated: the hook only knows the userId, and `purchase_items` carry
+  // no user_id to map.
+  const invalidateItemDerivedQueries = (uid: string) => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.homeFeed(uid) });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.monthlyTotalsPrefix(uid),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.monthReceiptsPrefix(uid),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.monthlyCachePrefix(uid),
+    });
+  };
+
   const deleteMutation = useMutation({
     mutationFn: (categoryId: string) => {
       if (!userId) {
@@ -100,6 +127,7 @@ export function useCategoryCatalog(): UseCategoryCatalogResult {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey });
+      invalidateItemDerivedQueries(userId as string);
     },
   });
 
@@ -116,6 +144,7 @@ export function useCategoryCatalog(): UseCategoryCatalogResult {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey });
+      invalidateItemDerivedQueries(userId as string);
     },
   });
 
