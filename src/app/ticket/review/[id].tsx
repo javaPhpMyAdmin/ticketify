@@ -29,6 +29,7 @@ import {
   View,
 } from '@/components';
 import { useSessionUser } from '@/features/auth';
+import { useCategoryCatalog } from '@/features/categories';
 import { RenameItemModal, sanitizeItemName } from '@/features/items';
 import {
   buildFeedRow,
@@ -42,7 +43,7 @@ import {
   reviewItemsToFeedItems,
   SAVE_ERROR_MESSAGE,
   saveReceipt,
-  sweepDraftAfterDelete,
+  createCategoryDeleteHandler,
   updateReceipt,
   useReceiptDraftActions,
   useReceiptDraftDraft,
@@ -101,6 +102,11 @@ export default function ReviewReceiptScreen() {
   const currency = useSettingsStore((s) => s.currency);
   const { draft } = useReceiptDraftDraft();
   const { setStore, setPayment, upsertItem, clear, setItems } = useReceiptDraftActions();
+  // PR 5 (D6): the merged catalog lets the review chips render CUSTOM slugs
+  // with their own row (label/icon); unknown slugs keep the deterministic
+  // 'otros' fallback and a null choice stays SIN CATEGORÍA. Single fetch —
+  // the picker and the rows share the same React Query cache.
+  const { catalog } = useCategoryCatalog();
   // The scan flow is the single entry point for parsing: `scan()` runs
   // the upload + parse pipeline and seeds the store with the draft. A
   // failure leaves the store untouched, so the screen shows a retry state
@@ -346,20 +352,13 @@ export default function ReviewReceiptScreen() {
     upsertItem({ ...sheetTarget, category_id: categoryKey });
     setCategoryTarget(null);
   };
-  // W1: a resolved delete/reassign sweeps the WHOLE draft — every item whose
-  // category (user pick OR AI suggestion) references the deleted slug
-  // resolves to the SAME explicit resolution: the reassignment target
-  // (blocked) or the EXPLICIT 'otros' slug (empty — the app-wide persisted
-  // fallback, NULLs never persist), never per-item silent drift. The
-  // picker's target item is part of the sweep, exactly like every sibling.
-  const handleCategoryDeleted = (
-    deletedSlug: string,
-    fallbackSlug: string,
-  ) => {
-    const items = draft?.items ?? [];
-    setItems(sweepDraftAfterDelete(items, deletedSlug, fallbackSlug));
-    setCategoryTarget(null);
-  };
+  // W1: the whole-draft delete sweep is shared with the manual screen —
+  // see `createCategoryDeleteHandler` in category-picker-form.ts.
+  const handleCategoryDeleted = createCategoryDeleteHandler(
+    draft?.items ?? [],
+    setItems,
+    () => setCategoryTarget(null),
+  );
   // Synchronous double-tap guard: the `saving` state is async, so two taps
   // in the same frame would both read it as false and run the save twice.
   // The ref is set before any await, so a second tap in the same frame is
@@ -632,6 +631,7 @@ export default function ReviewReceiptScreen() {
                   <ReceiptItemsList
                     items={draft.items}
                     currency={currency}
+                    catalog={catalog}
                     onPressCategory={(item) => setCategoryTarget(item)}
                     onToggleImpulse={(item, v) =>
                       upsertItem({ ...item, is_impulse: v })

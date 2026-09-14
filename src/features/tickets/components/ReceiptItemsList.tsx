@@ -1,4 +1,5 @@
 import { Card, Divider, View } from '@/components';
+import type { CategoryCatalog } from '@/features/categories/catalog';
 import { spacing } from '@/theme';
 import type { ReviewItem } from '@/types';
 
@@ -10,6 +11,12 @@ export interface ReceiptItemsListProps {
   currency?: string;
   /** When true, the list is rendered without the wrapping Card chrome. */
   bare?: boolean;
+  /**
+   * PR 5: the merged catalog (user + canonical). Threaded to every row so
+   * custom slug chips render their own name/icon; when absent the rows
+   * fall back to the static registry (backward compatible).
+   */
+  catalog?: CategoryCatalog;
   /** Called when the user taps an item's category chip to edit it. */
   onPressCategory: (item: ReviewItem) => void;
   /** Called when the user toggles the "impulse" switch on a row. */
@@ -30,6 +37,7 @@ export function ReceiptItemsList({
   items,
   currency,
   bare,
+  catalog,
   onPressCategory,
   onToggleImpulse,
   onEditName,
@@ -41,6 +49,7 @@ export function ReceiptItemsList({
           <ReviewItemRow
             item={item}
             currency={currency}
+            catalog={catalog}
             onPressCategory={() => onPressCategory(item)}
             onToggleImpulse={(v) => onToggleImpulse(item, v)}
             {...(onEditName ? { onEditName: () => onEditName(item) } : {})}
