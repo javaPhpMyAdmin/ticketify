@@ -23,6 +23,9 @@
   },
   "include": [
     "../src/features/analytics/hooks/useCategoryBudgets.ts",
+    "../src/features/categories/api.ts",
+    "../src/features/categories/catalog.ts",
+    "../src/features/categories/hooks/useCategoryCatalog.ts",
     "../src/features/home/categories.ts",
     "../src/lib/query-keys.ts",
     "../src/lib/supabase/feature-access.ts",

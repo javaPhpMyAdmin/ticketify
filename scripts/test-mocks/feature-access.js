@@ -208,6 +208,16 @@ exports.markCategoryBudgetRolloverApplied = async function markCategoryBudgetRol
 };
 
 /**
+ * PR 7 re-gate (S-3): the rollover hook imports `ROLLOVER_MARKER_SLUG` from
+ * this module at runtime (the require-hook redirect). Without this export the
+ * hook's sentinel clause compared against `undefined` and the sentinel-excluded
+ * tests passed vacuously through the validKeys filter. Mirroring the constant
+ * makes the explicit `category_slug !== ROLLOVER_MARKER_SLUG` clause observable
+ * and testable.
+ */
+exports.ROLLOVER_MARKER_SLUG = '__rollover__';
+
+/**
  * PR 2: `READ_ERROR_MESSAGE` is now a function in the real feature-access
  * seam (`feature-access.ts`). The mock mirrors the signature so consumers
  * keep compiling — call sites in the test pass `READ_ERROR_MESSAGE()`

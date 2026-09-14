@@ -3,10 +3,11 @@ import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useSessionUser } from '@/features/auth';
+import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
 import { currentMonthKey, previousMonthKey } from '@/features/home/hooks/useHomeFeed';
-import { EXPENSE_CATEGORIES } from '@/features/home/categories';
 import { queryKeys } from '@/lib/query-keys';
 import {
+  ROLLOVER_MARKER_SLUG,
   markCategoryBudgetRolloverApplied,
   readCategoryBudgets,
   upsertCategoryBudgets,
@@ -37,6 +38,13 @@ import type { CategoryBudget } from '@/types';
  * `rolloverEnabled` (default true) lets callers opt out — the household
  * context passes `false` because household limits are aggregated server-side
  * and must not be re-copied per member (AD-6).
+ *
+ * PR 7 (category-management): validKeys are the DYNAMIC merged catalog (13
+ * canonical ∪ own custom rows) — custom budgets roll over exactly like
+ * canonical ones, a deleted custom slug is dropped, the `__rollover__`
+ * sentinel is excluded explicitly, and the rollover fails closed (never runs,
+ * never writes the marker) while the catalog is unknown (loading or failed)
+ * so an empty key set can never silently drop previous budgets.
  */
 export function useCategoryBudgets(
   yearMonth = currentMonthKey(),
@@ -44,6 +52,12 @@ export function useCategoryBudgets(
 ) {
   const { userId } = useSessionUser();
   const queryClient = useQueryClient();
+  // PR 7 (category-management): the rollover key set is the DYNAMIC catalog —
+  // the merged 13 canonical ∪ the caller's own custom rows (D3: the picker,
+  // budgets settings, rollover validKeys and all display surfaces consume the
+  // same catalog). `useCategoryCatalog` is the single shared cache, so the
+  // settings screen's own catalog hook and this one resolve the same data.
+  const { catalog, isLoading: catalogLoading } = useCategoryCatalog();
 
   const budgetsQuery = useQuery({
     queryKey: queryKeys.categoryBudgets(userId!, yearMonth),
@@ -76,6 +90,12 @@ export function useCategoryBudgets(
   const rolloverDoneRef = useRef<string | null>(null);
   const lastRolloverAttemptRef = useRef<number | null>(null);
 
+  // PR 7 (category-management): stable gate signal for the fail-closed catalog
+  // check — `catalog` is `{}` before the first successful load AND after a
+  // failed load (`useCategoryCatalog` resolves data ?? {}), so the count is
+  // the only observable that distinguishes "loaded" from "unknown".
+  const catalogKeyCount = Object.keys(catalog).length;
+
   const rolloverMutation = useMutation({
     mutationFn: async (): Promise<{ copied: number } | null> => {
       const prevKey = previousMonthKey(yearMonth);
@@ -83,12 +103,27 @@ export function useCategoryBudgets(
       if (prevResult.status !== 'ok') return null;
 
       const prevBudgets = prevResult.data ?? [];
-      const validKeys = new Set(Object.keys(EXPENSE_CATEGORIES));
+      // PR 7 (category-management): validKeys = the merged dynamic catalog
+      // (13 canonical ∪ own custom rows). Custom categories roll over exactly
+      // like canonical ones (same slug key, same amount, same month handling);
+      // a DELETED custom category disappears from the catalog and its budget
+      // is dropped (spec: "Category removed from the catalog is not copied").
+      const validKeys = new Set(Object.keys(catalog));
 
-      // Filter: slug must exist in EXPENSE_CATEGORIES and amount > 0 (AD-7).
-      // The sentinel slug (amount 0) is excluded by the amount filter.
+      // Filter: slug must exist in the dynamic catalog AND amount > 0 (AD-7),
+      // and the rollover sentinel is excluded EXPLICITLY — never a copy
+      // candidate even if a corrupted row carried amount > 0 (the amount
+      // filter alone must not be what keeps it out). This hook is NOT the
+      // only gate: `markCategoryBudgetRolloverApplied` applies the same
+      // sentinel exclusion on the write path (feature-access.ts:346-348);
+      // both must agree or a rogue sentinel row could copy.
       const copies = prevBudgets
-        .filter((b) => validKeys.has(b.category_slug) && b.amount > 0)
+        .filter(
+          (b) =>
+            b.category_slug !== ROLLOVER_MARKER_SLUG &&
+            validKeys.has(b.category_slug) &&
+            b.amount > 0,
+        )
         .map((b) => ({ category_slug: b.category_slug, amount: b.amount }));
 
       lastRolloverAttemptRef.current = copies.length;
@@ -132,6 +167,14 @@ export function useCategoryBudgets(
     if (budgets.length > 0) return;
     if (budgets.some((b) => b.rollover_applied === true)) return;
     if (budgetsQuery.data === undefined) return;
+    // PR 7 (category-management): fail-closed catalog gate. Rollover only runs
+    // once the dynamic catalog actually LOADED (0 sentinel keys = still
+    // loading OR failed/empty). With an unknown catalog the key set is
+    // UNKNOWN — copying now could silently drop every previous budget (empty
+    // validKeys), and writing the sentinel would permanently suppress a retry
+    // next open. No catalog → no rollover.
+    if (catalogLoading) return;
+    if (catalogKeyCount === 0) return;
     if (rolloverMutation.isPending) return;
     if (rolloverDoneRef.current === yearMonth) return;
 
@@ -142,6 +185,8 @@ export function useCategoryBudgets(
     yearMonth,
     budgets,
     budgetsQuery.data,
+    catalogLoading,
+    catalogKeyCount,
     rolloverMutation.isPending,
     rolloverEnabled,
   ]);
