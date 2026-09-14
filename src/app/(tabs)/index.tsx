@@ -24,6 +24,7 @@ import {
   SnacksBreakdownModal,
   useBudget,
 } from '@/features/budget';
+import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
 import {
   currentMonthKey,
   mapPurchaseRowsToHomeFeed,
@@ -88,6 +89,10 @@ export default function HomeScreen() {
   const { data: monthList, isLoading: monthLoading } =
     useMonthReceipts(monthKey);
   const { userId } = useSessionUser();
+  // Display convergence (REQ-008): the merged catalog converges the Home
+  // feed's category rows with the other tabs — same hook, same query key,
+  // same static-first resolution for canonical slugs (W-2).
+  const { catalog } = useCategoryCatalog();
   const { guard } = useFrozenGuard();
   const insets = useSafeAreaInsets();
   const { session } = useSessionStore();
@@ -128,9 +133,11 @@ export default function HomeScreen() {
   // Unified per-month feed: receipts + categories + snacks total derived
   // from the FULL month's rows for the SELECTED month. Works identically
   // for the current and past months, and never writes the receipts store.
+  // The merged catalog (W-2) converges the category rows with the other
+  // tabs: custom slugs render their own visuals, canonical stays static.
   const monthFeed = useMemo(
-    () => mapPurchaseRowsToHomeFeed(monthList, householdTotal, monthKey),
-    [monthList, householdTotal, monthKey],
+    () => mapPurchaseRowsToHomeFeed(monthList, householdTotal, monthKey, catalog),
+    [monthList, householdTotal, monthKey, catalog],
   );
 
   // Section-title counter with the origin breakdown (migration 0029):

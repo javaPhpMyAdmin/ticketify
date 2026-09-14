@@ -1,4 +1,5 @@
 import type { IconName } from '@/components';
+import type { CategoryCatalog } from '@/features/categories/catalog';
 
 /**
  * Spending-category taxonomy for the Home feed.
@@ -147,4 +148,147 @@ export function getCategoryColor(
 ): Pick<ExpenseCategory, 'background' | 'foreground'> {
   const def = EXPENSE_CATEGORIES[(key ?? 'otros') as ExpenseCategoryKey] ?? EXPENSE_CATEGORIES.otros;
   return { background: def.background, foreground: def.foreground };
+}
+
+/**
+ * Own-property membership in the static canonical taxonomy. The registry is
+ * a plain object literal, so `EXPENSE_CATEGORIES['constructor']` (or any
+ * other inherited member such as `toString`/`valueOf`) is TRUTHY — an
+ * own-property check keeps prototype keys out of the canonical branch
+ * (proto-key trap, W-1). Production catalogs are null-prototype records;
+ * harness/plain-literal catalogs get the same guard at the lookup site.
+ */
+export function isCanonicalCategoryKey(
+  key: string | null | undefined,
+): key is ExpenseCategoryKey {
+  return (
+    key != null &&
+    Object.prototype.hasOwnProperty.call(EXPENSE_CATEGORIES, key)
+  );
+}
+
+/**
+ * The visuals a category renders with (REQ-008 — display convergence).
+ *
+ * Phase 6 splits "the catalog entry" from "what the app displays": the
+ * display layer resolves through the merged catalog (custom rows carry
+ * their own name/icon/color) while keeping canonical rows byte-identical
+ * with today. `CategoryVisuals` is the resolved, render-ready shape:
+ * label/icon/background/foreground for one slug — plus the slug itself so
+ * callers can key lists without re-resolving.
+ */
+export interface CategoryVisuals {
+  key: string;
+  label: string;
+  icon: IconName;
+  background: string;
+  foreground: string;
+}
+
+/**
+ * Deterministic foreground for a custom row's background: custom rows pick
+ * their color from the canonical palette, so the canonical background →
+ * foreground mapping yields a coherent text/icon color. Unknown colors
+ * (a malformed/legacy row outside the palette) fall back to white.
+ */
+const FOREGROUND_BY_BACKGROUND = new Map(
+  Object.values(EXPENSE_CATEGORIES).map((entry) => [entry.background, entry.foreground]),
+);
+
+export function foregroundByBackground(background: string): string {
+  return FOREGROUND_BY_BACKGROUND.get(background) ?? '#FFFFFF';
+}
+
+/**
+ * Static-first category display resolution (REQ-008 — design D3/D4,
+ * spec-critical): the display layer resolves visuals from the merged
+ * catalog, but canonical slugs ALWAYS render the static taxonomy — the DB
+ * mirror rows may carry different icons/colors (the canonical 13 must stay
+ * byte-identical with today).
+ *
+ * - canonical slug (in the static taxonomy) → static entry, unchanged
+ * - custom slug (in the catalog, not canonical) → the catalog row's own
+ *   name/icon/color, with a derived foreground
+ * - unknown slug, absent catalog, or null slug → static 'otros'
+ *   (deterministic fallback visuals)
+ */
+export function resolveCategoryDisplay(
+  catalog: CategoryCatalog | null | undefined,
+  slug: string | null | undefined,
+): CategoryVisuals {
+  const key = slug ?? 'otros';
+  const staticDef = isCanonicalCategoryKey(key)
+    ? EXPENSE_CATEGORIES[key]
+    : undefined;
+  if (staticDef) {
+    return {
+      key: staticDef.key,
+      label: staticDef.label,
+      icon: staticDef.icon,
+      background: staticDef.background,
+      foreground: staticDef.foreground,
+    };
+  }
+  // Own-property lookup: production catalogs are null-prototype records
+  // (mergeCategoryCatalog), but a plain-literal catalog must not leak
+  // Object.prototype members either ('constructor' is inherited; a custom
+  // row legitimately keyed 'constructor' is an OWN property and resolves).
+  const custom =
+    catalog &&
+    Object.prototype.hasOwnProperty.call(catalog, key)
+      ? catalog[key]
+      : undefined;
+  if (custom) {
+    return {
+      key: custom.slug,
+      label: custom.name,
+      icon: custom.icon as IconName,
+      background: custom.color,
+      foreground: foregroundByBackground(custom.color),
+    };
+  }
+  const otros = EXPENSE_CATEGORIES.otros;
+  return {
+    key: otros.key,
+    label: otros.label,
+    icon: otros.icon,
+    background: otros.background,
+    foreground: otros.foreground,
+  };
+}
+
+/**
+ * Household-RPC row visual resolution (W-5 — display convergence).
+ *
+ * Household `monthly_category_totals` rows carry their OWN category_id —
+ * the categories row the SPENDING member's purchase items reference — with
+ * NO ownership marker in the RPC output (migration 0031 returns only
+ * category_id/category_name/category_slug/total/item_count/
+ * percent_of_total/budget_limit). Resolving such a row through the
+ * VIEWER's merged personal catalog would contaminate another member's
+ * visuals with the viewer's rows (slug-collision case: the viewer's own
+ * 'delivery' row hijacking the other member's 'delivery').
+ *
+ * Only a row whose category_id IS the viewer's catalog entry — the
+ * viewer's own custom row, or the SHARED canonical/global row — renders
+ * through `resolveCategoryDisplay` (own-row convergence kept). Every other
+ * row — another member's custom category, an unknown slug, an absent
+ * catalog — resolves against the STATIC taxonomy ONLY: canonical slugs
+ * keep their static visuals, custom slugs bucket to 'otros'-class visuals.
+ * The components render the DB-provided `category_name` regardless,
+ * preserving pre-PR6 household behavior.
+ */
+export function resolveHouseholdCategoryVisuals(
+  catalog: CategoryCatalog | null | undefined,
+  categoryId: string | null | undefined,
+  slug: string,
+): CategoryVisuals {
+  const own =
+    catalog && Object.prototype.hasOwnProperty.call(catalog, slug)
+      ? catalog[slug]
+      : undefined;
+  if (own && categoryId != null && own.id === categoryId) {
+    return resolveCategoryDisplay(catalog, slug);
+  }
+  return resolveCategoryDisplay(null, slug);
 }
