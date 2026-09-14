@@ -19,6 +19,27 @@
  *  12. Household mode (rolloverEnabled=false) → no rollover at all
  *  13. Delete-on-zero remount → sentinel survives, no re-rollover
  *  14. All-reads error seam → hook error state, no mark, no crash
+ *  15. Custom-category budget carried forward (catalog-aware validKeys)
+ *  16. Deleted-category budget dropped on rollover (removed from catalog)
+ *  17. Sentinel excluded explicitly (even with amount > 0)
+ *  18. Catalog-gate: unloaded catalog → rollover never fires (fail-closed)
+ *  19. Sentinel excluded when the CATALOG itself contains the slug
+ *      (non-vacuous: validKeys includes it, only the explicit clause drops it)
+ *
+ * PR 7 re-gate (S-3): the feature-access mock exports `ROLLOVER_MARKER_SLUG`
+ * (`='__rollover__'`) so the compiled hook's explicit sentinel clause compares
+ * against the REAL constant at runtime — without it the clause was vacuous
+ * (`undefined` comparison) and tests 17/19 passed only through validKeys.
+ *
+ * PR 7 (`category-management`): the rollover is catalog-aware — validKeys
+ * comes from the REAL compiled `useCategoryCatalog` (merged 13 ∪ own custom
+ * rows through `mergeCategoryCatalog` + the real supabase double
+ * `test-stubs/supabase.ts`). The harness arms `categories` table reads once
+ * (canonical 13), and custom-category tests re-arm with own rows. Custom
+ * budgets roll forward EXACTLY like canonical ones; a deleted custom slug
+ * disappears from the catalog and is dropped; the `__rollover__` sentinel is
+ * excluded explicitly even if a corrupted row carried amount > 0; and an
+ * unloaded catalog FAILS CLOSED (rollover never runs, no sentinel write).
  *
  * The hook is mounted inside a real React tree (jsdom + react-dom/client +
  * act()) wrapped in a real QueryClientProvider — the exact pattern
@@ -27,7 +48,8 @@
  * Determinism: currentMonthKey / previousMonthKey are stubbed via
  * `@/features/home/hooks/useHomeFeed`; userId via `@/features/auth`;
  * readCategoryBudgets / upsertCategoryBudgets / markCategoryBudgetRolloverApplied
- * via feature-access mock seams. No real clock, no network.
+ * via feature-access mock seams; the category catalog via the real compiled
+ * supabase double. No real clock, no network.
  *
  * Usage: pnpm test:category-budget-rollover
  */
@@ -135,6 +157,43 @@ const augBudgets = [
   makeBudget('limpieza', 0, '2026-08'),             // amount ≤ 0 → filtered
 ];
 
+/**
+ * The canonical 13 `categories` rows (user_id null = global). The rollover
+ * validKeys feed comes from the REAL compiled `useCategoryCatalog`, which
+ * reads the `categories` table through the supabase double; arming these rows
+ * makes the catalog resolve to exactly the canonical keys (13) for every
+ * existing test, and custom-category tests re-arm with additional own rows.
+ */
+const CANONICAL_SLUGS = [
+  'bebidas', 'refrescos', 'lacteos', 'panaderia', 'snacks', 'alimentos',
+  'higiene', 'limpieza', 'carnes', 'frutas-verduras', 'farmacia', 'servicios',
+  'otros',
+];
+const CANONICAL_CATALOG_ROWS = CANONICAL_SLUGS.map((slug, index) => ({
+  id: `cat-${slug}`,
+  slug,
+  name: slug,
+  kind: 'need',
+  icon: 'dot',
+  color: '#000000',
+  sort_order: index,
+  user_id: null,
+}));
+
+/** One own (user-scoped) custom `categories` row. */
+function customCatalogRow(slug, name) {
+  return {
+    id: `cat-${slug}`,
+    slug,
+    name,
+    kind: 'want',
+    icon: 'package',
+    color: '#7C3AED',
+    sort_order: 100,
+    user_id: 'test-user-id',
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------
@@ -177,6 +236,13 @@ async function run() {
   // Deterministic clock: current month key is pinned.
   homeFeedStub.__setCurrentMonthKey('2026-09');
   authStub.__setUserId('test-user-id');
+
+  // PR 7: the rollover reads the category catalog through the real compiled
+  // hook + supabase double. Arm the canonical 13 once — faMock.__reset()
+  // only resets the feature-access mock, so this state survives every test;
+  // custom-category tests re-arm `categories` with their own rows.
+  const supabaseStub = await load('scripts/test-stubs/supabase.js');
+  supabaseStub.__setTableRead('categories', { rows: CANONICAL_CATALOG_ROWS });
 
   // -----------------------------------------------------------------------
   // Hook-mount helpers (pattern: test-run-rate-hook.mjs)
@@ -851,7 +917,7 @@ async function run() {
       assert.equal(
         faMock.__getReadCategoryBudgetsCallCount(),
         1,
-        'no prev read either — gate short-circuits before the mutation',
+        'only the current-month query read happened — the gate short-circuits before the mutation',
       );
       assert.equal(ref.current.budgets.length, 0);
     } finally {
@@ -986,6 +1052,295 @@ async function run() {
       assert.equal(ref.current.error, faMock.READ_ERROR_MESSAGE(), 'user-safe error surfaced');
       assert.equal(ref.current.budgets.length, 0);
       assert.equal(ref.current.isLoading, false);
+    } finally {
+      unmount();
+    }
+  });
+
+  // =========================================================================
+  // PR 7 — catalog-aware validKeys (REQ-B delta: custom budgets roll over
+  // exactly like canonical ones; deleted/unknown slugs and the sentinel never
+  // carry forward; an unloaded catalog fails closed)
+  // =========================================================================
+  console.log('\n[tests] PR 7 catalog-aware rollover scenarios\n');
+
+  await test('custom-carries: custom category budget rolls forward like canonical', async () => {
+    faMock.__reset();
+    authStub.__setUserId('test-user-id');
+    homeFeedStub.__setCurrentMonthKey('2026-09');
+
+    // Catalog = canonical 13 + the user's own 'delivery' row.
+    supabaseStub.__setTableRead('categories', {
+      rows: [...CANONICAL_CATALOG_ROWS, customCatalogRow('delivery', 'Delivery')],
+    });
+
+    // Prev month: canonical + the custom 'delivery' budget.
+    faMock.__setReadCategoryBudgets(async (userId, yearMonth) => {
+      if (yearMonth === '2026-08') {
+        return {
+          status: 'ok',
+          data: [
+            makeBudget('alimentos', 50000, '2026-08'),
+            makeBudget('delivery', 10000, '2026-08'),
+          ],
+        };
+      }
+      return { status: 'ok', data: [] };
+    });
+
+    let markCalls = 0;
+    let lastMarkBudgets = null;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async (budgets) => {
+      markCalls += 1;
+      lastMarkBudgets = budgets;
+      return { status: 'ok', data: null };
+    });
+
+    const { ref, unmount, waitFor } = mountHook(
+      () => useCategoryBudgets('2026-09'),
+      makeQueryClient(),
+    );
+
+    try {
+      await waitFor(() => markCalls >= 1, { timeout: 3000 });
+      for (let i = 0; i < 3; i++) {
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      }
+      assert.equal(markCalls, 1);
+      const slugs = lastMarkBudgets.map((b) => b.category_slug).sort();
+      assert.deepEqual(
+        slugs,
+        ['alimentos', 'delivery'],
+        'custom slug is in the dynamic catalog → copied EXACTLY like canonical',
+      );
+      const delivery = lastMarkBudgets.find((b) => b.category_slug === 'delivery');
+      assert.equal(delivery.amount, 10000, 'custom limit amount carried unchanged');
+      assert.ok(ref.current !== undefined, 'hook mounted');
+    } finally {
+      unmount();
+    }
+  });
+
+  await test('deleted-category-dropped: removed custom slug is not copied on rollover', async () => {
+    faMock.__reset();
+    authStub.__setUserId('test-user-id');
+    homeFeedStub.__setCurrentMonthKey('2026-09');
+
+    // The 'delivery' row was DELETED (PR 4 flow) → the dynamic catalog no
+    // longer contains the slug, even though a stale prev-month budget row
+    // still references it (delete-on-zero never ran for it).
+    supabaseStub.__setTableRead('categories', { rows: CANONICAL_CATALOG_ROWS });
+
+    faMock.__setReadCategoryBudgets(async (userId, yearMonth) => {
+      if (yearMonth === '2026-08') {
+        return {
+          status: 'ok',
+          data: [
+            makeBudget('alimentos', 50000, '2026-08'),
+            makeBudget('delivery', 10000, '2026-08'),
+          ],
+        };
+      }
+      return { status: 'ok', data: [] };
+    });
+
+    let markCalls = 0;
+    let lastMarkBudgets = null;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async (budgets) => {
+      markCalls += 1;
+      lastMarkBudgets = budgets;
+      return { status: 'ok', data: null };
+    });
+
+    const { ref, unmount, waitFor } = mountHook(
+      () => useCategoryBudgets('2026-09'),
+      makeQueryClient(),
+    );
+
+    try {
+      await waitFor(() => markCalls >= 1, { timeout: 3000 });
+      for (let i = 0; i < 3; i++) {
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      }
+      assert.equal(markCalls, 1);
+      const slugs = lastMarkBudgets.map((b) => b.category_slug);
+      assert.ok(!slugs.includes('delivery'), 'deleted slug must NOT be copied');
+      assert.ok(slugs.includes('alimentos'), 'valid slug still copied');
+    } finally {
+      unmount();
+    }
+  });
+
+  await test('sentinel-excluded: __rollover__ excluded explicitly even with amount > 0', async () => {
+    faMock.__reset();
+    authStub.__setUserId('test-user-id');
+    homeFeedStub.__setCurrentMonthKey('2026-09');
+
+    supabaseStub.__setTableRead('categories', { rows: CANONICAL_CATALOG_ROWS });
+
+    // Corrupted-but-possible prev state: the sentinel row would never carry a
+    // positive amount in the real write path (mark writes amount 0), but the
+    // amount > 0 filter alone must NOT be what keeps it out — the slug check
+    // excludes it explicitly, so a rogue positive sentinel still never copies.
+    faMock.__setReadCategoryBudgets(async (userId, yearMonth) => {
+      if (yearMonth === '2026-08') {
+        return {
+          status: 'ok',
+          data: [
+            makeBudget('alimentos', 50000, '2026-08'),
+            makeBudget('__rollover__', 5000, '2026-08'),
+          ],
+        };
+      }
+      return { status: 'ok', data: [] };
+    });
+
+    let markCalls = 0;
+    let lastMarkBudgets = null;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async (budgets) => {
+      markCalls += 1;
+      lastMarkBudgets = budgets;
+      return { status: 'ok', data: null };
+    });
+
+    const { ref, unmount, waitFor } = mountHook(
+      () => useCategoryBudgets('2026-09'),
+      makeQueryClient(),
+    );
+
+    try {
+      await waitFor(() => markCalls >= 1, { timeout: 3000 });
+      for (let i = 0; i < 3; i++) {
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      }
+      assert.equal(markCalls, 1);
+      const slugs = lastMarkBudgets.map((b) => b.category_slug);
+      assert.ok(!slugs.includes('__rollover__'), 'sentinel never copies, even positive');
+      assert.deepEqual(slugs, ['alimentos'], 'only the real catalog slug copies');
+    } finally {
+      unmount();
+    }
+  });
+
+  await test('sentinel-in-validKeys: corrupted catalog contains the sentinel slug → the EXPLICIT clause (not validKeys) excludes it', async () => {
+    // The plain sentinel-excluded test above can only pass through validKeys
+    // (the sentinel slug is absent from the clean catalog) — it would NOT
+    // catch a removal of the hook's explicit slug check. Here the catalog is
+    // CORRUPTED to contain a `__rollover__` slug row: validKeys now includes
+    // the sentinel and amount > 0 is satisfied, so ONLY the explicit
+    // `category_slug !== ROLLOVER_MARKER_SLUG` clause can keep the row out.
+    // This is the non-vacuous pin; it REDs if the clause (or the mock's
+    // ROLLOVER_MARKER_SLUG constant) is ever removed.
+    faMock.__reset();
+    authStub.__setUserId('test-user-id');
+    homeFeedStub.__setCurrentMonthKey('2026-09');
+
+    supabaseStub.__setTableRead('categories', {
+      rows: [
+        ...CANONICAL_CATALOG_ROWS,
+        {
+          id: 'cat-__rollover__',
+          slug: '__rollover__',
+          name: '__rollover__',
+          kind: 'need',
+          icon: 'dot',
+          color: '#000000',
+          sort_order: 200,
+          user_id: null,
+        },
+      ],
+    });
+
+    faMock.__setReadCategoryBudgets(async (userId, yearMonth) => {
+      if (yearMonth === '2026-08') {
+        return {
+          status: 'ok',
+          data: [
+            makeBudget('alimentos', 50000, '2026-08'),
+            makeBudget('__rollover__', 5000, '2026-08'),
+          ],
+        };
+      }
+      return { status: 'ok', data: [] };
+    });
+
+    let markCalls = 0;
+    let lastMarkBudgets = null;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async (budgets) => {
+      markCalls += 1;
+      lastMarkBudgets = budgets;
+      return { status: 'ok', data: null };
+    });
+
+    const { ref, unmount, waitFor } = mountHook(
+      () => useCategoryBudgets('2026-09'),
+      makeQueryClient(),
+    );
+
+    try {
+      await waitFor(() => markCalls >= 1, { timeout: 3000 });
+      for (let i = 0; i < 3; i++) {
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      }
+      assert.equal(markCalls, 1);
+      const slugs = lastMarkBudgets.map((b) => b.category_slug);
+      assert.ok(
+        !slugs.includes('__rollover__'),
+        'explicit sentinel clause fires even when the catalog contains the slug',
+      );
+      assert.deepEqual(slugs, ['alimentos'], 'only the real catalog slug copies');
+    } finally {
+      unmount();
+    }
+  });
+
+  await test('catalog-gate: catalog read fails → rollover never fires (fail-closed)', async () => {
+    faMock.__reset();
+    authStub.__setUserId('test-user-id');
+    homeFeedStub.__setCurrentMonthKey('2026-09');
+
+    // The catalog read FAILS → useCategoryCatalog resolves `{}` → the dynamic
+    // key set is UNKNOWN. Rolling over now could silently drop every previous
+    // budget (empty validKeys), so the hook must fail closed: no copies, and
+    // NO marker write either (a sentinel would permanently suppress retry).
+    supabaseStub.__setTableRead('categories', {
+      rows: null,
+      error: { message: 'relation "categories" does not exist', code: '42P01' },
+    });
+
+    faMock.__setReadCategoryBudgets(async (userId, yearMonth) => {
+      if (yearMonth === '2026-08') {
+        return {
+          status: 'ok',
+          data: [makeBudget('alimentos', 50000, '2026-08')],
+        };
+      }
+      return { status: 'ok', data: [] };
+    });
+
+    let markCalls = 0;
+    faMock.__setMarkCategoryBudgetRolloverApplied(async () => {
+      markCalls += 1;
+      return { status: 'ok', data: null };
+    });
+
+    const { ref, unmount, waitFor } = mountHook(
+      () => useCategoryBudgets('2026-09'),
+      makeQueryClient(),
+    );
+
+    try {
+      await waitFor((r) => !!r && r.isLoading === false, { timeout: 3000 });
+      for (let i = 0; i < 6; i++) {
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      }
+      assert.equal(markCalls, 0, 'rollover must NOT run with an unknown catalog');
+      assert.equal(
+        faMock.__getReadCategoryBudgetsCallCount(),
+        1,
+        'only the current-month query read happened — the mutation never fired its prev-month read',
+      );
+      assert.equal(ref.current.budgets.length, 0);
     } finally {
       unmount();
     }

@@ -26,6 +26,7 @@
     "test:category-budget-rollover": "node scripts/test-category-budget-rollover.mjs",
     "test:categories": "node scripts/test-categories.mjs",
     "test:budget-month-local": "node scripts/test-budget-month-local.mjs",
+    "manual:category-e2e": "node scripts/manual-category-e2e.mjs",
     "test:run-rate": "node scripts/test-run-rate.mjs",
     "test:run-rate-hook": "node scripts/test-run-rate-hook.mjs",
     "test:parse-ticket": "node scripts/test-parse-ticket.mjs",
