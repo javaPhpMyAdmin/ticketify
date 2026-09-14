@@ -84,7 +84,7 @@ One React Query hook, one cache, every consumer converges on `resolveCategory`. 
 
 Cache: `queryKeys.categories(userId)` (new factory in `src/lib/query-keys.ts`). Invalidated after `createCustomCategory` / `deleteCustomCategory` / `reassignCategoryItems`.
 
-Fallback semantics (spec-critical, unchanged): `resolveCategory(catalog, slug) ?? getExpenseCategory(slug)` — canonical rows render exactly as today; unknown slugs render 'otros'.
+Fallback semantics (spec-critical, display convergence, 6.2): the display layer resolves through `resolveCategoryDisplay(catalog, slug)` — STATIC-FIRST: a canonical slug always renders the static taxonomy entry (byte-identical with pre-catalog behavior, even when the DB mirror row carries a different icon/color — the one-checker rule); a custom slug renders the catalog row's own name/icon/color with a derived foreground; an unknown slug, absent catalog, or null slug renders static 'otros'. The picker consumes the same contract via `pickerRowForCategory`/`pickerRowsFromCatalog` (static-first mapped to the picker row shape), so the same canonical slug renders identical visuals on every surface. Household RPC rows (`monthly_category_totals`) carry the SPENDING member's `category_id` with no ownership marker and resolve through `resolveHouseholdCategoryVisuals` — only rows whose `category_id` IS the viewer's catalog entry converge; any other row renders the static taxonomy under the DB-provided name (W-5).
 
 ### D4 — Slugify + collision handling
 
