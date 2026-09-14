@@ -58,7 +58,7 @@ TDD RED→GREEN; gate: `pnpm test` + `pnpm typecheck` + `pnpm lint`.
 
 ## Phase 7: Budgets + Rollover (PR 7)
 
-- [ ] 7.1 GREEN `src/app/settings/category-budgets.tsx`: merged catalog list (custom label/color), batch upsert, zero → delete, `currentMonthKey()`
-- [ ] 7.2 GREEN `useCategoryBudgets.ts`: rollover `validKeys` = catalog (13 ∪ own), sentinel excluded
-- [ ] 7.3 Update `test-category-budget-rollover.mjs` + `test-category-budget-progress.mjs`
-- [ ] 7.4 Manual script: create→assign→display→budget/rollover→blocked delete→reassign→delete
+- [x] 7.1 GREEN `src/app/settings/category-budgets.tsx`: merged catalog list (custom label/color), batch upsert, zero → delete, `currentMonthKey()`
+- [x] 7.2 GREEN `useCategoryBudgets.ts`: rollover `validKeys` = catalog (13 ∪ own), sentinel excluded
+- [x] 7.3 Update `test-category-budget-rollover.mjs` + `test-category-budget-progress.mjs`
+- [x] 7.4 Manual script: create→assign→display→budget/rollover→blocked delete→reassign→delete
