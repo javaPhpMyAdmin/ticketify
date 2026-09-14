@@ -252,6 +252,7 @@ let householdStoreMod;
 let queryKeysMod;
 let hrefMod;
 let useCategoryDetail;
+let catsMod;
 
 async function run() {
   console.log('\n[tests] compiling household-category-items modules…');
@@ -274,6 +275,7 @@ async function run() {
   householdStoreMod = await load('src/stores/use-household-store.js');
   queryKeysMod = await load('src/lib/query-keys.js');
   hrefMod = await load('src/features/charts/categoryHref.js');
+  catsMod = await load('src/features/home/categories.js');
   useCategoryDetail = homeMod.useCategoryDetail;
 
   // v5's default retry would wait out exponential delays before the error
@@ -437,6 +439,83 @@ async function run() {
     stubMod.__setSupabaseConfigInputs('https://real-project.supabase.co', 'real-anon-key');
   });
 
+  await test('RPC preserves custom slugs verbatim (display convergence contract)', async () => {
+    // Phase 6 contract: the household RPC rows keep the custom slug so the
+    // display layer can resolve custom visuals from the merged catalog
+    // downstream. A custom slug must NOT be coerced to a canonical key.
+    stubMod.__resetSupabaseBehavior();
+    stubMod.__setRpcResult('get_household_category_items', {
+      rows: [
+        {
+          id: 'i-custom',
+          name: 'Hamburguesas',
+          amount: 120,
+          quantity: 1,
+          purchase_date: '2026-08-03',
+          store_name: null,
+          member_name: 'Ana',
+        },
+      ],
+    });
+    const res = await featureMod.readHouseholdCategoryItems('h1', '2026-08', 'delivery');
+    assert.equal(res.status, 'ok');
+    assert.equal(res.data[0].name, 'Hamburguesas');
+    const last = stubMod.__lastRpcCall();
+    assert.deepEqual(last.params, {
+      p_household_id: 'h1',
+      p_year_month: '2026-08',
+      p_category_slug: 'delivery',
+    });
+  });
+
+  console.log('\n[tests] resolveCategoryDisplay (catalog-aware visuals, REQ-008)\n');
+
+  const stubCatalog = {
+    refrescos: {
+      id: 'r1',
+      slug: 'refrescos',
+      name: 'Refrescos',
+      kind: 'need',
+      icon: 'cup.and.saucer.fill',
+      color: '#10B981',
+      sort_order: 0,
+    },
+    delivery: {
+      id: 'c1',
+      slug: 'delivery',
+      name: 'Delivery',
+      kind: 'want',
+      icon: 'car.fill',
+      color: '#EA580C',
+      sort_order: 100,
+    },
+  };
+
+  await test('resolveCategoryDisplay: custom slug renders own visuals', () => {
+    const out = catsMod.resolveCategoryDisplay(stubCatalog, 'delivery');
+    assert.equal(out.label, 'Delivery');
+    assert.equal(out.icon, 'car.fill');
+    assert.equal(out.background, '#EA580C');
+  });
+
+  await test('resolveCategoryDisplay: canonical slug stays static (byte-identical)', () => {
+    const out = catsMod.resolveCategoryDisplay(stubCatalog, 'refrescos');
+    assert.equal(out.label, 'Refrescos');
+    assert.equal(
+      out.icon,
+      'takeoutbag.and.cup.and.straw.fill',
+      'static icon, not the DB row icon',
+    );
+    assert.equal(out.background, '#EA580C');
+  });
+
+  await test('resolveCategoryDisplay: unknown slug falls back to otros', () => {
+    const out = catsMod.resolveCategoryDisplay(stubCatalog, 'nope');
+    assert.equal(out.label, 'Otros');
+    assert.equal(out.icon, 'sparkles');
+    assert.equal(out.background, '#4B5563');
+  });
+
   console.log('\n[tests] categoryDetailHref\n');
 
   await test('current month + household → /categories/slug?scope=household', () => {
@@ -535,6 +614,12 @@ async function run() {
       assert.deepEqual(captured.items, [{ name: 'menu', amount: 180, quantity: 3 }]);
       assert.equal(captured.total, 180);
       assert.equal(typeof captured.retry, 'function');
+      // Display-convergence pin (REQ-008): the hook's category visual comes
+      // from the static taxonomy for canonical keys — byte-identical to the
+      // pre-catalog behavior. `useCategoryDetail` stays catalog-agnostic;
+      // the /categories/[key] screen resolves catalog visuals on its own.
+      assert.equal(captured.category.key, 'carnes');
+      assert.equal(captured.category.icon, 'fork.knife');
       // Exact query key shape (factory + literal) — the contract the screen
       // and the cache invalidation rely on.
       const expectedKey = queryKeysMod.queryKeys.householdCategoryItems(
@@ -698,6 +783,50 @@ async function run() {
     } finally {
       await unmountProbe(renderer);
     }
+  });
+
+  // ── W-5 (household rows are NOT the viewer's catalog) ─────────────────
+  // `monthly_category_totals` rows carry their OWN category_id (the
+  // spending member's categories row) with no ownership marker in the RPC
+  // output; a slug collision (viewer + other member both own 'delivery')
+  // must never resolve the other member's row through the viewer's catalog.
+  console.log('\n[tests] household row visual resolution (W-5, REQ-008)\n');
+
+  const viewerCatalog = {
+    delivery: { id: 'c1', slug: 'delivery', name: 'Delivery', kind: 'want', icon: 'car.fill', color: '#2563EB', sort_order: 100 },
+    carnes: { id: 'g-carnes', slug: 'carnes', name: 'Carnicería', kind: 'need', icon: 'fork.knife', color: '#E11D48', sort_order: 50 },
+  };
+
+  await test('household visuals: viewer-owned row (id match) → own catalog visuals (convergence kept)', () => {
+    const visual = catsMod.resolveHouseholdCategoryVisuals(viewerCatalog, 'c1', 'delivery');
+    assert.equal(visual.key, 'delivery');
+    assert.equal(visual.label, 'Delivery');
+    assert.equal(visual.icon, 'car.fill');
+    assert.equal(visual.background, '#2563EB');
+  });
+
+  await test('household visuals: OTHER member custom row (id mismatch) → static otros, NEVER the viewer row', () => {
+    // Slug collision: the other member's 'delivery' row (category_id
+    // 'c-other') must NOT render the viewer's 'delivery' visuals; unknown
+    // ids and absent catalogs bucket to 'otros'-class static visuals.
+    const collision = catsMod.resolveHouseholdCategoryVisuals(viewerCatalog, 'c-other', 'delivery');
+    assert.equal(collision.key, 'otros');
+    assert.equal(collision.label, 'Otros');
+    assert.equal(collision.icon, 'sparkles');
+    assert.equal(collision.background, '#4B5563');
+    const unknownId = catsMod.resolveHouseholdCategoryVisuals(viewerCatalog, 'no-such-id', 'delivery');
+    assert.equal(unknownId.background, '#4B5563');
+    const absentCatalog = catsMod.resolveHouseholdCategoryVisuals(undefined, 'c1', 'delivery');
+    assert.equal(absentCatalog.background, '#4B5563');
+  });
+
+  await test('household visuals: canonical slug (shared global row) → static taxonomy, any owner', () => {
+    const own = catsMod.resolveHouseholdCategoryVisuals(viewerCatalog, 'g-carnes', 'carnes');
+    assert.equal(own.icon, 'fork.knife');
+    assert.equal(own.background, '#E11D48');
+    const otherOwner = catsMod.resolveHouseholdCategoryVisuals(viewerCatalog, 'g-carnes-other', 'carnes');
+    assert.equal(otherOwner.icon, 'fork.knife', 'canonical stays static even when the id is not in the viewer catalog');
+    assert.equal(otherOwner.background, '#E11D48');
   });
 
   console.log('\n[tests] CategoryDetailScreen (REAL render)\n');
@@ -930,6 +1059,101 @@ async function run() {
       assert.ok(!text.includes('$U 0'), 'no false zero before hydration');
       assert.ok(!text.includes('Sin gastos'), 'no false "no spend" before hydration');
       assert.equal(stubMod.__lastRpcCall(), null, 'no RPC fired without a householdId');
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
+  // ── W-4 (display convergence) ─────────────────────────────────────────
+  // The drill-down header icon circle must keep the EXACT pre-PR6 style for
+  // canonical slugs (colors.chipBg background + colors.primary icon) and
+  // use the resolver visuals ONLY for the custom-category branch. The
+  // react-native test double makes StyleSheet.create an identity, so the
+  // rendered host tree exposes the REAL style objects — we pin the resolved
+  // backgroundColor of the 48×48 circle host View.
+  const iconCircleBackground = (root) => {
+    const found = [];
+    const walk = (node) => {
+      if (node == null || typeof node !== 'object') return;
+      if (node.type === 'View' && node.props && node.props.style) {
+        const s = node.props.style;
+        const base = Array.isArray(s) ? s[0] : s;
+        if (
+          base &&
+          typeof base === 'object' &&
+          base.width === 48 &&
+          base.height === 48
+        ) {
+          // React Native style arrays: later entries override earlier ones.
+          let bg = base.backgroundColor;
+          if (Array.isArray(s)) {
+            for (const part of s) {
+              if (part && typeof part === 'object' && part.backgroundColor) {
+                bg = part.backgroundColor;
+              }
+            }
+          }
+          found.push(bg);
+        }
+      }
+      for (const child of node.children ?? []) walk(child);
+    };
+    walk(root);
+    return found;
+  };
+
+  await test('canonical key: header circle keeps the pre-PR6 chipBg background (not the category color)', async () => {
+    resetAll();
+    signIn();
+    // Canonical route: no catalog row needed — the static branch must win
+    // regardless of the catalog state.
+    setRoute({ key: 'carnes', month: '2026-08' });
+    const renderer = await renderScreen();
+    try {
+      await settleUntil(
+        () => renderText(renderer).includes('TOTAL DEL MES'),
+        'canonical drill-down settles',
+      );
+      const backgrounds = iconCircleBackground(renderer.toJSON());
+      assert.equal(backgrounds.length, 1, 'exactly one 48×48 icon circle');
+      // colors.chipBg (light palette, src/theme/colors.ts) — the pre-PR6
+      // background; a canonical slug must NOT render visual.background.
+      assert.equal(backgrounds[0], '#F3F4F6');
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
+  await test('custom key: header circle renders the catalog row visual background (converged)', async () => {
+    resetAll();
+    signIn();
+    // Arm the viewer's own custom row so the merged catalog resolves it.
+    stubMod.__setTableRead('categories', {
+      rows: [
+        {
+          id: 'c1',
+          slug: 'delivery',
+          name: 'Delivery',
+          kind: 'want',
+          icon: 'car.fill',
+          color: '#2563EB',
+          sort_order: 100,
+          user_id: 'u1',
+        },
+      ],
+    });
+    setRoute({ key: 'delivery', month: '2026-08' });
+    const renderer = await renderScreen();
+    try {
+      await settleUntil(
+        () => renderText(renderer).includes('Delivery'),
+        'custom header label settles from the catalog row',
+      );
+      const text = renderText(renderer);
+      assert.ok(text.includes('Delivery'), 'custom label from the catalog');
+      const backgrounds = iconCircleBackground(renderer.toJSON());
+      assert.equal(backgrounds.length, 1, 'exactly one 48×48 icon circle');
+      assert.equal(backgrounds[0], '#2563EB', 'custom circle uses the row visual background');
     } finally {
       await unmountProbe(renderer);
     }

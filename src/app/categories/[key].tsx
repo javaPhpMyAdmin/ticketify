@@ -5,6 +5,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Divider, EmptyState, Icon, Text, View } from '@/components';
 import { monthKeyToLabel, useCategoryDetail } from '@/features/home';
+import {
+  isCanonicalCategoryKey,
+  resolveCategoryDisplay,
+} from '@/features/home/categories';
+import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrency } from '@/lib/format';
 import { useSettingsStore } from '@/stores/use-settings-store';
@@ -50,8 +55,17 @@ export default function CategoryDetailScreen() {
   // back a11y.
   const { t } = useTranslation(['analytics', 'common']);
   const householdScope = scope === 'household' ? 'household' : 'personal';
+  // Display convergence (REQ-008): the merged catalog resolves the header
+  // label and icon for CUSTOM categories (canonical slugs stay on the
+  // static taxonomy via `resolveCategoryDisplay`). `useCategoryDetail`
+  // keeps aggregating totals/items unchanged.
+  const { catalog } = useCategoryCatalog();
+  const visual = resolveCategoryDisplay(catalog, key ?? 'otros');
+  // W-4: the canonical header renders EXACTLY as before the catalog existed
+  // — chipBg circle + primary icon (byte-identical invariant). Only the
+  // custom-category branch switches to the resolved row's visuals.
+  const canonicalHeader = isCanonicalCategoryKey(key ?? 'otros');
   const {
-    category,
     total,
     items,
     isLoading,
@@ -87,7 +101,7 @@ export default function CategoryDetailScreen() {
           <Icon name="arrow.left" size={24} color={colors.textPrimary} />
         </Pressable>
         <View style={styles.headerText}>
-          <Text style={styles.title}>{category.label}</Text>
+          <Text style={styles.title}>{visual.label}</Text>
           {month ? (
             <Text style={styles.subtitle}>
               {monthKeyToLabel(locale, month)}
@@ -101,8 +115,18 @@ export default function CategoryDetailScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.totalCard}>
-          <View style={styles.iconCircle}>
-            <Icon name={category.icon} size={24} color={colors.primary} />
+          <View
+            style={
+              canonicalHeader
+                ? styles.iconCircle
+                : [styles.iconCircle, { backgroundColor: visual.background }]
+            }
+          >
+            <Icon
+              name={visual.icon}
+              size={24}
+              color={canonicalHeader ? colors.primary : visual.foreground}
+            />
           </View>
           <Text style={styles.totalLabel}>{t('analytics:totalKicker')}</Text>
           <Text style={styles.totalAmount}>
