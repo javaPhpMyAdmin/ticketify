@@ -199,6 +199,7 @@ async function run() {
     createCustomCategory,
     deleteCustomCategory,
     reassignCategoryItems,
+    countCategoryItems,
     CATEGORY_ALREADY_EXISTS_MESSAGE,
     CREATE_CATEGORY_ERROR_MESSAGE,
     DELETE_CATEGORY_ERROR_MESSAGE,
@@ -238,6 +239,21 @@ async function run() {
     return new QueryClient({
       defaultOptions: {
         queries: { retry: false, gcTime: 0 },
+        mutations: { retry: false },
+      },
+    });
+  }
+
+  /**
+   * Invalidation assertions seed UNOBSERVED keys via `setQueryData` and then
+   * read their post-invalidation state — with gcTime 0 the seeded entries
+   * would be garbage-collected as soon as they go inactive, so these tests
+   * use a long-lived cache (no observers → v5 keeps the invalidated state).
+   */
+  function makeLongLivedQueryClient() {
+    return new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: 60_000 },
         mutations: { retry: false },
       },
     });
@@ -627,6 +643,65 @@ async function run() {
     assert.deepEqual(result, { status: 'error', message: REASSIGN_CATEGORY_ERROR_MESSAGE });
   });
 
+  await test('countCategoryItems: ok — HEAD count=exact, category + purchases-user scoping, count surfaced', async () => {
+    stub.__resetSupabaseBehavior();
+    stub.__setTableCount('purchase_items', 5);
+    const result = await countCategoryItems('test-user-id', 'cat-delivery');
+    assert.equal(result.status, 'ok');
+    assert.equal(result.data, 5);
+    assert.deepEqual(stub.__getQueryCalls('purchase_items'), [
+      { op: 'count-exact', columns: 'id' },
+      { op: 'eq', column: 'category_id', value: 'cat-delivery' },
+      { op: 'eq', column: 'purchases.user_id', value: 'test-user-id' },
+    ], 'HEAD count precedes the filters — ONE query, no rows travel; purchase_items has no user_id, so the count scopes via the purchases to-one join (user_id lives on the parent) — RLS-parity at the query level like deleteCustomCategory (W2)');
+  });
+
+  await test('countCategoryItems: REAL zero → empty allowed; null/absent count → fail-closed error', async () => {
+    stub.__resetSupabaseBehavior();
+    stub.__setTableCount('purchase_items', 0);
+    const zero = await countCategoryItems('test-user-id', 'cat-delivery');
+    assert.deepEqual(zero, { status: 'ok', data: 0 }, 'a REAL 0 (empty table) → empty → delete allowed');
+    stub.__resetSupabaseBehavior();
+    // Unarmed HEAD select resolves count: null (no Content-Range) — the count
+    // is UNKNOWN. The seam must NOT map unknown → 0: that would let a forged
+    // or failed count proceed to delete. Fail closed to the error path (W2).
+    const unarmed = await countCategoryItems('test-user-id', 'cat-delivery');
+    assert.deepEqual(
+      unarmed,
+      { status: 'error', message: DELETE_CATEGORY_ERROR_MESSAGE },
+      'null/absent count is an ERROR — never a fabricated 0, delete must not proceed',
+    );
+  });
+
+  await test('countCategoryItems: error → delete copy', async () => {
+    stub.__resetSupabaseBehavior();
+    stub.__setTableRead('purchase_items', {
+      rows: null,
+      error: { message: 'relation "purchase_items" does not exist', code: '42P01' },
+    });
+    const result = await countCategoryItems('test-user-id', 'cat-delivery');
+    assert.deepEqual(result, {
+      status: 'error',
+      message: DELETE_CATEGORY_ERROR_MESSAGE,
+    }, 'the D1 count never fabricates a number on a backend failure');
+  });
+
+  await test('countCategoryItems: unconfigured → gate before any backend call', async () => {
+    stub.__resetSupabaseBehavior();
+    stub.__setSupabaseConfigInputs('https://YOUR-PROJECT.supabase.co', 'YOUR-ANON-KEY');
+    try {
+      const result = await countCategoryItems('test-user-id', 'cat-delivery');
+      assert.deepEqual(result, { status: 'unconfigured' });
+      assert.equal(
+        stub.__getCallLog().filter((e) => e.kind === 'from' && e.table === 'purchase_items').length,
+        0,
+        'no from() call may fire unconfigured',
+      );
+    } finally {
+      stub.__setSupabaseConfigInputs('https://real-project.supabase.co', 'real-anon-key');
+    }
+  });
+
   await test('createCustomCategory: unconfigured → gate before any insert', async () => {
     stub.__resetSupabaseBehavior();
     stub.__setSupabaseConfigInputs('https://YOUR-PROJECT.supabase.co', 'YOUR-ANON-KEY');
@@ -806,6 +881,136 @@ async function run() {
     } finally {
       unmount();
       authStub.__setUserId('test-user-id');
+    }
+  });
+
+  await test('hook: reassign onSuccess invalidates feed + analytics + receipts + monthly-cache keys', async () => {
+    stub.__resetSupabaseBehavior();
+    authStub.__setUserId('test-user-id');
+    stub.__setTableRead('categories', { rows: [bebidas, otros] });
+    const { ref, unmount, waitFor, queryClient } = mountHook(useCategoryCatalog, makeLongLivedQueryClient());
+    try {
+      await waitFor((r) => !!r && Object.keys(r.catalog).length === 2);
+      // Seed every derived key the reassign must invalidate; all are
+      // UNOBSERVED here, so v5 keeps them in the invalidated state
+      // deterministically (no refetch can race the assertion).
+      const home = keysMod.queryKeys.homeFeed('test-user-id');
+      const totals = keysMod.queryKeys.monthlyTotals('test-user-id', '2026-09');
+      const receipts = keysMod.queryKeys.monthReceipts('test-user-id', '2026-09');
+      const cache = keysMod.queryKeys.monthlyCache('test-user-id', '2026-09');
+      for (const key of [home, totals, receipts, cache]) {
+        queryClient.setQueryData(key, { seeded: true });
+        assert.equal(queryClient.getQueryState(key).isInvalidated, false, 'seeded and fresh');
+      }
+      // The reassign itself succeeds (armed UPDATE returns the moved rows).
+      stub.__setDeleteRead('purchase_items', [{ id: 'pi-1' }, { id: 'pi-2' }]);
+      await ref.current.reassign({ fromId: 'cat-delivery', toId: 'cat-otros' });
+      for (const key of [home, totals, receipts, cache]) {
+        assert.ok(queryClient.getQueryState(key), 'seeded key still cached');
+        assert.equal(
+          queryClient.getQueryState(key).isInvalidated,
+          true,
+          `reassign must invalidate ${JSON.stringify(key)}`,
+        );
+      }
+    } finally {
+      unmount();
+    }
+  });
+
+  await test('hook: delete onSuccess invalidates feed + analytics + receipts + monthly-cache keys', async () => {
+    stub.__resetSupabaseBehavior();
+    authStub.__setUserId('test-user-id');
+    stub.__setTableRead('categories', { rows: [bebidas, otros, delivery] });
+    const { ref, unmount, waitFor, queryClient } = mountHook(useCategoryCatalog, makeLongLivedQueryClient());
+    try {
+      await waitFor((r) => !!r && Object.keys(r.catalog).length === 3);
+      const home = keysMod.queryKeys.homeFeed('test-user-id');
+      const totals = keysMod.queryKeys.monthlyTotals('test-user-id', '2026-09');
+      const receipts = keysMod.queryKeys.monthReceipts('test-user-id', '2026-09');
+      const cache = keysMod.queryKeys.monthlyCache('test-user-id', '2026-09');
+      for (const key of [home, totals, receipts, cache]) {
+        queryClient.setQueryData(key, { seeded: true });
+      }
+      stub.__setDeleteRead('categories', [{ id: 'cat-delivery' }]);
+      await ref.current.delete('cat-delivery');
+      await waitFor((r) => !!r && r.isDeleting === false && Object.keys(r.catalog).length === 3);
+      for (const key of [home, totals, receipts, cache]) {
+        assert.ok(queryClient.getQueryState(key), 'seeded key still cached');
+        assert.equal(
+          queryClient.getQueryState(key).isInvalidated,
+          true,
+          `delete must invalidate ${JSON.stringify(key)}`,
+        );
+      }
+    } finally {
+      unmount();
+    }
+  });
+
+  await test('hook: FAILED reassign does NOT invalidate the derived keys', async () => {
+    stub.__resetSupabaseBehavior();
+    authStub.__setUserId('test-user-id');
+    stub.__setTableRead('categories', { rows: [bebidas, otros] });
+    const { ref, unmount, waitFor, queryClient } = mountHook(useCategoryCatalog, makeLongLivedQueryClient());
+    try {
+      await waitFor((r) => !!r && Object.keys(r.catalog).length === 2);
+      const home = keysMod.queryKeys.homeFeed('test-user-id');
+      const totals = keysMod.queryKeys.monthlyTotals('test-user-id', '2026-09');
+      const receipts = keysMod.queryKeys.monthReceipts('test-user-id', '2026-09');
+      const cache = keysMod.queryKeys.monthlyCache('test-user-id', '2026-09');
+      for (const key of [home, totals, receipts, cache]) {
+        queryClient.setQueryData(key, { seeded: true });
+      }
+      stub.__failNextUpdate('purchase_items');
+      await assert.rejects(
+        () => ref.current.reassign({ fromId: 'cat-delivery', toId: 'cat-otros' }),
+        /No se pudieron reasignar los gastos\. Inténtalo de nuevo\./,
+      );
+      await waitFor((r) => !!r && r.reassignError !== null);
+      for (const key of [home, totals, receipts, cache]) {
+        assert.ok(queryClient.getQueryState(key), 'seeded key still cached');
+        assert.equal(
+          queryClient.getQueryState(key).isInvalidated,
+          false,
+          `failed reassign must NOT invalidate ${JSON.stringify(key)}`,
+        );
+      }
+    } finally {
+      unmount();
+    }
+  });
+
+  await test('hook: FAILED delete does NOT invalidate the derived keys', async () => {
+    stub.__resetSupabaseBehavior();
+    authStub.__setUserId('test-user-id');
+    stub.__setTableRead('categories', { rows: [bebidas, otros, delivery] });
+    const { ref, unmount, waitFor, queryClient } = mountHook(useCategoryCatalog, makeLongLivedQueryClient());
+    try {
+      await waitFor((r) => !!r && Object.keys(r.catalog).length === 3);
+      const home = keysMod.queryKeys.homeFeed('test-user-id');
+      const totals = keysMod.queryKeys.monthlyTotals('test-user-id', '2026-09');
+      const receipts = keysMod.queryKeys.monthReceipts('test-user-id', '2026-09');
+      const cache = keysMod.queryKeys.monthlyCache('test-user-id', '2026-09');
+      for (const key of [home, totals, receipts, cache]) {
+        queryClient.setQueryData(key, { seeded: true });
+      }
+      stub.__failNextDelete('categories');
+      await assert.rejects(
+        () => ref.current.delete('cat-delivery'),
+        /No se pudo eliminar la categoría\. Inténtalo de nuevo\./,
+      );
+      await waitFor((r) => !!r && r.deleteError !== null);
+      for (const key of [home, totals, receipts, cache]) {
+        assert.ok(queryClient.getQueryState(key), 'seeded key still cached');
+        assert.equal(
+          queryClient.getQueryState(key).isInvalidated,
+          false,
+          `failed delete must NOT invalidate ${JSON.stringify(key)}`,
+        );
+      }
+    } finally {
+      unmount();
     }
   });
 

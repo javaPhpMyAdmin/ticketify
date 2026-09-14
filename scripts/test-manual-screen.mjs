@@ -1120,13 +1120,337 @@ async function categoryPickerFormTests(picker, catalog) {
 }
 
 // ---------------------------------------------------------------------------
+// Category-picker DELETE logic (PR 7, slice 4/7 — category-picker-form.ts)
+// Block-Delete Policy (spec REQ-BLOCK-DELETE): in-use → blocked + explanation,
+// reassignment offered, NO silent re-bucket; empty → delete allowed.
+// ---------------------------------------------------------------------------
+
+async function categoryPickerDeleteTests(picker, catalog) {
+  const {
+    CUSTOM_CATEGORY_MIN_SORT_ORDER,
+    customCategorySlugs,
+    isCategoryInUse,
+    reassignmentTargets,
+    requestCategoryDelete,
+    confirmCategoryReassignDelete,
+    confirmCategoryDelete,
+    categoryAfterDelete,
+    sweepDraftAfterDelete,
+    hasReassignTarget,
+    CATEGORY_DELETE_ERROR_KEYS,
+  } = picker;
+  const { mergeCategoryCatalog } = catalog;
+
+  /** Catalog: canonical bebidas/lacteos/otros + own delivery/gimnasio. */
+  const mergedWithOwn = mergeCategoryCatalog(
+    [
+      { id: 'g-bebidas', slug: 'bebidas', name: 'Bebidas', kind: 'need', icon: 'waterbottle.fill', color: '#2563EB', sort_order: 5, user_id: null },
+      { id: 'g-lacteos', slug: 'lacteos', name: 'Lácteos', kind: 'need', icon: 'drop.fill', color: '#0284C7', sort_order: 1, user_id: null },
+      { id: 'g-otros', slug: 'otros', name: 'Sin categoría', kind: 'need', icon: 'ellipsis.circle.fill', color: '#4B5563', sort_order: 99, user_id: null },
+    ],
+    [
+      { id: 'c-delivery', slug: 'delivery', name: 'Delivery', kind: 'want', icon: 'sparkles', color: '#7C3AED', sort_order: 100, user_id: 'u1' },
+      { id: 'c-gimnasio', slug: 'gimnasio', name: 'Gimnasio', kind: 'want', icon: 'sparkles', color: '#F59E0B', sort_order: 101, user_id: 'u1' },
+    ],
+  );
+
+  await test('delete: custom sort_order floor pinned at 100 (DB CHECK parity)', () => {
+    assert.equal(CUSTOM_CATEGORY_MIN_SORT_ORDER, 100);
+  });
+
+  await test('delete: customCategorySlugs — own rows only, canonical excluded', () => {
+    assert.deepEqual(customCategorySlugs(mergedWithOwn), ['delivery', 'gimnasio']);
+    assert.deepEqual(
+      customCategorySlugs(
+        mergeCategoryCatalog(
+          [{ id: 'g-bebidas', slug: 'bebidas', name: 'Bebidas', kind: 'need', icon: 'waterbottle.fill', color: '#2563EB', sort_order: 5, user_id: null }],
+          [],
+        ),
+      ),
+      [],
+      'canonical-only catalog has nothing deletable',
+    );
+  });
+
+  await test('delete: customCategorySlugs — user-first shadow row IS own custom', () => {
+    // A custom row shadowing a canonical slug keeps sort_order >= 100, so the
+    // delete affordance applies to it (RLS owns the row).
+    const shadowed = mergeCategoryCatalog(
+      [{ id: 'g-bebidas', slug: 'bebidas', name: 'Bebidas', kind: 'need', icon: 'waterbottle.fill', color: '#2563EB', sort_order: 5, user_id: null }],
+      [{ id: 'c-bebidas', slug: 'bebidas', name: 'Mi Bebidas', kind: 'want', icon: 'sparkles', color: '#7C3AED', sort_order: 100, user_id: 'u1' }],
+    );
+    assert.deepEqual(customCategorySlugs(shadowed), ['bebidas']);
+  });
+
+  await test('delete: isCategoryInUse — 0 false, >0 true', () => {
+    assert.equal(isCategoryInUse(0), false);
+    assert.equal(isCategoryInUse(1), true);
+    assert.equal(isCategoryInUse(5), true);
+  });
+
+  await test('delete: reassignmentTargets — deleted slug excluded, canonical INCLUDED', () => {
+    const targets = reassignmentTargets(mergedWithOwn, 'delivery');
+    const slugs = targets.map((row) => row.slug);
+    // Canonical rows — including the 'otros' fallback — stay valid targets
+    // (spec scenario moves purchases to 'otros'); only the deleted category
+    // is excluded. NO silent re-bucket: the choice is explicit.
+    assert.equal(slugs.includes('delivery'), false, 'deleted slug excluded');
+    assert.ok(slugs.includes('bebidas'), 'canonical row is a target');
+    assert.ok(slugs.includes('lacteos'), 'canonical row is a target');
+    assert.ok(slugs.includes('otros'), 'otros stays a valid explicit target');
+    assert.ok(slugs.includes('gimnasio'), 'other own rows are targets');
+  });
+
+  await test('delete: reassignmentTargets — every row has the picker shape', () => {
+    for (const row of reassignmentTargets(mergedWithOwn, 'delivery')) {
+      assert.deepEqual(Object.keys(row).sort(), ['color', 'icon', 'label', 'slug']);
+      assert.ok(row.slug.length > 0);
+      assert.ok(row.label.length > 0);
+    }
+  });
+
+  await test('delete: requestCategoryDelete — count > 0 → in-use with count', async () => {
+    const calls = [];
+    const outcome = await requestCategoryDelete(
+      {
+        count: async (id) => {
+          calls.push(['count', id]);
+          return { ok: true, count: 5 };
+        },
+      },
+      'c-delivery',
+    );
+    assert.deepEqual(outcome, { status: 'in-use', count: 5 });
+    assert.deepEqual(calls, [['count', 'c-delivery']]);
+  });
+
+  await test('delete: requestCategoryDelete — count 0 → empty (delete allowed)', async () => {
+    const outcome = await requestCategoryDelete(
+      { count: async () => ({ ok: true, count: 0 }) },
+      'c-delivery',
+    );
+    assert.deepEqual(outcome, { status: 'empty' });
+  });
+
+  await test('delete: requestCategoryDelete — count failure → error step count', async () => {
+    const outcome = await requestCategoryDelete(
+      { count: async () => ({ ok: false, count: 0 }) },
+      'c-delivery',
+    );
+    assert.deepEqual(outcome, { status: 'error', step: 'count' });
+  });
+
+  await test('delete: requestCategoryDelete — count REJECTS → error step count', async () => {
+    const outcome = await requestCategoryDelete(
+      {
+        count: async () => {
+          throw new Error('network down');
+        },
+      },
+      'c-delivery',
+    );
+    assert.deepEqual(outcome, { status: 'error', step: 'count' });
+  });
+
+  await test('delete: confirmCategoryReassignDelete — reassign THEN delete, in order', async () => {
+    const calls = [];
+    const outcome = await confirmCategoryReassignDelete(
+      {
+        reassign: async (fromId, toId) => {
+          calls.push(['reassign', fromId, toId]);
+          return { ok: true };
+        },
+        deleteRow: async (id) => {
+          calls.push(['delete', id]);
+          return { ok: true };
+        },
+      },
+      'c-delivery',
+      'g-otros',
+    );
+    assert.deepEqual(outcome, { status: 'deleted' });
+    assert.deepEqual(calls, [
+      ['reassign', 'c-delivery', 'g-otros'],
+      ['delete', 'c-delivery'],
+    ]);
+  });
+
+  await test('delete: confirmCategoryReassignDelete — reassign fails → NO delete (fail-closed)', async () => {
+    const calls = [];
+    const outcome = await confirmCategoryReassignDelete(
+      {
+        reassign: async () => {
+          calls.push(['reassign']);
+          return { ok: false };
+        },
+        deleteRow: async () => {
+          calls.push(['delete']);
+          return { ok: true };
+        },
+      },
+      'c-delivery',
+      'g-otros',
+    );
+    assert.deepEqual(outcome, { status: 'error', step: 'reassign' });
+    assert.deepEqual(calls, [['reassign']], 'delete must never fire after a failed reassign');
+  });
+
+  await test('delete: confirmCategoryReassignDelete — reassign REJECTS → error step reassign', async () => {
+    const outcome = await confirmCategoryReassignDelete(
+      {
+        reassign: async () => {
+          throw new Error('network down');
+        },
+        deleteRow: async () => ({ ok: true }),
+      },
+      'c-delivery',
+      'g-otros',
+    );
+    assert.deepEqual(outcome, { status: 'error', step: 'reassign' });
+  });
+
+  await test('delete: confirmCategoryReassignDelete — delete fails after reassign → error step delete', async () => {
+    const outcome = await confirmCategoryReassignDelete(
+      {
+        reassign: async () => ({ ok: true }),
+        deleteRow: async () => ({ ok: false }),
+      },
+      'c-delivery',
+      'g-otros',
+    );
+    assert.deepEqual(outcome, { status: 'error', step: 'delete' });
+  });
+
+  await test('delete: confirmCategoryDelete — empty-category delete ok', async () => {
+    const calls = [];
+    const outcome = await confirmCategoryDelete(
+      {
+        deleteRow: async (id) => {
+          calls.push(['delete', id]);
+          return { ok: true };
+        },
+      },
+      'c-delivery',
+    );
+    assert.deepEqual(outcome, { status: 'deleted' });
+    assert.deepEqual(calls, [['delete', 'c-delivery']]);
+  });
+
+  await test('delete: confirmCategoryDelete — deletion failure → error step delete', async () => {
+    const outcome = await confirmCategoryDelete(
+      { deleteRow: async () => ({ ok: false }) },
+      'c-delivery',
+    );
+    assert.deepEqual(outcome, { status: 'error', step: 'delete' });
+  });
+
+  await test('delete: categoryAfterDelete — other selection untouched', () => {
+    assert.equal(categoryAfterDelete('bebidas', 'delivery', 'otros'), 'bebidas');
+    assert.equal(categoryAfterDelete(null, 'delivery', 'otros'), null);
+  });
+
+  await test('delete: categoryAfterDelete — deleted selection falls back (no dangling slug)', () => {
+    assert.equal(categoryAfterDelete('delivery', 'delivery', 'otros'), 'otros');
+    assert.equal(categoryAfterDelete('delivery', 'delivery', 'gimnasio'), 'gimnasio');
+  });
+
+  // ── Gate fix W1 (both lenses): the DRAFT SWEEP. Deletes happen from the
+  // picker, but the same receipt draft can hold OTHER items referencing the
+  // deleted slug. Without a sweep those siblings would drift per-item and
+  // land in whatever the save seam resolves — silently. The sweep resolves
+  // EVERY matching reference to the SAME explicit resolution the primary
+  // item got: the reassignment target (blocked delete) or the EXPLICIT
+  // 'otros' slug (empty delete) — the app-wide persisted fallback ("NULLs
+  // never persist": tickets/api.ts maps unresolved/null to 'otros' at save,
+  // so an explicit-null sweep would silently re-resolve to otros later).
+  // The re-bucket is VISIBLE in the picker after the sweep — by design,
+  // never per-item silent drift.
+
+  await test('delete: sweepDraftAfterDelete — sibling items resolve to the SAME reassignment target (never otros)', () => {
+    const draft = [
+      { temp_id: 't1', name: 'Pizza', category_id: 'delivery', ai_suggested_category_id: null },
+      { temp_id: 't2', name: 'Sushi', category_id: 'delivery', ai_suggested_category_id: null },
+      { temp_id: 't3', name: 'Agua', category_id: 'bebidas', ai_suggested_category_id: null },
+      { temp_id: 't4', name: 'Sin categoría', category_id: null, ai_suggested_category_id: 'delivery' },
+    ];
+    const swept = sweepDraftAfterDelete(draft, 'delivery', 'gimnasio');
+    assert.equal(swept[0].category_id, 'gimnasio', 'primary item resolves to the explicit reassignment target');
+    assert.equal(swept[1].category_id, 'gimnasio', 'SIBLING item resolves to the SAME explicit target');
+    assert.equal(swept[2].category_id, 'bebidas', 'other categories untouched');
+    assert.equal(swept[3].category_id, null, 'uncategorized stays uncategorized (onSelect contract)');
+    assert.equal(
+      swept[3].ai_suggested_category_id,
+      'gimnasio',
+      'a stale AI suggestion referencing the deleted slug resolves to the same target — no reference may die into otros',
+    );
+    assert.equal(
+      swept.some((i) => i.category_id === 'delivery' || i.ai_suggested_category_id === 'delivery'),
+      false,
+      'no draft reference keeps the deleted slug after the sweep',
+    );
+  });
+
+  await test("delete: sweepDraftAfterDelete — empty delete sweeps every reference to the EXPLICIT 'otros' slug (NULLs never persist)", () => {
+    const swept = sweepDraftAfterDelete(
+      [
+        { temp_id: 't1', name: 'Pizza', category_id: 'delivery', ai_suggested_category_id: null },
+        { temp_id: 't2', name: 'Sushi', category_id: 'delivery', ai_suggested_category_id: 'delivery' },
+      ],
+      'delivery',
+      'otros',
+    );
+    assert.deepEqual(
+      swept.map((i) => i.category_id),
+      ['otros', 'otros'],
+      "empty delete resolves EVERY reference to the EXPLICIT 'otros' slug — the persisted fallback (an explicit-null sweep would silently re-resolve to otros at save)",
+    );
+    assert.deepEqual(
+      swept.map((i) => i.ai_suggested_category_id),
+      [null, 'otros'],
+      'every stale suggestion REFERENCING the deleted slug resolves to the same visible fallback — no silent per-item drift; a null suggestion is untouched',
+    );
+  });
+
+  await test('delete: sweepDraftAfterDelete — returns new items, never mutates the draft', () => {
+    const draft = [
+      { temp_id: 't1', name: 'Pizza', category_id: 'delivery', ai_suggested_category_id: null },
+    ];
+    const swept = sweepDraftAfterDelete(draft, 'delivery', 'gimnasio');
+    assert.notEqual(swept, draft, 'a new array is returned');
+    assert.notEqual(swept[0], draft[0], 'swept items are new objects');
+    assert.equal(draft[0].category_id, 'delivery', 'the source draft is untouched');
+  });
+
+  // ── Gate fix W5 (reliability): the reassign target may VANISH from the
+  // catalog mid-flow (concurrent refetch). The handler must never dereference
+  // a missing row — the pure predicate gates the lookup so a vanished target
+  // surfaces the reassign error step instead of throwing.
+
+  await test('delete: hasReassignTarget — present target true; vanished or null target false (no throw)', () => {
+    assert.equal(hasReassignTarget(mergedWithOwn, 'gimnasio'), true, 'row present in the catalog');
+    assert.equal(hasReassignTarget({}, 'delivery'), false, 'row vanished from a refetched catalog');
+    assert.equal(hasReassignTarget(mergedWithOwn, null), false, 'no target picked yet');
+    assert.equal(hasReassignTarget({}, null), false);
+  });
+
+  await test('delete: error keys bridge steps to localized tickets keys', () => {
+    assert.equal(CATEGORY_DELETE_ERROR_KEYS.count, 'tickets:categoryDeleteError');
+    assert.equal(CATEGORY_DELETE_ERROR_KEYS.delete, 'tickets:categoryDeleteError');
+    assert.equal(CATEGORY_DELETE_ERROR_KEYS.reassign, 'tickets:categoryReassignError');
+    for (const key of Object.values(CATEGORY_DELETE_ERROR_KEYS)) {
+      assert.ok(key.startsWith('tickets:'), key + ' must be a key, not copy');
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // i18n parity (PR 7, slice 3/7 — task 3.3 acceptance)
 // ---------------------------------------------------------------------------
 
 const LOCALES_ROOT = join(__dirname, '..', 'src', 'i18n', 'locales');
 
 async function i18nParityTests(picker) {
-  const { CATEGORY_CREATE_ERROR_KEYS } = picker;
+  const { CATEGORY_CREATE_ERROR_KEYS, CATEGORY_DELETE_ERROR_KEYS } = picker;
   const readTickets = (locale) =>
     JSON.parse(
       readFileSync(join(LOCALES_ROOT, locale, 'tickets.json'), 'utf8'),
@@ -1241,23 +1565,236 @@ async function i18nParityTests(picker) {
     );
   });
 
-  await test('modal: dismissal gated on isCreating + session guard wired (cancel must cancel)', () => {
+  await test('modal: dismissal gated on busy + session guard wired (cancel must cancel)', () => {
     // Fix 2: BottomSheet.dismissable=false suppresses system back, backdrop
-    // tap and the close button mid-create; handleCreate must session-guard
-    // onSelect so a dismissed create never categorizes the item.
+    // tap and the close button while a mutation is in flight; slice 4/7
+    // extends the gate from create-only to create+delete+reassign.
+    // handleCreate must session-guard onSelect so a dismissed create never
+    // categorizes the item.
     const modalSource = readFileSync(
       join(root, 'src/features/tickets/components/CategoryPickerModal.tsx'),
       'utf8',
     );
     assert.ok(
-      modalSource.includes('dismissable={canDismissCategoryPicker(isCreating)}') ||
-        modalSource.includes('dismissable={!isCreating}'),
-      'sheet must not dismiss while a create is in flight',
+      modalSource.includes('canDismissCategoryPicker(') &&
+        modalSource.includes('isCreating') &&
+        modalSource.includes('isDeleting') &&
+        modalSource.includes('isReassigning'),
+      'sheet must not dismiss while a create/delete/reassign is in flight',
     );
     assert.ok(
       modalSource.includes('isCurrentCategoryCreateSession('),
       'handleCreate must session-guard onSelect',
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // Slice 4/7 (Phase 4): DELETE copy parity — blocked/reassign + errors
+  // -------------------------------------------------------------------------
+
+  const deleteKeys = [
+    'categoryDeleteInUse_one',
+    'categoryDeleteInUse_other',
+    'categoryReassignTitle',
+    'categoryReassignToLabel',
+    'categoryDeleteConfirm',
+    'categoryDeleteError',
+    'categoryReassignError',
+  ];
+
+  await test('i18n: every category-delete key exists in all three locales', () => {
+    for (const fullKey of [
+      ...Object.values(CATEGORY_DELETE_ERROR_KEYS),
+      ...deleteKeys.map((k) => `tickets:${k}`),
+    ]) {
+      const key = fullKey.replace(/^tickets:/, '');
+      assert.ok(key in esAr, `es-AR missing ${fullKey}`);
+      assert.ok(key in en, `en missing ${fullKey}`);
+      assert.ok(key in ptBr, `pt-BR missing ${fullKey}`);
+    }
+  });
+
+  await test('i18n: es-AR delete error copy converges with the API seam messages', () => {
+    // Same convergence contract as the create path (PR 3): the modal maps
+    // the seam's raw es-AR copy onto localized keys (CATEGORY_DELETE_ERROR_KEYS),
+    // and the es-AR values mirror the api.ts constants byte-for-byte.
+    assert.equal(
+      esAr.categoryDeleteError,
+      'No se pudo eliminar la categoría. Inténtalo de nuevo.',
+      'es-AR delete error must mirror DELETE_CATEGORY_ERROR_MESSAGE',
+    );
+    assert.equal(
+      esAr.categoryReassignError,
+      'No se pudieron reasignar los gastos. Inténtalo de nuevo.',
+      'es-AR reassign error must mirror REASSIGN_CATEGORY_ERROR_MESSAGE',
+    );
+    const apiSource = readFileSync(
+      join(root, 'src/features/categories/api.ts'),
+      'utf8',
+    );
+    assert.ok(
+      apiSource.includes(
+        "DELETE_CATEGORY_ERROR_MESSAGE =\n  'No se pudo eliminar la categoría. Inténtalo de nuevo.'",
+      ),
+      'delete literal drifted from the pinned copy',
+    );
+    assert.ok(
+      apiSource.includes(
+        "REASSIGN_CATEGORY_ERROR_MESSAGE =\n  'No se pudieron reasignar los gastos. Inténtalo de nuevo.'",
+      ),
+      'reassign literal drifted from the pinned copy',
+    );
+  });
+
+  await test('i18n: es-AR in-use copy is rioplatense voseo, en/pt-BR are NOT es-AR', () => {
+    // The blocked banner has to explain WITHOUT re-bucketing (spec): the
+    // imperative is voseo ("Movela"/"Movelas"), and the other locales must
+    // not leak the es-AR copy.
+    assert.ok(
+      esAr.categoryDeleteInUse_other.includes('compras asociadas'),
+      'es-AR plural in-use banner',
+    );
+    assert.ok(
+      esAr.categoryDeleteInUse_other.includes('Movelas'),
+      'es-AR banner must use rioplatense voseo imperative',
+    );
+    assert.ok(
+      esAr.categoryDeleteInUse_one.includes('Movela'),
+      'es-AR singular banner must use rioplatense voseo imperative',
+    );
+    assert.notEqual(en.categoryDeleteInUse_one, esAr.categoryDeleteInUse_one);
+    assert.notEqual(ptBr.categoryDeleteInUse_one, esAr.categoryDeleteInUse_one);
+  });
+
+  await test('modal: long-press delete affordance exists on own rows only', () => {
+    const modalSource = readFileSync(
+      join(root, 'src/features/tickets/components/CategoryPickerModal.tsx'),
+      'utf8',
+    );
+    assert.ok(
+      modalSource.includes('onLongPress'),
+      'the delete affordance is a long-press',
+    );
+    assert.ok(
+      modalSource.includes('customCategorySlugs('),
+      'own-custom-row gating uses customCategorySlugs',
+    );
+  });
+
+  await test('modal: delete flow counts first, then reassign+delete (fail-closed)', () => {
+    const modalSource = readFileSync(
+      join(root, 'src/features/tickets/components/CategoryPickerModal.tsx'),
+      'utf8',
+    );
+    assert.ok(
+      modalSource.includes('countCategoryItems('),
+      'the count is the RLS-scoped supabase seam',
+    );
+    assert.ok(
+      modalSource.includes('requestCategoryDelete('),
+      'the count outcome drives blocked vs empty',
+    );
+    assert.ok(
+      modalSource.includes('confirmCategoryReassignDelete('),
+      'blocked path orchestrates reassign-then-delete',
+    );
+    assert.ok(
+      modalSource.includes('confirmCategoryDelete('),
+      'empty path deletes directly',
+    );
+  });
+
+  // ── Gate fix W1 (both lenses): the delete success must REPORT the
+  // (deletedSlug, fallbackSlug) resolution so the parent can SWEEP the whole
+  // draft — a sibling item carrying the deleted slug must resolve to the SAME
+  // resolution the primary item got: the reassignment target (blocked) or the
+  // EXPLICIT 'otros' slug (empty — the persisted fallback, NULLs never
+  // persist). The re-bucket is VISIBLE in the picker — never per-item
+  // silent drift.
+
+  await test('modal: delete success reports (deletedSlug, fallback) — the draft sweep is the parent contract', () => {
+    const modalSource = readFileSync(
+      join(root, 'src/features/tickets/components/CategoryPickerModal.tsx'),
+      'utf8',
+    );
+    assert.ok(
+      modalSource.includes('onCategoryDeleted(pending.slug, fallbackSlug)'),
+      'blocked path must report the deleted slug + the EXPLICIT target as the sweep fallback',
+    );
+    assert.ok(
+      modalSource.includes("onCategoryDeleted(pending.slug, 'otros')"),
+      "empty path must report the deleted slug + the EXPLICIT 'otros' slug (the persisted fallback — NULLs never persist)",
+    );
+  });
+
+  // ── Gate fix W4 (reliability): the COUNT phase was not dismissal-gated —
+  // cancel-mid-count could apply a stale outcome after the user left. The
+  // whole delete flow must be non-dismissable while an async op is in flight,
+  // and deleteOutcome must reset BEFORE the count await so a previous flow's
+  // outcome can never render in the next one.
+
+  await test('modal: count phase is dismissal-gated and deleteOutcome resets before the count await', () => {
+    const modalSource = readFileSync(
+      join(root, 'src/features/tickets/components/CategoryPickerModal.tsx'),
+      'utf8',
+    );
+    assert.ok(
+      modalSource.includes('isDeleteCounting'),
+      'the count phase must be tracked for the dismissal gate',
+    );
+    assert.ok(
+      /canDismissCategoryPicker\(\s*isCreating \|\| isDeleting \|\| isReassigning \|\| isDeleteCounting[,]?\s*\)/.test(
+        modalSource,
+      ),
+      'count in flight must pin the sheet closed (backdrop/back/close all blocked)',
+    );
+    const start = modalSource.indexOf('setPendingDelete({ id: entry.id, slug: entry.slug })');
+    const countAwait = modalSource.indexOf('await requestCategoryDelete', start);
+    assert.ok(start !== -1 && countAwait !== -1, 'handleLongPressRow body found');
+    const body = modalSource.slice(start, countAwait);
+    assert.ok(
+      body.includes('setDeleteOutcome(null)'),
+      'deleteOutcome must reset BEFORE the count await (a previous outcome must never render in the next flow)',
+    );
+  });
+
+  // ── Gate fix W5 (reliability): `catalog[reassignTargetSlug]` can be
+  // undefined on a concurrent refetch — dereferencing it would throw inside
+  // the async handler and leave the sheet stuck on the blocked view. The
+  // handler must guard the lookup through the pure predicate and surface the
+  // reassign error step instead.
+
+  await test('modal: vanished reassign target surfaces the reassign error step, never a throw', () => {
+    const modalSource = readFileSync(
+      join(root, 'src/features/tickets/components/CategoryPickerModal.tsx'),
+      'utf8',
+    );
+    assert.ok(
+      modalSource.includes('hasReassignTarget('),
+      'the handler must guard the target lookup through the pure predicate',
+    );
+    assert.ok(
+      modalSource.includes("step: 'reassign'"),
+      'a vanished target resolves to the reassign error step (the blocked view is not stuck)',
+    );
+  });
+
+  await test('modal: blocked view renders in-use copy + reassign target label', () => {
+    const modalSource = readFileSync(
+      join(root, 'src/features/tickets/components/CategoryPickerModal.tsx'),
+      'utf8',
+    );
+    for (const use of [
+      // The in-use banner resolves through i18next plural keys
+      // (categoryDeleteInUse_one / _other), so the source assert keys on
+      // the shared prefix.
+      "t('categoryDeleteInUse",
+      "t('categoryReassignTitle')",
+      "t('categoryReassignToLabel')",
+      "t('categoryDeleteConfirm')",
+    ]) {
+      assert.ok(modalSource.includes(use), `modal must render ${use}`);
+    }
   });
 }
   // ---------------------------------------------------------------------------
@@ -1288,6 +1825,7 @@ async function run() {
   if (picker) {
     const catalog = await importOut('catalog.js');
     await categoryPickerFormTests(picker, catalog);
+    await categoryPickerDeleteTests(picker, catalog);
     await i18nParityTests(picker);
   } else {
     await test(
