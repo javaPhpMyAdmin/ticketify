@@ -32,6 +32,7 @@ import type { IconName } from '@/components';
 import type { CategoryKind } from '@/types';
 
 import {
+  resolveCategory,
   slugCollides,
   slugify,
   type CategoryCatalog,
@@ -91,6 +92,35 @@ export function canonicalFallbackRows(): CategoryPickerRow[] {
     icon: entry.icon,
     color: entry.background,
   }));
+}
+
+/**
+ * PR 5 (editor wiring): the single catalog-aware row a chip/editor label
+ * resolves to for a slug. This is the `resolveCategory` contract mapped to
+ * the picker row shape the Chip renders (label + icon):
+ *
+ * - a custom slug → its own row (label/icon render the user's category),
+ * - an unknown slug → the deterministic 'otros' row (catalog present),
+ * - a null/empty selection → null (the editor default renders
+ *   SIN CATEGORÍA — "No category chosen → category_id = null" never
+ *   displays as the otros fallback),
+ * - an empty catalog (pre-load/read-failure) → null, so the caller chains
+ *   the static `getExpenseCategory(slug)` fallback exactly like the
+ *   `resolveCategory ?? getExpenseCategory` consumer pattern.
+ */
+export function pickerRowForCategory(
+  catalog: CategoryCatalog | undefined,
+  slug: string | null | undefined,
+): CategoryPickerRow | null {
+  if (!slug || !catalog) return null;
+  const entry = resolveCategory(catalog, slug);
+  if (!entry) return null;
+  return {
+    slug: entry.slug,
+    label: entry.name,
+    icon: entry.icon as IconName,
+    color: entry.color,
+  };
 }
 
 /**
@@ -420,10 +450,10 @@ export async function confirmCategoryDelete(
  * back to the caller-provided resolution (the explicit reassignment target,
  * or 'otros' on an empty delete — the app-wide persisted fallback, "NULLs
  * never persist"; the DRAFT-level rule is `sweepDraftAfterDelete` below).
- * This single-item form is app-dead (the modal reports the deleted slug +
- * fallback to the parent, which sweeps the WHOLE draft) but stays exported
- * because the node harness pins it. Any other selection (or null) passes
- * through untouched.
+ * `ItemEditorModal` applies this to its OWN buffer when a delete resolves
+ * inside the stacked picker (the modal also forwards the resolution so the
+ * parent sweeps the WHOLE draft — W1); the node harness pins it too. Any
+ * other selection (or null) passes through untouched.
  */
 export function categoryAfterDelete(
   selectedSlug: string | null,
@@ -474,6 +504,30 @@ export function sweepDraftAfterDelete<T extends CategoryDraftItemLike>(
         ? fallbackSlug
         : item.ai_suggested_category_id,
   }));
+}
+
+/**
+ * W1 (gate fix, both lenses): a resolved delete/reassign sweeps the WHOLE
+ * draft — every item whose category (user pick OR AI suggestion) references
+ * the deleted slug resolves to the SAME explicit resolution: the
+ * reassignment target (blocked) or the EXPLICIT 'otros' slug (empty — the
+ * app-wide persisted fallback, "NULLs never persist"), never per-item silent
+ * drift. The picker's target item is part of the sweep, exactly like every
+ * sibling. The factory binds the sweep to the screen's state: `items` is
+ * captured at render (the current draft), `setItems` commits the swept
+ * array, and `clearTarget` closes the picker's target item. The primary
+ * item's OWN buffer is rebucketed separately by `categoryAfterDelete` in
+ * `ItemEditorModal`.
+ */
+export function createCategoryDeleteHandler<T extends CategoryDraftItemLike>(
+  items: readonly T[],
+  setItems: (items: T[]) => void,
+  clearTarget: () => void,
+): (deletedSlug: string, fallbackSlug: string) => void {
+  return (deletedSlug: string, fallbackSlug: string) => {
+    setItems(sweepDraftAfterDelete(items, deletedSlug, fallbackSlug));
+    clearTarget();
+  };
 }
 
 /**

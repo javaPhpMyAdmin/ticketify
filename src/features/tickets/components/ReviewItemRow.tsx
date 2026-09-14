@@ -3,14 +3,24 @@ import { useTranslation } from 'react-i18next';
 
 import { Chip, Icon, Text, View } from '@/components';
 import { getExpenseCategory } from '@/features/home/categories';
+import type { CategoryCatalog } from '@/features/categories/catalog';
 import { formatCurrency } from '@/lib/format';
 import { colors, spacing, typography } from '@/theme';
 import type { ReviewItem } from '@/types';
+
+import { pickerRowForCategory } from '../category-picker-form';
 
 export interface ReviewItemRowProps {
   item: ReviewItem;
   /** ISO 4217 code for the line price (defaults to the settings default, UYU). */
   currency?: string;
+  /**
+   * PR 5: the merged catalog (user + canonical). When provided, custom
+   * slugs render their own name/icon on the chip; when absent (or still
+   * loading), chips resolve through the static registry exactly like
+   * before — backward compatible with every existing caller.
+   */
+  catalog?: CategoryCatalog;
   /** Called when the user taps the category chip to edit it. */
   onPressCategory: () => void;
   /** Called when the user toggles the "impulse" switch. */
@@ -40,6 +50,7 @@ export interface ReviewItemRowProps {
 export function ReviewItemRow({
   item,
   currency = 'UYU',
+  catalog,
   onPressCategory,
   onToggleImpulse,
   onEditName,
@@ -49,7 +60,13 @@ export function ReviewItemRow({
   // Quantity, category fallback and the impulse switch read from `tickets`.
   const { t } = useTranslation(['a11y', 'tickets']);
   const categoryId = item.category_id ?? item.ai_suggested_category_id;
-  const category = categoryId ? getExpenseCategory(categoryId) : null;
+  // PR 5: custom slugs resolve through the merged catalog (own row);
+  // unknown/absent catalogs fall back to the static registry (unknown
+  // buckets into 'otros' there); a null choice stays SIN CATEGORÍA.
+  const chipRow = pickerRowForCategory(catalog, categoryId);
+  const category = categoryId
+    ? (chipRow ?? getExpenseCategory(categoryId))
+    : null;
 
   return (
     <View style={styles.row}>
