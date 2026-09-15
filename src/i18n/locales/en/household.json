@@ -23,6 +23,7 @@
   "searchArticleCount_other": "{{count}} items",
   "searchZeroArticles": "0 items",
   "searchResultA11y": "Tap to see item details",
+  "searchResultHint": "Tap to view",
   "searchHideItem": "Hide {{name}}",
   "householdCreateChooseName": "Choose a name for your household.",
   "householdCreate": "Create household",

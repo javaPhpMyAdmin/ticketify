@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -7,12 +8,19 @@ import {
   StyleSheet,
   TextInput,
 } from 'react-native';
-import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Card, FieldGroup, Icon, Pressable, Spinner, Text, View } from '@/components';
-import { useProfile } from '@/features/profile';
+import {
+  Card,
+  FieldGroup,
+  Icon,
+  Pressable,
+  Spinner,
+  Text,
+  View,
+} from '@/components';
 import { useFrozenGuard } from '@/features/pro';
+import { useProfile } from '@/features/profile';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -61,8 +69,7 @@ export default function BudgetEditorScreen() {
   }, [user, dirty, saving]);
 
   const parsed = Number.parseInt(draft, 10);
-  const valid =
-    draft.trim() !== '' && Number.isFinite(parsed) && parsed >= 0;
+  const valid = draft.trim() !== '' && Number.isFinite(parsed) && parsed >= 0;
 
   const handleSave = async () => {
     if (saving || !valid) return;
@@ -102,11 +109,12 @@ export default function BudgetEditorScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Card>
+          <Card style={{ backgroundColor: colors.surface }}>
             <FieldGroup
               label={`Monto (${currency})`}
               helper={t('settings:monthlyBudgetHelper')}
               error={error ?? undefined}
+              style={{ backgroundColor: colors.surface }}
             >
               <TextInput
                 value={draft}
@@ -172,6 +180,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xxl,
     gap: spacing.lg,
+    backgroundColor: 'transparent',
   },
   input: {
     ...typography.headlineMd,

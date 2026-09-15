@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -10,7 +11,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useQuery } from '@tanstack/react-query';
 
 import {
   Card,
@@ -24,14 +24,14 @@ import {
   View,
 } from '@/components';
 import { useSessionUser } from '@/features/auth';
-import { resolveCategoryDisplay } from '@/features/home/categories';
 import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
+import { resolveCategoryDisplay } from '@/features/home/categories';
+import type { PurchaseWithItems } from '@/features/tickets';
 import {
   deleteReceipt,
   fetchPurchaseDetail,
   purchaseToDraft,
 } from '@/features/tickets';
-import type { PurchaseWithItems } from '@/features/tickets';
 import { useScreenTitle } from '@/i18n/hooks/useScreenTitle';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
@@ -39,8 +39,8 @@ import {
   getSignedReceiptPhotoUrl,
   resolveReceiptPhotoPath,
 } from '@/lib/supabase/receipt-photo';
-import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useDialogStore } from '@/stores/use-dialog-store';
+import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 import { ReceiptCategoryItemsModal } from './ReceiptCategoryItemsModal';
@@ -128,9 +128,7 @@ export default function ReceiptDetailScreen() {
 
   // ── Derive receipt + category_totals from the fetched purchase ────────
   const rawReceipt = detailQuery.data;
-  const receipt = rawReceipt
-    ? purchaseToFeedRow(rawReceipt)
-    : undefined;
+  const receipt = rawReceipt ? purchaseToFeedRow(rawReceipt) : undefined;
 
   // ── Loading gate: session bootstrap OR query in flight ────────────────
   const isSessionLoading = !userId;
@@ -296,14 +294,16 @@ export default function ReceiptDetailScreen() {
       return;
     }
     setPhotoLoading(true);
-    getSignedReceiptPhotoUrl(classified.value).then((signed) => {
-      if (!cancelled) {
-        setPhotoSource(signed);
-        setPhotoLoading(false);
-      }
-    }).catch(() => {
-      if (!cancelled) setPhotoLoading(false);
-    });
+    getSignedReceiptPhotoUrl(classified.value)
+      .then((signed) => {
+        if (!cancelled) {
+          setPhotoSource(signed);
+          setPhotoLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPhotoLoading(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -402,10 +402,12 @@ export default function ReceiptDetailScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         {header}
         <View style={styles.notFound}>
-          <Icon name="exclamationmark.triangle.fill" size={32} color={colors.danger} />
-          <Text style={styles.notFoundText}>
-            {t('receipts:loadFailed')}
-          </Text>
+          <Icon
+            name="exclamationmark.triangle.fill"
+            size={32}
+            color={colors.danger}
+          />
+          <Text style={styles.notFoundText}>{t('receipts:loadFailed')}</Text>
           <Pressable
             onPress={() => detailQuery.refetch()}
             style={styles.retryButton}
@@ -424,7 +426,9 @@ export default function ReceiptDetailScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         {header}
         <View style={styles.notFound}>
-          <Text style={styles.notFoundText}>{t('receipts:ticketNotFound')}</Text>
+          <Text style={styles.notFoundText}>
+            {t('receipts:ticketNotFound')}
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -433,14 +437,20 @@ export default function ReceiptDetailScreen() {
   const items = receipt.items ?? [];
   const categoryTotals = receipt.category_totals ?? {};
   const categoryEntries = Object.entries(categoryTotals)
-    .map(([key, amount]) => ({ key, amount, def: resolveCategoryDisplay(catalog, key) }))
+    .map(([key, amount]) => ({
+      key,
+      amount,
+      def: resolveCategoryDisplay(catalog, key),
+    }))
     .sort((a, b) => b.amount - a.amount);
   // Items of the open category sheet: THIS receipt's lines filtered by the
   // tapped category slug, plus the category's total from this receipt.
   const openCategoryItems = openCategory
     ? items.filter((item) => item.category === openCategory)
     : [];
-  const openCategoryTotal = openCategory ? (categoryTotals[openCategory] ?? 0) : 0;
+  const openCategoryTotal = openCategory
+    ? categoryTotals[openCategory] ?? 0
+    : 0;
   const openCategoryLabel = openCategory
     ? resolveCategoryDisplay(catalog, openCategory).label
     : '';
@@ -469,12 +479,16 @@ export default function ReceiptDetailScreen() {
         ) : photoLoading || (receipt?.image_url && !photoFailed) ? (
           <View style={styles.photoPlaceholder}>
             <Spinner size="sm" color={colors.textSecondary} />
-            <Text style={styles.photoPlaceholderText}>{t('receipts:photoPlaceholderLoading')}</Text>
+            <Text style={styles.photoPlaceholderText}>
+              {t('receipts:photoPlaceholderLoading')}
+            </Text>
           </View>
         ) : (
           <View style={styles.photoPlaceholder}>
             <Icon name="doc.text" size={40} color={colors.textSecondary} />
-            <Text style={styles.photoPlaceholderText}>{t('receipts:photoPlaceholderEmpty')}</Text>
+            <Text style={styles.photoPlaceholderText}>
+              {t('receipts:photoPlaceholderEmpty')}
+            </Text>
           </View>
         )}
 
@@ -508,7 +522,9 @@ export default function ReceiptDetailScreen() {
 
         {categoryEntries.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('receipts:categoriesTitle')}</Text>
+            <Text style={styles.sectionTitle}>
+              {t('receipts:categoriesTitle')}
+            </Text>
             <Card padding={spacing.lg}>
               {categoryEntries.map((entry, idx) => (
                 <View key={entry.key}>
@@ -744,6 +760,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
     paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
   },
   catIcon: {
     width: 36,
@@ -762,8 +779,10 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   catAmount: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
+    // ...typography.headlineMd,
+    fontSize: 16,
+    fontWeight: '900',
+    color: colors.primary,
   },
   kicker: {
     ...typography.labelCaps,
@@ -772,6 +791,7 @@ const styles = StyleSheet.create({
   metaRow: {
     flexDirection: 'row',
     gap: spacing.lg,
+    backgroundColor: colors.surface,
   },
   originRow: {
     alignItems: 'flex-start',
@@ -780,13 +800,17 @@ const styles = StyleSheet.create({
   metaCol: {
     flex: 1,
     gap: spacing.xs,
+    backgroundColor: colors.surface,
   },
   metaValue: {
-    ...typography.bodyLg,
-    color: colors.textPrimary,
+    // ...typography.bodyLg,
+    fontSize: 17,
+    fontWeight: '600',
+    color: colors.primary,
   },
   section: {
     gap: spacing.md,
+    // backgroundColor: colors.surface,
   },
   sectionTitle: {
     ...typography.headlineMd,
@@ -798,10 +822,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
     paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
   },
   itemInfo: {
     flex: 1,
     gap: 2,
+    backgroundColor: colors.surface,
   },
   itemName: {
     ...typography.bodyMd,
@@ -812,8 +838,10 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   itemAmount: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
+    // ...typography.headlineMd,
+    fontSize: 16,
+    fontWeight: '900',
+    color: colors.primary,
   },
   empty: {
     ...typography.bodyMd,

@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -7,7 +8,6 @@ import {
   StyleSheet,
   TextInput,
 } from 'react-native';
-import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Card, Icon, Pressable, Spinner, Text, View } from '@/components';
@@ -130,7 +130,13 @@ export default function CategoryBudgetsScreen() {
     // brief load window. This guard is the source of truth for loading;
     // DO NOT "simplify" disabled to include them without also keeping this
     // early return (a tap during load must remain a no-op, not a save).
-    if (isLoading || catalogLoading || !!budgetsError || isSaving || submitting) {
+    if (
+      isLoading ||
+      catalogLoading ||
+      !!budgetsError ||
+      isSaving ||
+      submitting
+    ) {
       return;
     }
     return guard(async () => {
@@ -181,7 +187,7 @@ export default function CategoryBudgetsScreen() {
           ) : budgetsError ? (
             <Text style={styles.error}>{budgetsError}</Text>
           ) : (
-            <Card>
+            <Card style={{ backgroundColor: colors.surface }}>
               {categoryKeys.map((key, index) => {
                 const visual = resolveCategoryDisplay(catalog, key);
                 return (
@@ -217,7 +223,9 @@ export default function CategoryBudgetsScreen() {
                       placeholderTextColor={colors.textSecondary}
                       editable={!isSaving && !submitting}
                       style={styles.input}
-                      accessibilityLabel={`${t('settings:categoryBudgetLabel')} ${visual.label}`}
+                      accessibilityLabel={`${t(
+                        'settings:categoryBudgetLabel',
+                      )} ${visual.label}`}
                     />
                   </View>
                 );
@@ -274,6 +282,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xxl,
     gap: spacing.lg,
+    backgroundColor: colors.surface,
   },
   loadingWrap: {
     alignItems: 'center',
@@ -285,26 +294,31 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
   },
   rowBorder: {
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
   },
   rowLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     flex: 1,
+    backgroundColor: colors.surface,
   },
   iconDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
+    backgroundColor: colors.surface,
   },
   rowLabel: {
     ...typography.bodyMd,
     color: colors.textPrimary,
     fontWeight: '500',
+    backgroundColor: colors.surface,
   },
   input: {
     ...typography.bodyMd,

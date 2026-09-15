@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Image, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { Image, StyleSheet } from 'react-native';
 
 import {
   Icon,
@@ -140,7 +140,12 @@ export function ReceiptRow({
             <Text style={styles.name} numberOfLines={1}>
               {name}
             </Text>
-            {isManual ? <Chip label={t('receiptManual')} /> : null}
+            {isManual ? (
+              <Chip
+                style={{ backgroundColor: '#a8fbe6' }}
+                label={t('receiptManual')}
+              />
+            ) : null}
           </View>
         </View>
         <View

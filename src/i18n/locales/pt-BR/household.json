@@ -23,6 +23,7 @@
   "searchArticleCount_other": "{{count}} itens",
   "searchZeroArticles": "0 itens",
   "searchResultA11y": "Toque para ver detalhes do item",
+  "searchResultHint": "Toque para ver",
   "searchHideItem": "Ocultar {{name}}",
   "householdCreateChooseName": "Escolha um nome para sua família.",
   "householdCreate": "Criar família",
