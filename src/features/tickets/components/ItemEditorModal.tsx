@@ -294,6 +294,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radii.md,
+    boxShadow: '1px 2px 6px rgba(0, 0, 0, 0.3)',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     backgroundColor: colors.surface,

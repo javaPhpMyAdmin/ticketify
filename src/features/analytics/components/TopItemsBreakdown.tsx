@@ -88,6 +88,9 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
+    // Standard soft shadow (same convention as Card): light from top-left,
+    // so the falloff lands on the bottom and right edges.
+    boxShadow: '1px 2px 6px rgba(0, 0, 0, 0.3)',
     padding: spacing.lg,
     gap: spacing.lg,
   },

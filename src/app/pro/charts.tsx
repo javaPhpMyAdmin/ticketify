@@ -1036,6 +1036,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
+    boxShadow: '1px 2px 6px rgba(0, 0, 0, 0.3)',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
