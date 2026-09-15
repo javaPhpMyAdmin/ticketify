@@ -4,14 +4,12 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Divider, Icon, IconButton, Text, View } from '@/components';
 import {
-  Divider,
-  Icon,
-  IconButton,
-  Text,
-  View,
-} from '@/components';
-import { monthKeyToLabel, useItemDetail, normalizeItemName } from '@/features/home';
+  monthKeyToLabel,
+  normalizeItemName,
+  useItemDetail,
+} from '@/features/home';
 import { RenameItemModal, useRenameItem } from '@/features/items';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrency, formatDate } from '@/lib/format';
@@ -50,8 +48,11 @@ export default function ItemDetailScreen() {
   const itemName = name ?? '';
   const { total, purchases } = useItemDetail(itemName, month);
 
-  const { mutate: renameItem, isLoading: isRenaming, error: renameError } =
-    useRenameItem();
+  const {
+    mutate: renameItem,
+    isLoading: isRenaming,
+    error: renameError,
+  } = useRenameItem();
   const [renameOpen, setRenameOpen] = useState(false);
 
   const handleRename = async (newName: string) => {
@@ -114,7 +115,9 @@ export default function ItemDetailScreen() {
           <View style={styles.iconCircle}>
             <Icon name="cart.fill" size={24} color={colors.primary} />
           </View>
-          <Text style={styles.totalLabel}>{t('analytics:itemTotalKicker')}</Text>
+          <Text style={styles.totalLabel}>
+            {t('analytics:itemTotalKicker')}
+          </Text>
           <Text style={styles.totalAmount}>
             {formatCurrency(total, currency)}
           </Text>
@@ -122,9 +125,7 @@ export default function ItemDetailScreen() {
 
         <View style={styles.purchasesCard}>
           {purchases.length === 0 ? (
-            <Text style={styles.empty}>
-              {t('analytics:itemEmpty')}
-            </Text>
+            <Text style={styles.empty}>{t('analytics:itemEmpty')}</Text>
           ) : (
             purchases.map((purchase, idx) => (
               <Fragment key={`${purchase.receiptId}-${idx}`}>
@@ -142,23 +143,23 @@ export default function ItemDetailScreen() {
                     date: formatDate(activeLocale, purchase.date),
                   })}
                 >
-                {idx > 0 ? <Divider /> : null}
-                <View style={styles.purchaseRow}>
-                  <View style={styles.purchaseBody}>
-                    <Text style={styles.storeName} numberOfLines={1}>
-                      {purchase.storeName}
-                    </Text>
-                    <Text style={styles.purchaseDate}>
-                      {formatDate(activeLocale, purchase.date)}
-                    </Text>
-                    <Text style={styles.purchaseCaption} numberOfLines={1}>
-                      {t('analytics:itemReceiptCaption')}
+                  {idx > 0 ? <Divider /> : null}
+                  <View style={styles.purchaseRow}>
+                    <View style={styles.purchaseBody}>
+                      <Text style={styles.storeName} numberOfLines={1}>
+                        {purchase.storeName}
+                      </Text>
+                      <Text style={styles.purchaseDate}>
+                        {formatDate(activeLocale, purchase.date)}
+                      </Text>
+                      <Text style={styles.purchaseCaption} numberOfLines={1}>
+                        {t('analytics:itemReceiptCaption')}
+                      </Text>
+                    </View>
+                    <Text style={styles.purchaseAmount}>
+                      {formatCurrency(purchase.amount, currency)}
                     </Text>
                   </View>
-                  <Text style={styles.purchaseAmount}>
-                    {formatCurrency(purchase.amount, currency)}
-                  </Text>
-                </View>
                 </Pressable>
               </Fragment>
             ))
@@ -251,10 +252,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
     paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
   },
   purchaseBody: {
     flex: 1,
     gap: spacing.xs,
+    backgroundColor: colors.surface,
   },
   storeName: {
     ...typography.bodyMd,

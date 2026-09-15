@@ -4,7 +4,10 @@ import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Card, Divider, Icon, Pressable, Text, View } from '@/components';
-import { useLocaleStore, type LocaleOverride } from '@/i18n/stores/useLocaleStore';
+import {
+  useLocaleStore,
+  type LocaleOverride,
+} from '@/i18n/stores/useLocaleStore';
 import { colors, spacing, typography } from '@/theme';
 
 /**
@@ -35,7 +38,7 @@ type Option = {
     | 'settingsLanguage:pt-BR';
 };
 
-const OPTIONS: ReadonlyArray<Option> = [
+const OPTIONS: readonly Option[] = [
   { value: 'auto', labelKey: 'settingsLanguage:auto' },
   { value: 'en', labelKey: 'settingsLanguage:en' },
   { value: 'es-AR', labelKey: 'settingsLanguage:es-AR' },
@@ -93,7 +96,10 @@ export default function LanguageSelectorScreen() {
           {OPTIONS.map((option, idx) => {
             const selected = option.value === override;
             return (
-              <View key={option.value}>
+              <View
+                style={{ backgroundColor: colors.surface }}
+                key={option.value}
+              >
                 <Pressable
                   onPress={() => handleSelect(option.value)}
                   style={styles.row}

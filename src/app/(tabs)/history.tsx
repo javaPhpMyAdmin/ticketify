@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Image,
   Platform,
@@ -11,7 +12,6 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { useTranslation } from 'react-i18next';
 
 import { useQuery } from '@tanstack/react-query';
 
@@ -29,6 +29,7 @@ import {
   useMonthlyTotals,
 } from '@/features/analytics';
 import { useSessionStore, useSessionUser } from '@/features/auth';
+import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
 import { categoryDetailHref } from '@/features/charts';
 import {
   aggregateCategoriesByMonth,
@@ -42,8 +43,10 @@ import {
   useItemSearch,
   useMonthNavigation,
 } from '@/features/home';
-import { resolveCategoryDisplay, resolveHouseholdCategoryVisuals } from '@/features/home/categories';
-import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
+import {
+  resolveCategoryDisplay,
+  resolveHouseholdCategoryVisuals,
+} from '@/features/home/categories';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrency } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
@@ -173,7 +176,10 @@ export default function HistoryScreen() {
   const categoryColors = useMemo(() => {
     const bySlug: Record<string, string> = {};
     for (const category of categories) {
-      bySlug[category.key] = resolveCategoryDisplay(catalog, category.key).background;
+      bySlug[category.key] = resolveCategoryDisplay(
+        catalog,
+        category.key,
+      ).background;
     }
     return bySlug;
   }, [categories, catalog]);
@@ -310,7 +316,9 @@ export default function HistoryScreen() {
                       active && styles.viewSegmentLabelActive,
                     ]}
                   >
-                    {mode === 'personal' ? t('household:mySpending') : t('household:household')}
+                    {mode === 'personal'
+                      ? t('household:mySpending')
+                      : t('household:household')}
                   </Text>
                 </Pressable>
               );
@@ -383,7 +391,9 @@ export default function HistoryScreen() {
               <View style={styles.searchTotalRow}>
                 <View style={styles.searchTotalLeft}>
                   <Text style={styles.searchTotalLabel}>
-                    {t('household:searchArticleCount', { count: visibleResults.length })}
+                    {t('household:searchArticleCount', {
+                      count: visibleResults.length,
+                    })}
                   </Text>
                   {hiddenItems.size > 0 ? (
                     <Pressable
@@ -392,7 +402,9 @@ export default function HistoryScreen() {
                       accessibilityRole="button"
                       accessibilityLabel={t('household:searchHiddenRestore')}
                     >
-                      <Text style={styles.restoreLink}>{t('household:searchHiddenRestore')}</Text>
+                      <Text style={styles.restoreLink}>
+                        {t('household:searchHiddenRestore')}
+                      </Text>
                     </Pressable>
                   ) : null}
                 </View>
@@ -417,9 +429,14 @@ export default function HistoryScreen() {
                     accessibilityRole="button"
                     accessibilityHint={t('household:searchResultA11y')}
                   >
-                    <Text style={styles.searchResultName} numberOfLines={1}>
-                      {item.name}
-                    </Text>
+                    <View style={styles.searchResultInfo}>
+                      <Text style={styles.searchResultName} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.searchResultHint}>
+                        {t('household:searchResultHint')}
+                      </Text>
+                    </View>
                     <Text style={styles.searchResultAmount}>
                       {formatCurrency(item.amount, currency)}
                     </Text>
@@ -438,7 +455,9 @@ export default function HistoryScreen() {
                       setHiddenItems((prev) => new Set(prev).add(item.name))
                     }
                     accessibilityRole="button"
-                    accessibilityLabel={t('household:searchHideItem', { name: item.name })}
+                    accessibilityLabel={t('household:searchHideItem', {
+                      name: item.name,
+                    })}
                   >
                     <Icon name="trash" size={30} color="red" />
                   </Pressable>
@@ -456,7 +475,9 @@ export default function HistoryScreen() {
               title={householdTotalsError}
             />
           ) : householdTotals.length === 0 ? (
-            <Text style={styles.empty}>{t('household:emptyNoDataHousehold')}</Text>
+            <Text style={styles.empty}>
+              {t('household:emptyNoDataHousehold')}
+            </Text>
           ) : (
             <View style={styles.categoryList}>
               {householdTotals.map((t) => {
@@ -503,7 +524,10 @@ export default function HistoryScreen() {
           <Text style={styles.empty}>{t('household:emptyNoData')}</Text>
         ) : (
           <View style={styles.categoryList}>
-            <SegmentedBudgetBar categories={categories} categoryColors={categoryColors} />
+            <SegmentedBudgetBar
+              categories={categories}
+              categoryColors={categoryColors}
+            />
             {categories.map((category) => {
               const percent =
                 monthTotal === 0 ? 0 : (category.amount / monthTotal) * 100;
@@ -639,7 +663,8 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   searchTotalAmount: {
-    ...typography.headlineMd,
+    fontSize: 22,
+    fontWeight: '900',
     color: colors.primary,
   },
   searchResultWrap: {
@@ -657,8 +682,18 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
+    boxShadow: '1px 2px 6px rgba(0, 0, 0, 0.3)',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+  },
+  searchResultInfo: {
+    flex: 1,
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+  },
+  searchResultHint: {
+    ...typography.labelSm,
+    color: colors.textSecondary,
   },
   searchResultPressed: {
     transform: [{ scale: 0.98 }],
@@ -669,8 +704,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    // backgroundColor: colors.surface,
-    // borderWidth: 1,
     borderColor: colors.border,
   },
   hideItemPressed: {

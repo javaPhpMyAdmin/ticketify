@@ -407,8 +407,12 @@ async function run() {
       join(root, 'src/app/settings/category-budgets.tsx'),
       'utf8',
     );
+    // The pin is semantic, not textual: normalize whitespace so a
+    // reformat (prettier splitting the guard across lines) cannot
+    // produce a false negative on the same code.
+    const compact = src.replace(/\s+/g, ' ');
     assert.ok(
-      src.includes(
+      compact.includes(
         'isLoading || catalogLoading || !!budgetsError || isSaving || submitting',
       ),
       'handleSave must no-op while either read is loading OR failed (CRITICAL-1)',
