@@ -199,6 +199,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     gap: spacing.xs,
+    // Standard soft elevation shared by the `Card` atom (RN 0.76+ boxShadow
+    // works on both platforms) so the input container matches the other
+    // boxed inputs across auth/settings/ticket flows.
+    boxShadow: '1px 2px 6px rgba(0, 0, 0, 0.3)',
   },
   fieldLabel: {
     ...typography.labelSm,

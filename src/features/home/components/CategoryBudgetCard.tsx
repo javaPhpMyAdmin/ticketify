@@ -157,6 +157,11 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.lg,
     borderRadius: radii.lg,
+    // Standard soft elevation shared by the `Card` atom and FAB (RN 0.76+
+    // boxShadow works on both platforms). The History category list and the
+    // Home category section render through this Pressable, so the shadow
+    // lives here rather than on each consumer.
+    boxShadow: '1px 2px 6px rgba(0, 0, 0, 0.3)',
   },
   pressed: {
     transform: [{ scale: 0.98 }],

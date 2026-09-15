@@ -358,6 +358,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.danger,
     borderRadius: 12,
+    boxShadow: '1px 2px 6px rgba(0, 0, 0, 0.3)',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: spacing.md,
