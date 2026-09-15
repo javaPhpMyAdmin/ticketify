@@ -13,7 +13,7 @@
   "categoryItemsA11y_one": "Ver item de {{category}}",
   "categoryItemsA11y_other": "Ver itens de {{category}}",
   "photoA11y": "Ver foto em tela cheia",
-  "photoPlaceholderLoading": "Carregando comprovante...",
+  "photoPlaceholderLoading": "Carregando comprovante…",
   "photoPlaceholderEmpty": "Sem foto do comprovante",
   "closePhotoA11y": "Fechar foto",
   "loadingTicket": "Carregando comprovante…",
