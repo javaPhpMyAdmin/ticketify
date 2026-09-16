@@ -21,8 +21,11 @@ import { registerAuthStateListener } from '@/lib/auth/auth-listener-registry';
 import { ensureProfile } from '@/lib/auth/profile-sync';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
+import { logOutRevenueCat } from '@/lib/revenuecat';
 import { supabase } from '@/lib/supabase';
 import { isSecureStoreAvailable } from '@/lib/supabase/storage-adapter';
+import { withTimeout } from '@/lib/with-timeout';
+import { useProStore } from '@/stores/use-pro-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 
 /** A store action result: a user-displayable message, or null on success. */
@@ -68,29 +71,6 @@ export let AUTH_RESTORE_TIMEOUT_MS = 10_000;
  */
 export function __setAuthRestoreTimeout(ms: number): void {
   AUTH_RESTORE_TIMEOUT_MS = ms;
-}
-
-/**
- * Races `promise` against a timer and ALWAYS cancels the timer once either
- * side wins. Cancelling matters beyond hygiene: a restore that settles early
- * must not leave a pending timeout keeping the process alive (the node test
- * harness previously lingered ~10 s per restore test on leaked timers).
- * `fallback` is the race result when the bound fires first.
- */
-function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  fallback: T,
-): Promise<T> {
-  let handle: ReturnType<typeof setTimeout> | undefined;
-  return Promise.race([
-    promise,
-    new Promise<T>((resolve) => {
-      handle = setTimeout(() => resolve(fallback), ms);
-    }),
-  ]).finally(() => {
-    if (handle) clearTimeout(handle);
-  });
 }
 
 /** Generic sign-up failure copy — never a raw GoTrue message (no enumeration). */
@@ -250,6 +230,12 @@ export const useSessionStore = create<SessionState>((set) => ({
   },
 
   signOut: async () => {
+    // Bridge identity (webhook identity bridge): clear the RevenueCat
+    // app-user mapping BEFORE the Supabase sign-out so the next user never
+    // inherits this user's RevenueCat identity. Best-effort by contract —
+    // logOutRevenueCat never throws, so a failed logOut cannot block the
+    // sign-out itself.
+    await logOutRevenueCat();
     const { error } = await supabase.auth.signOut();
     if (error) {
       // auth-js clears the local session and fires SIGNED_OUT BEFORE
@@ -304,6 +290,12 @@ function initAuthStateListener(): void {
         // subscribed (D6).
         queryClient.clear();
         useReceiptsStore.getState().resetAll();
+        // Reset the Pro entitlement store too: the previous user's
+        // isPro/subscription state must never leak into the next session
+        // (first-frame flash of Pro UI for the wrong user). reset() restores
+        // the locked defaults (`isLoading: true`), so the gate cannot open
+        // until the next user's session resolves.
+        useProStore.getState().reset();
         useSessionStore.setState({ session: null });
         return;
       }

@@ -72,6 +72,13 @@ export interface ProState {
   ) => void;
   /** Direct setter for the monotonic ever-paid flag. */
   setEverPaid: (everPaid: boolean) => void;
+  /**
+   * Restore the full initial state (locked defaults). Called on SIGNED_OUT
+   * and at the start of every per-user resolution so a previous user's
+   * `isPro` / `subscriptionStatus` / `everPaid` can never leak into the
+   * next session on the same device.
+   */
+  reset: () => void;
 }
 
 /** Compute derived trial booleans from raw status + timestamp. */
@@ -135,4 +142,15 @@ export const useProStore = create<ProState>((set) => ({
   },
 
   setEverPaid: (everPaid) => set({ everPaid }),
+
+  reset: () =>
+    set({
+      isPro: false,
+      isLoading: true,
+      subscriptionStatus: 'none',
+      trialEndsAt: null,
+      isTrialing: false,
+      isFrozen: false,
+      everPaid: false,
+    }),
 }));

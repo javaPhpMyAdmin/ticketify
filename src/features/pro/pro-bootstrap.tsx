@@ -2,44 +2,61 @@
  * Pro bootstrap (pro-subscription spec — REQ-PRO-1,
  * subscription-trial — DB subscription state).
  *
- * Configures the RevenueCat SDK exactly once per process and pipes the
- * resulting `CustomerInfo` into `useProStore`. Mounted inside
- * `QueryClientProvider` in `_layout.tsx`; renders `null` so it never
- * affects the visual tree.
+ * Mounted inside `QueryClientProvider` in `_layout.tsx`; renders `null` so
+ * it never affects the visual tree. Two effects, two concerns:
+ *
+ *   1. ONE-TIME SDK setup (guarded by the module-level `bootstrapped`
+ *      flag): `configure` runs at most once per process — REQ-PRO-1.
+ *      Re-calling `Purchases.configure` would reset internal SDK state
+ *      (cached customerInfo, listener registrations), so a session flip
+ *      must never re-configure.
+ *   2. PER-USER identity bridge + resolution (keyed on `[userId]`, runs
+ *      on EVERY userId change): `logInRevenueCat(userId)` before reading
+ *      `CustomerInfo` so the snapshot is scoped to the Supabase user, then
+ *      DB-first resolution into `useProStore`. This is the webhook
+ *      identity bridge — without it every purchase lands on
+ *      `$RCAnonymousID` and the server-side tier sync never runs.
  *
  * Safe-by-default (REQ-GATE-5):
  *
- *   - Missing API key → `configure` returns false, the store stays at
- *     `{ isPro: false, isLoading: true }`. The gate is locked.
- *   - Native module unavailable (Expo Go / dev client not rebuilt) →
- *     `configure` returns false. Same outcome.
- *   - `getCustomerInfo` rejects → store lands at `{ isPro: false,
- *     isLoading: false }`. The gate is locked (free default), and the
- *     paywall surfaces a user-safe error when the SDK is reachable but
- *     cannot read the entitlement.
+ *   - Missing API key / native module unavailable (Expo Go / dev client
+ *     not rebuilt) → identity bridge is skipped, `getCustomerInfo` returns
+ *     null, the store resolves from the DB profile only. The gate locks on
+ *     the safe default.
+ *   - `logInRevenueCat` fails → `console.warn` and fall through to the
+ *     DB-first resolution. A failed bridge must NOT block Pro gating.
+ *   - `getCustomerInfo` rejects or overruns its bound → resolved as null
+ *     → free default, `isLoading: false`.
  *
- * The `configured` flag is the module-level guard the design calls for:
- * `Purchases.configure` resets internal SDK state (cached customerInfo,
- * listener registrations), so re-calling it on every session flip would
- * break the customerInfoUpdate listener and the live entitlement state.
+ * Per-user race guard: `activeUserIdRef` holds the userId the effects are
+ * CURRENTLY resolving for. Every await in the per-user path re-checks it
+ * and bails when the user flipped mid-flight (A → B), so an in-flight A
+ * resolution can never overwrite B's store state. The `customerInfoUpdate`
+ * listener (attached once) uses the same ref — a callback from a previous
+ * user's session or from the anonymous identity is dropped.
  *
  * Subscription state (migration 0016):
- *   On every bootstrap path that resolves to a userId, the profile is
- *   read from DB to populate `subscriptionStatus` and `trialEndsAt`.
- *   This ensures the gate can resolve `'frozen'` for expired trials.
+ *   On every per-user resolution, the profile is read from DB to populate
+ *   `subscriptionStatus` and `trialEndsAt`, so the gate can resolve
+ *   `'frozen'` for expired trials.
  */
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { useSessionUser } from '@/features/auth';
 import {
+  attachCustomerInfoListener,
   configure as configureRevenueCat,
   getCustomerInfo,
   isNativeAvailable,
+  logInRevenueCat,
+  logOutRevenueCat,
+  REVENUECAT_CALL_TIMEOUT_MS,
 } from '@/lib/revenuecat';
 import {
   expireOverdueTrials,
   readProfileRow,
 } from '@/lib/supabase/feature-access';
+import { withTimeout } from '@/lib/with-timeout';
 import { useProStore } from '@/stores/use-pro-store';
 
 import { isProOverrideEnabled } from './gate';
@@ -47,20 +64,25 @@ import { isProOverrideEnabled } from './gate';
 const REVENUECAT_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? '';
 
 /**
- * Tracks whether `configure` has already run this process. Mirrors the
- * guard inside the wrapper (`src/lib/revenuecat.ts`) but is checked
- * here too so a re-render of the bootstrap (e.g. after a session flip)
- * never re-configures the SDK.
+ * Tracks whether `configure` has already run this process. Guards ONLY the
+ * one-time SDK setup — identity bridging and per-user store resolution are
+ * deliberately NOT behind this flag so they re-run for every session flip.
  */
 let bootstrapped = false;
 
 /**
- * Read the user's subscription state from the DB profile and push it
- * into the store. Called on every bootstrap path that has a userId.
+ * Read the user's subscription state from the DB profile and push it into
+ * the store. Called on every per-user resolution path that has a userId.
  * Never throws — a failed read leaves the store defaults (none/locked).
+ * `isCurrent` is the per-user race guard: bails when the user flipped
+ * while the profile read was in flight.
  */
-async function syncSubscriptionFromDB(userId: string): Promise<void> {
+async function syncSubscriptionFromDB(
+  userId: string,
+  isCurrent: () => boolean,
+): Promise<void> {
   const result = await readProfileRow(userId);
+  if (!isCurrent()) return;
   if (result.status === 'ok' && result.data) {
     const { subscription_status, trial_ends_at, ever_paid } = result.data;
     const status = subscription_status ?? 'none';
@@ -85,6 +107,69 @@ async function syncSubscriptionFromDB(userId: string): Promise<void> {
 }
 
 /**
+ * Per-user resolution: bridge the RevenueCat identity, read the scoped
+ * CustomerInfo snapshot, then resolve the store DB-first. Runs for EVERY
+ * userId change (not just the first), so a sign-out → sign-in cycle in the
+ * same process re-bridges the new user's identity.
+ *
+ * `isCurrent` is the per-user race guard (bails after every await when the
+ * user flipped); `identityBridged` mirrors `identityBridgedRef` so the
+ * customerInfoUpdate listener only dispatches callbacks for a successfully
+ * bridged, still-current user.
+ */
+async function resolveProSession(
+  userId: string,
+  isCurrent: () => boolean,
+  identityBridged: { current: boolean },
+): Promise<void> {
+  // Bridge identity FIRST so the CustomerInfo snapshot below is scoped to
+  // this Supabase user. A failed bridge must NOT block Pro gating — warn,
+  // then resolve DB-first (the RC snapshot is not trustworthy for this
+  // user when the bridge failed; it could still belong to the anonymous or
+  // a previous identity).
+  let identityOk = false;
+  if (isNativeAvailable() && REVENUECAT_API_KEY) {
+    const identity = await logInRevenueCat(userId);
+    if (!isCurrent()) return;
+    identityOk = identity.ok;
+    identityBridged.current = identityOk;
+    if (!identityOk) {
+      console.warn(
+        '[pro-bootstrap] RevenueCat logIn failed, continuing:',
+        identity.message,
+      );
+    }
+  }
+
+  // CustomerInfo snapshot, bounded so a hung native call cannot keep the
+  // gate locked (isLoading stays true → free users blocked from scanning).
+  // A failure/timeout resolves as null → safe free default.
+  const info = await withTimeout(
+    getCustomerInfo(),
+    REVENUECAT_CALL_TIMEOUT_MS,
+    null,
+  );
+  if (!isCurrent()) return;
+
+  // Sync subscription state from DB FIRST — the DB is authoritative for
+  // trial/active status. RevenueCat entitlements are only relevant for paid
+  // subscriptions, not for our custom trial flow.
+  await syncSubscriptionFromDB(userId, isCurrent);
+  if (!isCurrent()) return;
+
+  // Only set isPro from RevenueCat when (a) the identity bridge actually
+  // succeeded (the snapshot is scoped to THIS user) and (b) the DB didn't
+  // already set it (DB trial/active status overrides RC entitlements).
+  const store = useProStore.getState();
+  if (identityOk && !store.isPro) {
+    useProStore.setState({
+      isPro: info?.isPro ?? false,
+    });
+  }
+  useProStore.setState({ isLoading: false });
+}
+
+/**
  * Bootstraps RevenueCat on mount. Returns null — the bootstrap is a
  * pure side-effect carrier.
  */
@@ -93,117 +178,104 @@ export function ProBootstrap(): null {
   const setPro = useProStore((s) => s.setPro);
   const setEverPaid = useProStore((s) => s.setEverPaid);
 
+  /**
+   * The userId the effects are CURRENTLY resolving for. Every await in the
+   * per-user path and every listener callback re-checks this ref so a
+   * resolution from a previous user can never overwrite the current user's
+   * store state.
+   */
+  const activeUserIdRef = useRef<string | null>(null);
+  /** True when the CURRENT user's RevenueCat identity bridge succeeded. */
+  const identityBridgedRef = useRef(false);
+
+  // Effect 1 — ONE-TIME SDK setup. Configure runs at most once per process;
+  // everything else about a session (identity bridge, snapshot, store
+  // resolution) belongs to the per-user effect below.
   useEffect(() => {
     if (bootstrapped) return;
+    if (!userId) return; // no session yet: nothing to configure
     if (isProOverrideEnabled()) {
-      // DEV-ONLY: see the safety note in `gate.ts`. This branch is the
-      // single point where the override flips the store to Pro BEFORE
-      // any RevenueCat call (configure / getCustomerInfo / listener
-      // registration) so the gate opens without the native module. The
-      // run order matters: do not move this branch below the real
-      // SDK bootstrap, or the SDK will overwrite our override on its
-      // first customerInfo snapshot.
+      // DEV-ONLY: never touch the SDK when the override is on (see the
+      // safety note in `gate.ts`); the per-user effect flips the store.
+      return;
+    }
+    if (!isNativeAvailable()) return; // per-user effect degrades to DB-only
+    if (!REVENUECAT_API_KEY) return; // same — warning emitted per-user
+    const ok = configureRevenueCat(REVENUECAT_API_KEY);
+    if (!ok) return;
+    bootstrapped = true;
+
+    // Live entitlement changes arrive through the SDK's customerInfoUpdate
+    // listener (registered ONCE, after configure). The callback dispatches
+    // ONLY for the current bridged user: a callback from a previous user's
+    // session or from the anonymous identity must never overwrite the
+    // current user's store state.
+    attachCustomerInfoListener((isPro) => {
+      if (activeUserIdRef.current === null || !identityBridgedRef.current) {
+        return;
+      }
+      setPro(isPro);
+      // A real purchase activating the `pro` entitlement is a MONOTONIC
+      // event (migration 0021): the webhook sets ever_paid=true in the DB,
+      // but `syncSubscriptionFromDB` only runs per session — NOT on this
+      // listener. Mirror the DB flag immediately so the store never offers
+      // a free trial the server would reject for an ever-paid user. This
+      // is the only caller of `setEverPaid`.
+      if (isPro) setEverPaid(true);
+    });
+  }, [userId, setPro, setEverPaid]);
+
+  // Effect 2 — PER-USER identity bridge + resolution. Keyed on `[userId]`
+  // so it runs on EVERY userId change, including the null (sign-out) case.
+  // This is what keeps the RevenueCat identity in sync across
+  // sign-out → sign-in cycles in the same process.
+  useEffect(() => {
+    // Keep the ref in sync FIRST so in-flight resolutions and listener
+    // callbacks compare against the latest identity.
+    activeUserIdRef.current = userId;
+
+    if (isProOverrideEnabled()) {
+      // DEV-ONLY: see the safety note in `gate.ts`. Flips the store to Pro
+      // BEFORE any RevenueCat work so the gate opens without the SDK.
       if (userId) {
         useProStore.setState({ isPro: true, isLoading: false });
         // Still sync subscription state from DB for frozen-state resolution.
-        void syncSubscriptionFromDB(userId);
-      } else {
-        // No session yet: leave the store in its default `{ isLoading: true,
-        // isPro: false }` so the gate stays locked until the session
-        // resolves and this effect re-runs.
-        return;
+        void syncSubscriptionFromDB(
+          userId,
+          () => activeUserIdRef.current === userId,
+        );
       }
-      bootstrapped = true;
       return;
     }
+
     if (!userId) {
-      // No session yet: do not configure — there is nothing to look up.
-      // The store stays at `{ isLoading: true }` so the gate remains
-      // locked until the session resolves and this effect re-runs.
+      // Signed out: clear the previous user's store state (locked defaults,
+      // so no Pro UI can flash for a future user) and detach the RC app-user
+      // mapping defensively (idempotent; a no-op when the SDK was never
+      // configured).
+      identityBridgedRef.current = false;
+      useProStore.getState().reset();
+      void logOutRevenueCat();
       return;
     }
-    if (!isNativeAvailable()) {
-      // Native module missing: settle the gate so Pro screens do not
-      // stay in the loading state forever. The gate resolves to
-      // `'locked'` (`isPro: false`), which is the safe default.
-      // Still sync subscription state for frozen-state detection.
-      useProStore.setState({ isLoading: false, isPro: false });
-      void syncSubscriptionFromDB(userId);
-      return;
-    }
-    if (!REVENUECAT_API_KEY) {
-      // SDK is reachable but the project is missing its API key: log
-      // a warning so the misconfiguration is observable, then settle
-      // the gate on the safe default.
+
+    // Real user: reset to safe defaults (gate locked) BEFORE resolving so a
+    // previous user's Pro state can never flash during this resolution.
+    identityBridgedRef.current = false;
+    useProStore.getState().reset();
+    if (isNativeAvailable() && !REVENUECAT_API_KEY) {
+      // SDK is reachable but the project is missing its API key: log a
+      // warning so the misconfiguration is observable.
       console.warn(
         '[pro-bootstrap] EXPO_PUBLIC_REVENUECAT_API_KEY is empty; the paywall will report a configuration error.',
       );
-      useProStore.setState({ isLoading: false, isPro: false });
-      void syncSubscriptionFromDB(userId);
-      return;
     }
-    const ok = configureRevenueCat(REVENUECAT_API_KEY);
-    if (!ok) {
-      useProStore.setState({ isLoading: false, isPro: false });
-      void syncSubscriptionFromDB(userId);
-      return;
-    }
-    bootstrapped = true;
-
-    // Pipe the first customerInfo snapshot into the store. The gate
-    // settles on the entitlement state. A failed fetch leaves
-    // `isPro: false, isLoading: false` so the gate locks on the safe
-    // default rather than staying in the loading state.
-    void (async () => {
-      const info = await getCustomerInfo();
-
-      // Sync subscription state from DB FIRST — the DB is authoritative
-      // for trial/active status. RevenueCat entitlements are only relevant
-      // for paid subscriptions, not for our custom trial flow.
-      await syncSubscriptionFromDB(userId);
-
-      // Only set isPro from RevenueCat if the DB didn't already set it
-      // (DB trial/active status overrides RevenueCat entitlements).
-      const store = useProStore.getState();
-      if (!store.isPro) {
-        useProStore.setState({
-          isPro: info?.isPro ?? false,
-        });
-      }
-      useProStore.setState({ isLoading: false });
-
-      // The SDK's customerInfoUpdate listener will fire on every
-      // subsequent entitlement change (renewal, refund, family-share
-      // transfer). We register it AFTER the initial snapshot so the
-      // listener path is the single source of truth for live updates.
-      try {
-        // Runtime require (mirrors the wrapper): the native module is
-        // not linked in Expo Go, so a static import would crash there.
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const Purchases = require('react-native-purchases');
-        if (Purchases?.addCustomerInfoUpdateListener) {
-          Purchases.addCustomerInfoUpdateListener((ci: any) => {
-            const isPro =
-              ci?.entitlements?.all?.['pro']?.isActive === true;
-            setPro(isPro);
-            // A real purchase activating the `pro` entitlement is a
-            // MONOTONIC event (migration 0021): the webhook sets
-            // ever_paid=true in the DB, but `syncSubscriptionFromDB`
-            // only runs once per process under the `bootstrapped` guard —
-            // NOT on this listener. Mirror the DB flag immediately so the
-            // store never offers a free trial the server would reject for
-            // an ever-paid user. This is the only caller of `setEverPaid`.
-            if (isPro) setEverPaid(true);
-          });
-        }
-      } catch (err) {
-        console.warn(
-          '[pro-bootstrap] customerInfoUpdate listener registration failed:',
-          err,
-        );
-      }
-    })();
-  }, [userId, setPro, setEverPaid]);
+    void resolveProSession(
+      userId,
+      () => activeUserIdRef.current === userId,
+      identityBridgedRef,
+    );
+  }, [userId]);
 
   return null;
 }

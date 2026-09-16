@@ -20,6 +20,8 @@
  * M8.1 adds unit harnesses for the wrapper's behaviour against mocks.
  */
 
+import { withTimeout } from '@/lib/with-timeout';
+
 // Runtime require: returns `null` when the native module is not linked
 // (Expo Go / web / dev-client not rebuilt after install). Kept as `any`
 // because the SDK's types are version-pinned and we want this wrapper to
@@ -28,7 +30,13 @@ let Purchases: any = null;
 let nativeModuleError: unknown = null;
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  Purchases = require('react-native-purchases');
+  const purchasesModule = require('react-native-purchases');
+  // The package's CJS build exports `{ default: Purchases }` (interop
+  // shape), so a raw `require` yields the namespace object and its
+  // methods (`configure`, `getOfferings`) are undefined. Resolve the
+  // class itself, falling back to the module when a future version
+  // exports the class directly.
+  Purchases = purchasesModule?.default ?? purchasesModule;
 } catch (err) {
   // The native module is not linked in this environment (most commonly
   // Expo Go). Every wrapper below checks for `null` and short-circuits,
@@ -110,6 +118,133 @@ export async function getCustomerInfo(): Promise<CustomerInfoSnapshot | null> {
     return { isPro };
   } catch (err) {
     console.warn('[revenuecat] getCustomerInfo failed:', err);
+    return null;
+  }
+}
+
+/** Result of an identity-bridging call (`logIn` / `logOut`). */
+export interface RevenueCatIdentityResult {
+  ok: boolean;
+  message?: string;
+}
+
+/**
+ * Bounded wait for SDK identity calls. A hung native call must never stall
+ * the Pro bootstrap (gate stays locked → free users blocked from scanning)
+ * or block sign-out, so `logIn` / `logOut` race against this bound. Mirrors
+ * the auth restore timeout convention (10 s).
+ */
+export const REVENUECAT_CALL_TIMEOUT_MS = 10_000;
+
+/** Sentinel returned by `withTimeout` when the SDK call overruns its bound. */
+const IDENTITY_TIMEOUT_SENTINEL = Symbol('revenuecat-identity-timeout');
+
+/**
+ * Associates the RevenueCat app user with the Supabase UUID so purchases
+ * are attributed to the real identity instead of an anonymous
+ * `$RCAnonymousID` (webhook identity bridge). The SDK resolves with
+ * `{ customerInfo, created }`; we tolerate that shape and only report
+ * success/failure.
+ *
+ * Safe by default: never throws to callers. Returns `ok: false` when the
+ * native module is unavailable, the SDK is not configured yet, the id is
+ * empty, the call times out, or the SDK call itself fails.
+ */
+export async function logInRevenueCat(
+  appUserId: string,
+): Promise<RevenueCatIdentityResult> {
+  if (!Purchases) {
+    return { ok: false, message: 'Compras no disponibles en este entorno.' };
+  }
+  if (!appUserId.trim()) {
+    return { ok: false, message: 'Identidad de compra inválida.' };
+  }
+  if (!configured) {
+    return { ok: false, message: 'RevenueCat no está configurado.' };
+  }
+  try {
+    const result = await withTimeout(
+      Purchases.logIn(appUserId),
+      REVENUECAT_CALL_TIMEOUT_MS,
+      IDENTITY_TIMEOUT_SENTINEL,
+    );
+    if (result === IDENTITY_TIMEOUT_SENTINEL) {
+      console.warn(`[revenuecat] logIn exceeded ${REVENUECAT_CALL_TIMEOUT_MS}ms`);
+      return { ok: false, message: 'No se pudo vincular la cuenta de compras.' };
+    }
+    return { ok: true };
+  } catch (err) {
+    console.warn('[revenuecat] logIn failed:', err);
+    return { ok: false, message: 'No se pudo vincular la cuenta de compras.' };
+  }
+}
+
+/**
+ * Clears the RevenueCat app-user mapping. Idempotent and safe: a no-op
+ * when the SDK is unavailable or not configured; never throws to callers.
+ * Called on sign-out so the next user never inherits the previous user's
+ * RevenueCat identity. Bounded so a hung native call cannot block the
+ * sign-out itself.
+ */
+export async function logOutRevenueCat(): Promise<RevenueCatIdentityResult> {
+  if (!Purchases) {
+    return { ok: false, message: 'Compras no disponibles en este entorno.' };
+  }
+  if (!configured) {
+    return { ok: false, message: 'RevenueCat no está configurado.' };
+  }
+  try {
+    const result = await withTimeout(
+      Purchases.logOut(),
+      REVENUECAT_CALL_TIMEOUT_MS,
+      IDENTITY_TIMEOUT_SENTINEL,
+    );
+    if (result === IDENTITY_TIMEOUT_SENTINEL) {
+      console.warn(`[revenuecat] logOut exceeded ${REVENUECAT_CALL_TIMEOUT_MS}ms`);
+      return { ok: false, message: 'No se pudo cerrar la cuenta de compras.' };
+    }
+    return { ok: true };
+  } catch (err) {
+    console.warn('[revenuecat] logOut failed:', err);
+    return { ok: false, message: 'No se pudo cerrar la cuenta de compras.' };
+  }
+}
+
+/**
+ * Entitlement-change listener callback projected to the `pro` boolean.
+ * The SDK's `customerInfoUpdate` fires on renewal, refund, family-share
+ * transfer, etc. Consumers still guard on the current user identity.
+ */
+export type CustomerInfoUpdateListener = (isPro: boolean) => void;
+
+/**
+ * Attaches the SDK's `customerInfoUpdate` listener. Resolves the CJS
+ * interop shape (`{ default: PurchasesClass }`) ONCE, here — the module
+ * load at the top of this file already unwraps `.default`, so the static
+ * is directly reachable. This is the single place that owns the interop
+ * knowledge; callers never raw-`require` the package.
+ *
+ * Returns an unsubscribe function, or `null` when the native module is
+ * unavailable or registration failed.
+ */
+export function attachCustomerInfoListener(
+  listener: CustomerInfoUpdateListener,
+): (() => void) | null {
+  if (!Purchases?.addCustomerInfoUpdateListener) return null;
+  try {
+    const handle = Purchases.addCustomerInfoUpdateListener((ci: any) => {
+      const isPro = ci?.entitlements?.all?.[PRO_ENTITLEMENT]?.isActive === true;
+      listener(isPro);
+    });
+    return () => {
+      try {
+        handle?.unsubscribe?.();
+      } catch (err) {
+        console.warn('[revenuecat] listener unsubscribe failed:', err);
+      }
+    };
+  } catch (err) {
+    console.warn('[revenuecat] listener registration failed:', err);
     return null;
   }
 }
