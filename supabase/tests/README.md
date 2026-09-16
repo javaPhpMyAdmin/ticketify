@@ -61,6 +61,68 @@ Like the others it is a single `DO`/`assert` block, idempotent, and runs via
 `pnpm test:sql` (its step is registered in `scripts/test-db-smoke.mjs`) and
 via the CI `db-smoke` job.
 
+## `household-gate-tier.sql`
+
+A fail-closed smoke test for the household-subscription security fix
+(migration 0034). Covers:
+
+1. **Catalog**: `create_household(text)` and `sync_client_subscription(text)`
+   exist, are `SECURITY DEFINER`, owned by `postgres`, with least-privilege
+   grants (no EXECUTE for anon/public, EXECUTE for `authenticated` only —
+   the 0029 §4 create-or-replace-resets-EXECUTE trap).
+2. **create_household gate (the integrity hole)**: a free user whose
+   `subscription_status` was spoofed to `'active'` (the old
+   `sync_client_subscription('active')` exploit path) is REJECTED with
+   `Pro subscription required to create a household`, and nothing is
+   written (no household row, no `household_id`).
+3. **No trial regression**: a Pro user and a trialing user
+   (`tier='pro'`, `subscription_status='trial'` — the state
+   `start_free_trial` produces) both create households successfully, with
+   owner membership and `profiles.household_id` set.
+4. **`sync_client_subscription` rejections**: `'active'` is rejected for
+   free AND Pro users (exact error message asserted, no mutation); the
+   remaining claims (`'none'`/`'trial'`/`'expired'`) are accepted but never
+   change `tier` and never write `trial_ends_at` — they cannot grant Pro
+   capability or freeze the expiry materialization.
+
+It ends with a `raise notice` on success. Like the others it is a single
+`DO`/`assert` block, idempotent, and runs via `pnpm test:sql` (its step is
+registered in `scripts/test-db-smoke.mjs`) and via the CI `db-smoke` job.
+
+## `trial-freeze-guard.sql`
+
+A fail-closed smoke test for the trial-freeze security fix (migration 0035).
+Covers:
+
+1. **Catalog**: `sync_client_subscription(text)` and
+   `expire_overdue_trials()` exist, are `SECURITY DEFINER`, owned by
+   `postgres`, with least-privilege grants (no EXECUTE for anon/public,
+   EXECUTE for `authenticated` only).
+2. **Guard A (claim guard)**: a profile in an ACTIVE trial
+   (`subscription_status='trial'`, `trial_ends_at` in the future,
+   `tier='pro'`) is REJECTED when claiming `'none'` or `'expired'` with the
+   exact message `cannot change subscription status during active trial`,
+   and nothing is mutated (status, tier, and `trial_ends_at` all intact);
+   self-claiming `'trial'` stays allowed.
+3. **Guard A no-regression**: a user NOT in a trial (no `trial_ends_at`)
+   can still claim `'none'`/`'expired'` freely — the free lifecycle is
+   preserved and neither claim ever changes `tier` or writes
+   `trial_ends_at`.
+4. **Guard B (status-independent materializer)**: `expire_overdue_trials`
+   keys on the trial window (`trial_ends_at <= now()` AND `tier='pro'`)
+   instead of `subscription_status='trial'` — a pre-fix FROZEN row
+   (`status='none'`, `tier='pro'`, past `trial_ends_at`) self-heals to
+   `expired`/`free`, a classic overdue `'trial'` row still expires (0020
+   behavior preserved), and an in-window trial is untouched.
+5. **Paid-subscriber protection**: a REAL payer (`status='active'`,
+   `tier='pro'`, `ever_paid=true`) carrying a stale PAST `trial_ends_at`
+   survives `expire_overdue_trials` untouched — B can never downgrade a
+   paying user to free.
+
+It ends with a `raise notice` on success. Like the others it is a single
+`DO`/`assert` block, idempotent, and runs via `pnpm test:sql` (its step is
+registered in `scripts/test-db-smoke.mjs`) and via the CI `db-smoke` job.
+
 ## Running it locally
 
 Requires **Docker** (daemon running) and the **Supabase CLI** on `PATH`.

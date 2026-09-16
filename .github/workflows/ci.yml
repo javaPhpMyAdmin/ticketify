@@ -84,3 +84,23 @@ jobs:
         # affected month server-side, so the materialized
         # monthly_user_totals cache reflects the move immediately.
         run: supabase db query --local --file supabase/tests/recalculate-on-purchase-items-update.sql
+
+      - name: Run household-gate-tier SQL smoke test
+        # Pins the 0034 security contract: create_household gates on the
+        # server-authoritative tier ONLY (a free user with a spoofed
+        # subscription_status='active' is rejected), trial access via
+        # tier='pro' keeps working (no regression), sync_client_subscription
+        # rejects the 'active' claim (webhook-only) and the remaining claims
+        # never change tier; anon/public have no EXECUTE on either definer RPC.
+        run: supabase db query --local --file supabase/tests/household-gate-tier.sql
+
+      - name: Run trial-freeze-guard SQL smoke test
+        # Pins the 0035 security contract: sync_client_subscription rejects
+        # ANY move off an ACTIVE trial ('none'/'expired' — the trial-freeze
+        # vector) while non-trial claims keep working (free lifecycle
+        # preserved); expire_overdue_trials keys on the trial window
+        # (trial_ends_at <= now() AND tier='pro') regardless of
+        # subscription_status so pre-fix frozen rows self-heal, and real
+        # paid subscribers (status='active' / ever_paid) are never
+        # downgraded.
+        run: supabase db query --local --file supabase/tests/trial-freeze-guard.sql

@@ -1,6 +1,9 @@
 /**
  * Local runner for the SQL smoke tests (supabase/tests/pro-subscription.sql,
- * supabase/tests/household-totals.sql and supabase/tests/user-categories.sql).
+ * supabase/tests/household-totals.sql, supabase/tests/user-categories.sql,
+ * supabase/tests/recalculate-on-purchase-items-update.sql,
+ * supabase/tests/household-gate-tier.sql and
+ * supabase/tests/trial-freeze-guard.sql).
  *
  * This is intentionally NOT part of the `pnpm test` chain. The Node test suite
  * (test:*) is 100% dependency-free of Docker and runs anywhere. This script
@@ -82,5 +85,11 @@ run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'household-to
 
 console.log('\n== Running user-categories SQL smoke test ==\n');
 run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'user-categories.sql')]);
+
+console.log('\n== Running household-gate-tier SQL smoke test ==\n');
+run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'household-gate-tier.sql')]);
+
+console.log('\n== Running trial-freeze-guard SQL smoke test ==\n');
+run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'trial-freeze-guard.sql')]);
 
 console.log('\n[ticketify test:sql] SQL smoke tests passed.\n');
