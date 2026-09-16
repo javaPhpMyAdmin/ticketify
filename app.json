@@ -3,6 +3,7 @@
     "name": "Ticketify",
     "slug": "ticketify",
     "version": "0.1.0",
+    "owner": "chelobatdev",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "ticketify",
@@ -14,12 +15,17 @@
     },
     "android": {
       "package": "com.tickettify.app",
+      "versionCode": 4,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "softwareKeyboardLayoutMode": "pan"
+      "softwareKeyboardLayoutMode": "pan",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "output": "static",
@@ -59,7 +65,11 @@
     },
     "extra": {
       "supabaseUrl": "https://YOUR-PROJECT.supabase.co",
-      "supabaseAnonKey": "YOUR-ANON-KEY"
+      "supabaseAnonKey": "YOUR-ANON-KEY",
+      "router": {},
+      "eas": {
+        "projectId": "4e833933-55a7-498b-aff4-a7841f9c5b18"
+      }
     }
   }
 }
