@@ -16,6 +16,14 @@ export type SettingTrailing =
   | { type: 'chevron' }
   | { type: 'none' };
 
+/**
+ * Visual treatment of a row. `default` is the standard neutral treatment;
+ * `danger` paints the icon tint and label with `colors.danger` so the row
+ * is visually distinct (used by the "Eliminar cuenta" entry on the
+ * profile screen — design §9).
+ */
+export type AccountSettingRowTone = 'default' | 'danger';
+
 export interface AccountSettingRow {
   id: string;
   label: string;
@@ -24,6 +32,13 @@ export interface AccountSettingRow {
   trailing: SettingTrailing;
   /** Opens the row's destination screen (chevron rows that navigate). */
   onPress?: () => void;
+  /**
+   * Visual treatment of the row. Defaults to `'default'` — every existing
+   * row omits the prop and renders unchanged. `danger` is reserved for
+   * destructive actions (e.g. "Eliminar cuenta") that need to read as
+   * a "danger zone" affordance without changing the row's layout.
+   */
+  tone?: AccountSettingRowTone;
 }
 
 export interface AccountSettingsListProps {
@@ -64,12 +79,16 @@ export function AccountSettingsList({ rows }: AccountSettingsListProps) {
 
 /** The icon / label / value / trailing-element content shared by every row. */
 function renderRowContent(row: AccountSettingRow) {
+  const isDanger = row.tone === 'danger';
+  const accent = isDanger ? colors.danger : colors.textPrimary;
   return (
     <>
       <View style={styles.iconBubble}>
-        <Icon name={row.icon} size={18} color={colors.textPrimary} />
+        <Icon name={row.icon} size={18} color={accent} />
       </View>
-      <Text style={styles.label}>{row.label}</Text>
+      <Text style={[styles.label, isDanger && { color: colors.danger }]}>
+        {row.label}
+      </Text>
       {row.value ? <Text style={styles.value}>{row.value}</Text> : null}
       {row.trailing.type === 'chevron' ? (
         <Icon name="chevron.right" size={18} color={colors.textSecondary} />

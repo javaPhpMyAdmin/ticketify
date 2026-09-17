@@ -148,6 +148,18 @@ export default function ProfileScreen() {
       trailing: { type: 'chevron' },
       onPress: () => router.push('/settings/language'),
     },
+    {
+      // Destructive action — visually separated from the standard
+      // settings block by the dangerSection wrapper below. The row
+      // itself uses `tone: 'danger'` so the icon and label paint in
+      // `colors.danger` (AccountSettingsList extension from WU-3.6).
+      id: 'delete-account',
+      label: t('settings:deleteAccount'),
+      icon: 'trash',
+      tone: 'danger',
+      trailing: { type: 'chevron' },
+      onPress: () => router.push('/settings/delete-account'),
+    },
   ];
 
   const handleSignOut = async () => {
@@ -345,7 +357,18 @@ export default function ProfileScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('settings:sectionTitle')}</Text>
-          <AccountSettingsList rows={settings} />
+          <AccountSettingsList rows={settings.slice(0, settings.length - 1)} />
+        </View>
+
+        {/* Destructive actions sit in their own section, separated from the
+            standard settings block by a hairline + spacing. The last row
+            (`delete-account`) is rendered here so it reads as a "danger
+            zone" affordance instead of another routine setting. */}
+        <View style={styles.dangerSection}>
+          <Text style={styles.dangerSectionTitle}>
+            {t('settings:deleteAccountSectionTitle')}
+          </Text>
+          <AccountSettingsList rows={[settings[settings.length - 1]]} />
         </View>
 
         <View style={styles.section}>
@@ -392,6 +415,19 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '900',
     color: colors.textSecondary,
+  },
+  dangerSection: {
+    gap: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+  },
+  dangerSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.danger,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   error: {
     ...typography.labelSm,

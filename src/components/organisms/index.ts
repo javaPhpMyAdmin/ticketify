@@ -12,3 +12,7 @@ export type { UsageMeterProps } from './UsageMeter';
 
 export { ProfileHeader } from './ProfileHeader';
 export type { ProfileHeaderProps } from './ProfileHeader';
+
+export { TypedConfirmation } from './TypedConfirmation';
+export type { TypedConfirmationProps } from './TypedConfirmation';
+export { matchesTypedConfirmation } from './TypedConfirmation';

@@ -64,6 +64,7 @@ export {
   BudgetCard,
   UsageMeter,
   ProfileHeader,
+  TypedConfirmation,
 } from './organisms';
 export type {
   ReceiptRowProps,
@@ -71,4 +72,5 @@ export type {
   BudgetCardProps,
   UsageMeterProps,
   ProfileHeaderProps,
+  TypedConfirmationProps,
 } from './organisms';

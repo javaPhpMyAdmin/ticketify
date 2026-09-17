@@ -23,8 +23,13 @@ import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
 import { logOutRevenueCat } from '@/lib/revenuecat';
 import { supabase } from '@/lib/supabase';
+import {
+  type DeleteAccountResult,
+  deleteAccount as deleteAccountFn,
+} from '@/lib/supabase/feature-access';
 import { isSecureStoreAvailable } from '@/lib/supabase/storage-adapter';
 import { withTimeout } from '@/lib/with-timeout';
+import { useHouseholdStore } from '@/stores/use-household-store';
 import { useProStore } from '@/stores/use-pro-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 
@@ -53,6 +58,23 @@ interface SessionState {
   ) => Promise<AuthActionError>;
   signUpWithEmail: (email: string, password: string) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
+  /**
+   * Hard-delete the signed-in user's account (REQ-ACCTDEL). Runs the manual
+   * cleanup chain on success because the SIGNED_OUT listener does NOT fire
+   * after a hard delete (auth.users is gone, no JWT to invalidate,
+   * supabase.auth.signOut() is never called). Returns the wrapper's
+   * discriminated `DeleteAccountResult` for the screen to map to UX.
+   */
+  deleteAccount: () => Promise<DeleteAccountResult>;
+  /**
+   * Cross-route preservation for the typed-confirmation input
+   * (REQ-HOUSE-DEL-2): when the user is redirected to /settings/household
+   * (because they're a household owner with active members), the typed
+   * value must survive the trip back. The screen writes on every keystroke
+   * and clears it on mount/unmount (success or give-up).
+   */
+  deleteAccountDraft: { typedValue: string } | null;
+  setDeleteAccountDraft: (draft: { typedValue: string } | null) => void;
 }
 
 /**
@@ -109,6 +131,11 @@ export const useSessionStore = create<SessionState>((set) => ({
   // Real auth: start signed out until restore() finds a stored session.
   session: null,
   isBootstrapping: true,
+  // Cross-route typed-confirmation draft (REQ-HOUSE-DEL-2). Always starts
+  // null; the delete-account screen seeds it from local state when it
+  // mounts and writes through on every keystroke. Cleared on success or
+  // unmount by the screen.
+  deleteAccountDraft: null,
 
   restore: async () => {
     set({ isBootstrapping: true });
@@ -252,6 +279,45 @@ export const useSessionStore = create<SessionState>((set) => ({
     // SIGNED_OUT fires through onAuthStateChange and clears the session; the
     // gate then shows the sign-in screen.
   },
+
+  deleteAccount: async () => {
+    // (a) Best-effort local SDK clear; never throws by contract
+    //     (`logOutRevenueCat` swallows errors). The server-side REST revoke
+    //     in step (b) is authoritative; this is purely about preventing the
+    //     NEXT user on this device from inheriting the alias. Mirrors
+    //     signOut() — keep the bridge semantics identical so the same
+    //     regression-test covers both paths.
+    await logOutRevenueCat();
+
+    // (b) Server: storage sweep + parse_attempts scrub + RC revoke +
+    //     auth.users delete inside the RPC transaction (PR2). Throws
+    //     NOTHING useful — returns a discriminated DeleteAccountResult the
+    //     caller maps to UX. Cleanup below is GATED on success so a
+    //     failed RPC leaves the user's session and caches intact for a
+    //     retry.
+    const result = await deleteAccountFn();
+    if (result.status === 'error') return result;
+
+    // (c) Manual cleanup — the SIGNED_OUT listener does NOT fire after
+    //     hard delete (auth.users is gone, no JWT to invalidate; we
+    //     never call supabase.auth.signOut()). Replicate the listener
+    //     body verbatim so the next user on this device sees the same
+    //     clean slate they would after a sign-out.
+    queryClient.clear();
+    useReceiptsStore.getState().resetAll();
+    useProStore.getState().reset();
+    useHouseholdStore.getState().reset();
+    useSessionStore.setState({ session: null });
+
+    // Drop the typed-confirmation draft — the next user on this device
+    // must never see the previous user's typed value when the screen is
+    // re-opened.
+    useSessionStore.setState({ deleteAccountDraft: null });
+
+    return result; // { status: 'ok', alreadyDeleted?: boolean }
+  },
+
+  setDeleteAccountDraft: (draft) => set({ deleteAccountDraft: draft }),
 }));
 
 /**
