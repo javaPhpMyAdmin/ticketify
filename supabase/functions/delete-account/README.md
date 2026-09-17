@@ -135,7 +135,148 @@ Expected outputs:
 
 ---
 
-## 5. Audit signal — known limitation
+## 5. Monitoring + smoke test (production reference)
+
+The §4 smoke test is the on-call minimum; this section is the
+production-grade reference for the on-call engineer who needs to
+verify a deletion actually completed end-to-end (RPC + Storage
+sweep + RC alias revoke + audit signal) without false negatives.
+
+### 5.1 Audit-signal query — `webhook_events`
+
+The edge function inserts a row into `public.webhook_events` AFTER
+the RPC returns `'ok'`:
+
+```sql
+select event_id, user_id, event_ts
+  from public.webhook_events
+ where event_type = 'ACCOUNT_DELETION'
+ order by event_ts desc
+ limit 50;
+```
+
+> **Known limitation** (see §6): until migration
+> `0037_drop_webhook_events_user_id_fk` lands, the insert raises an
+> FK violation (the cascade wipes the FK target before the insert
+> fires) and the handler swallows it as a `console.error`. The query
+> above returns rows from POST-FK-drop environments only; in the
+> current schema, audit deletion events via the Supabase function
+> logs (`[delete-account]` prefix) or `auth.audit_log_entries`.
+
+### 5.2 Smoke test with annotated error codes
+
+Each error path is reachable through the function's stable envelope.
+Run the curl from §4 against the four documented failure modes to
+prove the wrapper + handler map the wire to the right code:
+
+```bash
+# Pre-conditions per scenario — drive the function to a known state
+# before each POST so the result is reproducible.
+
+# (1) Happy path: signed-in user with no household, no Pro sub.
+#     Expected: 200 { ok: true } — destructive path succeeded.
+#     Verify: auth.users row gone, storage.objects under {uid}/ gone.
+curl -i -X POST \
+  "https://lfbyifbccfjposuzgccl.supabase.co/functions/v1/delete-account" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" -d '{}'
+# → 200 {"ok":true}
+
+# (2) Idempotent re-delete: a user who already completed scenario (1)
+#     a few seconds ago. The RPC's first check is
+#     `if not exists (select 1 from auth.users …) return 'already_deleted';`
+#     so the function returns the idempotency marker without touching
+#     any downstream state.
+#     Expected: 200 { ok: true, already_deleted: true }.
+curl -i -X POST …  # same call as scenario (1) on a deleted user
+# → 200 {"ok":true,"already_deleted":true}
+
+# (3) Household-owner pre-flight (REQ-HOUSE-DEL-1): sign in as a user
+#     who is the created_by of a household with at least one OTHER
+#     member (i.e. household_members row with user_id <> caller).
+#     Expected: 409 { ok: false, error: 'household_owner_with_members',
+#                       message: 'Tenés que disolver el hogar antes
+#                       de eliminar tu cuenta.' }
+#     Verify: auth.users row PRESERVED, destructive path skipped.
+#     Caller UX: redirect to /settings/household after the toast.
+
+# (4) RevenueCat revoke failed: revoke the env var OR point the
+#     function at an unreachable RC API (network policy block).
+#     Expected: 502 { ok: false, error: 'revenuecat_revoke_failed',
+#                       message: 'No se pudo revocar la suscripción
+#                       de RevenueCat.' }
+#     Verify: auth.users row PRESERVED (the destructive path is
+#     fail-closed — the alias MUST be gone before auth.users goes).
+
+# (5) Internal RPC failure: simulate by stubbing the RPC with an
+#     unexpected exception. Expected: 500 { ok: false, error: 'internal' }.
+
+# (6) Unauthenticated: POST without Authorization header (or with a
+#     bearer the gateway rejects). Expected: 401 { ok: false,
+#     error: 'unauthenticated' }.
+curl -i -X POST \
+  "https://lfbyifbccfjposuzgccl.supabase.co/functions/v1/delete-account" \
+  -H "Content-Type: application/json" -d '{}'
+# → 401 {"ok":false,"error":"unauthenticated"}
+```
+
+Every error envelope maps 1:1 to the `DeleteAccountErrorCode` union
+in `src/lib/supabase/feature-access.ts` so the client screen applies
+the correct localized copy and routing (household block → /settings/
+household; revoke/internal → retry dialog).
+
+### 5.3 RevenueCat alias verification (server-side revoke)
+
+The server-side alias revoke is the AUTHORITATIVE bridge wipe — the
+local SDK clear in step (a) of `useSessionStore.deleteAccount` is
+purely cosmetic for the NEXT device user. Verify the alias is gone
+directly against the RevenueCat REST API:
+
+```bash
+# After a successful deletion, the subscriber lookup must return 404.
+# Replace $USER_ID with the deleted user's auth.uid() (or, easier,
+# the email-equivalent app_user_id if the project used email-as-id).
+curl -i \
+  -H "Authorization: Bearer $REVENUECAT_SECRET_API_KEY" \
+  "https://api.revenuecat.com/v1/subscribers/$USER_ID"
+# → 404 Not Found   ← alias is gone
+# → 200 with subscriber JSON   ← alias still alive (BUG — re-run delete)
+
+# Dashboard cross-check (manual): RevenueCat → Customers → search
+# by app_user_id or email → the deleted row shows `Last Seen: <deletion time>`
+# but no active entitlements. The alias stays in the dashboard
+# (RevenueCat retains a tombstone for refund/analytics purposes) but
+# has no `active_entitlements`.
+```
+
+> **Why this matters**: a leaked alias means the next subscriber with
+> the same `app_user_id` could inherit the deleted user's Pro
+> entitlement. The revoke step is fail-closed (502 short-circuits the
+> destructive path); the verification above proves the leak is closed.
+
+### 5.4 Storage sweep verification
+
+The Storage sweep runs inside the RPC transaction (the `protect_delete`
+trigger requires the `storage.allow_delete_query` GUC set LOCAL).
+After a successful deletion:
+
+```sql
+-- No rows for the deleted user's folder in the receipts bucket.
+select name
+  from storage.objects
+ where bucket_id = 'receipts'
+   and (storage.foldername(name))[1] = '<deleted-user-uuid>';
+-- Expected: 0 rows.
+```
+
+A non-empty result is a GDPR leak — the receipt photos survive the
+auth.users cascade (Storage has no `ON DELETE CASCADE` from
+`auth.users`). Escalate to a manual `storage.objects` delete via the
+Supabase dashboard's Storage explorer.
+
+---
+
+## 6. Audit signal — known limitation
 
 REQ-ACCTDEL-13 calls for an audit row in `webhook_events` with
 `event_type = 'ACCOUNT_DELETION'`. The PR1 cascade chain wipes
@@ -159,7 +300,7 @@ Until then, audit deletion events via the Supabase function logs
 
 ---
 
-## 6. Rollback
+## 7. Rollback
 
 Per design §13 step 4. Drop in reverse dependency order; the SQL
 migration is the ONLY artifact that cannot be naively dropped.
@@ -179,7 +320,7 @@ migration is the ONLY artifact that cannot be naively dropped.
 
 ---
 
-## 7. Source layout
+## 8. Source layout
 
 ```
 supabase/functions/
@@ -196,16 +337,20 @@ supabase/functions/
 
 ---
 
-## 8. What / Why / Where / Learned
+## 9. What / Why / Where / Learned
 
 **What**: Production runbook for the `delete-account` edge function
-— prerequisites, deploy sequence, smoke test, rollback plan, and a
-callout for the audit-row FK limitation discovered during apply.
+— prerequisites, deploy sequence, smoke test (basic + per-error-
+code), monitoring (audit query, RC alias check, Storage sweep),
+rollback plan, and a callout for the audit-row FK limitation.
 
 **Why**: The deploy sequence has a non-obvious pre-requisite
 (`REVENUECAT_SECRET_API_KEY` MUST be set BEFORE deploy — without
 it, every call returns 502). Documenting it inline in a README
-makes the on-call engineer's deploy path unambiguous.
+makes the on-call engineer's deploy path unambiguous, and the §5
+monitoring + smoke test annotations prove the destructive path
+actually completed (RPC + Storage + RC + audit) without false
+negatives.
 
 **Where**: `mobile/supabase/functions/delete-account/README.md`,
 deploy target project-ref `lfbyifbccfjposuzgccl`.
@@ -216,4 +361,7 @@ independent and the runtime wins. (b) The audit-row-after-FK-target-gone
 conflict is a real schema tension that the design §14 Decision 1
 did not catch (the cascade chain wipes the FK target before the
 insert fires). A follow-up migration to drop the FK is required
-for REQ-ACCTDEL-13 to fully work.
+for REQ-ACCTDEL-13 to fully work. (c) Storage has no `ON DELETE
+CASCADE` from `auth.users` — the RPC's `delete from storage.objects`
+is the ONLY thing that purges receipt photos, which is why a
+Storage sweep verification is part of the production smoke flow.
