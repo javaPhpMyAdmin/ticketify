@@ -4,12 +4,17 @@
 --
 -- Change: delete-account  (SDD change id)
 -- Phase:  PR1 (SQL migration + smoke test + test runner wiring)
--- Cross-refs: REQ-ACCTDEL-6 (Storage sweep), REQ-ACCTDEL-7
---             (parse_attempts scrub), REQ-ACCTDEL-8 (auth.users delete),
---             REQ-ACCTDEL-9 (idempotency), REQ-ACCTDEL-11 (privilege
---             grants), REQ-HOUSE-DEL-1 (owner pre-flight). See
---             openspec/specs/user-account-deletion/spec.md and the deltas
---             under openspec/changes/delete-account/specs/.
+-- Cross-refs: REQ-ACCTDEL-5 (household owner pre-flight), REQ-ACCTDEL-6
+--             (atomic erasure across auth.users + Storage + parse_attempts
+--             in a single transaction), REQ-ACCTDEL-8 (Storage sweep for
+--             the receipts bucket), REQ-ACCTDEL-9 (idempotency on an
+--             already-deleted user), REQ-AUTH-DEL-2 (auth.users removal is
+--             the destructive primitive), REQ-HOUSE-DEL-1 (owner pre-flight
+--             check), and the NFR Security privilege boundary (EXECUTE only
+--             to service_role). See openspec/specs/user-account-deletion/
+--             spec.md and the deltas under openspec/changes/delete-account/
+--             specs/. (REQ-ACCTDEL-7/10/11/12 are PR2/PR3 work and are
+--             NOT covered by this migration.)
 --
 -- Compliance driver: Google Play Data Deletion policy + GDPR Art. 17.
 --

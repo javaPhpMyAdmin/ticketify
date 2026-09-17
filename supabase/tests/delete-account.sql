@@ -70,12 +70,15 @@ declare
   v_user_blocked      uuid := 'da000000-0000-0000-0000-0000000000b1';
   v_user_blocked_peer uuid := 'da000000-0000-0000-0000-0000000000b2';
   v_hid_blocked       uuid := 'da000000-0000-0000-0000-0000000000b3';
+  v_user_solo         uuid := 'da000000-0000-0000-0000-0000000000a1';
+  v_hid_solo          uuid := 'da000000-0000-0000-0000-0000000000a2';
   v_store             uuid := 'da000000-0000-0000-0000-0000000000d1';
   v_purchase          uuid := 'da000000-0000-0000-0000-0000000000d2';
   v_item              uuid := 'da000000-0000-0000-0000-0000000000d3';
   v_category          uuid := 'da000000-0000-0000-0000-0000000000d4';
   v_storage_object    uuid := 'da000000-0000-0000-0000-0000000000d5';
   v_cascade_email     text := 'cascade@delete-account.test.local';
+  v_solo_email        text := 'solo-owner@delete-account.test.local';
 
   -- §1 catalog vars.
   v_secdef      boolean;
@@ -85,7 +88,10 @@ declare
   -- §2 cascade behavior vars.
   v_count       int;
 
-  -- §5 household-blocked vars.
+  -- §5 solo-owner (NOT blocked) vars.
+  v_solo_status text;
+
+  -- §7 household-blocked vars.
   v_sqlstate    text;
   v_errmsg      text;
   v_blocked_uid_count int;
@@ -292,15 +298,73 @@ begin
     'parse_attempts row must be deleted by the scrub (§4 — the table has no FK to profiles)';
 
   -- -------------------------------------------------------------------------
+  -- §5. Solo owner is NOT blocked — a household `created_by` who is the
+  --     ONLY member of their household must NOT be rejected by the
+  --     pre-flight. The pre-flight only blocks when there is ANOTHER
+  --     active member in the household; a solo owner proceeds through the
+  --     normal destructive path.
+  --
+  --     Distinction from §7 (Household-owner BLOCKED): §7 seeds TWO users
+  --     (owner + peer member) and asserts a raise. This section seeds ONE
+  --     user (solo owner with only themselves in household_members) and
+  --     asserts NO raise. Together they pin the pre-flight's exact
+  --     contract: "block iff there is a non-owner member".
+  --
+  --     Idempotency: a previous run's leftover row may occupy the email
+  --     slot (the partial unique index `users_email_partial_key`). Wipe
+  --     the email slot before the insert so re-runs are clean.
+  -- -------------------------------------------------------------------------
+  delete from auth.users where email = v_solo_email;
+
+  insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+  values
+    ('00000000-0000-0000-0000-000000000000', v_user_solo, 'authenticated', 'authenticated', v_solo_email, '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now())
+  on conflict (id) do nothing;
+
+  insert into public.profiles (id, full_name, monthly_budget, currency, tier, subscription_status, created_at)
+  values (v_user_solo, 'Solo Owner', 0, 'USD', 'pro', 'active', now())
+  on conflict (id) do nothing;
+
+  -- Solo household: the user is `created_by` AND the ONLY member.
+  insert into public.households (id, name, created_by, created_at)
+  values (v_hid_solo, 'Solo Household', v_user_solo, now())
+  on conflict (id) do nothing;
+
+  insert into public.household_members (household_id, user_id, role, joined_at)
+  values (v_hid_solo, v_user_solo, 'owner', now())
+  on conflict (household_id, user_id) do nothing;
+
+  update public.profiles set household_id = v_hid_solo
+   where id = v_user_solo;
+
+  -- Call the RPC — must NOT raise. Returns 'ok'.
+  v_solo_status := public.delete_user_account(v_user_solo);
+  assert v_solo_status = 'ok',
+    format('solo owner must NOT be blocked by the household-owner pre-flight, got: %s', v_solo_status);
+
+  -- Every row tied to the solo owner is gone.
+  select count(*) into v_count from auth.users where id = v_user_solo;
+  assert v_count = 0, 'solo owner auth.users row must be deleted by the RPC';
+
+  select count(*) into v_count from public.profiles where id = v_user_solo;
+  assert v_count = 0, 'solo owner profiles row must be deleted (CASCADE)';
+
+  select count(*) into v_count from public.households where id = v_hid_solo;
+  assert v_count = 0, 'solo owner households row must be deleted (CASCADE on owner)';
+
+  select count(*) into v_count from public.household_members where user_id = v_user_solo;
+  assert v_count = 0, 'solo owner household_members row must be deleted (CASCADE)';
+
+  -- -------------------------------------------------------------------------
   -- §6. Idempotency — a second call on the SAME (now-deleted) uid returns
-  -- ''already_deleted'' and does not raise.
+  --     ''already_deleted'' and does not raise.
   -- -------------------------------------------------------------------------
   v_second_call := public.delete_user_account(v_user_cascade);
   assert v_second_call = 'already_deleted',
     format('second call on deleted user must return ''already_deleted'', got: %s', v_second_call);
 
   -- -------------------------------------------------------------------------
-  -- §5. Household-owner blocked — a household `created_by` with at least
+  -- §7. Household-owner blocked — a household `created_by` with at least
   --     one OTHER active member is rejected with the EXACT exception text
   --     AND SQLSTATE P0001. Nothing else is mutated.
   -- -------------------------------------------------------------------------
@@ -385,7 +449,7 @@ begin
   end;
 
   -- -------------------------------------------------------------------------
-  -- §7. Re-signup with the same email — after a successful delete, a fresh
+  -- §8. Re-signup with the same email — after a successful delete, a fresh
   --     auth.users row may be inserted with the SAME email.
   --
   --     Supabase Auth 17.6.x (current local stack) DOES enforce a unique
@@ -424,5 +488,5 @@ begin
   -- -------------------------------------------------------------------------
   -- Summary — only reached if every assert above passed.
   -- -------------------------------------------------------------------------
-  raise notice 'delete-account.sql smoke: catalog + cascade + storage sweep + parse_attempts scrub + household-owner block + idempotency + re-signup assertions passed';
+  raise notice 'delete-account.sql smoke: catalog + cascade + storage sweep + parse_attempts scrub + solo-owner (NOT blocked) + idempotency + household-owner block + re-signup assertions passed';
 end $$;
