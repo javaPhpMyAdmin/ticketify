@@ -26,14 +26,12 @@
 //      `household_owner_with_members` (400).
 //   5. Audit signal (REQ-ACCTDEL-13) — on a fresh 'ok' return,
 //      insert a `webhook_events` row with event_type='ACCOUNT_DELETION'
-//      so the operator dashboard can audit deletion events. NOTE:
-//      the PR1 cascade chain wipes `webhook_events` for the user
-//      via the `profiles.user_id` FK; the insert is wrapped in a
-//      try/catch so an FK violation is logged but does NOT fail
-//      the destructive path (the user's data is already gone by
-//      this point — failing here would leave them in an
-//      unauthenticated limbo state). See apply-progress-pr2.md
-//      risk #1 for the follow-up migration that drops the FK.
+//      so the operator dashboard can audit deletion events. Migration
+//      0037 dropped the `webhook_events.user_id` FK so the audit row
+//      survives the cascade (the FK target is gone by this point).
+//      On a failed insert we log + continue: the destructive path
+//      already succeeded and we owe the user a 200 envelope even if
+//      the audit row did not persist.
 //   6. Success envelope — 200 { ok: true, already_deleted: ... }.
 //
 // Env (platform-provided + operator-set):
@@ -170,41 +168,30 @@ Deno.serve(async (req: Request) => {
 
   // ----- 6. Audit signal (REQ-ACCTDEL-13) --------------------------------
   // Insert AFTER the destructive path so the row corresponds to a
-  // confirmed deletion (design §14 Decision 1). The insert is
-  // wrapped in a try/catch because the PR1 cascade chain wipes
-  // `webhook_events` via the `profiles.user_id` FK — the FK target
-  // is gone by this point, so the insert will raise a foreign-key
-  // violation. We log it as an operator warning but do NOT fail the
-  // destructive path: the user's data is already gone, and failing
-  // here would leave them with no successful response but no data
-  // (an even worse state). See apply-progress-pr2.md risk #1 for
-  // the follow-up migration that drops the FK constraint.
+  // confirmed deletion (design §14 Decision 1). Migration 0037 dropped
+  // the `webhook_events.user_id → profiles.id` FK so the audit row
+  // survives the cascade (the FK target is gone by this point).
   if (!alreadyDeleted) {
-    try {
-      const auditEventId = crypto.randomUUID();
-      const nowIso = new Date().toISOString();
-      const { error: auditErr } = await svc.from('webhook_events').insert({
-        user_id: appUserId,
-        event_id: auditEventId,
-        event_ts: nowIso,
-        event_type: ACCOUNT_DELETION_EVENT_TYPE,
-        // applied_at has `default now()`; pass it explicitly so the
-        // audit row's `event_ts` and `applied_at` are identical
-        // (no clock-skew window between "event happened" and
-        // "audit row written").
-        applied_at: nowIso,
-      });
-      if (auditErr) {
-        console.error(
-          '[delete-account] audit row insert failed (destructive path already succeeded):',
-          auditErr.code ?? 'unknown_code',
-          auditErr.message,
-        );
-      }
-    } catch (auditCatch) {
+    const auditEventId = crypto.randomUUID();
+    const nowIso = new Date().toISOString();
+    const { error: auditErr } = await svc.from('webhook_events').insert({
+      user_id: appUserId,
+      event_id: auditEventId,
+      event_ts: nowIso,
+      event_type: ACCOUNT_DELETION_EVENT_TYPE,
+      // applied_at has `default now()`; pass it explicitly so the
+      // audit row's `event_ts` and `applied_at` are identical
+      // (no clock-skew window between "event happened" and
+      // "audit row written").
+      applied_at: nowIso,
+    });
+    if (auditErr) {
+      // The destructive path already succeeded. Log but do NOT fail
+      // here — the user has no data and we owe them a 200 envelope.
       console.error(
-        '[delete-account] audit row insert threw unexpectedly:',
-        auditCatch,
+        '[delete-account] audit row insert failed (destructive path already succeeded):',
+        auditErr.code ?? 'unknown_code',
+        auditErr.message,
       );
     }
   }

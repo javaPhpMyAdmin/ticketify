@@ -1,0 +1,53 @@
+-- ============================================================================
+-- 0037_drop_webhook_events_user_id_fk.sql
+-- Ticketify — drop the `webhook_events.user_id` foreign key.
+--
+-- Change: delete-account (SDD change id)
+-- Phase:  PR2 follow-up (apply-progress-pr2.md risk #1)
+-- Cross-refs: REQ-ACCTDEL-13 (audit signal — the edge function inserts the
+--             audit row AFTER the destructive RPC, so it must survive the
+--             cascade that wiped `profiles.user_id` rows).
+--
+-- Why this migration exists
+-- --------------------------
+-- The PR1 destructive primitive (0036_delete_account.sql §5) cascades
+-- `auth.users → profiles → webhook_events` via the
+-- `webhook_events_user_id_fkey` constraint. That cascade was correct for
+-- the legacy semantics ("delete the user, wipe every trace of them"),
+-- but it conflicts with the PR2 audit-signal requirement (design §14
+-- Decision 1): the edge function inserts an `ACCOUNT_DELETION` row in
+-- `webhook_events` AFTER the RPC returns `'ok'`, by which point the FK
+-- target is already gone.
+--
+-- The PR2 handler caught the FK violation as a non-fatal operator warning
+-- (apply-progress-pr2.md risk #1), which means the audit row never
+-- actually persisted. This migration drops the FK so the insert succeeds
+-- and the audit row survives the cascade.
+--
+-- Trade-off (explicit)
+-- --------------------
+-- After this migration, every pre-existing `webhook_events` row for
+-- deleted users becomes an ORPHAN (user_id references a non-existent
+-- profile / auth.users row). The rows themselves contain no PII
+-- (transaction IDs, event types, timestamps — not the user's email,
+-- name, or any contact detail), so this is GDPR-acceptable: the audit
+-- trail of subscription events for a deleted account remains for
+-- operator review without exposing personal data.
+--
+-- The migration is reversible: re-creating the FK would fail (the
+-- orphan user_ids would violate the constraint). Rollback would
+-- require either (a) scrubbing the orphan rows first or (b) recreating
+-- the cascade semantics with a different table for audit. Documented
+-- in design §13 step 4 as part of the PR2 rollback story.
+--
+-- Compliance: the destructive primitive is unaffected; the audit-signal
+-- requirement (REQ-ACCTDEL-13) now actually persists.
+-- ============================================================================
+
+alter table public.webhook_events
+  drop constraint if exists webhook_events_user_id_fkey;
+
+-- `user_id` stays NOT NULL: the column still records who the event
+-- belonged to. The orphaned reference is the only thing the dropped FK
+-- changes — the data shape is identical, only the cross-table guarantee
+-- is gone.
