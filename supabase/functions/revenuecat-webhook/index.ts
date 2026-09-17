@@ -196,13 +196,19 @@ Deno.serve(async (req: Request) => {
   }
 
   // ----- 3. Parse JSON body --------------------------------------------
+  // RevenueCat webhook v2 delivers `{ api_version: "1.0", event: { ... } }`
+  // — the event is NESTED under `event`, not at the root. Real deliveries
+  // carry the envelope; flat payloads are accepted for synthetic/test
+  // deliveries. Reading the root object (the envelope) made `event.type`
+  // undefined and every real delivery a 200 no-op.
   let event: RevenueCatEvent;
   try {
     const parsed = JSON.parse(rawBody);
     if (!isRecord(parsed)) {
       return jsonResponse(400, { error: 'malformed_body' });
     }
-    event = parsed as RevenueCatEvent;
+    const envelope = isRecord(parsed.event) ? parsed.event : parsed;
+    event = envelope as RevenueCatEvent;
   } catch {
     return jsonResponse(400, { error: 'malformed_body' });
   }
