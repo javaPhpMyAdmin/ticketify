@@ -2333,6 +2333,118 @@ async function run() {
     );
   });
 
+  console.log('\n[tests] delete-account edge envelope invariants (PR4 WU-4.3)\n');
+
+  // The PR2 delete-account edge function emits a 4-code envelope and the
+  // PR3 feature-access wrapper consumes it. This section pins the SHAPE
+  // (the field names + types the wire carries) and the SET of codes —
+  // any drift on either side would crash the wrapper's narrow or render
+  // the typed envelope unreadable. The companion test-delete-account.mjs
+  // harness covers the wrapper's full mapping + the cleanup chain; here
+  // we keep the invariant pins in this single harness so a regression
+  // on the wire contract shows up alongside the data-access failures.
+
+  await test('deleteAccount accepts the PR2 envelope shape with all 4 known error codes', async () => {
+    resetAll();
+    // The 4 codes the edge function emits. Each one must surface intact
+    // through the wrapper — if the wrapper ever narrows against a stale
+    // union, the typed code gets demoted to 'internal' and the screen
+    // loses the actionable localized copy. The pin asserts the codes
+    // round-trip verbatim, not the Spanish message — the wrapper never
+    // surfaces server-supplied text (anti-enumeration), but the code
+    // identity is the screen's routing key.
+    const KNOWN_CODES = [
+      'unauthenticated',
+      'household_owner_with_members',
+      'revenuecat_revoke_failed',
+      'internal',
+    ];
+    for (const code of KNOWN_CODES) {
+      stubMod.__setFunctionInvoke('delete-account', {
+        data: { ok: false, error: code },
+        error: null,
+      });
+      const result = await seamMod.deleteAccount();
+      assert.equal(result.status, 'error');
+      assert.equal(result.code, code, `code round-trips: ${code}`);
+      assert.equal(
+        result.message,
+        '',
+        'server-sourced message never surfaces (anti-enumeration)',
+      );
+    }
+  });
+
+  await test('deleteAccount accepts the envelope fields the edge function carries', async () => {
+    resetAll();
+    // Wire-shape contract: every field the edge function emits MUST be
+    // tolerated by the wrapper. A drift on any of these field names would
+    // crash the destructuring cast inside the wrapper. The test arms
+    // each field independently and asserts the wrapper returns a usable
+    // result (never throws).
+    const FIELD_PROBES = [
+      { name: 'already_deleted: true (idempotent)', data: { ok: true, already_deleted: true } },
+      { name: 'already_deleted: false (explicit)', data: { ok: true, already_deleted: false } },
+      { name: 'error + message body', data: { ok: false, error: 'revenuecat_revoke_failed', message: '…' } },
+      { name: 'ok: true + error (legacy drift)', data: { ok: true, error: 'unknown_drift' } },
+      { name: 'ok: false without error code', data: { ok: false } },
+      { name: 'ok: true with null already_deleted', data: { ok: true, already_deleted: null } },
+    ];
+    for (const probe of FIELD_PROBES) {
+      stubMod.__setFunctionInvoke('delete-account', {
+        data: probe.data,
+        error: null,
+      });
+      const result = await seamMod.deleteAccount();
+      assert.ok(result, `${probe.name}: wrapper returned a value`);
+      assert.ok(
+        result.status === 'ok' || result.status === 'error',
+        `${probe.name}: status is 'ok' or 'error'`,
+      );
+    }
+  });
+
+  await test('deleteAccount envelope omits alreadyDeleted when the edge did not set it', async () => {
+    resetAll();
+    // The spec's success shape is `{ status: 'ok' }` with alreadyDeleted
+    // omitted (undefined) on a first-time delete. An envelope that leaks
+    // `alreadyDeleted: false` would mislead downstream JSON comparisons
+    // or test snapshots — the wrapper must omit the field when the edge
+    // did not set it.
+    stubMod.__setFunctionInvoke('delete-account', {
+      data: { ok: true },
+      error: null,
+    });
+    const result = await seamMod.deleteAccount();
+    assert.equal(result.status, 'ok');
+    assert.equal(
+      result.alreadyDeleted,
+      undefined,
+      'alreadyDeleted is omitted on a first-time delete',
+    );
+  });
+
+  await test('deleteAccount envelope carries the 4-code enum in the union signature', async () => {
+    // The TypeScript union `DeleteAccountErrorCode` is erased at runtime,
+    // so we cannot introspect it directly. Instead, the contract is pinned
+    // by the WRAPPER's defensive narrow: a 5th (unknown) code must be
+    // demoted to 'internal' (the wrapper's documented fallback), and all
+    // 4 known codes must round-trip verbatim. Together these pins prove
+    // the wrapper's narrow list is exactly the 4-code union.
+    resetAll();
+    stubMod.__setFunctionInvoke('delete-account', {
+      data: { ok: false, error: 'not_a_real_code_xyz' },
+      error: null,
+    });
+    const result = await seamMod.deleteAccount();
+    assert.equal(result.status, 'error');
+    assert.equal(
+      result.code,
+      'internal',
+      'unknown server codes demote to internal (defensive narrow)',
+    );
+  });
+
   console.log('\n[tests] receipt photo storage\n');
 
   await test('uploadToStorage uploads the local image and returns the object path', async () => {

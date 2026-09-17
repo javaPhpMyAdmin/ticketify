@@ -1050,46 +1050,84 @@ export async function deleteAccount(): Promise<DeleteAccountResult> {
       message: '',
     };
   }
-  const { data, error } = await supabase.functions.invoke('delete-account');
-
-  // FunctionsHttpError carries the status; FunctionsRelayError is a
-  // transport failure (treated as 'internal' so the user sees "inténtalo
-  // de nuevo"). The raw error.message is intentionally NOT surfaced —
-  // the screen has screen-controlled localized copy keyed on `code`.
-  if (error) {
-    console.warn('[delete-account] invoke failed:', error.message);
-    return { status: 'error', code: 'internal', message: '' };
-  }
-  if (!data) {
-    return { status: 'error', code: 'internal', message: '' };
-  }
-
-  // Cast the response shape from the supabase-js generic default `any`
-  // (no generic on invoke() so the test stub seam stays untyped — see
-  // scripts/test-stubs/supabase.ts). The envelope is small and
-  // well-known; defensive narrowing on `error` below keeps an unexpected
-  // server value from leaking through.
-  const payload = data as {
+  // The wire envelope: small, well-known, and the test stub seam stays
+  // untyped (no generic on invoke() — see scripts/test-stubs/supabase.ts).
+  // Defensive narrowing below keeps an unexpected server value from
+  // leaking through.
+  type DeleteAccountPayload = {
     ok: boolean;
     already_deleted?: boolean;
     error?: DeleteAccountErrorCode;
     message?: string;
   };
-
-  if (payload.ok) {
-    return { status: 'ok', alreadyDeleted: payload.already_deleted === true };
+  type InvokeError = {
+    message?: string;
+    context?: { status?: number };
+  };
+  // Transport/abort failures (FunctionsFetchError, FunctionsRelayError on
+  // some client builds, non-Error throwables) REJECT the promise instead of
+  // resolving { data, error }. The wrapper must never throw — the screen has
+  // a 'try-again' UX keyed on `code: 'internal'`, so any thrown error
+  // would crash the typed-confirmation flow before the screen can route.
+  let data: DeleteAccountPayload | null = null;
+  let error: InvokeError | null = null;
+  try {
+    const result = await supabase.functions.invoke('delete-account');
+    data = result.data as DeleteAccountPayload | null;
+    error = result.error as InvokeError | null;
+  } catch (err) {
+    console.warn('[delete-account] invoke threw:', err);
+    return { status: 'error', code: 'internal', message: '' };
   }
 
+  // The edge function returns a JSON body for EVERY status (including
+  // non-2xx), and supabase-js parses it into `data` even when `error` is
+  // set (a 409 body `{ ok: false, error: 'household_owner_with_members' }`
+  // surfaces as `{ data: <body>, error: FunctionsHttpError(409) }`).
+  // Prefer the body's typed `error` field — it carries the stable envelope
+  // — and fall back to HTTP-status mapping when the body is missing.
   const knownCodes: DeleteAccountErrorCode[] = [
     'unauthenticated',
     'household_owner_with_members',
     'revenuecat_revoke_failed',
     'internal',
   ];
-  const code: DeleteAccountErrorCode = knownCodes.includes(
-    payload.error as DeleteAccountErrorCode,
-  )
-    ? (payload.error as DeleteAccountErrorCode)
-    : 'internal';
-  return { status: 'error', code, message: '' };
+  if (data && data.error) {
+    return {
+      status: 'error',
+      code: knownCodes.includes(data.error) ? data.error : 'internal',
+      message: '',
+    };
+  }
+  if (data && data.ok) {
+    // Omit `alreadyDeleted` (undefined) on a fresh first-time delete so the
+    // type contract matches the spec's `{ status: 'ok' }` shape — the field
+    // only appears when the edge function returns the idempotent marker.
+    const alreadyDeleted =
+      data.already_deleted === true ? true : undefined;
+    return { status: 'ok', alreadyDeleted };
+  }
+
+  // FunctionsHttpError without a parseable body, or a body without a typed
+  // `error` field: map by HTTP status (the edge function's documented
+  // mapping). FunctionsRelayError carries no status — treated as 'internal'.
+  if (error) {
+    console.warn('[delete-account] invoke failed:', error.message);
+    const status = error.context?.status;
+    if (status === 502) {
+      return { status: 'error', code: 'revenuecat_revoke_failed', message: '' };
+    }
+    if (status === 401) {
+      return { status: 'error', code: 'unauthenticated', message: '' };
+    }
+    if (status === 409) {
+      return {
+        status: 'error',
+        code: 'household_owner_with_members',
+        message: '',
+      };
+    }
+    return { status: 'error', code: 'internal', message: '' };
+  }
+  return { status: 'error', code: 'internal', message: '' };
 }
