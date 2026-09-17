@@ -41,7 +41,6 @@
 // `supabase/config.toml`: RevenueCat does NOT send a Supabase user JWT,
 // it authenticates via its own shared secret (REQ-SYNC-4).
 
-import { createClient } from '@supabase/supabase-js';
 import {
   isProductionEnvironment,
   mapTier,
@@ -51,6 +50,7 @@ import {
   type Tier,
 } from './lib/event-types.ts';
 import { isUuid } from './lib/uuid.ts';
+import { serviceClient } from '../_shared/service-client.ts';
 import { verifySecret } from './lib/verify.ts';
 
 // ---------------------------------------------------------------------------
@@ -77,10 +77,6 @@ interface WebhookResponse {
 // ---------------------------------------------------------------------------
 // Env
 // ---------------------------------------------------------------------------
-
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
-const SUPABASE_SERVICE_ROLE_KEY =
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
 /**
  * Shared secret sent by RevenueCat in the Authorization header.
@@ -110,15 +106,10 @@ const PROFILE_NOT_FOUND_SQLSTATE = 'P0002';
 
 // ---------------------------------------------------------------------------
 // Supabase service-role client — bypasses RLS for ledger writes + RPC.
-// Mirrors `parse-ticket/serviceClient()` (no Authorization header from
-// the caller; we authenticate via the secret check above, not a user JWT).
+// Imported from the shared module (PR2 WU-2.1 refactor). No Authorization
+// header from the caller; we authenticate via the secret check above,
+// not a user JWT.
 // ---------------------------------------------------------------------------
-
-function serviceClient() {
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false },
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Response helpers
