@@ -99,9 +99,17 @@ export default function DeleteAccountScreen() {
       return;
     }
 
+    // Per REQ-ACCTDEL-11: an `unauthenticated` envelope means the user's
+    // JWT expired between mount and confirm (rare in practice — the
+    // SIGNED_OUT listener would normally have routed them out first).
+    // Re-route to `/sign-in` so they can re-authenticate and retry.
+    if (result.code === 'unauthenticated') {
+      router.replace('/sign-in');
+      return;
+    }
+
     if (
       result.code === 'revenuecat_revoke_failed' ||
-      result.code === 'unauthenticated' ||
       result.code === 'internal'
     ) {
       const bodyKey =
