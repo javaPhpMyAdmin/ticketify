@@ -276,7 +276,13 @@ begin
   assert v_count = 0, 'category_budgets row must be deleted (CASCADE)';
 
   select count(*) into v_count from public.webhook_events where user_id = v_user_cascade;
-  assert v_count = 0, 'webhook_events row must be deleted (CASCADE)';
+  -- After migration 0037, `webhook_events.user_id` has no FK to profiles —
+  -- the row survives the cascade as an orphan (audit-trail semantics per
+  -- REQ-ACCTDEL-13). The historical ledger is preserved for the operator;
+  -- the destructive primitive is unaffected (every other per-user table
+  -- is still wiped).
+  assert v_count = 1,
+    'webhook_events row must SURVIVE the cascade (migration 0037 dropped the FK — see REQ-ACCTDEL-13 audit-signal semantics)';
 
   select count(*) into v_count from public.categories where user_id = v_user_cascade;
   assert v_count = 0, 'user-scoped categories row must be deleted (CASCADE)';

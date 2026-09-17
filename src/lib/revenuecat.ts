@@ -311,6 +311,43 @@ export async function restorePurchases(): Promise<PurchaseResult> {
   }
 }
 
+/** Result of opening the platform-native subscription management screen. */
+export interface ManageSubscriptionsResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Opens the platform-native subscription management screen (Google Play
+ * on Android, App Store on iOS) so the user can cancel or change their
+ * subscription plan. Google Play policy explicitly forbids in-app
+ * cancellation of subscriptions managed by the Play Store — this is the
+ * supported escape hatch (a deep-link button, NOT an in-app cancel).
+ *
+ * Safe by default: never throws. Returns `ok: false` when the native
+ * module is unavailable or not configured; the profile UI surfaces the
+ * error inline so a misconfigured install is observable instead of a
+ * silent no-op.
+ */
+export async function showManageSubscriptions(): Promise<ManageSubscriptionsResult> {
+  if (!Purchases) {
+    return { ok: false, error: 'Compras no disponibles en este entorno.' };
+  }
+  if (!configured) {
+    return { ok: false, error: 'RevenueCat no está configurado.' };
+  }
+  try {
+    await Purchases.showManageSubscriptions();
+    return { ok: true };
+  } catch (err) {
+    console.warn('[revenuecat] showManageSubscriptions failed:', err);
+    return {
+      ok: false,
+      error: 'No se pudo abrir la administración de suscripción.',
+    };
+  }
+}
+
 export interface OfferingsSnapshot {
   /** The `monthly` package identifier, or null when missing / unavailable. */
   monthly: string | null;

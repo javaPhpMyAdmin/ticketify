@@ -14,6 +14,7 @@ import {
   type AccountSettingRow,
 } from '@/features/profile';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
+import { showManageSubscriptions } from '@/lib/revenuecat';
 import { leaveHousehold } from '@/lib/supabase/feature-access';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
@@ -22,7 +23,7 @@ import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
 
 export default function ProfileScreen() {
-  const { t } = useTranslation(['settings', 'common', 'auth']);
+  const { t } = useTranslation(['settings', 'common', 'auth', 'pro']);
   const { user, usage, error } = useProfile();
   const currency = useSettingsStore((s) => s.currency);
   const household = useSettingsStore((s) => s.household_sharing);
@@ -38,6 +39,8 @@ export default function ProfileScreen() {
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const [togglingHousehold, setTogglingHousehold] = useState(false);
+  const [managingSubscription, setManagingSubscription] = useState(false);
+  const [manageSubscriptionError, setManageSubscriptionError] = useState<string | null>(null);
   const { userId } = useSessionUser();
 
   // Export is a Pro feature (REQ-GATE-1): free users see the row, but
@@ -160,6 +163,25 @@ export default function ProfileScreen() {
     }
   };
 
+  // Opens the platform-native subscription management screen (Google
+  // Play on Android, App Store on iOS). Google Play policy forbids
+  // in-app cancellation of subscriptions managed by the Play Store —
+  // this is the supported escape hatch. Errors surface inline so a
+  // misconfigured install is observable instead of a silent no-op.
+  const handleManageSubscription = async () => {
+    if (managingSubscription) return;
+    setManagingSubscription(true);
+    setManageSubscriptionError(null);
+    try {
+      const result = await showManageSubscriptions();
+      if (!result.ok && result.error) {
+        setManageSubscriptionError(result.error);
+      }
+    } finally {
+      setManagingSubscription(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
@@ -181,11 +203,28 @@ export default function ProfileScreen() {
           // Active paid subscriber
           if (subscriptionStatus === 'active') {
             return (
-              <View style={styles.statusRow}>
-                <View style={styles.statusBadgeActive}>
-                  <Text style={styles.statusBadgeText}>PRO</Text>
+              <View style={styles.statusGroup}>
+                <View style={styles.statusRow}>
+                  <View style={styles.statusBadgeActive}>
+                    <Text style={styles.statusBadgeText}>PRO</Text>
+                  </View>
+                  <Text style={styles.statusLabel}>{t('settings:proActive')}</Text>
                 </View>
-                <Text style={styles.statusLabel}>{t('settings:proActive')}</Text>
+                <Pressable
+                  onPress={handleManageSubscription}
+                  disabled={managingSubscription}
+                  style={({ pressed }) => [
+                    styles.manageSubscriptionButton,
+                    pressed && styles.pressablePressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('pro:manageSubscription')}
+                >
+                  <Text style={styles.manageSubscriptionText}>
+                    {t('pro:manageSubscription')}
+                  </Text>
+                  <Text style={styles.manageSubscriptionChevron}>›</Text>
+                </Pressable>
               </View>
             );
           }
@@ -298,6 +337,10 @@ export default function ProfileScreen() {
 
         {usage ? <UsageLimitsCard usage={usage} isPro={isPro} /> : null}
 
+        {manageSubscriptionError ? (
+          <Text style={styles.error}>{manageSubscriptionError}</Text>
+        ) : null}
+
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <View style={styles.section}>
@@ -369,6 +412,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   // ── Subscription status ──
+  statusGroup: {
+    gap: spacing.sm,
+  },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -432,5 +478,29 @@ const styles = StyleSheet.create({
     ...typography.labelSm,
     fontWeight: '700',
     color: colors.primary,
+  },
+  manageSubscriptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  manageSubscriptionText: {
+    ...typography.bodyMd,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  manageSubscriptionChevron: {
+    ...typography.headlineMd,
+    color: colors.textSecondary,
+    fontWeight: '300',
+  },
+  pressablePressed: {
+    opacity: 0.7,
   },
 });

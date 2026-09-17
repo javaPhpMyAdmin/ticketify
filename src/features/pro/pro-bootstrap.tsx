@@ -58,6 +58,9 @@ import {
 } from '@/lib/supabase/feature-access';
 import { withTimeout } from '@/lib/with-timeout';
 import { useProStore } from '@/stores/use-pro-store';
+import { queryClient } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
+import type { User } from '@/types';
 
 import { isProOverrideEnabled } from './gate';
 
@@ -177,6 +180,7 @@ export function ProBootstrap(): null {
   const { userId } = useSessionUser();
   const setPro = useProStore((s) => s.setPro);
   const setEverPaid = useProStore((s) => s.setEverPaid);
+  const isPro = useProStore((s) => s.isPro);
 
   /**
    * The userId the effects are CURRENTLY resolving for. Every await in the
@@ -276,6 +280,43 @@ export function ProBootstrap(): null {
       identityBridgedRef,
     );
   }, [userId]);
+
+  // Tier-transition sync (REQ-PRO-UX): when the store reports a tier
+  // flip (typically from the customerInfoUpdate listener after a
+  // purchase, or from a webhook-driven DB change surfaced via the next
+  // bootstrap), the profile header MUST reflect the new entitlement
+  // without requiring an app restart.
+  //
+  // The store (useProStore.isPro) updates synchronously via the SDK
+  // listener, but useProfile reads `user.tier` from a TanStack Query
+  // cache that lives outside the store. Two-step sync:
+  //
+  //   1. Optimistic: setQueryData flips `tier` in the cached profile
+  //      IMMEDIATELY so the header changes with the store (no 5s wait).
+  //   2. Reconcile: invalidateQueries at +5s re-reads the DB. The
+  //      RevenueCat webhook is async — it lands 1-3s after the SDK
+  //      listener — so this catches the case where step 1 wrote a tier
+  //      the DB hadn't yet caught up with (e.g. an `active` write that
+  //      was rejected server-side, or a free-trial conversion the SDK
+  //      saw but the webhook hadn't painted).
+  //
+  // The `activeUserIdRef` check inside the timer is a belt-and-suspenders
+  // guard for a sign-out within the 5s window (the effect cleanup also
+  // clears the timer, but the ref check makes the intent explicit).
+  useEffect(() => {
+    if (!userId) return;
+    queryClient.setQueryData<User | null>(queryKeys.profile(userId), (old) =>
+      old ? { ...old, tier: isPro ? 'pro' : 'free' } : old,
+    );
+    const timer = setTimeout(() => {
+      if (activeUserIdRef.current === userId) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.profile(userId),
+        });
+      }
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [isPro, userId]);
 
   return null;
 }
