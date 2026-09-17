@@ -36,5 +36,7 @@
   "trialBannerDays_one": "Prueba PRO: {{count}} día restante",
   "trialBannerDays_other": "Prueba PRO: {{count}} días restantes",
   "trialExpiredTitle": "Tu prueba gratuita expiró",
-  "trialExpiredSubtitle": "Tu acceso finalizó el {{date}}"
+  "trialExpiredSubtitle": "Tu acceso finalizó el {{date}}",
+  "manageSubscription": "Administrar suscripción",
+  "manageSubscriptionHint": "Cancelá o cambiá tu plan en Google Play"
 }
