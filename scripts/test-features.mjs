@@ -2445,6 +2445,35 @@ async function run() {
     );
   });
 
+  await test('deleteAccount never touches the storage endpoint directly', async () => {
+    // Storage-scope invariant (WU-4.3): the wrapper MUST route the object
+    // sweep exclusively through the edge function — it is the single
+    // destructive authority. A future refactor that adds a direct
+    // `storage.remove` / `storage-upload` / `storage-signed` call would
+    // bypass the audit-signal RPC and the owner gate; this pin catches it.
+    // Mirrors the `deleteReceipt` foreign-object guard above.
+    resetAll();
+    stubMod.__setFunctionInvoke('delete-account', {
+      data: { ok: true },
+      error: null,
+    });
+    const result = await seamMod.deleteAccount();
+    assert.equal(result.status, 'ok');
+    const log = stubMod.__getCallLog();
+    assert.ok(
+      !log.some((e) => e.kind === 'storage-remove'),
+      'storage objects are never removed by the direct client',
+    );
+    assert.ok(
+      !log.some((e) => e.kind === 'storage-upload'),
+      'storage objects are never uploaded by the direct client',
+    );
+    assert.ok(
+      !log.some((e) => e.kind === 'storage-signed'),
+      'storage signed URLs are never requested by the direct client',
+    );
+  });
+
   console.log('\n[tests] receipt photo storage\n');
 
   await test('uploadToStorage uploads the local image and returns the object path', async () => {

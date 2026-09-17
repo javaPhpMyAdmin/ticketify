@@ -56,7 +56,7 @@ Hard-delete an authenticated user's account and every byte of personal data atta
                                        useProStore.reset(),
                                        useHouseholdStore.reset(),
                                        useSessionStore.session = null
-                                  → router.replace('/auth/sign-in')
+                                  → router.replace('/sign-in')
                                   error → useDialogStore.show OR router.push
                                           + useToastStore.show (household detour)
 ```
@@ -367,13 +367,13 @@ const onConfirm = async () => {
   const result = await useSessionStore.getState().deleteAccount();
   setDeleting(false);
   if (result.status === 'ok') {
-    router.replace('/auth/sign-in');
+    router.replace('/sign-in');
     return;
   }
   // Map error code → UX
   switch (result.code) {
     case 'household_owner_with_members':
-      useToastStore.getState().show(t('settings:deleteAccountErrorHouseholdBody'), 'default');
+      useToastStore.getState().show(t('settings:deleteAccountErrorHouseholdOwnerBody'), 'default');
       router.replace('/settings/household');
       return;
     case 'revenuecat_revoke_failed':
@@ -466,7 +466,7 @@ export interface AccountSettingRow {
 "deleteAccountTypedAction": "Eliminar cuenta para siempre",
 "deleteAccountFinalWarning": "Esta acción es irreversible.",
 "deleteAccountErrorTitle": "No se pudo eliminar la cuenta",
-"deleteAccountErrorHouseholdBody": "Tenés que disolver el hogar antes de eliminar tu cuenta.",
+"deleteAccountErrorHouseholdOwnerBody": "Tenés que disolver el hogar antes de eliminar tu cuenta.",
 "deleteAccountErrorRevokeBody": "No pudimos cancelar tu suscripción. Probá de nuevo en unos minutos.",
 "deleteAccountErrorInternalBody": "No pudimos eliminar la cuenta. Inténtalo de nuevo.",
 "deleteAccountErrorRetry": "Reintentar"
