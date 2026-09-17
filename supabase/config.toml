@@ -3,6 +3,14 @@ project_id = "tickettify"
 [functions.parse-ticket]
 verify_jwt = true
 
+# delete-account authenticates with the user's own JWT (validated by
+# the gateway before the handler runs). The function reads auth.uid()
+# from the gateway context — see REQ-ACCTDEL-7 / design §4 / §12.
+# `verify_jwt = true` mirrors parse-ticket; no shared secret at the
+# gateway, the Supabase session itself is the credential.
+[functions.delete-account]
+verify_jwt = true
+
 # RevenueCat webhook authenticates with a shared secret in the
 # Authorization header (constant-time compared inside the handler),
 # NOT with a Supabase user JWT — see REQ-SYNC-4 and design D6.
