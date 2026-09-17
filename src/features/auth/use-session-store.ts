@@ -281,13 +281,19 @@ export const useSessionStore = create<SessionState>((set) => ({
   },
 
   deleteAccount: async () => {
-    // (a) Best-effort local SDK clear; never throws by contract
-    //     (`logOutRevenueCat` swallows errors). The server-side REST revoke
-    //     in step (b) is authoritative; this is purely about preventing the
-    //     NEXT user on this device from inheriting the alias. Mirrors
+    // (a) Best-effort local SDK clear; the real `logOutRevenueCat` never
+    //     throws by contract (it catches native errors internally and
+    //     returns `{ ok: false }` on failure), but we wrap defensively
+    //     here so a future native SDK that DOES throw can never block
+    //     the destructive RPC path — the server-side REST revoke in
+    //     step (b) is authoritative for the bridge wipe. Mirrors
     //     signOut() — keep the bridge semantics identical so the same
     //     regression-test covers both paths.
-    await logOutRevenueCat();
+    try {
+      await logOutRevenueCat();
+    } catch (err) {
+      console.warn('[deleteAccount] logOutRevenueCat threw (continuing):', err);
+    }
 
     // (b) Server: storage sweep + parse_attempts scrub + RC revoke +
     //     auth.users delete inside the RPC transaction (PR2). Throws

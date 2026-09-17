@@ -14,5 +14,10 @@
  *   until the user types something substantive).
  */
 export function matchesTypedConfirmation(input: string, prompt: string): boolean {
-  return input.trim().toLowerCase() === prompt.trim().toLowerCase();
+  // Defensive on null/undefined inputs — the typed-confirmation rule must
+  // never crash. A caller that forgets to narrow still gets a usable
+  // boolean (false, never match) instead of throwing into the React tree.
+  const safeInput = typeof input === 'string' ? input.trim().toLowerCase() : '';
+  const safePrompt = typeof prompt === 'string' ? prompt.trim().toLowerCase() : '';
+  return safeInput.length > 0 && safeInput === safePrompt;
 }
