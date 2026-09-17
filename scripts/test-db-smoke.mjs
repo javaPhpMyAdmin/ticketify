@@ -2,8 +2,9 @@
  * Local runner for the SQL smoke tests (supabase/tests/pro-subscription.sql,
  * supabase/tests/household-totals.sql, supabase/tests/user-categories.sql,
  * supabase/tests/recalculate-on-purchase-items-update.sql,
- * supabase/tests/household-gate-tier.sql and
- * supabase/tests/trial-freeze-guard.sql).
+ * supabase/tests/household-gate-tier.sql,
+ * supabase/tests/trial-freeze-guard.sql and
+ * supabase/tests/delete-account.sql).
  *
  * This is intentionally NOT part of the `pnpm test` chain. The Node test suite
  * (test:*) is 100% dependency-free of Docker and runs anywhere. This script
@@ -17,10 +18,10 @@
  *      supabase/migrations/ from scratch (fresh scratch DB, never prod).
  *   3. `supabase db reset --local` — deterministically rebuilds the catalog so
  *      the assertions see exactly what the migrations declare.
- *   4. `supabase db query --local --file supabase/tests/pro-subscription.sql` —
- *      runs the READ-ONLY smoke test (plain DO/assert blocks, NOT pgTAP, so
- *      `supabase test db` is not used). Any raised assertion fails the query,
- *      which propagates as a non-zero exit and fails this script.
+ *   4. `supabase db query --local --file <smoke-test>` — runs each READ-ONLY
+ *      smoke test (plain DO/assert blocks, NOT pgTAP, so `supabase test db`
+ *      is not used). Any raised assertion fails the query, which propagates
+ *      as a non-zero exit and fails this script.
  *
  * Requirements: Docker daemon running + the Supabase CLI (`supabase`) on PATH.
  *
@@ -91,5 +92,8 @@ run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'household-ga
 
 console.log('\n== Running trial-freeze-guard SQL smoke test ==\n');
 run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'trial-freeze-guard.sql')]);
+
+console.log('\n== Running delete-account SQL smoke test ==\n');
+run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'delete-account.sql')]);
 
 console.log('\n[ticketify test:sql] SQL smoke tests passed.\n');
