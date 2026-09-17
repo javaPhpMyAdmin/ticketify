@@ -995,3 +995,101 @@ export async function triggerMonthlyRecalc(
   }
   return { status: 'ok', data: undefined };
 }
+
+// ---------------------------------------------------------------------------
+// Account deletion (REQ-ACCTDEL-1..14)
+// ---------------------------------------------------------------------------
+
+/**
+ * Stable error codes returned by the `delete-account` edge function. Mirrors
+ * the HTTP status the function emits:
+ *   - `unauthenticated` (401) — no/invalid JWT (defensive; gateway should reject first).
+ *   - `household_owner_with_members` (409) — caller is the owner of a
+ *     household that still has other active members (REQ-HOUSE-DEL-1).
+ *   - `revenuecat_revoke_failed` (502) — the RevenueCat alias revoke
+ *     returned non-2xx (and not 404). Spec REQ-ACCTDEL-7 requires the alias
+ *     to be gone BEFORE auth.users is removed; we fail-closed.
+ *   - `internal` (500 / network) — anything else; user sees the retry copy.
+ */
+export type DeleteAccountErrorCode =
+  | 'unauthenticated'
+  | 'household_owner_with_members'
+  | 'revenuecat_revoke_failed'
+  | 'internal';
+
+/**
+ * Discriminated union the screen consumes (REQ-ACCTDEL-4). The wrapper
+ * NEVER returns a user-facing string sourced from the server: `message`
+ * is empty for `error` results so the screen applies screen-controlled
+ * localized copy keyed on `code`. Anti-enumeration, mirrors the rest of
+ * `feature-access.ts` (post-M3).
+ */
+export type DeleteAccountResult =
+  | { status: 'ok'; alreadyDeleted?: boolean }
+  | { status: 'error'; code: DeleteAccountErrorCode; message: string };
+
+/**
+ * Hard-delete the signed-in user's account. Calls the `delete-account`
+ * edge function (PR2) which orchestrates: RevenueCat alias revoke →
+ * `delete_user_account(p_user_id)` SECURITY DEFINER RPC → `auth.users`
+ * cascade → audit row → 200.
+ *
+ * Returns a discriminated `DeleteAccountResult` the caller maps to UX
+ * (see `src/app/settings/delete-account.tsx`). Never throws.
+ *
+ * The function may also be invoked without a session (e.g. if a user taps
+ * the row after a manual sign-out). When `isSupabaseConfigured` is false
+ * (web/tests/dev without keys), the function returns `'internal'` so the
+ * UI can show the retry copy instead of a network error.
+ */
+export async function deleteAccount(): Promise<DeleteAccountResult> {
+  if (!isSupabaseConfigured) {
+    return {
+      status: 'error',
+      code: 'internal',
+      message: '',
+    };
+  }
+  const { data, error } = await supabase.functions.invoke('delete-account');
+
+  // FunctionsHttpError carries the status; FunctionsRelayError is a
+  // transport failure (treated as 'internal' so the user sees "inténtalo
+  // de nuevo"). The raw error.message is intentionally NOT surfaced —
+  // the screen has screen-controlled localized copy keyed on `code`.
+  if (error) {
+    console.warn('[delete-account] invoke failed:', error.message);
+    return { status: 'error', code: 'internal', message: '' };
+  }
+  if (!data) {
+    return { status: 'error', code: 'internal', message: '' };
+  }
+
+  // Cast the response shape from the supabase-js generic default `any`
+  // (no generic on invoke() so the test stub seam stays untyped — see
+  // scripts/test-stubs/supabase.ts). The envelope is small and
+  // well-known; defensive narrowing on `error` below keeps an unexpected
+  // server value from leaking through.
+  const payload = data as {
+    ok: boolean;
+    already_deleted?: boolean;
+    error?: DeleteAccountErrorCode;
+    message?: string;
+  };
+
+  if (payload.ok) {
+    return { status: 'ok', alreadyDeleted: payload.already_deleted === true };
+  }
+
+  const knownCodes: DeleteAccountErrorCode[] = [
+    'unauthenticated',
+    'household_owner_with_members',
+    'revenuecat_revoke_failed',
+    'internal',
+  ];
+  const code: DeleteAccountErrorCode = knownCodes.includes(
+    payload.error as DeleteAccountErrorCode,
+  )
+    ? (payload.error as DeleteAccountErrorCode)
+    : 'internal';
+  return { status: 'error', code, message: '' };
+}
