@@ -126,6 +126,45 @@ begin
   -- `exception when others then raise` preserves the original error and
   -- forces ROLLBACK on any failure (no partial state survives).
   begin
+    -- Allow the storage sweep to bypass Supabase Storage's
+    -- `protect_delete()` trigger. The trigger blocks direct DELETE on
+    -- `storage.objects` unless the session GUC
+    -- `storage.allow_delete_query = 'true'`. Set LOCAL so the value
+    -- is transaction-scoped (no leak across RPC calls).
+    perform set_config('storage.allow_delete_query', 'true', true);
+
+    -- Explicit pre-delete of rows that user-defined AFTER triggers
+    -- UPSERT into. The cascade from auth.users → profiles → purchases
+    -- fires `trg_monthly_totals_recalculate` (an AFTER trigger on
+    -- purchases, 0015) which calls `recalculate_monthly_totals` →
+    -- UPSERT into `monthly_user_totals`. `monthly_user_totals.user_id`
+    -- has a FK to `profiles.id`, so the UPSERT fails the FK check
+    -- during the cascade (the profile row is deleted before the
+    -- purchases cascade finishes).
+    --
+    -- Pre-deleting these rows in DEPENDENCY order so the AFTER trigger
+    -- fires against a still-present profile row:
+    --
+    --   (a) purchase_items first (FK to purchases, no triggers) — the
+    --       cascade from purchases would otherwise delete these, but
+    --       doing it explicitly lets us control the order.
+    --   (b) purchases next (AFTER trigger UPSERTs monthly_user_totals
+    --       — profile still exists, FK check passes; INSERT path
+    --       because we cleared monthly_user_totals in (c)).
+    --   (c) monthly_user_totals (FK to profiles — profile still
+    --       exists; removes the row the trigger just inserted so the
+    --       cascade DELETE from auth.users later has nothing to do).
+    --
+    -- After this pre-delete, the cascade from `DELETE FROM auth.users`
+    -- is a no-op for purchases/purchase_items/monthly_user_totals
+    -- (zero rows affected → zero trigger fires → zero FK-check failures).
+    delete from public.purchase_items
+     where purchase_id in (
+       select id from public.purchases where user_id = p_user_id
+     );
+    delete from public.purchases where user_id = p_user_id;
+    delete from public.monthly_user_totals where user_id = p_user_id;
+
     -- §3. Storage sweep — receipts bucket under <p_user_id>/...
     delete from storage.objects
      where bucket_id = 'receipts'
@@ -137,7 +176,10 @@ begin
      where user_id = p_user_id;
 
     -- §5. Final destructive step. ON DELETE CASCADE chains in 0001,
-    --     0012, 0014, 0032 wipe every per-user table row.
+    --     0012, 0014, 0032 wipe the remaining per-user table rows
+    --     (stores, scan_usage, category_budgets, webhook_events,
+    --     household_members, invite_codes, user_categories,
+    --     households, profiles).
     delete from auth.users where id = p_user_id;
   exception when others then
     raise;

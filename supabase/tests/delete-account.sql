@@ -133,7 +133,14 @@ begin
   -- §2. Cascade — seed a user with rows across every per-user table, plus
   --     §3 storage object + §4 parse_attempts row, then call the RPC and
   --     assert every row is gone.
+  --
+  --     Idempotency: a previous run's re-signup row (random uuid, same
+  --     email) may still exist — wipe the email slot before the cascade
+  --     insert so the partial unique index `users_email_partial_key`
+  --     doesn't reject the deterministic uuid fixture.
   -- -------------------------------------------------------------------------
+  delete from auth.users where email = v_cascade_email;
+
   insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
   values
     ('00000000-0000-0000-0000-000000000000', v_user_cascade, 'authenticated', 'authenticated', v_cascade_email, '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now())
@@ -157,17 +164,17 @@ begin
 
   insert into public.scan_usage (user_id, year_month, scans_used, scans_limit)
   values (v_user_cascade, to_char(now(), 'YYYY-MM'), 0, 15)
-  on conflict (user_id) do nothing;
+  on conflict (user_id, year_month) do nothing;
 
   -- monthly_user_totals (0015) has its own cache table — seed a row.
-  insert into public.monthly_user_totals (user_id, year_month, total_amount, purchase_count, updated_at)
+  insert into public.monthly_user_totals (user_id, year_month, total, items_count, updated_at)
   values (v_user_cascade, to_char(now(), 'YYYY-MM'), 12.34, 1, now())
   on conflict (user_id, year_month) do nothing;
 
   -- category_budgets (0013)
-  insert into public.category_budgets (user_id, category, monthly_limit, year_month, created_at)
-  values (v_user_cascade, 'food', 100.00, to_char(now(), 'YYYY-MM'), now())
-  on conflict (user_id, category, year_month) do nothing;
+  insert into public.category_budgets (user_id, category_slug, month, amount)
+  values (v_user_cascade, 'food', to_char(now(), 'YYYY-MM'), 100.00)
+  on conflict (user_id, category_slug, month) do nothing;
 
   -- webhook_events (0012)
   insert into public.webhook_events (user_id, event_id, event_ts, event_type, applied_at)
@@ -379,10 +386,20 @@ begin
 
   -- -------------------------------------------------------------------------
   -- §7. Re-signup with the same email — after a successful delete, a fresh
-  --     auth.users row may be inserted with the SAME email. Supabase Auth
-  --     does NOT block re-registration (no UNIQUE constraint on email —
-  --     soft-soft uniqueness is enforced via separate verification flows).
+  --     auth.users row may be inserted with the SAME email.
+  --
+  --     Supabase Auth 17.6.x (current local stack) DOES enforce a unique
+  --     index `users_email_partial_key` on `auth.users(email) WHERE
+  --     is_sso_user = false`. After the destructive RPC physically removes
+  --     the row, a new signup with the same email succeeds because the
+  --     email slot is free.
+  --
+  --     Idempotency: a previous run's re-signup row may already occupy the
+  --     slot (its uuid is non-deterministic). Delete any leftover row
+  --     with the test email BEFORE the insert so re-runs are clean.
   -- -------------------------------------------------------------------------
+  delete from auth.users where email = v_cascade_email;
+
   v_resignup_ok := false;
   begin
     -- Use a NEW uuid (the original is gone) + the SAME email.
