@@ -103,5 +103,8 @@
   "deleteAccountErrorHouseholdOwnerBody": "Você precisa dissolver a família antes de excluir sua conta.",
   "deleteAccountErrorRevokeBody": "Não conseguimos cancelar sua assinatura. Tente novamente em alguns minutos.",
   "deleteAccountErrorInternalBody": "Não conseguimos excluir a conta. Tente novamente.",
-  "deleteAccountErrorRetry": "Tentar novamente"
+  "deleteAccountErrorRetry": "Tentar novamente",
+  "legalSectionTitle": "LEGAL",
+  "privacyPolicy": "Política de privacidade",
+  "termsConditions": "Termos e condições"
 }

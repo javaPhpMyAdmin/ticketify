@@ -288,6 +288,135 @@ async function run() {
     assert.equal(result, legalMod.LEGAL_URLS.privacy['es-AR']);
   });
 
+  console.log('\n[tests] section 4 — catalog parity (REQ-5)\n');
+
+  const LOCALES_ROOT = join(root, 'src', 'i18n', 'locales');
+  const LOCALE_TAGS = ['es-AR', 'en', 'pt-BR'];
+  const readCatalog = (locale, namespace) =>
+    JSON.parse(
+      readFileSync(join(LOCALES_ROOT, locale, `${namespace}.json`), 'utf8'),
+    );
+  // Same parity primitive as scripts/test-manual-screen.mjs: compare the
+  // sorted key set per namespace, not the values.
+  const keySet = (namespace) => Object.keys(namespace).sort().join(',');
+  const LEGAL_KEYS = {
+    settings: ['legalSectionTitle', 'privacyPolicy', 'termsConditions'],
+    auth: ['signUpLegalPrefix', 'signUpLegalAnd'],
+  };
+
+  await test('settings.json key sets are identical across the three locales', () => {
+    const esAr = readCatalog('es-AR', 'settings');
+    const en = readCatalog('en', 'settings');
+    const ptBr = readCatalog('pt-BR', 'settings');
+    assert.equal(keySet(en), keySet(esAr), 'settings parity: en vs es-AR');
+    assert.equal(keySet(ptBr), keySet(esAr), 'settings parity: pt-BR vs es-AR');
+  });
+
+  await test('auth.json key sets are identical across the three locales', () => {
+    const esAr = readCatalog('es-AR', 'auth');
+    const en = readCatalog('en', 'auth');
+    const ptBr = readCatalog('pt-BR', 'auth');
+    assert.equal(keySet(en), keySet(esAr), 'auth parity: en vs es-AR');
+    assert.equal(keySet(ptBr), keySet(esAr), 'auth parity: pt-BR vs es-AR');
+  });
+
+  await test('every legal key exists as a non-empty string in all three locales', () => {
+    for (const locale of LOCALE_TAGS) {
+      const catalogs = {
+        settings: readCatalog(locale, 'settings'),
+        auth: readCatalog(locale, 'auth'),
+      };
+      for (const [namespace, keys] of Object.entries(LEGAL_KEYS)) {
+        for (const key of keys) {
+          const where = `${locale}/${namespace}.json:${key}`;
+          assert.ok(key in catalogs[namespace], `missing legal key ${where}`);
+          assert.equal(
+            typeof catalogs[namespace][key],
+            'string',
+            `${where} must be a string`,
+          );
+          assert.ok(
+            catalogs[namespace][key].length > 0,
+            `${where} must be non-empty`,
+          );
+        }
+      }
+    }
+  });
+
+  // Golden per-locale tables (REQ-5): EXACT values, not cross-catalog
+  // equality — a typo that keeps all three catalogs "in sync" must still
+  // fail. Trailing spaces in the auth connectors are part of the contract.
+  const GOLDEN_SETTINGS_LEGAL = {
+    'es-AR': {
+      legalSectionTitle: 'LEGAL',
+      privacyPolicy: 'Política de privacidad',
+      termsConditions: 'Términos y condiciones',
+    },
+    en: {
+      legalSectionTitle: 'LEGAL',
+      privacyPolicy: 'Privacy Policy',
+      termsConditions: 'Terms & Conditions',
+    },
+    'pt-BR': {
+      legalSectionTitle: 'LEGAL',
+      privacyPolicy: 'Política de privacidade',
+      termsConditions: 'Termos e condições',
+    },
+  };
+  const GOLDEN_AUTH_LEGAL = {
+    'es-AR': {
+      signUpLegalPrefix: 'Al continuar aceptás la ',
+      signUpLegalAnd: ' y los ',
+    },
+    en: {
+      signUpLegalPrefix: 'By signing up you agree to the ',
+      signUpLegalAnd: ' and the ',
+    },
+    'pt-BR': {
+      signUpLegalPrefix: 'Ao se cadastrar você aceita a ',
+      signUpLegalAnd: ' e os ',
+    },
+  };
+
+  await test('settings legal values match the per-locale golden table', () => {
+    for (const locale of LOCALE_TAGS) {
+      const catalog = readCatalog(locale, 'settings');
+      for (const [key, expected] of Object.entries(GOLDEN_SETTINGS_LEGAL[locale])) {
+        assert.equal(
+          catalog[key],
+          expected,
+          `${locale}/settings.json:${key} must equal the golden value`,
+        );
+      }
+    }
+  });
+
+  await test('auth legal values match the per-locale golden table (trailing spaces preserved)', () => {
+    for (const locale of LOCALE_TAGS) {
+      const catalog = readCatalog(locale, 'auth');
+      for (const [key, expected] of Object.entries(GOLDEN_AUTH_LEGAL[locale])) {
+        assert.equal(
+          catalog[key],
+          expected,
+          `${locale}/auth.json:${key} must equal the golden value`,
+        );
+      }
+    }
+  });
+
+  await test('signUpLegalPrefix/signUpLegalAnd end with a space in all three locales', () => {
+    for (const locale of LOCALE_TAGS) {
+      const auth = readCatalog(locale, 'auth');
+      for (const key of ['signUpLegalPrefix', 'signUpLegalAnd']) {
+        const where = `${locale}/auth.json:${key}`;
+        assert.ok(
+          auth[key].endsWith(' '),
+          `${where} must end with a space (footer connector convention)`,
+        );
+      }
+    }
+  });
 
   console.log('');
   if (failed > 0) {

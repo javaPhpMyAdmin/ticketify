@@ -103,5 +103,8 @@
   "deleteAccountErrorHouseholdOwnerBody": "Tenés que disolver el hogar antes de eliminar tu cuenta.",
   "deleteAccountErrorRevokeBody": "No pudimos cancelar tu suscripción. Probá de nuevo en unos minutos.",
   "deleteAccountErrorInternalBody": "No pudimos eliminar la cuenta. Inténtalo de nuevo.",
-  "deleteAccountErrorRetry": "Reintentar"
+  "deleteAccountErrorRetry": "Reintentar",
+  "legalSectionTitle": "LEGAL",
+  "privacyPolicy": "Política de privacidad",
+  "termsConditions": "Términos y condiciones"
 }
