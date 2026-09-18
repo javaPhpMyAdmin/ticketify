@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020", "dom"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "..",
+    "paths": {
+      "expo-web-browser": ["./scripts/test-stubs/web-browser.ts"],
+      "@/*": ["./src/*"]
+    },
+    "rootDir": ".."
+  },
+  "include": [
+    "../src/lib/open-external-url.ts",
+    "../src/lib/legal-urls.ts",
+    "../src/i18n/detector.ts",
+    "../scripts/test-stubs/web-browser.ts",
+    "../scripts/test-stubs/globals.d.ts"
+  ]
+}
