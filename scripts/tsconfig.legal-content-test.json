@@ -31,6 +31,7 @@
     "../src/app/legal/terms.tsx",
     "../scripts/render-legal-screen.ts",
     "../src/lib/legal-urls.ts",
+    "../src/lib/auth/session-nav.ts",
     "../src/i18n/detector.ts",
     "../scripts/test-stubs/legal-i18next.ts",
     "../scripts/test-stubs/react-native.ts",

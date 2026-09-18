@@ -27,8 +27,13 @@
  *      CURRENT locale's document through `LegalScreen` (AD-1 static RG
  *      Text, no runtime fetch): document title, draft notice, every
  *      section title + body for the active catalog, and a working back
- *      button. Rendered with the es-AR and pt-BR catalogs to prove the
- *      component reads the active locale rather than hardcoded copy.
+ *      button whose label comes from the shipped es-AR common.json (F1).
+ *      The locale-switch test refreshes the SAME mounted renderer (F2 —
+ *      a remount could mask a snapshotting screen); fetch/XHR globals
+ *      throw so a network-touching edit fails loudly (F3, REQ-4); two
+ *      static contracts pin pre-auth reachability (F4, REQ-1); and the
+ *      catalogs must keep cross-locale-distinct copy (F5) and unique
+ *      section ids (F8).
  *
  * The catalog checks read the JSON straight from disk (same parity
  * primitive as test-legal-links.mjs §4). The rendering section compiles
@@ -121,6 +126,15 @@ const readCatalog = (locale) =>
   JSON.parse(readFileSync(join(LOCALES_ROOT, locale, 'legal.json'), 'utf8'));
 
 /**
+ * Reads the `common` namespace catalog like `readCatalog` — the back-button
+ * accessibility label must come from the SHIPPED es-AR copy (F1), so a
+ * future edit of common.json's `back` value can never silently drift away
+ * from what the render harness asserts.
+ */
+const readCommon = (locale) =>
+  JSON.parse(readFileSync(join(LOCALES_ROOT, locale, 'common.json'), 'utf8'));
+
+/**
  * Every string leaf of a catalog as `{ path, value }` (nested objects
  * walked, arrays skipped — section strings are verified separately by the
  * coverage section). The path is the i18next-style dotted key, e.g.
@@ -178,6 +192,14 @@ function sectionIds(catalog, doc) {
   return catalog[doc].sections.map((s) => s.id);
 }
 
+/** Resolve an i18next-style dotted key against a catalog (F5 distinctness). */
+function resolveKey(catalog, dotted) {
+  return dotted.split('.').reduce(
+    (acc, part) => (acc === null || typeof acc !== 'object' ? undefined : acc[part]),
+    catalog,
+  );
+}
+
 /**
  * Legally-required section ids per document. Whenever the copy drops one of
  * these from ALL locales at once, key-set parity alone would still pass —
@@ -203,7 +225,32 @@ const REQUIRED_TERMS_SECTIONS = [
 ];
 const DOCUMENTS = ['privacy', 'terms'];
 
+/**
+ * Keys whose values MUST differ across the three locales (F5). A
+ * copy-paste of the es-AR bodies into en/pt-BR with only the draftNotice
+ * swapped would still pass every parity/coverage assert — these five
+ * consent-gate strings (which U4/U5 render) plus the two draft notices
+ * pin that each locale ships genuinely distinct copy. The gate keys ship
+ * in U2's catalogs already, so all seven are asserted now; U5 adds the
+ * gate UI that consumes them.
+ */
+const LOCALE_DISTINCT_KEYS = [
+  'privacy.draftNotice',
+  'terms.draftNotice',
+  'consentGateTitle',
+  'consentGateBody',
+  'consentGateAccept',
+  'consentGateSignOut',
+  'signUpConsentRequired',
+];
+
 const catalogs = Object.fromEntries(LOCALE_TAGS.map((l) => [l, readCatalog(l)]));
+
+// F1: the back-button a11y label contract is the disk value of es-AR
+// `common.back` — the stub is injected with the same catalog (see
+// legal-i18next.ts), so a hardcoded label elsewhere cannot drift silently.
+const esArCommon = readCommon('es-AR');
+const BACK_LABEL = esArCommon.back;
 
 async function run() {
   console.log('\n[tests] section 1 — legal ns key-set parity (REQ-2)\n');
@@ -255,6 +302,23 @@ async function run() {
       );
     }
     assert.ok(esAr.length > 0, 'terms must define at least one section');
+  });
+
+  // F8: a duplicated id would break React keys (LegalScreen renders
+  // `sections.map((s) => <View key={s.id} …>)`) and would make U4/U5
+  // acceptance records ambiguous — each document must use unique ids.
+  await test('every section id is unique within its document in all three locales (F8)', () => {
+    for (const locale of LOCALE_TAGS) {
+      for (const doc of DOCUMENTS) {
+        const ids = sectionIds(catalogs[locale], doc);
+        assert.equal(
+          new Set(ids).size,
+          ids.length,
+          `${locale}/legal.json ${doc} has duplicate section ids: ` +
+            ids.filter((id, i) => ids.indexOf(id) !== i).join(', '),
+        );
+      }
+    }
   });
 
   console.log('\n[tests] section 2 — required section coverage + draft marker\n');
@@ -314,6 +378,24 @@ async function run() {
     }
   });
 
+  // F5: copy-paste guard — values must differ across locales.
+  await test('draft notices and consent-gate copy differ across the three locales (F5)', () => {
+    for (const key of LOCALE_DISTINCT_KEYS) {
+      const values = LOCALE_TAGS.map((l) => resolveKey(catalogs[l], key));
+      values.forEach((v, i) => {
+        assert.ok(
+          typeof v === 'string' && v.length > 0,
+          `${LOCALE_TAGS[i]}/legal.json ${key} must be a non-empty string`,
+        );
+      });
+      assert.equal(
+        new Set(values).size,
+        values.length,
+        `${key} must differ across locales (got: ${JSON.stringify(values)})`,
+      );
+    }
+  });
+
   // Self-checks: the harness's own detection primitives must prove they
   // would CATCH divergence — a catalog missing a key / holding empty or
   // blank values (spec REQ-2 "Divergence is detected" scenario) — using
@@ -357,8 +439,14 @@ async function run() {
   // pattern) and rendered with react-test-renderer. The legal-i18next stub
   // resolves `legal:` keys against a catalog INJECTED by the harness — the
   // SAME in-memory catalogs section 1 asserts over — so a render test pins
-  // the REAL shipped copy, and swapping the active catalog (es-AR → pt-BR)
-  // proves the screen reads the CURRENT locale instead of hardcoded text.
+  // the REAL shipped copy. The locale-switch test (F2) swaps the active
+  // catalog and refreshes the SAME mounted renderer in place (a remount
+  // could mask a mount-snapshotting screen); the back-label test (F1)
+  // drives the label from the shipped es-AR common.json. REQ-4's "no
+  // runtime fetch" is guarded by throwing fetch/XMLHttpRequest globals
+  // (F3), and REQ-1's pre-auth reachability by two static contracts (F4):
+  // the routes stay OUTSIDE the Stack.Protected gate in _layout.tsx, and
+  // decideSessionNavigation never redirects a signed-out /legal/* visitor.
   console.log('\n[tests] section 3 — screen rendering (AD-1, current-locale content)\n');
 
   console.log('[tests] compiling legal routes + LegalScreen with isolated tsconfig…');
@@ -367,6 +455,16 @@ async function run() {
 
   globalThis.__DEV__ = false;
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  // F3 (REQ-4 "no runtime fetch"): LegalScreen is fetch-free today by
+  // construction, but nothing else would fail if a future edit added a
+  // network call. These throwing globals make ANY fetch/XHR attempt by
+  // the compiled screen fail the render tests loudly.
+  globalThis.fetch = function fetchProbe() {
+    throw new Error('legal screen must not fetch during render (REQ-4, F3 guard)');
+  };
+  globalThis.XMLHttpRequest = function XMLHttpRequestProbe() {
+    throw new Error('legal screen must not open XHR during render (REQ-4, F3 guard)');
+  };
   const React = require(require.resolve('react'));
   const TestRenderer = require(require.resolve('react-test-renderer'));
   const { act, create } = TestRenderer;
@@ -379,6 +477,53 @@ async function run() {
   const routeMod = await load('scripts/render-legal-screen.js');
   const PrivacyRoute = routeMod.PrivacyRoute;
   const TermsRoute = routeMod.TermsRoute;
+
+  // F4 (REQ-1 pre-auth reachability): the routes are reachable signed-out
+  // ONLY because (a) they are NOT registered inside the Stack.Protected
+  // gate in _layout.tsx — Expo Router auto-registers the unlisted files
+  // as public routes — and (b) decideSessionNavigation never redirects a
+  // signed-out visitor off `/legal/*` (its flip/park clauses both require
+  // a session). Both are asserted against the real mechanism so a future
+  // gating change fails the harness loudly.
+  await test('routes stay outside the auth gate: no Stack.Screen registration for legal in _layout.tsx (F4)', () => {
+    const layoutSource = readFileSync(join(root, 'src', 'app', '_layout.tsx'), 'utf8');
+    // Positive control: the gate is real — (tabs) IS registered inside it.
+    assert.ok(
+      layoutSource.includes('Stack.Screen name="(tabs)"'),
+      'sanity: _layout.tsx must register (tabs) inside the protected stack',
+    );
+    assert.ok(
+      !layoutSource.includes('Stack.Screen name="legal'),
+      'legal routes must NOT be registered inside Stack.Protected (public by absence)',
+    );
+  });
+
+  await test('decideSessionNavigation never redirects a signed-out /legal/* visitor (F4)', async () => {
+    const sessionNavMod = await load('src/lib/auth/session-nav.js');
+    const decide = sessionNavMod.decideSessionNavigation;
+    for (const pathname of ['/legal/privacy', '/legal/terms']) {
+      assert.equal(
+        decide({ prevSession: null, session: null, pathname }).shouldNavigate,
+        false,
+        `signed-out ${pathname} must stay put (REQ-1 deep link)`,
+      );
+    }
+    // Controls proving the mechanism is live, not vacuously false:
+    // (a) /reset-password keeps its suppression even WITH a session flip;
+    // (b) a flip on any other route still redirects — so a regression
+    //     that turns the decide into a signed-out redirect would fail the
+    //     loop above.
+    assert.equal(
+      decide({ prevSession: null, session: {}, pathname: '/reset-password' }).shouldNavigate,
+      false,
+      'control: /reset-password stays suppressed on a session flip',
+    );
+    assert.equal(
+      decide({ prevSession: null, session: {}, pathname: '/tabs/home' }).shouldNavigate,
+      true,
+      'control: a session flip on a regular route must still redirect',
+    );
+  });
 
   /** Flatten every string leaf of a react-test-renderer host tree. */
   function flattenStrings(node) {
@@ -405,7 +550,7 @@ async function run() {
   }
 
   await test('privacy route renders the es-AR document: title, draft notice, every section', async () => {
-    i18nStub.__setActiveLegalCatalog(catalogs['es-AR']);
+    i18nStub.__setActiveLegalCatalog(catalogs['es-AR'], 'es-AR', esArCommon);
     const renderer = await renderRoute(PrivacyRoute);
     const text = renderText(renderer);
     const doc = catalogs['es-AR'].privacy;
@@ -425,7 +570,7 @@ async function run() {
   });
 
   await test('terms route renders the es-AR document incl. every required section', async () => {
-    i18nStub.__setActiveLegalCatalog(catalogs['es-AR']);
+    i18nStub.__setActiveLegalCatalog(catalogs['es-AR'], 'es-AR', esArCommon);
     const renderer = await renderRoute(TermsRoute);
     const text = renderText(renderer);
     const doc = catalogs['es-AR'].terms;
@@ -441,36 +586,57 @@ async function run() {
     await unmountRoute(renderer);
   });
 
-  await test('switching the active catalog to pt-BR re-renders the pt-BR copy (not hardcoded)', async () => {
-    i18nStub.__setActiveLegalCatalog(catalogs['pt-BR']);
+  // F2: proves a LIVE locale change — the SAME mounted renderer is
+  // refreshed in place after the catalog swap. A mount-snapshotting
+  // screen would keep the stale es-AR copy under `update()` and fail;
+  // the direct-`t()` LegalScreen re-renders and passes.
+  await test('switching the active catalog to pt-BR re-renders the SAME mounted screen (F2)', async () => {
+    i18nStub.__setActiveLegalCatalog(catalogs['es-AR'], 'es-AR', esArCommon);
     const renderer = await renderRoute(PrivacyRoute);
-    const text = renderText(renderer);
+    const before = renderText(renderer);
+    assert.ok(
+      before.includes(catalogs['es-AR'].privacy.draftNotice),
+      'es-AR draft notice shows while the es-AR catalog is active',
+    );
+    // Swap the catalog under the SAME renderer and refresh it in place.
+    i18nStub.__setActiveLegalCatalog(catalogs['pt-BR'], 'pt-BR', esArCommon);
+    await act(async () => {
+      renderer.update(React.createElement(PrivacyRoute));
+    });
+    const after = renderText(renderer);
     const doc = catalogs['pt-BR'].privacy;
-    assert.ok(text.includes(doc.title), 'pt-BR privacy title must be rendered');
+    assert.ok(
+      after.includes(doc.title),
+      'pt-BR privacy title must render after the in-place update',
+    );
     const thirdParties = doc.sections.find((s) => s.id === 'thirdParties');
     assert.ok(
-      text.includes(thirdParties.title),
-      'pt-BR third-parties title must be rendered',
+      after.includes(thirdParties.title),
+      'pt-BR third-parties title must render after the in-place update',
     );
     assert.ok(
-      text.includes(thirdParties.body),
-      'pt-BR third-parties body must be rendered',
+      after.includes(thirdParties.body),
+      'pt-BR third-parties body must render after the in-place update',
     );
-    // The es-AR and pt-BR document TITLES overlap as substrings
-    // ('Política de privacidad' ⊂ 'Política de privacidade'), so the
-    // negative check uses the draft notices — distinct in every locale.
+    // Negative check via the draft notices — the es-AR and pt-BR document
+    // TITLES overlap as substrings ('Política de privacidad' ⊂
+    // 'Política de privacidade'), so titles cannot separate the locales.
     assert.ok(
-      !text.includes(catalogs['es-AR'].privacy.draftNotice),
-      'es-AR copy must NOT render under the pt-BR catalog',
+      !after.includes(catalogs['es-AR'].privacy.draftNotice),
+      'es-AR copy must NOT remain after the in-place update',
     );
     await unmountRoute(renderer);
   });
 
-  await test('back button presses router.back() with the common:back a11y label', async () => {
-    i18nStub.__setActiveLegalCatalog(catalogs['es-AR']);
+  await test('back button presses router.back() with the shipped common:back a11y label (F1)', async () => {
+    i18nStub.__setActiveLegalCatalog(catalogs['es-AR'], 'es-AR', esArCommon);
     routerStub.__resetRouterStub();
+    assert.ok(
+      typeof BACK_LABEL === 'string' && BACK_LABEL.length > 0,
+      'es-AR common.back must be a non-empty string (disk contract)',
+    );
     const renderer = await renderRoute(PrivacyRoute);
-    const back = renderer.root.findByProps({ accessibilityLabel: 'Volver' });
+    const back = renderer.root.findByProps({ accessibilityLabel: BACK_LABEL });
     await act(async () => {
       back.props.onPress();
     });
