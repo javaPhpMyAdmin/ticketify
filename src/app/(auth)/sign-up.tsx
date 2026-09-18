@@ -12,6 +12,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FieldGroup, Pressable, Spinner, Text, View } from '@/components';
 import { useSessionStore } from '@/features/auth';
+import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
+import { legalUrlFor } from '@/lib/legal-urls';
+import { openExternalUrl } from '@/lib/open-external-url';
 import { colors, radii, spacing, typography } from '@/theme';
 
 /**
@@ -23,8 +26,9 @@ import { colors, radii, spacing, typography } from '@/theme';
  * exposes the app content.
  */
 export default function SignUpScreen() {
-  const { t } = useTranslation(['auth']);
+  const { t } = useTranslation(['auth', 'settings']);
   const signUpWithEmail = useSessionStore((s) => s.signUpWithEmail);
+  const activeLocale = useLocaleStore((s) => s.activeLocale);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -158,6 +162,27 @@ export default function SignUpScreen() {
               <Text style={styles.footerLink}>{t('auth:signIn')}</Text>
             </Pressable>
           </View>
+
+          {/* Legal links below the footer pairing (REQ-4): usable pre-auth —
+              the opener and URL map import no session/auth modules. */}
+          <View style={styles.legalFooter}>
+            <Text style={styles.legalText}>{t('auth:signUpLegalPrefix')}</Text>
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel={t('settings:privacyPolicy')}
+              onPress={() => void openExternalUrl(legalUrlFor('privacy', activeLocale))}
+            >
+              <Text style={styles.legalLink}>{t('settings:privacyPolicy')}</Text>
+            </Pressable>
+            <Text style={styles.legalText}>{t('auth:signUpLegalAnd')}</Text>
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel={t('settings:termsConditions')}
+              onPress={() => void openExternalUrl(legalUrlFor('terms', activeLocale))}
+            >
+              <Text style={styles.legalLink}>{t('settings:termsConditions')}</Text>
+            </Pressable>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -240,6 +265,23 @@ const styles = StyleSheet.create({
     ...typography.bodyMd,
     color: colors.primary,
     fontWeight: '600',
+  },
+  legalFooter: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: spacing.xxl,
+    gap: spacing.xs,
+  },
+  legalLink: {
+    ...typography.labelSm,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  legalText: {
+    ...typography.labelSm,
+    color: colors.textSecondary,
   },
   confirmation: {
     flex: 1,

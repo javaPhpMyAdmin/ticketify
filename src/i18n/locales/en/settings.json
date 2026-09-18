@@ -103,5 +103,8 @@
   "deleteAccountErrorHouseholdOwnerBody": "You must disband the household before deleting your account.",
   "deleteAccountErrorRevokeBody": "We could not cancel your subscription. Try again in a few minutes.",
   "deleteAccountErrorInternalBody": "We could not delete your account. Try again.",
-  "deleteAccountErrorRetry": "Retry"
+  "deleteAccountErrorRetry": "Retry",
+  "legalSectionTitle": "LEGAL",
+  "privacyPolicy": "Privacy Policy",
+  "termsConditions": "Terms & Conditions"
 }

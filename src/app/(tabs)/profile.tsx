@@ -14,6 +14,8 @@ import {
   type AccountSettingRow,
 } from '@/features/profile';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
+import { legalUrlFor } from '@/lib/legal-urls';
+import { openExternalUrl } from '@/lib/open-external-url';
 import { showManageSubscriptions } from '@/lib/revenuecat';
 import { leaveHousehold } from '@/lib/supabase/feature-access';
 import { queryClient } from '@/lib/query-client';
@@ -33,6 +35,7 @@ export default function ProfileScreen() {
   const { isPro, isLoading: proLoading, subscriptionStatus, trialEndsAt, daysRemaining, isFrozen, everPaid } =
     useProEntitlement();
   const localeOverride = useLocaleStore((s) => s.override);
+  const activeLocale = useLocaleStore((s) => s.activeLocale);
 
   const householdName = useHouseholdStore((s) => s.household?.name);
 
@@ -159,6 +162,27 @@ export default function ProfileScreen() {
       tone: 'danger',
       trailing: { type: 'chevron' },
       onPress: () => router.push('/settings/delete-account'),
+    },
+  ];
+
+  // Legal documents open in the external browser (REQ-3). Deliberately a
+  // separate row set — appending these to `settings[]` would shift the
+  // slice/danger split below, so the Legal group renders as its own
+  // section between the main list and the danger zone.
+  const legalRows: AccountSettingRow[] = [
+    {
+      id: 'privacy-policy',
+      label: t('settings:privacyPolicy'),
+      icon: 'doc.text',
+      trailing: { type: 'chevron' },
+      onPress: () => void openExternalUrl(legalUrlFor('privacy', activeLocale)),
+    },
+    {
+      id: 'terms-and-conditions',
+      label: t('settings:termsConditions'),
+      icon: 'doc.on.doc',
+      trailing: { type: 'chevron' },
+      onPress: () => void openExternalUrl(legalUrlFor('terms', activeLocale)),
     },
   ];
 
@@ -358,6 +382,11 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('settings:sectionTitle')}</Text>
           <AccountSettingsList rows={settings.slice(0, settings.length - 1)} />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('settings:legalSectionTitle')}</Text>
+          <AccountSettingsList rows={legalRows} />
         </View>
 
         {/* Destructive actions sit in their own section, separated from the
