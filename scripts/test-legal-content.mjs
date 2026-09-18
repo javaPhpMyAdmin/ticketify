@@ -45,7 +45,13 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -642,6 +648,117 @@ async function run() {
     });
     assert.equal(routerStub.__lastNav(), 'back');
     await unmountRoute(renderer);
+  });
+
+  // ───────────────────────────────────────────────────────────────────
+  // Section 4 — hosted mirror (SDD U3: generate-legal-markdown.mjs)
+  // ───────────────────────────────────────────────────────────────────
+  // REQ-2 (U3) "the hosts mirror the same three documents, one per locale,
+  // byte-stable with the in-app catalogs": a static generator
+  // (scripts/generate-legal-markdown.mjs) reads the SHIPPED legal catalogs
+  // from disk and emits six Markdown mirrors under docs/legal/
+  // (docs/legal/{es-AR,en,pt-BR}/{privacy,terms}.md). The mirrors are
+  // COMMITTED so GitHub Pages can serve them without a runtime renderer.
+  //
+  // Three contracts are pinned here:
+  //   F6  mirror EXISTS for every (locale × document) and parses as a
+  //       non-empty markdown document carrying the locale + document type.
+  //   F7  each mirror is BYTE-IDENTICAL to a FRESH generation emitted to a
+  //       temp dir — i.e. the committed mirror is exactly what the generator
+  //       produces today. A stale/edited mirror diverges and fails loudly
+  //       (fresh-generation equality check deferred from U2-2.5).
+  //   F9  every legal section (id + title + body) from the shipped
+  //       catalog leaf is present verbatim in its mirror — the mirror is
+  //       content-COMPLETE vs the in-app text, and the DRAFT notice rides
+  //       along so hosted copy never loses the draft marker (R-3).
+  //
+  // The generator is invoked through the compile-and-load bridge so the
+  // test and the shipped command share ONE implementation (no drift).
+  console.log('\n[tests] section 4 — hosted mirrors (U3, REQ-2 byte-stable with in-app)\n');
+
+  const DOCS_ROOT = join(root, 'docs', 'legal');
+  const MIRROR_LOCALES = ['es-AR', 'en', 'pt-BR'];
+  const MIRROR_DOCS = ['privacy', 'terms'];
+
+  const generateLegalMarkdown = async (outDirOverride) => {
+    const genMod = await load('scripts/generate-legal-markdown.js');
+    const outDirs = await genMod.__emitLegalMirrors({
+      root,
+      outRoot: outDirOverride,
+    });
+    return outDirs;
+  };
+
+  const mirrorPath = (locale, doc) =>
+    join(DOCS_ROOT, locale, `${doc}.md`);
+
+  const mirrorExists = (locale, doc) =>
+    existsSync(mirrorPath(locale, doc));
+
+  await test('six mirrors exist on disk for every (locale × document) and carry type+locale in their title (F6)', () => {
+    for (const locale of MIRROR_LOCALES) {
+      for (const doc of MIRROR_DOCS) {
+        const file = mirrorPath(locale, doc);
+        assert.ok(
+          mirrorExists(locale, doc),
+          `mirror missing: docs/legal/${locale}/${doc}.md (generator not run / not committed)`,
+        );
+        const text = readFileSync(file, 'utf8');
+        assert.ok(
+          text.trim().length > 0,
+          `mirror must not be empty: ${file}`,
+        );
+        assert.ok(
+          text.includes(`# ${doc} · ${locale}`) ||
+            text.includes(`# ${doc === 'privacy' ? 'Privacy' : 'Terms'} — ${locale}`),
+          `mirror must declare its document type + locale in the H1: ${file}`,
+        );
+      }
+    }
+  });
+
+  await test('committed mirrors are byte-identical to a FRESH deterministic regeneration (F7, U2-2.5)', async () => {
+    const freshRoot = mkdtempSync(join(tmpRoot, 'legal-mirror-fresh-'));
+    try {
+      await generateLegalMarkdown(freshRoot);
+      for (const locale of MIRROR_LOCALES) {
+        for (const doc of MIRROR_DOCS) {
+          const committed = readFileSync(mirrorPath(locale, doc), 'utf8');
+          const fresh = readFileSync(join(freshRoot, locale, `${doc}.md`), 'utf8');
+          assert.equal(
+            fresh,
+            committed,
+            `docs/legal/${locale}/${doc}.md is stale — regenerate with ` +
+              '`node scripts/generate-legal-markdown.mjs` (fresh generation must match committed)',
+          );
+        }
+      }
+    } finally {
+      rmSync(freshRoot, { recursive: true, force: true });
+    }
+  });
+
+  await test('every legal section title + body + draft notice from the shipped catalog appear verbatim in its mirror (F9)', () => {
+    for (const locale of MIRROR_LOCALES) {
+      for (const doc of MIRROR_DOCS) {
+        const mirror = readFileSync(mirrorPath(locale, doc), 'utf8');
+        const catalogDoc = catalogs[locale][doc];
+        assert.ok(
+          mirror.includes(catalogDoc.draftNotice),
+          `${locale}/${doc}: draft notice must be present in the mirror (R-3)`,
+        );
+        for (const section of catalogDoc.sections) {
+          assert.ok(
+            mirror.includes(section.title),
+            `${locale}/${doc}: section title '${section.title}' must appear in the mirror`,
+          );
+          assert.ok(
+            mirror.includes(section.body),
+            `${locale}/${doc}: section body must appear in the mirror`,
+          );
+        }
+      }
+    }
   });
 
   console.log('');
