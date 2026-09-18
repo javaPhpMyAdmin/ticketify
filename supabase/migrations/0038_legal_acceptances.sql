@@ -26,7 +26,8 @@
 --
 --         user_id     uuid        NOT NULL → auth.users(id) ON DELETE CASCADE
 --         document    text        NOT NULL  CHECK (document in ('privacy','terms'))
---         version     text        NOT NULL  (ISO date string, e.g. '2026-09-18')
+--         version     text        NOT NULL  CHECK (version ~ '^\d{4}-\d{2}-\d{2}$')
+--                                            (ISO date string, e.g. '2026-09-18')
 --         accepted_at timestamptz NOT NULL  DEFAULT now()
 --         PRIMARY KEY (user_id, document, version)
 --
@@ -48,6 +49,12 @@
 --       from auth.uid() (clients can never choose the row owner) and is
 --       idempotent for duplicate (document, version) pairs via `on
 --       conflict do nothing` (REQ-1 duplicate record scenario).
+--
+--       The function pins `set search_path = ''` (definer hardening): every
+--       body reference is schema-qualified (public.legal_acceptances,
+--       auth.uid(); the ON CONFLICT target columns resolve against the
+--       INSERT's target table), so a hijacked search_path cannot redirect
+--       any name the definer resolves.
 --
 --       Grants follow 0036 exactly — explicit REVOKE from PUBLIC/anon/
 --       service_role (Postgres grants EXECUTE to PUBLIC by default for
@@ -73,7 +80,7 @@
 create table public.legal_acceptances (
   user_id     uuid        not null references auth.users(id) on delete cascade,
   document    text        not null check (document in ('privacy', 'terms')),
-  version     text        not null,
+  version     text        not null check (version ~ '^\d{4}-\d{2}-\d{2}$'),
   accepted_at timestamptz not null default now(),
   primary key (user_id, document, version)
 );
@@ -97,7 +104,7 @@ returns void
 language plpgsql
 security definer
 volatile
-set search_path = public
+set search_path = ''
 as $$
 begin
   insert into public.legal_acceptances (user_id, document, version)
@@ -123,4 +130,4 @@ revoke execute on function public.record_legal_acceptance(text, text) from publi
 grant  execute on function public.record_legal_acceptance(text, text) to authenticated;
 
 comment on function public.record_legal_acceptance(p_document text, p_version text) is
-  'Records the calling user''s acceptance of a legal document at a given version (user_id derived from auth.uid()). SECURITY DEFINER, owned by postgres, callable by authenticated ONLY. Idempotent: a duplicate (document, version) pair is a no-op (on conflict do nothing). Valid documents: privacy, terms (enforced by the table CHECK). Append-only: no update/delete policies exist on legal_acceptances.';
+  'Records the calling user''s acceptance of a legal document at a given version (user_id derived from auth.uid()). SECURITY DEFINER, owned by postgres, callable by authenticated ONLY. Idempotent: a duplicate (document, version) pair is a no-op (on conflict do nothing). Valid documents: privacy, terms (table CHECK); versions must match the ISO-date CHECK ^\d{4}-\d{2}-\d{2}$ (e.g. 2026-09-18). Append-only: no update/delete policies exist on legal_acceptances.';

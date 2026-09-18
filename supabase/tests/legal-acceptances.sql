@@ -30,6 +30,14 @@
 --        violation 23514; UPDATE and DELETE on own rows affect ZERO rows
 --        (no policy — immutable); an INSERT with ANOTHER user's user_id is
 --        blocked by the with-check; A's SELECT never sees B's rows.
+--        §2g extends with version-contract edge coverage: malformed and
+--        empty version strings raise CHECK violation 23514 (version ~ ISO
+--        date regex `^\d{4}-\d{2}-\d{2}$`); a NEW version for the same
+--        (user, document) APPENDS a second row while the OLD row survives
+--        (REQ-2 version-bump prereq); accepted_at is set to now() at write
+--        time (small-window assert); and the RPC with a NULL auth.uid()
+--        (no JWT sub claim) raises NOT NULL violation 23502 — the
+--        caller-derived owner never silently becomes a NULL row.
 --   §3. FK cascade — deleting the auth.users row removes the user's
 --        acceptance rows (audit rows die with the account).
 --   §4. Anon denial (LAST: role persists for the rest of the transaction):
@@ -44,9 +52,17 @@
 -- Fixture notes: NONE of the seeded rows exist in the fresh chain
 -- (0001-0037 seeds no auth.users rows with these fixed UUIDs), and every
 -- insert is idempotent (`on conflict (...) do nothing` with fixed UUIDs),
--- so the file is safe to re-run. `auth.users` inserts use the common
+--   so the file is safe to re-run. `auth.users` inserts use the common
 -- minimal column set; a future GoTrue schema drift fails loudly here
 -- (fail-closed is intended).
+--
+-- KNOWN GAP (pinned for the U4 client slice — see design.md Testing
+-- Strategy): this smoke exercises the RPC via direct SQL `perform
+-- public.record_legal_acceptance(...)`, and CI db-smoke runs `supabase db
+-- query` — PostgREST is NOT in this path. The
+-- `supabase.rpc('record_legal_acceptance', {p_document, p_version})` → 204
+-- response, named-argument, and JWT-role request contract MUST be verified
+-- by the U4 client slice against a LIVE PostgREST (not only mocks).
 -- ============================================================================
 
 do $$
@@ -64,6 +80,9 @@ declare
   -- same value).
   v_version      text := '2026-09-18';
 
+  -- A NEWER version token for the version-bump append assertion (§2g).
+  v_version_new  text := '2026-10-01';
+
   -- §1 catalog vars.
   v_secdef       boolean;
   v_owner        text;
@@ -79,6 +98,7 @@ declare
   v_blocked      boolean;
   v_sqlstate     text;
   v_errmsg       text;
+  v_ts           timestamptz;
 begin
   -- -------------------------------------------------------------------------
   -- §1. Catalog — migration 0038 contract
@@ -135,15 +155,31 @@ begin
   assert v_def = 'PRIMARY KEY (user_id, document, version)',
     'primary key must be (user_id, document, version), got: ' || coalesce(v_def, '<none>');
 
-  -- document CHECK ('privacy' | 'terms').
-  select pg_get_constraintdef(oid) into v_def
+  -- document CHECK ('privacy' | 'terms') AND version CHECK (ISO date shape
+  -- `^\d{4}-\d{2}-\d{2}$`) — exactly TWO table-level checks.
+  select count(*) into v_count
     from pg_constraint
    where conrelid = 'public.legal_acceptances'::regclass
      and contype = 'c';
-  assert v_def ilike '%document%'
-     and v_def ilike '%privacy%'
+  assert v_count = 2,
+    'legal_acceptances must have exactly 2 CHECK constraints (document ∈ privacy|terms, version ~ ISO date), got: ' || v_count;
+
+  select pg_get_constraintdef(oid) into v_def
+    from pg_constraint
+   where conrelid = 'public.legal_acceptances'::regclass
+     and contype = 'c'
+     and pg_get_constraintdef(oid) ilike '%document%';
+  assert v_def ilike '%privacy%'
      and v_def ilike '%terms%',
     'a CHECK constraint must constrain document to (privacy, terms), got: ' || coalesce(v_def, '<none>');
+
+  select pg_get_constraintdef(oid) into v_def
+    from pg_constraint
+   where conrelid = 'public.legal_acceptances'::regclass
+     and contype = 'c'
+     and pg_get_constraintdef(oid) ilike '%version%';
+  assert v_def ilike '%d{4}-%d{2}-%d{2}%',
+    'a CHECK constraint must pin version to an ISO date shape (^\d{4}-\d{2}-\d{2}$), got: ' || coalesce(v_def, '<none>');
 
   -- FK to auth.users ON DELETE CASCADE.
   select count(*) into v_count
@@ -335,6 +371,131 @@ begin
     'the blocked cross-user INSERT must not have written B''s row';
 
   -- -------------------------------------------------------------------------
+  -- §2g. Version-contract edge cases (review remediation R1/R3): the
+  --       version CHECK (ISO date shape), append semantics for version
+  --       bumps (REQ-2 prereq), accepted_at := now() at write time, and
+  --       the NULL auth.uid() path (no JWT sub → user_id NOT NULL
+  --       violation, never a NULL-owner row).
+  -- -------------------------------------------------------------------------
+
+  -- 2g-1. A malformed version string ('01-01-2026' — a realistic client
+  --       payload typo) is rejected by the version CHECK (23514).
+  v_sqlstate := '';
+  v_errmsg   := '';
+  begin
+    perform public.record_legal_acceptance('privacy', '01-01-2026');
+    raise exception 'MISSING_EXPECTED_RAISE';
+  exception
+    when others then
+      if sqlerrm = 'MISSING_EXPECTED_RAISE' then
+        raise;
+      end if;
+      v_sqlstate := sqlstate;
+      v_errmsg   := sqlerrm;
+  end;
+  assert v_sqlstate = '23514',
+    format('a malformed version (01-01-2026) must raise CHECK violation (23514), got: %s — %s', v_sqlstate, v_errmsg);
+
+  -- 2g-2. Pure garbage ('not-a-date') is likewise rejected (23514).
+  v_sqlstate := '';
+  v_errmsg   := '';
+  begin
+    perform public.record_legal_acceptance('privacy', 'not-a-date');
+    raise exception 'MISSING_EXPECTED_RAISE';
+  exception
+    when others then
+      if sqlerrm = 'MISSING_EXPECTED_RAISE' then
+        raise;
+      end if;
+      v_sqlstate := sqlstate;
+      v_errmsg   := sqlerrm;
+  end;
+  assert v_sqlstate = '23514',
+    format('a non-date version (not-a-date) must raise CHECK violation (23514), got: %s — %s', v_sqlstate, v_errmsg);
+
+  -- 2g-3. An empty version fails too ('' does not match the ISO-date
+  --       regex → CHECK violation 23514; it is NOT NULL so 23502 never
+  --       fires for it).
+  v_sqlstate := '';
+  v_errmsg   := '';
+  begin
+    perform public.record_legal_acceptance('privacy', '');
+    raise exception 'MISSING_EXPECTED_RAISE';
+  exception
+    when others then
+      if sqlerrm = 'MISSING_EXPECTED_RAISE' then
+        raise;
+      end if;
+      v_sqlstate := sqlstate;
+      v_errmsg   := sqlerrm;
+  end;
+  assert v_sqlstate = '23514',
+    format('an empty version must raise CHECK violation (23514), got: %s — %s', v_sqlstate, v_errmsg);
+
+  -- None of the rejected versions may leave rows behind.
+  select count(*) into v_count
+    from public.legal_acceptances
+   where version in ('01-01-2026', 'not-a-date', '');
+  assert v_count = 0,
+    'rejected version strings must not leave any row behind';
+
+  -- 2g-4. Version bump APPENDS: same (user, document) at a NEW version
+  --       adds a SECOND row; the OLD version row survives (REQ-2
+  --       version-bump prereq — never rewritten).
+  perform public.record_legal_acceptance('privacy', v_version_new);
+  select count(*) into v_count
+    from public.legal_acceptances
+   where user_id = v_user_a and document = 'privacy';
+  assert v_count = 2,
+    'accepting at a NEW version must append a second row (REQ-2 version bump), got: ' || v_count;
+  select count(*) into v_count
+    from public.legal_acceptances
+   where user_id = v_user_a and document = 'privacy' and version = v_version;
+  assert v_count = 1,
+    'the OLD version row must survive a version bump (append-only, never rewritten)';
+
+  -- 2g-5. accepted_at is set to now() at write time (small window around
+  --       the transaction clock — the insert happened moments ago in this
+  --       same transaction, so a far-off default would fail this).
+  select accepted_at into v_ts
+    from public.legal_acceptances
+   where user_id = v_user_a and document = 'privacy' and version = v_version_new;
+  assert v_ts is not null
+     and (now() - v_ts) between interval '0 seconds' and interval '30 seconds',
+    'accepted_at must be set to now() at write time (row outside the now() window)';
+
+  -- 2g-6. NULL auth.uid() (missing JWT sub claim): the RPC derives user_id
+  --       from auth.uid(); with no sub the owner would be NULL, so the
+  --       user_id NOT NULL constraint must reject the write (23502) and no
+  --       NULL-owner row may exist. Both GUC conventions are cleared (the
+  --       local image reads request.jwt.claim.sub, test harnesses
+  --       request.jwt.claims), then restored for the rest of the block.
+  perform set_config('request.jwt.claim.sub', '', true);
+  perform set_config('request.jwt.claims', '{}', true);
+  v_sqlstate := '';
+  v_errmsg   := '';
+  begin
+    perform public.record_legal_acceptance('terms', v_version);
+    raise exception 'MISSING_EXPECTED_RAISE';
+  exception
+    when others then
+      if sqlerrm = 'MISSING_EXPECTED_RAISE' then
+        raise;
+      end if;
+      v_sqlstate := sqlstate;
+      v_errmsg   := sqlerrm;
+  end;
+  assert v_sqlstate = '23502',
+    format('the RPC with a missing JWT sub (NULL auth.uid()) must raise NOT NULL violation (23502), got: %s — %s', v_sqlstate, v_errmsg);
+  perform set_config('request.jwt.claim.sub', v_user_a::text, true);
+  perform set_config('request.jwt.claims', format('{"sub":"%s"}', v_user_a), true);
+  select count(*) into v_count
+    from public.legal_acceptances
+   where user_id is null;
+  assert v_count = 0,
+    'a NULL-owner acceptance row must never exist (user_id NOT NULL)';
+
+  -- -------------------------------------------------------------------------
   -- §3. FK cascade — deleting the auth.users row removes the acceptance
   --     rows (audit rows die with the account). Return to postgres first:
   --     `set local role authenticated` cannot DELETE from auth.users.
@@ -377,5 +538,5 @@ begin
   -- -------------------------------------------------------------------------
   -- Summary — only reached if every assert above passed.
   -- -------------------------------------------------------------------------
-  raise notice 'legal-acceptances.sql smoke: catalog (columns + PK + CHECK + FK cascade + RLS policies + definer owner/grants) + RPC writes/idempotency + CHECK rejection + append-only (0-row UPDATE/DELETE) + cross-user isolation + FK cascade + anon denial assertions passed';
+  raise notice 'legal-acceptances.sql smoke: catalog (columns + PK + BOTH CHECKs (document, version) + FK cascade + RLS policies + definer owner/grants) + RPC writes/idempotency + CHECK rejections (document, malformed/empty version) + append-only (0-row UPDATE/DELETE) + cross-user isolation + version-bump append + now() accepted_at + NULL-sub rejection + FK cascade + anon denial assertions passed';
 end $$;
