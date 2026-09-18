@@ -1,0 +1,104 @@
+{
+  "privacy": {
+    "title": "Política de privacidade",
+    "draftNotice": "RASCUNHO — Este texto está pendente de revisão jurídica.",
+    "sections": [
+      {
+        "id": "intro",
+        "title": "1. Introdução",
+        "body": "Esta Política de privacidade explica quais dados coletamos quando você usa o Ticketify, para que os usamos, com quem os compartilhamos e quais direitos você tem sobre eles. Não vendemos seus dados pessoais a terceiros."
+      },
+      {
+        "id": "dataCollected",
+        "title": "2. Dados que coletamos",
+        "body": "Coletamos os dados que você nos fornece diretamente: seu e-mail, seu nome e os tickets e comprovantes que você carrega ou escaneia no aplicativo. Também armazenamos dados gerados pelo seu uso, como categorias, orçamentos, lares e preferências. Quando você assina o Pro, recebemos da loja de aplicativos a confirmação da sua compra."
+      },
+      {
+        "id": "purposes",
+        "title": "3. Finalidades do tratamento",
+        "body": "Usamos seus dados para fornecer o serviço: sincronizar seus tickets entre dispositivos, calcular seus orçamentos e estatísticas e gerenciar sua conta. Também usamos dados agregados e anônimos para melhorar o aplicativo. Os registros de aceitação de documentos legais são mantidos para cumprir nossas obrigações de auditoria."
+      },
+      {
+        "id": "thirdParties",
+        "title": "4. Terceiros",
+        "body": "Para operar o serviço trabalhamos com provedores de confiança: a Supabase hospeda o banco de dados e gerencia a autenticação; a RevenueCat gerencia as assinaturas dentro do aplicativo; e a Apple App Store e o Google Play processam os pagamentos. Esses provedores processam seus dados apenas para prestar seus serviços e sob nossas instruções."
+      },
+      {
+        "id": "retention",
+        "title": "5. Retenção de dados",
+        "body": "Mantemos seus dados enquanto sua conta estiver ativa e pelo tempo necessário para cumprir as finalidades desta política. Os registros de aceitação de documentos legais são mantidos de forma imutável para fins de auditoria. Ao excluir sua conta, seus dados são apagados, exceto aqueles que devemos conservar por obrigação legal."
+      },
+      {
+        "id": "accountDeletion",
+        "title": "6. Exclusão da conta",
+        "body": "Você pode excluir sua conta a qualquer momento em Configurações no aplicativo. A exclusão apaga seus tickets, orçamentos, lares e dados associados. O cancelamento da assinatura paga é feito separadamente na loja de aplicativos."
+      },
+      {
+        "id": "rights",
+        "title": "7. Seus direitos",
+        "body": "Você tem direito de acessar, corrigir, exportar e excluir seus dados pessoais, e de se opor ou limitar seu tratamento. Você pode exportar seus dados pelo aplicativo ou nos escrever pelo canal de contato indicado abaixo para exercer qualquer um desses direitos."
+      },
+      {
+        "id": "contact",
+        "title": "8. Contato",
+        "body": "Se você tiver dúvidas sobre esta política ou sobre o tratamento dos seus dados, escreva para [contato@ticketify.app]. Lembre-se de que este é um texto de rascunho: a versão final será publicada após a revisão jurídica."
+      }
+    ]
+  },
+  "terms": {
+    "title": "Termos e condições",
+    "draftNotice": "RASCUNHO — Este texto está pendente de revisão jurídica.",
+    "sections": [
+      {
+        "id": "acceptance",
+        "title": "1. Aceitação dos termos",
+        "body": "Ao criar uma conta ou usar o Ticketify você aceita estes Termos e condições. Se não concordar, não use o aplicativo."
+      },
+      {
+        "id": "serviceDescription",
+        "title": "2. Descrição do serviço",
+        "body": "O Ticketify permite guardar suas compras escaneando ou carregando tickets, montar orçamentos mensais por categoria e consultar estatísticas dos seus gastos. Se você criar ou entrar em um lar, seus dados são compartilhados com os membros desse lar."
+      },
+      {
+        "id": "account",
+        "title": "3. Sua conta",
+        "body": "Você é responsável por manter a confidencialidade da sua conta e pela atividade que ocorrer nela. Não é permitido usar o aplicativo para atividades ilegais nem carregar informações falsas ou de terceiros sem autorização."
+      },
+      {
+        "id": "subscriptions",
+        "title": "4. Assinaturas e pagamentos",
+        "body": "A assinatura Pro é cobrada pela loja de aplicativos e renova automaticamente até que você a cancele. Você pode cancelar a qualquer momento pela loja; o acesso aos recursos Pro continua até o fim do período pago."
+      },
+      {
+        "id": "license",
+        "title": "5. Licença de uso",
+        "body": "Concedemos a você uma licença limitada, não exclusiva e intransferível para usar o aplicativo de acordo com estes termos. Você não pode copiar, modificar, distribuir nem explorar comercialmente o aplicativo ou seu conteúdo."
+      },
+      {
+        "id": "liability",
+        "title": "6. Limitação de responsabilidade",
+        "body": "O aplicativo é fornecido 'como está'. Na máxima medida permitida pela lei, não somos responsáveis por danos indiretos ou consequentes decorrentes do seu uso. Os tickets e orçamentos são inseridos por você: verifique seus dados antes de tomar decisões com base neles."
+      },
+      {
+        "id": "changes",
+        "title": "7. Alterações nestes termos",
+        "body": "Podemos atualizar estes termos quando necessário. As alterações são comunicadas no aplicativo e valem a partir da data da nova versão. Se você continuar usando o aplicativo após uma alteração, considera-se que aceitou a nova versão."
+      },
+      {
+        "id": "governingLaw",
+        "title": "8. Legislação aplicável",
+        "body": "Estes termos são regidos pela legislação da República Argentina. Qualquer controvérsia decorrente do seu uso é submetida aos tribunais competentes da Cidade Autônoma de Buenos Aires."
+      },
+      {
+        "id": "contact",
+        "title": "9. Contato",
+        "body": "Para dúvidas sobre estes termos, escreva para [contato@ticketify.app]. Este texto é um rascunho pendente de revisão jurídica."
+      }
+    ]
+  },
+  "consentGateTitle": "Aceite nossos documentos legais",
+  "consentGateBody": "Para continuar usando o Ticketify você precisa aceitar a Política de privacidade e os Termos e condições atualizados.",
+  "consentGateAccept": "Aceitar",
+  "consentGateSignOut": "Sair da conta",
+  "signUpConsentRequired": "Você precisa aceitar a Política de privacidade e os Termos e condições para continuar."
+}
