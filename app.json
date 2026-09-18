@@ -23,8 +23,10 @@
       },
       "softwareKeyboardLayoutMode": "pan",
       "permissions": [
-        "android.permission.RECORD_AUDIO",
         "android.permission.CAMERA"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -52,7 +54,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Ticketify to use your camera to scan receipts."
+          "cameraPermission": "Allow Ticketify to use your camera to scan receipts.",
+          "recordAudioAndroid": false
         }
       ],
       "expo-font",

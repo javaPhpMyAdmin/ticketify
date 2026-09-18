@@ -104,3 +104,13 @@ jobs:
         # paid subscribers (status='active' / ever_paid) are never
         # downgraded.
         run: supabase db query --local --file supabase/tests/trial-freeze-guard.sql
+
+      - name: Run legal-acceptances SQL smoke test
+        # Pins the 0038 contract (legal-compliance U1): append-only
+        # legal_acceptances (RLS select/insert own only, zero update/delete
+        # policies), the record_legal_acceptance SECURITY DEFINER RPC
+        # (postgres owner, EXECUTE authenticated-only — anon/PUBLIC/
+        # service_role revoked), idempotent duplicate (document, version)
+        # writes, the document CHECK ('privacy'|'terms'), the auth.users
+        # ON DELETE CASCADE, and anon denial.
+        run: supabase db query --local --file supabase/tests/legal-acceptances.sql
