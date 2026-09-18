@@ -31,10 +31,17 @@
  *      local native tweaks) is never modified.
  *
  * Usage: pnpm test:android-manifest  (or: node scripts/test-android-manifest.mjs)
+ *
+ * Network dependency: `expo prebuild` fetches the `expo-template-bare-minimum`
+ * package (SDK 54 android template) from the npm registry when it first runs
+ * inside the fresh scratch dir — offline dev runs FAIL at the prebuild step
+ * even with a fully healthy repo. After one successful fetch, expo caches the
+ * template and consecutive runs are offline-OK. Do not treat that first-fetch
+ * failure as a config regression.
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -52,7 +59,11 @@ if (!existsSync(expoCli)) {
 
 // Sandboxed prebuild: a scratch copy of the config + symlinked node_modules
 // (so config plugins resolve) — the repo's native directories stay intact.
-const scratch = mkdtempSync(join(root, 'node_modules', '.tmp', 'android-manifest-test-'));
+// Mirror of the sibling harnesses (test-auth.mjs / test-boot-splash.mjs):
+// ensure the shared tmp root exists before mkdtempSync.
+const tmpRoot = join(root, 'node_modules', '.tmp');
+mkdirSync(tmpRoot, { recursive: true });
+const scratch = mkdtempSync(join(tmpRoot, 'android-manifest-test-'));
 const scratchManifest = join(scratch, 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
 
 try {
