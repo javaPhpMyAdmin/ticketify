@@ -1,0 +1,6 @@
+# Jekyll config for the GitHub Pages site served from /docs.
+# Without this, Pages was serving the .md files raw (content-type text/markdown)
+# and the directory URLs the app uses (e.g. /legal/es-AR/privacy/) returned 404.
+# `permalink: pretty` makes each *.md render to a directory + index.html
+# (e.g. privacy.md -> /legal/es-AR/privacy/), matching legal-urls.ts.
+permalink: pretty
