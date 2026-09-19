@@ -672,8 +672,9 @@ async function run() {
   //       content-COMPLETE vs the in-app text, and the DRAFT notice rides
   //       along so hosted copy never loses the draft marker (R-3).
   //
-  // The generator is invoked through the compile-and-load bridge so the
-  // test and the shipped command share ONE implementation (no drift).
+  // The generator ships as plain node ESM (.mjs), so the harness drives the
+  // SAME file `node scripts/generate-legal-markdown.mjs` runs — no compile
+  // step, no drift between the tested and the shipped implementation.
   console.log('\n[tests] section 4 — hosted mirrors (U3, REQ-2 byte-stable with in-app)\n');
 
   const DOCS_ROOT = join(root, 'docs', 'legal');
@@ -681,7 +682,9 @@ async function run() {
   const MIRROR_DOCS = ['privacy', 'terms'];
 
   const generateLegalMarkdown = async (outDirOverride) => {
-    const genMod = await load('scripts/generate-legal-markdown.js');
+    const genMod = await import(
+      pathToFileURL(join(root, 'scripts', 'generate-legal-markdown.mjs')).href
+    );
     const outDirs = await genMod.__emitLegalMirrors({
       root,
       outRoot: outDirOverride,
