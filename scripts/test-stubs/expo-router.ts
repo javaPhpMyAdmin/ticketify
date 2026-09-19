@@ -11,9 +11,15 @@ export type RouteParams = Record<string, string | undefined>;
 
 let routeParams: RouteParams = {};
 let lastNav: string | null = null;
+let currentPathname = '/';
 
 export function __setRouteParams(params: RouteParams): void {
   routeParams = params;
+}
+
+/** Sets the pathname `usePathname` reports (consent-gate harness). */
+export function __setPathname(pathname: string): void {
+  currentPathname = pathname;
 }
 
 export function __lastNav(): string | null {
@@ -23,10 +29,18 @@ export function __lastNav(): string | null {
 export function __resetRouterStub(): void {
   routeParams = {};
   lastNav = null;
+  currentPathname = '/';
 }
 
 export function useLocalSearchParams<T extends RouteParams = RouteParams>(): T {
   return routeParams as T;
+}
+
+/** Route type used by navigation helpers; untyped in the double. */
+export type Href = string;
+
+export function usePathname(): string {
+  return currentPathname;
 }
 
 export const router = {

@@ -12,9 +12,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FieldGroup, Pressable, Spinner, Text, View } from '@/components';
 import { useSessionStore } from '@/features/auth';
-import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
-import { legalUrlFor } from '@/lib/legal-urls';
-import { openExternalUrl } from '@/lib/open-external-url';
+import {
+  LATEST_LEGAL_VERSIONS,
+  pendingAcceptanceStore,
+} from '@/features/legal';
+import { openLegalDocument } from '@/lib/legal-navigation';
 import { colors, radii, spacing, typography } from '@/theme';
 
 /**
@@ -24,26 +26,66 @@ import { colors, radii, spacing, typography } from '@/theme';
  * session and the user is told to check their inbox (sign-up spec
  * scenario C); otherwise the SIGNED_IN event fires and the root gate
  * exposes the app content.
+ *
+ * Legal-consent (legal-compliance U5, AD-9/AD-10): the form requires
+ * explicit acceptance of the privacy policy + terms (checkbox gates
+ * submit; the `signUpConsentRequired` message appears on an unchecked
+ * submit attempt). Before the network sign-up call, the pending flag is
+ * stored with the typed email so the acceptances can be replayed once a
+ * session exists (queue-then-flush; flushPendingAcceptance on SIGNED_IN
+ * in the session store). The footer opens the documents IN-APP so they
+ * stay readable pre-auth and without an external browser.
  */
 export default function SignUpScreen() {
-  const { t } = useTranslation(['auth', 'settings']);
+  const { t } = useTranslation(['auth', 'settings', 'legal']);
   const signUpWithEmail = useSessionStore((s) => s.signUpWithEmail);
-  const activeLocale = useLocaleStore((s) => s.activeLocale);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [consentAccepted, setConsentAccepted] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmationSent, setConfirmationSent] = useState(false);
 
   const canSubmit =
-    email.trim().length > 0 && password.length >= 8 && !pending;
+    email.trim().length > 0 &&
+    password.length >= 8 &&
+    consentAccepted &&
+    !pending;
+
+  const handleConsentToggle = () => {
+    setConsentAccepted((accepted) => {
+      const next = !accepted;
+      if (next) setConsentError(null);
+      return next;
+    });
+  };
 
   const handleSignUp = async () => {
-    if (!canSubmit) return;
+    if (email.trim().length === 0 || password.length < 8 || pending) return;
+    if (!consentAccepted) {
+      setConsentError(t('legal:signUpConsentRequired'));
+      return;
+    }
     setPending(true);
     setError(null);
+    setConsentError(null);
     try {
+      // Queue-then-flush: write the pending flag BEFORE the network call so
+      // a session starting concurrently (or one that already exists) can
+      // replay these acceptances. Failures here must NOT block sign-up —
+      // the flag is best-effort (SecureStore write; warned, not thrown).
+      try {
+        await pendingAcceptanceStore.write({
+          email: email.trim().toLowerCase(),
+          version: LATEST_LEGAL_VERSIONS.privacy,
+          acceptedAt: new Date().toISOString(),
+        });
+      } catch (storageErr) {
+        // eslint-disable-next-line no-console -- queue failure is non-fatal
+        console.warn('[sign-up] could not queue legal acceptance', storageErr);
+      }
       const result = await signUpWithEmail(email, password);
       if (result.error) {
         setError(result.error);
@@ -137,6 +179,42 @@ export default function SignUpScreen() {
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
+            {/* Explicit legal consent (U5, AD-10): the checkbox itself is a
+                single toggle Pressable; the document names in the label are
+                the SAME strings the footer links below (which open in-app),
+                so there is no dead-end from this row. The composed label
+                reads "Al continuar aceptás la Política de privacidad y los
+                Términos y Condiciones" — prefix + settings labels. */}
+            <Pressable
+              style={styles.consentRow}
+              onPress={handleConsentToggle}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: consentAccepted }}
+              accessibilityLabel={t('legal:signUpConsentRequired')}
+            >
+              <View
+                style={[
+                  styles.checkbox,
+                  consentAccepted ? styles.checkboxChecked : styles.checkboxUnchecked,
+                ]}
+              >
+                {consentAccepted ? (
+                  <Text style={styles.checkboxMark}>{'\u2713'}</Text>
+                ) : null}
+              </View>
+              <Text style={styles.consentText}>
+                {t('auth:signUpLegalPrefix')}{' '}
+                <Text style={styles.consentLinkText}>
+                  {t('settings:privacyPolicy')}
+                </Text>{' '}
+                {t('auth:signUpLegalAnd')}{' '}
+                <Text style={styles.consentLinkText}>
+                  {t('settings:termsConditions')}
+                </Text>
+              </Text>
+            </Pressable>
+            {consentError ? <Text style={styles.error}>{consentError}</Text> : null}
+
             <Pressable
               style={styles.primaryButton}
               onPress={handleSignUp}
@@ -163,14 +241,15 @@ export default function SignUpScreen() {
             </Pressable>
           </View>
 
-          {/* Legal links below the footer pairing (REQ-4): usable pre-auth —
-              the opener and URL map import no session/auth modules. */}
+          {/* Legal links below the footer pairing (REQ-4): usable pre-auth and
+              opened IN-APP (AD-8) — the navigator import carries no session
+              or auth modules, and the routes live outside Stack.Protected. */}
           <View style={styles.legalFooter}>
             <Text style={styles.legalText}>{t('auth:signUpLegalPrefix')}</Text>
             <Pressable
               accessibilityRole="link"
               accessibilityLabel={t('settings:privacyPolicy')}
-              onPress={() => void openExternalUrl(legalUrlFor('privacy', activeLocale))}
+              onPress={() => openLegalDocument('privacy')}
             >
               <Text style={styles.legalLink}>{t('settings:privacyPolicy')}</Text>
             </Pressable>
@@ -178,7 +257,7 @@ export default function SignUpScreen() {
             <Pressable
               accessibilityRole="link"
               accessibilityLabel={t('settings:termsConditions')}
-              onPress={() => void openExternalUrl(legalUrlFor('terms', activeLocale))}
+              onPress={() => openLegalDocument('terms')}
             >
               <Text style={styles.legalLink}>{t('settings:termsConditions')}</Text>
             </Pressable>
@@ -236,6 +315,41 @@ const styles = StyleSheet.create({
   error: {
     ...typography.labelSm,
     color: colors.danger,
+  },
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: radii.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: colors.primary,
+  },
+  checkboxUnchecked: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  checkboxMark: {
+    ...typography.labelSm,
+    color: colors.onPrimary,
+    fontWeight: '700',
+  },
+  consentText: {
+    ...typography.labelSm,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  consentLinkText: {
+    ...typography.labelSm,
+    color: colors.primary,
+    fontWeight: '600',
   },
   primaryButton: {
     backgroundColor: colors.primary,

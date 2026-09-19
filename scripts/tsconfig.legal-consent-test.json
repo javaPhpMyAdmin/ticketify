@@ -4,6 +4,7 @@
     "moduleResolution": "node",
     "target": "es2020",
     "lib": ["es2020", "dom"],
+    "jsx": "react-jsx",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -12,6 +13,10 @@
     "paths": {
       "@/lib/supabase": ["./scripts/test-stubs/supabase.ts"],
       "@/lib/supabase/storage-adapter": ["./scripts/test-stubs/storage-adapter.ts"],
+      "react-native": ["./scripts/test-stubs/react-native.ts"],
+      "expo-router": ["./scripts/test-stubs/expo-router.ts"],
+      "react-i18next": ["./scripts/test-stubs/legal-i18next.ts"],
+      "@/components": ["./scripts/test-stubs/components.ts"],
       "@/*": ["./src/*"]
     },
     "rootDir": ".."
@@ -22,13 +27,19 @@
     "../src/features/legal/pending-acceptance.ts",
     "../src/features/legal/record-acceptance.ts",
     "../src/features/legal/use-legal-consent.ts",
-    "../src/lib/query-keys.ts",
+    "../src/features/legal/components/ConsentGate.tsx",
+    "../src/lib/legal-navigation.ts",
     "../src/lib/legal-urls.ts",
+    "../src/lib/query-keys.ts",
     "../src/i18n/detector.ts",
     "../src/lib/supabase/config-status.ts",
     "../src/lib/supabase/storage-adapter.ts",
     "../scripts/test-stubs/globals.d.ts",
     "../scripts/test-stubs/supabase.ts",
-    "../scripts/test-stubs/storage-adapter.ts"
+    "../scripts/test-stubs/storage-adapter.ts",
+    "../scripts/test-stubs/expo-router.ts",
+    "../scripts/test-stubs/react-native.ts",
+    "../scripts/test-stubs/legal-i18next.ts",
+    "../scripts/test-stubs/components.ts"
   ]
 }

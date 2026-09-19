@@ -11,6 +11,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { DialogHost, ToastHost } from '@/components';
 import { BootSplash } from '@/components/molecules/BootSplash';
 import { useSessionStore } from '@/features/auth';
+import { ConsentGate } from '@/features/legal/components/ConsentGate';
 import { ProBootstrap } from '@/features/pro';
 import { I18nProvider } from '@/i18n/components/I18nProvider';
 import { decideSessionNavigation } from '@/lib/auth/session-nav';
@@ -36,6 +37,7 @@ export default function RootLayout() {
   const restore = useSessionStore((s) => s.restore);
   const isBootstrapping = useSessionStore((s) => s.isBootstrapping);
   const session = useSessionStore((s) => s.session);
+  const signOut = useSessionStore((s) => s.signOut);
   const prevSession = useRef(session);
   const pathname = usePathname();
 
@@ -199,6 +201,13 @@ export default function RootLayout() {
               <Stack.Screen name="pro/index" />
               <Stack.Screen name="pro/charts" />
             </Stack.Protected>
+            {/* Legal documents are deliberately OUTSIDE the session guard
+                (legal-content REQ-1): pre-auth sign-up links, the consent
+                gate, and profile rows all open them without a session and
+                while gated. Registered explicitly so the guard boundary stays
+                documented — they must never move inside Stack.Protected. */}
+            <Stack.Screen name="legal/privacy" />
+            <Stack.Screen name="legal/terms" />
             <Stack.Screen name="(auth)" />
           </Stack>
         </I18nProvider>
@@ -211,6 +220,21 @@ export default function RootLayout() {
             toast host. Renders a centered overlay View (not Modal) above
             the Stack — see DialogHost for the layering tradeoff. */}
         <DialogHost />
+        {/* Blocking legal-consent gate (legal-compliance U5, AD-6): covers
+            the app while a session exists without current-version acceptance
+            rows, hides on /legal/*, and offers the documents + sign-out —
+            no dead-ends. userId null (no session) → gate stays hidden. */}
+        <ConsentGate
+          userId={session?.user?.id ?? null}
+          onSignOut={() => {
+            // The gate's escape hatch; sign-out failures surface where the
+            // profile screen handles them — never block the overlay on it.
+            void signOut().catch((err) => {
+              // eslint-disable-next-line no-console -- sign-out diagnostic
+              console.warn('[consent-gate] sign-out failed', err);
+            });
+          }}
+        />
         {/* Branded splash overlay: hides the native splash on its first
             frame and fades out once the session reconciled (`booted`). */}
         {bootSplashVisible ? (

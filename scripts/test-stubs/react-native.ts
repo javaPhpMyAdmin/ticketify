@@ -44,6 +44,7 @@ export const StyleSheet = {
 export function Pressable(props: {
   children?: React.ReactNode;
   onPress?: () => void;
+  disabled?: boolean;
   hitSlop?: number | Record<string, number>;
   accessibilityRole?: string;
   accessibilityLabel?: string;

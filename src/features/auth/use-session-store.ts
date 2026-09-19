@@ -17,6 +17,7 @@
 import type { Session } from '@supabase/supabase-js';
 import { create } from 'zustand';
 
+import { flushPendingAcceptance } from '@/features/legal/pending-acceptance';
 import { registerAuthStateListener } from '@/lib/auth/auth-listener-registry';
 import { ensureProfile } from '@/lib/auth/profile-sync';
 import { queryClient } from '@/lib/query-client';
@@ -387,6 +388,17 @@ function initAuthStateListener(): void {
                 queryKey: queryKeys.profile(session.user.id),
               }),
             );
+            // Legal-consent queue-then-flush (legal-compliance U5, AD-2):
+            // replay any pending acceptances the sign-up screen queued BEFORE
+            // the network sign-up call — the email on the flag may differ from
+            // this session's email, and the flush guards that. Fire-and-forget
+            // by contract (flushPendingAcceptance never rejects) beside the
+            // profile backfill; a failure only loses the queued markers, and
+            // the consent gate falls back to prompting again. An undefined
+            // session email (rare) cannot match any flag, so skip the flush.
+            if (session.user.email) {
+              void flushPendingAcceptance(session.user.email);
+            }
           }
         }
       }
