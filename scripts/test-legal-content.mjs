@@ -485,21 +485,27 @@ async function run() {
   const TermsRoute = routeMod.TermsRoute;
 
   // F4 (REQ-1 pre-auth reachability): the routes are reachable signed-out
-  // ONLY because (a) they are NOT registered inside the Stack.Protected
-  // gate in _layout.tsx — Expo Router auto-registers the unlisted files
-  // as public routes — and (b) decideSessionNavigation never redirects a
-  // signed-out visitor off `/legal/*` (its flip/park clauses both require
-  // a session). Both are asserted against the real mechanism so a future
-  // gating change fails the harness loudly.
-  await test('routes stay outside the auth gate: no Stack.Screen registration for legal in _layout.tsx (F4)', () => {
+  // ONLY because (a) they are not registered inside the Stack.Protected
+  // gate in _layout.tsx — U5 registers them EXPLICITLY (outside the guard)
+  // so the boundary is documented in code, and (b) decideSessionNavigation
+  // never redirects a signed-out visitor off `/legal/*` (its flip/park
+  // clauses both require a session). Both are asserted against the real
+  // mechanism so a future gating change fails the harness loudly.
+  await test('routes stay outside the auth gate: legal screens are NOT registered inside Stack.Protected (F4)', () => {
     const layoutSource = readFileSync(join(root, 'src', 'app', '_layout.tsx'), 'utf8');
     // Positive control: the gate is real — (tabs) IS registered inside it.
     assert.ok(
       layoutSource.includes('Stack.Screen name="(tabs)"'),
       'sanity: _layout.tsx must register (tabs) inside the protected stack',
     );
+    // Slice the protected block and require the legal screens absent there.
+    // ("Public by absence" was the pre-U5 contract; explicit registration
+    // OUTSIDE the guard is the U5 contract — moving a legal screen INTO the
+    // block below still fails this assertion loudly.)
+    const protectedBlock =
+      layoutSource.match(/<Stack\.Protected>[\s\S]*<\/Stack\.Protected>/)?.[0] ?? '';
     assert.ok(
-      !layoutSource.includes('Stack.Screen name="legal'),
+      !protectedBlock.includes('Stack.Screen name="legal'),
       'legal routes must NOT be registered inside Stack.Protected (public by absence)',
     );
   });

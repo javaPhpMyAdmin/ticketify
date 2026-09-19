@@ -28,12 +28,17 @@
  *       (local `supabase start` stack). Asserts the deployed RPC endpoint
  *       answers (2xx/204 with a token, 401/403 without — but never 404).
  *       Skipped by default: local stack is down → documented TODO assert.
+ *   Section 8 — U5 wiring: openLegalDocument routes through the
+ *       expo-router stub, and the ConsentGate overlay (react-test-renderer)
+ *       shows the real catalog copy when gated, records both acceptances
+ *       through the stub and releases, hides on /legal/* + when complete,
+ *       surfaces a failed write, and offers links + sign-out (no dead-ends).
  *
  * Usage: pnpm test:legal-consent
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -157,12 +162,23 @@ compile();
 // alias, exactly like the run-rate/auth harnesses).
 // ---------------------------------------------------------------------------
 function installRequireHook() {
+  // Bare specifiers + '@/components' resolve to the compiled test doubles
+  // (the gate's host elements must render as react-test-renderer walkable
+  // nodes; the real react-native/expo-router packages cannot load in node).
+  const STUB_SPECIFIERS = {
+    'react-native': join(outDir, 'scripts', 'test-stubs', 'react-native.js'),
+    'expo-router': join(outDir, 'scripts', 'test-stubs', 'expo-router.js'),
+    'react-i18next': join(outDir, 'scripts', 'test-stubs', 'legal-i18next.js'),
+    '@/components': join(outDir, 'scripts', 'test-stubs', 'components.js'),
+  };
   const originalResolve = Module._resolveFilename;
   Module._resolveFilename = function rewrittenResolve(request, ...rest) {
     if (request === '@/lib/supabase') {
       request = join(outDir, 'scripts', 'test-stubs', 'supabase.js');
     } else if (request === '@/lib/supabase/storage-adapter') {
       request = join(outDir, 'scripts', 'test-stubs', 'storage-adapter.js');
+    } else if (Object.prototype.hasOwnProperty.call(STUB_SPECIFIERS, request)) {
+      request = STUB_SPECIFIERS[request];
     } else if (request.startsWith('@/')) {
       request = join(outDir, 'src', request.slice(2));
     }
@@ -674,6 +690,236 @@ if (LIVE_SUPABASE_URL && LIVE_SUPABASE_ANON_KEY) {
     `  skip  live stack check — set TEST_LIVE_SUPABASE_URL + TEST_LIVE_SUPABASE_ANON_KEY ` +
       `against a running local supabase stack to enable`,
   );
+}
+
+// ===========================================================================
+// 8 — U5 wiring: openLegalDocument + ConsentGate overlay
+// ===========================================================================
+console.log('\n[tests] 8 — U5 wiring: legal navigation helper + ConsentGate overlay\n');
+
+await test('openLegalDocument routes in-app to /legal/{privacy,terms}', async () => {
+  const routerStub = await load('scripts/test-stubs/expo-router.js');
+  routerStub.__resetRouterStub();
+  const { openLegalDocument } = await load('src/lib/legal-navigation.js');
+  openLegalDocument('privacy');
+  assert.equal(routerStub.__lastNav(), 'push:/legal/privacy');
+  openLegalDocument('terms');
+  assert.equal(routerStub.__lastNav(), 'push:/legal/terms');
+});
+
+{
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+  // The gate reads the REAL shipped es-AR catalog through the
+  // react-i18next test double — the same in-memory bundle the content
+  // harness pins (F2), so a rendered assertion can never drift from disk.
+  const esARLegal = JSON.parse(
+    readFileSync(join(root, 'src/i18n/locales/es-AR/legal.json'), 'utf8'),
+  );
+  const { ACCEPTANCE_WRITE_ERROR_MESSAGE } = await load(
+    'src/features/legal/record-acceptance.js',
+  );
+
+  function makeGateClient() {
+    return new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: 0 },
+        mutations: { retry: false },
+      },
+    });
+  }
+
+  function flattenText(node) {
+    if (node == null) return '';
+    if (typeof node === 'string' || typeof node === 'number') return String(node);
+    return (node.children ?? []).map(flattenText).join('');
+  }
+
+  function findHost(node, type, predicate) {
+    if (node == null || typeof node !== 'object') return null;
+    if (typeof node.type === 'string' && node.type === type && (!predicate || predicate(node))) {
+      return node;
+    }
+    for (const child of node.children ?? []) {
+      const found = findHost(child, type, predicate);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  async function mountGate({ stub, pathname = '/', userId = 'user-1', onSignOut }) {
+    const routerStub = await load('scripts/test-stubs/expo-router.js');
+    const i18nextStub = await load('scripts/test-stubs/legal-i18next.js');
+    routerStub.__resetRouterStub();
+    routerStub.__setPathname(pathname);
+    i18nextStub.__setActiveLegalCatalog(esARLegal, 'es-AR');
+    const { ConsentGate } = await load('src/features/legal/components/ConsentGate.js');
+    const queryClient = makeGateClient();
+    let renderer;
+    act(() => {
+      renderer = create(
+        React.createElement(
+          QueryClientProvider,
+          { client: queryClient },
+          React.createElement(ConsentGate, { userId, onSignOut }),
+        ),
+      );
+    });
+    const tree = () => renderer.toJSON();
+    const waitFor = async (predicate, { timeout = 2000 } = {}) => {
+      const deadline = Date.now() + timeout;
+      for (;;) {
+        for (let i = 0; i < 3; i += 1) {
+          await act(async () => {
+            await new Promise((r) => setTimeout(r, 0));
+          });
+        }
+        if (predicate(tree())) return tree();
+        if (Date.now() > deadline) {
+          throw new Error(`waitFor timed out after ${timeout}ms; tree: ${JSON.stringify(tree())}`);
+        }
+      }
+    };
+    const press = (node) => {
+      assert.ok(node, 'expected a pressable node');
+      act(() => {
+        node.props.onPress();
+      });
+    };
+    return {
+      tree,
+      waitFor,
+      press,
+      renderer,
+      unmount: () => {
+        act(() => renderer.unmount());
+      },
+      findText: (text) =>
+        findHost(tree(), 'Text', (n) => flattenText(n).includes(text)),
+      findPressable: (label) =>
+        findHost(tree(), 'Pressable', (n) => n.props.accessibilityLabel === label),
+      findPressableByText: (text) =>
+        findHost(tree(), 'Pressable', (n) => flattenText(n).includes(text)),
+    };
+  }
+
+  await test('ConsentGate: gated → overlay with real catalog copy; accept → rpc×2 → releases', async () => {
+    const stub = await load('scripts/test-stubs/supabase.js');
+    resetSupabase(stub);
+    stub.__setTableRead('legal_acceptances', { rows: [], error: null });
+    stub.__setRpcResult('record_legal_acceptance', { rows: [], error: null });
+    const g = await mountGate({ stub, onSignOut: () => {} });
+    try {
+      await g.waitFor(() => g.findText(esARLegal.consentGateTitle) != null);
+      assert.ok(g.findText(esARLegal.consentGateBody) != null);
+      assert.ok(g.findText(esARLegal.consentGateSignOut) != null);
+      // The backend now holds both rows — the invalidation refetch sees them.
+      stub.__setTableRead('legal_acceptances', { rows: fullRows(), error: null });
+      g.press(g.findPressableByText(esARLegal.consentGateAccept));
+      // accept() is fire-and-forget from the gate (onPress returns void), so
+      // the async mutation settles AFTER the press — wait for the writes.
+      await g.waitFor(() => rpcCalls(stub).length === 2);
+      const calls = rpcCalls(stub);
+      assert.deepEqual(
+        calls.map((c) => c.params),
+        [
+          { p_document: 'privacy', p_version: LATEST.privacy },
+          { p_document: 'terms', p_version: LATEST.terms },
+        ],
+      );
+      await g.waitFor(() => g.tree() == null);
+    } finally {
+      g.unmount();
+    }
+  });
+
+  await test('ConsentGate: complete → overlay never renders', async () => {
+    const stub = await load('scripts/test-stubs/supabase.js');
+    resetSupabase(stub);
+    stub.__setTableRead('legal_acceptances', { rows: fullRows(), error: null });
+    const g = await mountGate({ stub, onSignOut: () => {} });
+    try {
+      assert.equal(g.tree(), null);
+      await g.waitFor(() => true, { timeout: 100 });
+      assert.equal(g.tree(), null);
+    } finally {
+      g.unmount();
+    }
+  });
+
+  await test('ConsentGate: gated on /legal/* → hidden (documents readable during the gate)', async () => {
+    const stub = await load('scripts/test-stubs/supabase.js');
+    resetSupabase(stub);
+    stub.__setTableRead('legal_acceptances', { rows: [], error: null });
+    const g = await mountGate({ stub, pathname: '/legal/terms', onSignOut: () => {} });
+    try {
+      assert.equal(g.tree(), null);
+      await g.waitFor(() => true, { timeout: 100 });
+      assert.equal(g.tree(), null);
+    } finally {
+      g.unmount();
+    }
+  });
+
+  await test('ConsentGate: sign-out press calls onSignOut (no dead-ends)', async () => {
+    const stub = await load('scripts/test-stubs/supabase.js');
+    resetSupabase(stub);
+    stub.__setTableRead('legal_acceptances', { rows: [], error: null });
+    let signedOut = 0;
+    const g = await mountGate({
+      stub,
+      onSignOut: () => {
+        signedOut += 1;
+      },
+    });
+    try {
+      await g.waitFor(() => g.findText(esARLegal.consentGateTitle) != null);
+      g.press(g.findPressableByText(esARLegal.consentGateSignOut));
+      assert.equal(signedOut, 1);
+    } finally {
+      g.unmount();
+    }
+  });
+
+  await test('ConsentGate: legal links navigate in-app without recording acceptance', async () => {
+    const stub = await load('scripts/test-stubs/supabase.js');
+    resetSupabase(stub);
+    stub.__setTableRead('legal_acceptances', { rows: [], error: null });
+    const routerStub = await load('scripts/test-stubs/expo-router.js');
+    const g = await mountGate({ stub, onSignOut: () => {} });
+    try {
+      await g.waitFor(() => g.findText(esARLegal.consentGateTitle) != null);
+      // The gate's link labels come from the settings namespace, which the
+      // legal-i18next double does not resolve — the stub returns the raw key,
+      // so links are located by their accessibilityLabel (as rendered).
+      g.press(g.findPressable('settings:privacyPolicy'));
+      assert.equal(routerStub.__lastNav(), 'push:/legal/privacy');
+      g.press(g.findPressable('settings:termsConditions'));
+      assert.equal(routerStub.__lastNav(), 'push:/legal/terms');
+      assert.equal(rpcCalls(stub).length, 0);
+    } finally {
+      g.unmount();
+    }
+  });
+
+  await test('ConsentGate: accept write failure → user-safe error copy, overlay stays gated', async () => {
+    const stub = await load('scripts/test-stubs/supabase.js');
+    resetSupabase(stub);
+    stub.__setTableRead('legal_acceptances', { rows: [], error: null });
+    stub.__setRpcResult('record_legal_acceptance', { rows: null, error: { message: 'down' } });
+    const g = await mountGate({ stub, onSignOut: () => {} });
+    try {
+      await g.waitFor(() => g.findText(esARLegal.consentGateTitle) != null);
+      g.press(g.findPressableByText(esARLegal.consentGateAccept));
+      await g.waitFor(() => g.findText(ACCEPTANCE_WRITE_ERROR_MESSAGE) != null);
+      // Still gated: the title and sign-out remain visible.
+      assert.ok(g.findText(esARLegal.consentGateTitle) != null);
+      assert.ok(g.findText(esARLegal.consentGateSignOut) != null);
+      assert.equal(rpcCalls(stub).length, 2);
+    } finally {
+      g.unmount();
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------

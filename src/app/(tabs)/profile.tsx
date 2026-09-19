@@ -14,8 +14,7 @@ import {
   type AccountSettingRow,
 } from '@/features/profile';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
-import { legalUrlFor } from '@/lib/legal-urls';
-import { openExternalUrl } from '@/lib/open-external-url';
+import { openLegalDocument } from '@/lib/legal-navigation';
 import { showManageSubscriptions } from '@/lib/revenuecat';
 import { leaveHousehold } from '@/lib/supabase/feature-access';
 import { queryClient } from '@/lib/query-client';
@@ -35,7 +34,6 @@ export default function ProfileScreen() {
   const { isPro, isLoading: proLoading, subscriptionStatus, trialEndsAt, daysRemaining, isFrozen, everPaid } =
     useProEntitlement();
   const localeOverride = useLocaleStore((s) => s.override);
-  const activeLocale = useLocaleStore((s) => s.activeLocale);
 
   const householdName = useHouseholdStore((s) => s.household?.name);
 
@@ -165,24 +163,27 @@ export default function ProfileScreen() {
     },
   ];
 
-  // Legal documents open in the external browser (REQ-3). Deliberately a
-  // separate row set — appending these to `settings[]` would shift the
-  // slice/danger split below, so the Legal group renders as its own
-  // section between the main list and the danger zone.
+  // Legal documents open IN-APP (legal-content AD-8, U5): the bundled
+  // LegalScreen renders the mirror of the same hosted contract (REQ-3) and
+  // stays reachable while the consent gate blocks the rest of the app, so
+  // the profile row can never dead-end. Deliberately a separate row set —
+  // appending these to `settings[]` would shift the slice/danger split
+  // below, so the Legal group renders as its own section between the main
+  // list and the danger zone.
   const legalRows: AccountSettingRow[] = [
     {
       id: 'privacy-policy',
       label: t('settings:privacyPolicy'),
       icon: 'doc.text',
       trailing: { type: 'chevron' },
-      onPress: () => void openExternalUrl(legalUrlFor('privacy', activeLocale)),
+      onPress: () => openLegalDocument('privacy'),
     },
     {
       id: 'terms-and-conditions',
       label: t('settings:termsConditions'),
       icon: 'doc.on.doc',
       trailing: { type: 'chevron' },
-      onPress: () => void openExternalUrl(legalUrlFor('terms', activeLocale)),
+      onPress: () => openLegalDocument('terms'),
     },
   ];
 
