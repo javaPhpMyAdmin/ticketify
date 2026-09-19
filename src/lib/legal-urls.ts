@@ -6,11 +6,16 @@
  * `es-AR` URL for any missing or unsupported locale (mirrors the app-i18n
  * fallback policy).
  *
- * Hosting is user-owned: the URLs below are `example.com` placeholders and
- * MUST be swapped for the real hosted pages before release (REQ-7). Each one
- * carries a `TODO(user): real URL` marker so the swap is grep-able. The
- * automated harness does not assert the domain — placeholders render and open
- * normally during development.
+ * Hosting contract (REQ-7): the documents are the committed mirrors pushed
+ * with `docs/` (GitHub Pages, `main` branch, `/docs` source) — the path
+ * below mirrors the mirror layout `docs/legal/{locale}/{document}.md`, so
+ * each URL resolves to the rendered page for that document. Pages
+ * enablement is OWNER-GATED: until it is enabled the URLs 404, which is
+ * EXPECTED and not a defect of this ship (in-app LegalScreen keeps the
+ * documents reachable meanwhile). The automated harness pins these EXACT
+ * values — `example.com` anywhere in this map fails the links suite, and
+ * the generator keeps the mirrors byte-stable with the shipped version
+ * (test:legal-content F6/F7).
  */
 import { DEFAULT_LOCALE, type SupportedLocale } from '@/i18n/detector';
 
@@ -19,16 +24,19 @@ export type LegalDocument = 'privacy' | 'terms';
 /** Default document used when the requested document is unknown (REQ-2). */
 const DEFAULT_DOCUMENT: LegalDocument = 'privacy';
 
+/** GitHub Pages base for the legal mirror (REQ-7, `docs/` on `main`). */
+const LEGAL_PAGES_BASE = 'https://javaPhpMyAdmin.github.io/ticketify/legal';
+
 export const LEGAL_URLS: Record<LegalDocument, Record<SupportedLocale, string>> = {
   privacy: {
-    'es-AR': 'https://example.com/privacy/es-AR', // TODO(user): real URL
-    en: 'https://example.com/privacy/en', // TODO(user): real URL
-    'pt-BR': 'https://example.com/privacy/pt-BR', // TODO(user): real URL
+    'es-AR': `${LEGAL_PAGES_BASE}/es-AR/privacy/`,
+    en: `${LEGAL_PAGES_BASE}/en/privacy/`,
+    'pt-BR': `${LEGAL_PAGES_BASE}/pt-BR/privacy/`,
   },
   terms: {
-    'es-AR': 'https://example.com/terms/es-AR', // TODO(user): real URL
-    en: 'https://example.com/terms/en', // TODO(user): real URL
-    'pt-BR': 'https://example.com/terms/pt-BR', // TODO(user): real URL
+    'es-AR': `${LEGAL_PAGES_BASE}/es-AR/terms/`,
+    en: `${LEGAL_PAGES_BASE}/en/terms/`,
+    'pt-BR': `${LEGAL_PAGES_BASE}/pt-BR/terms/`,
   },
 };
 
