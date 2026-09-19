@@ -46,7 +46,10 @@ The system SHALL provide a legal URL map with exactly two documents — `privacy
 
 ### REQ-3: Settings Legal group
 
-The system SHALL render a Legal section on the authenticated profile screen between the main settings list and the danger zone, built from a row set defined separately from the main `settings[]` array so the existing list/danger split is unaffected. The section SHALL show exactly two rows labelled with the `settings` keys `privacyPolicy` and `termsConditions`, under the section title `settings:legalSectionTitle`. Tapping a row SHALL invoke the opener (REQ-1) with `legalUrlFor(document, activeLocale)` and SHALL NOT navigate in-app.
+The system SHALL render a Legal section on the authenticated profile screen between the main settings list and the danger zone, built from a row set defined separately from the main `settings[]` array so the existing list/danger split is unaffected. The section SHALL show exactly two rows labelled with the `settings` keys `privacyPolicy` and `termsConditions`, under the section title `settings:legalSectionTitle`. Tapping a row SHALL navigate in-app to the matching legal-content route (`/legal/privacy` for Privacy, `/legal/terms` for Terms) for the active locale and SHALL NOT invoke the external opener (REQ-1).
+(Previously: tapping a row invoked the external opener with `legalUrlFor(document, activeLocale)` and did not navigate in-app.)
+
+> Source: change `legal-compliance` (archived 2026-09-19). Merged from delta `openspec/changes/archive/2026-09-19-legal-compliance/specs/legal-links/spec.md`.
 
 #### Scenario: Legal group renders in place
 
@@ -55,16 +58,19 @@ The system SHALL render a Legal section on the authenticated profile screen betw
 - THEN the Legal section appears between the main settings list and the delete-account danger row
 - AND it shows exactly two rows labelled via `settings:privacyPolicy` / `settings:termsConditions` in the active locale
 
-#### Scenario: Row opens the active-locale URL
+#### Scenario: Row opens the in-app document
 
-- GIVEN active locale `en`
+- GIVEN locale `en` on the profile tab
 - WHEN the user taps the Privacy Policy row
-- THEN the opener is invoked with the `en` privacy URL
-- AND no in-app navigation occurs
+- THEN the app routes to `/legal/privacy`
+- AND the external opener is not invoked
 
 ### REQ-4: Sign-up footer legal links
 
-The system SHALL render Privacy Policy and Terms & Conditions links on the sign-up screen below the existing footer, combining the `auth` keys `signUpLegalPrefix` and `signUpLegalAnd` with the `settings` labels `privacyPolicy` and `termsConditions`. The links SHALL invoke the opener (REQ-1) with the active-locale URL and SHALL NOT depend on an authenticated session. Opener rejection SHALL be silent (REQ-1) — no error dialog or blocking state.
+The system SHALL render Privacy Policy and Terms & Conditions links on the sign-up screen below the existing footer, combining the `auth` keys `signUpLegalPrefix` and `signUpLegalAnd` with the `settings` labels `privacyPolicy` and `termsConditions`. The links SHALL navigate in-app to the legal-content routes (`/legal/privacy`, `/legal/terms`) for the active locale, SHALL NOT depend on an authenticated session, and SHALL be tappable before the consent checkbox is accepted (legal-consent).
+(Previously: links invoked the external opener with the active-locale URL and required no session.)
+
+> Source: change `legal-compliance` (archived 2026-09-19). Merged from delta `openspec/changes/archive/2026-09-19-legal-compliance/specs/legal-links/spec.md`.
 
 #### Scenario: Links visible pre-auth
 
@@ -72,12 +78,12 @@ The system SHALL render Privacy Policy and Terms & Conditions links on the sign-
 - WHEN the footer renders
 - THEN both links are visible, built from the `auth` connectors and the `settings` labels in the active locale
 
-#### Scenario: Tap opens the legal document in-browser
+#### Scenario: Tap opens the document in-app
 
-- GIVEN active locale `es-AR`
+- GIVEN active locale `es-AR` with the consent checkbox unchecked
 - WHEN the user taps Terms & Conditions
-- THEN the opener receives the es-AR terms URL
-- AND the user remains on the sign-up screen
+- THEN the app routes to `/legal/terms`
+- AND back returns to the sign-up screen with the form state preserved
 
 ### REQ-5: i18n catalog parity
 
@@ -112,23 +118,27 @@ The system SHALL ship `scripts/test-legal-links.mjs` asserting: (a) three-catalo
 - WHEN the harness invokes `openExternalUrl(url, rejectingStub)`
 - THEN the harness asserts the result is `false` and no exception escapes
 
-### REQ-7: Placeholder lifecycle and release gate
+### REQ-7: Real hosted URLs and release gate
 
-URLs SHALL ship as `https://example.com/...` placeholders flagged with a visible `TODO(user)` marker so the real-domain swap is grep-able. The implementation SHALL replace every placeholder with the user's real hosted URLs before release, and release verification SHALL assert that no `example.com` value remains in the URL map. Placeholders SHALL render and open normally during development; the automated harness SHALL NOT fail on `example.com` placeholders — the real-domain check is a release gate, not a runtime contract.
+The URL map (REQ-2) SHALL contain exactly the hosted Pages URLs `https://javaPhpMyAdmin.github.io/ticketify/legal/{locale}/{doc}/` for both documents in three locales. The automated harness SHALL assert every URL uses that domain and SHALL fail the suite if any non-Pages value remains. Release verification SHALL NOT proceed until the assertion passes; the `TODO(user)` marker lifecycle is retired.
+(Previously: URLs shipped as `example.com` placeholders with `TODO(user)` markers, and the harness was required NOT to fail on them.)
+(Renamed from "Placeholder lifecycle and release gate" → "Real hosted URLs and release gate"; reason: the six `example.com` placeholders are replaced by real GitHub Pages URLs; the requirement now enforces the real domain instead of tolerating placeholders. Migration: RENAME applied BEFORE the MODIFIED block above; `scripts/test-legal-links.mjs` goldens updated; `TODO(user)` markers removed.)
 
-#### Scenario: Placeholders work during development
+> Source: change `legal-compliance` (archived 2026-09-19). Merged from delta `openspec/changes/archive/2026-09-19-legal-compliance/specs/legal-links/spec.md`.
 
-- GIVEN legal pages are not yet published
-- WHEN a Legal row or footer link is tapped
-- THEN the placeholder URL opens in the external browser without crashing
-- AND each placeholder retains its `TODO(user)` marker
+#### Scenario: All URLs resolve to the real domain
+
+- GIVEN the legal-links harness runs
+- WHEN it asserts the URL map (REQ-2)
+- THEN all six values use the Pages domain
+- AND no value contains `example.com`
 
 #### Scenario: Release blocks on example.com
 
-- GIVEN the user has published legal pages on the real domain
+- GIVEN a placeholder or stale domain value remains in the URL map
 - WHEN release verification runs
-- THEN no `https://example.com` value remains in the URL map
-- AND the hosted-privacy-URL entry for Play Console / App Store Connect is recorded as a user-owned release dependency
+- THEN the harness fails and the release cannot proceed
+- AND the Play/App-Store hosted-privacy-URL entry is recorded as satisfied by the Pages URLs
 
 ## Non-Functional Requirements
 
