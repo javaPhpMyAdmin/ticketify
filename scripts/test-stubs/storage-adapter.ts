@@ -8,6 +8,17 @@ const store = new Map<string, string>();
 let available = true;
 let hangAvailability = false;
 
+/**
+ * The storage contract the app's modules expect from the adapter (mirrors
+ * the real `StorageAdapter` in src/lib/supabase/storage-adapter.ts so the
+ * compiled legal/pending modules type-check against this double).
+ */
+export type StorageAdapter = {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+  removeItem(key: string): Promise<void>;
+};
+
 export function __resetStorage(): void {
   store.clear();
   available = true;

@@ -139,6 +139,13 @@ export const queryKeys = {
   categoryBudgets: (userId: string, yearMonth: string) =>
     ['category-budgets', userId, yearMonth] as const,
 
+  /**
+   * The user's legal acceptance rows (document + version per accepted doc).
+   * The consent gate (useLegalConsent) reads this key and invalidates it
+   * after a successful acceptance so the gate re-reads the fresh rows.
+   */
+  legal: (userId: string) => ['legal', userId] as const,
+
   // -----------------------------------------------------------------------
   // Household sharing (migration 0014)
   // -----------------------------------------------------------------------
