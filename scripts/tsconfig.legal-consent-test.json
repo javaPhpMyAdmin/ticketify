@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020", "dom"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "..",
+    "paths": {
+      "@/lib/supabase": ["./scripts/test-stubs/supabase.ts"],
+      "@/lib/supabase/storage-adapter": ["./scripts/test-stubs/storage-adapter.ts"],
+      "@/*": ["./src/*"]
+    },
+    "rootDir": ".."
+  },
+  "include": [
+    "../src/features/legal/legal-versions.ts",
+    "../src/features/legal/legal-consent.ts",
+    "../src/features/legal/pending-acceptance.ts",
+    "../src/features/legal/record-acceptance.ts",
+    "../src/features/legal/use-legal-consent.ts",
+    "../src/lib/query-keys.ts",
+    "../src/lib/legal-urls.ts",
+    "../src/i18n/detector.ts",
+    "../src/lib/supabase/config-status.ts",
+    "../src/lib/supabase/storage-adapter.ts",
+    "../scripts/test-stubs/globals.d.ts",
+    "../scripts/test-stubs/supabase.ts",
+    "../scripts/test-stubs/storage-adapter.ts"
+  ]
+}
