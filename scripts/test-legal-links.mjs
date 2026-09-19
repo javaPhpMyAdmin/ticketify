@@ -18,7 +18,8 @@
  *   1. Opener contract (REQ-1) — resolve → true + exact URL; reject → false,
  *      no exception escapes; default opener uses the stub `openBrowserAsync`.
  *   2. Legal URL map (REQ-2) — exactly two documents × three locales, all
- *      values `https:`. Placeholders are NOT asserted (REQ-7 release gate).
+ *      values `https:`; the hosted contract (REQ-7) is pinned to the exact
+ *      GitHub Pages URLs — `example.com` anywhere in the map FAILS the suite.
  *   3. Resolver fallback (REQ-2) — known locale wins; unknown/empty locales
  *      AND inherited-prototype keys ('constructor', '__proto__', 'toString')
  *      fall back to es-AR via an own-property guard; an unknown document
@@ -223,6 +224,47 @@ async function run() {
       for (const locale of ['en', 'es-AR', 'pt-BR']) {
         const url = legalMod.LEGAL_URLS[doc][locale];
         assert.match(url, /^https:\/\//, `${doc}/${locale} must be https`);
+      }
+    }
+  });
+
+  // REQ-7 hosted contract: the EXACT GitHub Pages URLs (mirror of
+  // docs/legal/{locale}/{document}.md on `main`). Golden per-locale tables —
+  // not cross-map equality — so a typo shared by every entry still fails.
+  // example.com is the pre-U6 placeholder domain; its presence in the map
+  // means the swap regressed and MUST fail loudly.
+  const GOLDEN_LEGAL_URLS = {
+    privacy: {
+      'es-AR': 'https://javaPhpMyAdmin.github.io/ticketify/legal/es-AR/privacy/',
+      en: 'https://javaPhpMyAdmin.github.io/ticketify/legal/en/privacy/',
+      'pt-BR': 'https://javaPhpMyAdmin.github.io/ticketify/legal/pt-BR/privacy/',
+    },
+    terms: {
+      'es-AR': 'https://javaPhpMyAdmin.github.io/ticketify/legal/es-AR/terms/',
+      en: 'https://javaPhpMyAdmin.github.io/ticketify/legal/en/terms/',
+      'pt-BR': 'https://javaPhpMyAdmin.github.io/ticketify/legal/pt-BR/terms/',
+    },
+  };
+
+  await test('URL values match the GitHub Pages golden table (REQ-7, exact)', () => {
+    for (const doc of ['privacy', 'terms']) {
+      for (const locale of ['en', 'es-AR', 'pt-BR']) {
+        assert.equal(
+          legalMod.LEGAL_URLS[doc][locale],
+          GOLDEN_LEGAL_URLS[doc][locale],
+          `${doc}/${locale} must equal the pinned Pages URL`,
+        );
+      }
+    }
+  });
+
+  await test('example.com does not appear anywhere in the URL map (placeholder regression gate)', () => {
+    for (const doc of ['privacy', 'terms']) {
+      for (const locale of ['en', 'es-AR', 'pt-BR']) {
+        assert.ok(
+          !legalMod.LEGAL_URLS[doc][locale].includes('example.com'),
+          `${doc}/${locale} must not contain the placeholder domain`,
+        );
       }
     }
   });
