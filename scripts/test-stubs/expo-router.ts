@@ -20,6 +20,11 @@ export function __lastNav(): string | null {
   return lastNav;
 }
 
+export function __resetRouterStub(): void {
+  routeParams = {};
+  lastNav = null;
+}
+
 export function useLocalSearchParams<T extends RouteParams = RouteParams>(): T {
   return routeParams as T;
 }

@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020", "dom"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "baseUrl": "..",
+    "paths": {
+      "@/components": ["./scripts/test-stubs/components.ts"],
+      "react-i18next": ["./scripts/test-stubs/legal-i18next.ts"],
+      "react-native": ["./scripts/test-stubs/react-native.ts"],
+      "expo-router": ["./scripts/test-stubs/expo-router.ts"],
+      "react-native-safe-area-context": ["./scripts/test-stubs/safe-area-context.ts"],
+      "@/lib/legal-urls": ["./src/lib/legal-urls.ts"],
+      "@/*": ["./src/*"]
+    },
+    "rootDir": ".."
+  },
+  "include": [
+    "../src/i18n/locales/es-AR/legal.json",
+    "../src/i18n/locales/en/legal.json",
+    "../src/i18n/locales/pt-BR/legal.json",
+    "../src/features/legal/components/LegalScreen.tsx",
+    "../src/app/legal/privacy.tsx",
+    "../src/app/legal/terms.tsx",
+    "../scripts/render-legal-screen.ts",
+    "../src/lib/legal-urls.ts",
+    "../src/lib/auth/session-nav.ts",
+    "../src/i18n/detector.ts",
+    "../scripts/test-stubs/legal-i18next.ts",
+    "../scripts/test-stubs/react-native.ts",
+    "../scripts/test-stubs/expo-router.ts",
+    "../scripts/test-stubs/safe-area-context.ts",
+    "../scripts/test-stubs/components.ts",
+    "../scripts/test-stubs/globals.d.ts"
+  ]
+}

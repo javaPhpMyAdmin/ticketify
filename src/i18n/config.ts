@@ -39,6 +39,7 @@ import enA11y from './locales/en/a11y.json';
 import enCurrency from './locales/en/currency.json';
 import enDate from './locales/en/date.json';
 import enPro from './locales/en/pro.json';
+import enLegal from './locales/en/legal.json';
 import esARCommon from './locales/es-AR/common.json';
 import esARTabs from './locales/es-AR/tabs.json';
 import esARSettingsLanguage from './locales/es-AR/settingsLanguage.json';
@@ -53,6 +54,7 @@ import esARA11y from './locales/es-AR/a11y.json';
 import esARCurrency from './locales/es-AR/currency.json';
 import esARDate from './locales/es-AR/date.json';
 import esARPro from './locales/es-AR/pro.json';
+import esARLegal from './locales/es-AR/legal.json';
 import ptBRCommon from './locales/pt-BR/common.json';
 import ptBRTabs from './locales/pt-BR/tabs.json';
 import ptBRSettingsLanguage from './locales/pt-BR/settingsLanguage.json';
@@ -67,6 +69,7 @@ import ptBRA11y from './locales/pt-BR/a11y.json';
 import ptBRCurrency from './locales/pt-BR/currency.json';
 import ptBRDate from './locales/pt-BR/date.json';
 import ptBRPro from './locales/pt-BR/pro.json';
+import ptBRLegal from './locales/pt-BR/legal.json';
 import { useLocaleStore } from './stores/useLocaleStore';
 
 /** Every locale the catalog ships, in `lng` form (matches JSON folder names). */
@@ -81,6 +84,14 @@ export type SupportedLocaleTag = (typeof SUPPORTED_LOCALE_TAGS)[number];
  * `date` — single locale-aware source for the calendar / weekday /
  * month arrays (per AD-12 in the design doc) — and `pro` for the
  * Pro charts screen copy.
+ *
+ * The `legal` namespace (legal-compliance U2) bundles the Privacy Policy
+ * and Terms documents as section arrays for the in-app `/legal/*`
+ * screens (AD-1 static RN text, no runtime fetch — REQ-4). es-AR is the
+ * source of truth for the legal copy; en/pt-BR are best-effort parsed
+ * translations whose key sets are pinned identical by the
+ * test:legal-content harness. The `draftNotice` keys mark the shipped
+ * text as DRAFT pending legal approval (design R-3).
  */
 export const NAMESPACES = [
   'common',
@@ -97,6 +108,7 @@ export const NAMESPACES = [
   'currency',
   'date',
   'pro',
+  'legal',
 ] as const;
 export type Namespace = (typeof NAMESPACES)[number];
 
@@ -117,6 +129,7 @@ export const RESOURCES = {
     currency: enCurrency,
     date: enDate,
     pro: enPro,
+    legal: enLegal,
   },
   'es-AR': {
     common: esARCommon,
@@ -133,6 +146,7 @@ export const RESOURCES = {
     currency: esARCurrency,
     date: esARDate,
     pro: esARPro,
+    legal: esARLegal,
   },
   'pt-BR': {
     common: ptBRCommon,
@@ -149,6 +163,7 @@ export const RESOURCES = {
     currency: ptBRCurrency,
     date: ptBRDate,
     pro: ptBRPro,
+    legal: ptBRLegal,
   },
 } as const;
 

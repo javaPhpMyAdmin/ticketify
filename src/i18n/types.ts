@@ -43,6 +43,7 @@ import type enA11y from './locales/en/a11y.json';
 import type enCurrency from './locales/en/currency.json';
 import type enDate from './locales/en/date.json';
 import type enPro from './locales/en/pro.json';
+import type enLegal from './locales/en/legal.json';
 import type esARCommon from './locales/es-AR/common.json';
 import type esARTabs from './locales/es-AR/tabs.json';
 import type esARSettingsLanguage from './locales/es-AR/settingsLanguage.json';
@@ -57,6 +58,7 @@ import type esARA11y from './locales/es-AR/a11y.json';
 import type esARCurrency from './locales/es-AR/currency.json';
 import type esARDate from './locales/es-AR/date.json';
 import type esARPro from './locales/es-AR/pro.json';
+import type esARLegal from './locales/es-AR/legal.json';
 
 declare module 'i18next' {
   interface ResourceNamespaceMap {
@@ -99,6 +101,15 @@ declare module 'i18next' {
      * couple of section headings.
      */
     pro: typeof esARPro & Partial<typeof enPro>;
+    /**
+     * legal-compliance U2: `legal` namespace — the bundled Privacy Policy
+     * and Terms documents (`privacy`/`terms` section arrays, AD-1 static
+     * RN text) plus the consent-gate copy for U4/U5. es-AR is the legal
+     * source of truth, typed exactly; en/pt-BR are best-effort parsed
+     * translations (Partial) whose KEY SETS are pinned identical by the
+     * test:legal-content parity harness.
+     */
+    legal: typeof esARLegal & Partial<typeof enLegal>;
   }
 
   interface CustomTypeOptions {
