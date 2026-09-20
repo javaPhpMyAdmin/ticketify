@@ -58,5 +58,11 @@
   "errorSyncDelayed": "A compra foi concluída, mas a assinatura ainda não apareceu. Tente novamente em alguns segundos.",
   "errorPurchaseCancelled": "Compra cancelada.",
   "errorNetwork": "Sem conexão. Tente a compra de novo.",
-  "errorGeneric": "Não conseguimos carregar os planos. Tente novamente."
+  "errorGeneric": "Não conseguimos carregar os planos. Tente novamente.",
+  "benefitUnlimitedScans": "Escaneamentos ilimitados",
+  "benefitAdvancedStats": "Estatísticas avançadas",
+  "benefitExportTickets": "Exportar tickets",
+  "benefitPriceAlerts": "Alertas de preço",
+  "planIntroCaption": "{{trialDays}} dias grátis, depois {{priceAfterTrial}}/mês",
+  "trialPill": "Teste · Termina em {{date}}"
 }

@@ -58,5 +58,11 @@
   "errorSyncDelayed": "La compra se completó, pero la suscripción aún no se refleja. Reintentá en unos segundos.",
   "errorPurchaseCancelled": "Compra cancelada.",
   "errorNetwork": "Sin conexión. Reintentá la compra.",
-  "errorGeneric": "No pudimos cargar los planes. Reintentá."
+  "errorGeneric": "No pudimos cargar los planes. Reintentá.",
+  "benefitUnlimitedScans": "Escaneos ilimitados",
+  "benefitAdvancedStats": "Estadísticas avanzadas",
+  "benefitExportTickets": "Exportar tickets",
+  "benefitPriceAlerts": "Alertas de precio",
+  "planIntroCaption": "{{trialDays}} días gratis, después {{priceAfterTrial}}/mes",
+  "trialPill": "Prueba · Termina {{date}}"
 }
