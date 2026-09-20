@@ -26,18 +26,32 @@
  *       periodUnit)`. The unit factor handles DAY (×1), WEEK (×7),
  *       MONTH (×30), YEAR (×365).
  *
- * Both projections are PURE functions of the input — no SDK mocking is
- * needed. Pass plain object literals shaped like the SDK's offering
- * objects and assert the projected `IntroPhase`. Triangulation runs
- * over (Android/iOS × FREE_TRIAL/no-trial) combinations plus the
- * 4 unit_to_days branches (DAY/WEEK/MONTH/YEAR) to pin every code
- * path the paywall caption consumer depends on.
+ * Two test layers:
+ *
+ *   1. PURE projection tests (no SDK mocking) — pass plain object
+ *      literals shaped like the SDK's offering objects and assert the
+ *      projected `IntroPhase`. Covers Android + iOS × every
+ *      trial-window / no-trial branch.
+ *
+ *   2. INTEGRATION tests via a mock SDK module — verify the
+ *      `getOfferings()` end-to-end path projects the right
+ *      `introPhase` into the returned `OfferingsSnapshot`. The mock
+ *      is a tiny CommonJS module written to the workdir and bound via
+ *      a Node `Module._resolveFilename` hook before the revenuecat
+ *      module is imported. The mock exposes mutable `offeringsFixture`
+ *      / `customerInfoFixture` so each test can swap scenarios without
+ *      re-importing the module.
  *
  * Usage: pnpm test:revenuecat-offerings
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -53,6 +67,7 @@ const tmpRoot = join(root, 'node_modules', '.tmp');
 mkdirSync(tmpRoot, { recursive: true });
 const workdir = mkdtempSync(join(tmpRoot, 'revenuecat-offerings-test-'));
 const outDir = join(workdir, 'out');
+const mockPath = join(workdir, 'react-native-purchases-mock.cjs');
 
 let passed = 0;
 let failed = 0;
@@ -79,15 +94,51 @@ async function compile() {
 }
 
 /**
- * Remap `@/*` → compiled output (matches the sibling harnesses in
- * scripts/). The `react-native-purchases` runtime require inside
- * `revenuecat.ts` is NOT remapped — the load attempt fails, the
- * wrapper's `Purchases` stays `null`, and the pure-function tests
- * (which never call `getOfferings()`) are unaffected.
+ * Mock `react-native-purchases` CommonJS module. The compiled
+ * `revenuecat.js` does `require('react-native-purchases')` at module
+ * load time; the require hook below redirects that to this file.
+ *
+ * Mutable fixtures (`offeringsFixture` / `customerInfoFixture`) let
+ * each integration test swap scenarios without re-importing the
+ * module — the SDK surface is called fresh on every `getOfferings()`
+ * call.
+ */
+writeFileSync(
+  mockPath,
+  [
+    '// Mutable fixtures for the integration tests. Tests rewrite',
+    '// `offeringsFixture` / `customerInfoFixture` between calls.',
+    'let offeringsFixture = null;',
+    'class MockPurchases {',
+    '  static configure() { return true; }',
+    '  static async getCustomerInfo() { return null; }',
+    '  static async getOfferings() { return offeringsFixture; }',
+    '  static async logIn() { return { created: false }; }',
+    '  static async logOut() {}',
+    '  static async purchasePackage() { return { customerInfo: { entitlements: { all: { pro: { isActive: true } } } } }; }',
+    '  static async restorePurchases() { return { entitlements: { all: { pro: { isActive: true } } } }; }',
+    '  static async showManageSubscriptions() {}',
+    '  static addCustomerInfoUpdateListener() { return { unsubscribe() {} }; }',
+    '}',
+    'MockPurchases.__setOfferings = (fixture) => { offeringsFixture = fixture; };',
+    'MockPurchases.__reset = () => { offeringsFixture = null; };',
+    'module.exports = MockPurchases;',
+    'module.exports.default = MockPurchases;',
+    '',
+  ].join('\n'),
+);
+
+/**
+ * Redirect `@/*` to compiled output AND `react-native-purchases` to
+ * the mock fixture. The hook must be installed BEFORE the compiled
+ * revenuecat.js is `await import()`ed (otherwise the runtime require
+ * resolves to the real native module, which isn't linked in the
+ * harness, and `Purchases` stays `null`).
  */
 function installRequireHook() {
   const originalResolve = Module._resolveFilename;
   Module._resolveFilename = function rewrittenResolve(request, ...rest) {
+    if (request === 'react-native-purchases') return mockPath;
     if (request.startsWith('@/')) {
       request = join(outDir, 'src', request.slice(2));
     }
@@ -100,12 +151,27 @@ async function run() {
   await compile();
   console.log('[tests] loading compiled module…');
   installRequireHook();
+  // Import via a unique cache-busting query string. Node's import cache
+  // is keyed by URL + querystring; without the nonce, the second
+  // `await import()` in this run() would return the cached module
+  // (without our mock hooked). One import per run() is enough — the
+  // mock module exposes mutable fixtures so the in-memory Purchases
+  // reference reads the latest fixture on every getOfferings() call.
+  const nonce = `?t=${Date.now()}`;
+  const { createRequire: makeRequire } = await import('node:module');
+  const liveRequire = makeRequire(import.meta.url);
+  const revenuecatUrl = pathToFileURL(join(outDir, 'src/lib/revenuecat.js')).href + nonce;
+  const revenuecatModule = await import(revenuecatUrl);
   const {
     projectAndroidIntroPhase,
     projectIosIntroPhase,
-  } = await import(
-    pathToFileURL(join(outDir, 'src/lib/revenuecat.js')).href
-  );
+    getOfferings,
+  } = revenuecatModule;
+  // The mock module is also loaded via `liveRequire` so the integration
+  // tests can mutate the mutable fixtures. (The revenuecat module reads
+  // the same mock via the require hook; mutating `__setOfferings`
+  // updates the SAME fixture object.)
+  const MockPurchases = liveRequire(mockPath);
 
   console.log('\n[tests] projectAndroidIntroPhase (REQ-PRO-INTRO-CAPTION)\n');
 
@@ -403,6 +469,199 @@ async function run() {
       cycles: 3,
     });
   });
+
+  console.log('\n[tests] getOfferings() integration (REQ-PRO-INTRO-CAPTION — paywall caption consumer)\n');
+
+  // Reset the mock's offerings fixture to null before each integration
+  // test. The SDK module's `getOfferings()` returns whatever the
+  // current `offeringsFixture` is at call time, so the tests just swap
+  // the fixture and assert the snapshot. (No need to re-import the
+  // revenuecat module — the require hook bound it to the mock at load.)
+
+  await test('SDK returns null (no offerings) → snapshot has both fields null', async () => {
+    MockPurchases.__setOfferings(null);
+    const result = await getOfferings();
+    // The wrapper doesn't return null when the SDK returns null — it
+    // returns a snapshot with `monthly: null` and `annual: null`. The
+    // null-return path is reserved for "Purchases unavailable" or
+    // "SDK threw" (defensive catch above).
+    assert.deepEqual(result, { monthly: null, annual: null });
+  });
+
+  await test('offerings.current is null → monthly/annual are null, introPhase is null', async () => {
+    MockPurchases.__setOfferings({ current: null });
+    const result = await getOfferings();
+    assert.deepEqual(result, { monthly: null, annual: null });
+  });
+
+  await test('current with only monthly (Android FREE_TRIAL) → monthly.introPhase projected', async () => {
+    MockPurchases.__setOfferings({
+      current: {
+        monthly: {
+          identifier: '$rc_monthly',
+          product: {
+            priceString: '$5.99',
+            defaultOption: {
+              pricingPhases: [
+                {
+                  offerPaymentMode: 'FREE_TRIAL',
+                  billingPeriod: { iso8601: 'P1W' },
+                  billingCycleCount: 1,
+                  price: { formatted: '$5.99' },
+                },
+              ],
+            },
+          },
+        },
+        annual: null,
+      },
+    });
+    const result = await getOfferings();
+    assert.equal(result.monthly?.identifier, '$rc_monthly');
+    assert.equal(result.monthly?.priceString, '$5.99');
+    assert.deepEqual(result.monthly?.introPhase, {
+      priceAfterTrial: '$5.99',
+      trialDays: 7,
+      cycles: 1,
+    });
+    assert.equal(result.annual, null);
+  });
+
+  await test('current with only annual (iOS introPrice) → annual.introPhase projected from product.priceString', async () => {
+    MockPurchases.__setOfferings({
+      current: {
+        monthly: null,
+        annual: {
+          identifier: '$rc_annual',
+          product: {
+            priceString: '$49.99',
+            introPrice: {
+              cycles: 1,
+              periodUnit: 'MONTH',
+              periodNumberOfUnits: 1,
+            },
+          },
+        },
+      },
+    });
+    const result = await getOfferings();
+    assert.equal(result.annual?.identifier, '$rc_annual');
+    assert.equal(result.annual?.priceString, '$49.99');
+    assert.deepEqual(result.annual?.introPhase, {
+      // iOS uses the package's product.priceString as the post-trial
+      // price (introPrice doesn't carry it).
+      priceAfterTrial: '$49.99',
+      trialDays: 30,
+      cycles: 1,
+    });
+    assert.equal(result.monthly, null);
+  });
+
+  await test('Android package without FREE_TRIAL phase → monthly.introPhase === null', async () => {
+    MockPurchases.__setOfferings({
+      current: {
+        monthly: {
+          identifier: '$rc_monthly',
+          product: {
+            priceString: '$5.99',
+            defaultOption: {
+              // Only a recurring paid phase — no FREE_TRIAL.
+              pricingPhases: [
+                {
+                  offerPaymentMode: null,
+                  billingPeriod: { iso8601: 'P1M' },
+                  billingCycleCount: null,
+                  price: { formatted: '$5.99' },
+                },
+              ],
+            },
+          },
+        },
+        annual: null,
+      },
+    });
+    const result = await getOfferings();
+    assert.equal(result.monthly?.introPhase, null);
+  });
+
+  await test('iOS package without introPrice → annual.introPhase === null', async () => {
+    MockPurchases.__setOfferings({
+      current: {
+        monthly: null,
+        annual: {
+          identifier: '$rc_annual',
+          product: {
+            priceString: '$49.99',
+            // No introPrice field — no intro offer configured.
+          },
+        },
+      },
+    });
+    const result = await getOfferings();
+    assert.equal(result.annual?.introPhase, null);
+  });
+
+  await test('SDK throws → getOfferings returns null (defensive, no crash)', async () => {
+    // Swap the mock's getOfferings method to throw on the next call.
+    // The wrapper's try/catch in `getOfferings` MUST swallow the
+    // error and return null (otherwise the bootstrap crashes).
+    const original = MockPurchases.getOfferings;
+    MockPurchases.getOfferings = async () => {
+      throw new Error('network down');
+    };
+    try {
+      const result = await getOfferings();
+      assert.equal(result, null);
+    } finally {
+      MockPurchases.getOfferings = original;
+    }
+  });
+
+  await test('current with both monthly + annual (mixed: Android monthly + iOS annual) — both introPhases projected', async () => {
+    MockPurchases.__setOfferings({
+      current: {
+        monthly: {
+          identifier: '$rc_monthly',
+          product: {
+            priceString: '$5.99',
+            defaultOption: {
+              pricingPhases: [
+                {
+                  offerPaymentMode: 'FREE_TRIAL',
+                  billingPeriod: { iso8601: 'P1W' },
+                  billingCycleCount: 1,
+                  price: { formatted: '$5.99' },
+                },
+              ],
+            },
+          },
+        },
+        annual: {
+          identifier: '$rc_annual',
+          product: {
+            priceString: '$49.99',
+            introPrice: {
+              cycles: 1,
+              periodUnit: 'MONTH',
+              periodNumberOfUnits: 1,
+            },
+          },
+        },
+      },
+    });
+    const result = await getOfferings();
+    assert.deepEqual(
+      result.monthly?.introPhase,
+      { priceAfterTrial: '$5.99', trialDays: 7, cycles: 1 },
+    );
+    assert.deepEqual(
+      result.annual?.introPhase,
+      { priceAfterTrial: '$49.99', trialDays: 30, cycles: 1 },
+    );
+  });
+
+  // Reset the mock so any later code in the same process starts clean.
+  MockPurchases.__reset();
 
   console.log('');
   if (failed > 0) {
