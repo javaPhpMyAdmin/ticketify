@@ -349,19 +349,53 @@ export async function showManageSubscriptions(): Promise<ManageSubscriptionsResu
 }
 
 /**
+ * Intro-phase projection (pro-subscription spec — REQ-PRO-INTRO-CAPTION,
+ * added by revenuecat-trial-migration slice B).
+ *
+ * Native intro offers are configured in Play Console + App Store Connect
+ * (NOT in this codebase) — the Play/App store re-states the terms in
+ * its native checkout sheet, so the paywall caption is a UX hint, not a
+ * binding display. When `null`, the paywall must NOT render a caption
+ * (no intro offer configured → no trial pricing to project).
+ *
+ * `priceAfterTrial` — localized recurring price after the trial ends
+ * (Android reads it from the FREE_TRIAL phase's `price.formatted`;
+ * iOS reads it from the package's `product.priceString` since the
+ * `introPrice` doesn't carry the post-trial price on iOS).
+ *
+ * `trialDays` — trial duration in days. Android derives it from the
+ * phase's `billingPeriod.iso8601` × `billingCycleCount`; iOS derives
+ * it from `introPrice.cycles × periodNumberOfUnits × unit_to_days(
+ * periodUnit)`. The factors are documented at `projectAndroidIntroPhase`
+ * / `projectIosIntroPhase` below.
+ *
+ * `cycles` — number of billing cycles the trial spans (Android pins
+ * this from `billingCycleCount`; iOS pins it from `introPrice.cycles`).
+ */
+export interface IntroPhase {
+  priceAfterTrial: string;
+  trialDays: number;
+  cycles: number;
+}
+
+/**
  * A single purchasable package surfaced by the current offering. The
  * `identifier` is what `purchasePackage()` consumes; `priceString` is the
  * localized price (e.g. "$5.99", "ARS 1.499,00") formatted by the Play
  * Store — Play requires the actual price (not a free-form label) on
- * the subscription disclosure. `period` is a localized suffix like
- * "/month" or "/year" — we use the package type (`MONTHLY` / `ANNUAL`)
- * since the SDK already maps it for us.
+ * the subscription disclosure. `introPhase` is the trial-window projection
+ * for the caption shown above the buy button (REQ-PRO-INTRO-CAPTION).
  */
 export interface OfferingPackage {
   /** The package identifier passed to `purchasePackage()`. */
   identifier: string;
   /** Localized price from the store (includes currency symbol/format). */
   priceString: string;
+  /**
+   * Free-trial / intro-offer projection, or `null` when no intro offer is
+   * configured (the paywall MUST hide its caption in that case).
+   */
+  introPhase: IntroPhase | null;
 }
 
 export interface OfferingsSnapshot {
@@ -373,10 +407,12 @@ export interface OfferingsSnapshot {
 
 /**
  * Reads the current offering and projects its `monthly` / `annual`
- * packages to `{ identifier, priceString }`. The paywall uses the
- * identifier to call `purchasePackage()` and the priceString to render
- * the Play-compliant price disclosure. Returns `null` when the native
- * module is not linked.
+ * packages to `{ identifier, priceString, introPhase }`. The paywall uses
+ * the identifier to call `purchasePackage()`, the priceString to render
+ * the Play-compliant price disclosure, and the introPhase to render the
+ * trial caption above the buy button (REQ-PRO-INTRO-CAPTION; null when
+ * the platform/product has no intro offer configured). Returns `null` when
+ * the native module is not linked.
  */
 export async function getOfferings(): Promise<OfferingsSnapshot | null> {
   if (!Purchases) return null;
@@ -388,6 +424,7 @@ export async function getOfferings(): Promise<OfferingsSnapshot | null> {
         ? {
             identifier: pkg.identifier,
             priceString: pkg.product.priceString ?? '',
+            introPhase: projectIntroPhase(pkg),
           }
         : null;
     return {
@@ -397,6 +434,122 @@ export async function getOfferings(): Promise<OfferingsSnapshot | null> {
   } catch (err) {
     console.warn('[revenuecat] getOfferings failed:', err);
     return null;
+  }
+}
+
+/**
+ * Project the intro phase for a single offering package. Routes by the
+ * shape of the SDK's product — Android exposes `defaultOption.pricingPhases`
+ * with an `offerPaymentMode` discriminator; iOS exposes `introPrice`
+ * (StoreKit 2 canonical intro shape). Pure function of the input — no
+ * SDK access, no async — so the harness tests it directly.
+ *
+ * Design note: the Android branch uses the FREE_TRIAL phase's own
+ * `price.formatted` as the post-trial price (this is the recurring price
+ * the SDK attaches to the trial phase). The iOS branch uses the
+ * package's `product.priceString` (iOS's `introPrice` doesn't carry a
+ * post-trial price).
+ */
+export function projectIntroPhase(pkg: unknown): IntroPhase | null {
+  return projectAndroidIntroPhase(pkg) ?? projectIosIntroPhase(pkg);
+}
+
+/**
+ * Android intro-phase projection. Scans the package's default
+ * subscription option for a `FREE_TRIAL` pricing phase and projects it
+ * to the `{ priceAfterTrial, trialDays, cycles }` contract.
+ *
+ * The trial window comes from the FREE_TRIAL phase's `billingPeriod`
+ * (ISO 8601 string like `P1D`/`P1W`/`P1M`/`P1Y`) and `billingCycleCount`
+ * (number of cycles the trial spans). `trialDays = cycleDays(iso8601) ×
+ * billingCycleCount` where `cycleDays` maps `P1D=1, P1W=7, P1M=30,
+ * P1Y=365`. Months and years use 30/365-day approximations — the
+ * post-trial price is the only authoritative anchor; the day count is a
+ * UX hint.
+ *
+ * Returns `null` when no FREE_TRIAL phase exists (no intro offer, or
+ * the only intro phase is a discounted recurring payment — the caption
+ * is specifically for free trials per REQ-PRO-INTRO-CAPTION).
+ */
+export function projectAndroidIntroPhase(pkg: unknown): IntroPhase | null {
+  const phase = (pkg as any)?.product?.defaultOption?.pricingPhases?.find(
+    (p: { offerPaymentMode?: string | null }) =>
+      p.offerPaymentMode === 'FREE_TRIAL',
+  );
+  if (!phase) return null;
+  return {
+    priceAfterTrial: phase.price?.formatted ?? '',
+    trialDays:
+      iso8601ToDays(phase.billingPeriod?.iso8601 ?? '') *
+      (phase.billingCycleCount ?? 1),
+    cycles: phase.billingCycleCount ?? 1,
+  };
+}
+
+/**
+ * iOS intro-phase projection. Reads the package's `introPrice`
+ * (StoreKit 2's canonical introductory-price shape, exposed via the
+ * RevenueCat SDK's `PurchasesIntroPrice`). The trial window is computed
+ * from `cycles × periodNumberOfUnits × unit_to_days(periodUnit)`.
+ *
+ * Returns `null` when `introPrice` is absent (no intro offer configured).
+ *
+ * iOS-specific note: the `introPrice` does NOT carry a post-trial price
+ * — we project the package's own `product.priceString` as the
+ * recurring price the user will see once the trial converts. Play
+ * re-states the terms in its native checkout sheet, so the caption is
+ * a UX hint only.
+ */
+export function projectIosIntroPhase(pkg: unknown): IntroPhase | null {
+  const product = (pkg as any)?.product;
+  const intro = product?.introPrice;
+  if (!intro) return null;
+  return {
+    priceAfterTrial: product.priceString ?? '',
+    trialDays:
+      periodUnitToDays(intro.periodUnit) *
+      (intro.periodNumberOfUnits ?? 1) *
+      (intro.cycles ?? 1),
+    cycles: intro.cycles ?? 1,
+  };
+}
+
+/** ISO 8601 duration → days. Handles the 4 unit forms the SDK emits. */
+function iso8601ToDays(iso: string): number {
+  // Patterns observed: P1D, P7D, P1W, P1M, P3M, P1Y. We parse the leading
+  // integer + suffix letter; the integer is in the FIRST capture group
+  // of every supported variant (the SDK does not emit compound forms like
+  // P1Y2M).
+  const m = /^P(\d+)([DWMY])$/.exec(iso);
+  if (!m) return 0;
+  const n = Number(m[1]);
+  switch (m[2]) {
+    case 'D':
+      return n;
+    case 'W':
+      return n * 7;
+    case 'M':
+      return n * 30;
+    case 'Y':
+      return n * 365;
+    default:
+      return 0;
+  }
+}
+
+/** Billing-period unit (DAY / WEEK / MONTH / YEAR) → days. */
+function periodUnitToDays(unit: string | undefined): number {
+  switch (unit) {
+    case 'DAY':
+      return 1;
+    case 'WEEK':
+      return 7;
+    case 'MONTH':
+      return 30;
+    case 'YEAR':
+      return 365;
+    default:
+      return 0;
   }
 }
 

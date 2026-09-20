@@ -35,10 +35,13 @@
  * listener (attached once) uses the same ref — a callback from a previous
  * user's session or from the anonymous identity is dropped.
  *
- * Subscription state (migration 0016):
- *   On every per-user resolution, the profile is read from DB to populate
- *   `subscriptionStatus` and `trialEndsAt`, so the gate can resolve
- *   `'frozen'` for expired trials.
+ * Subscription state (post-cutover 0039, revenuecat-trial-migration slice B):
+ *   The DB profile carries `subscription_status` ('none' | 'active')
+ *   and `ever_paid` — no `trial_ends_at`, no `'trial'` / `'expired'`.
+ *   On every per-user resolution, the profile is read from DB to seed
+ *   `everPaid` (the only DB-backed store field beyond `isPro` /
+ *   `isLoading`). The pre-cutover `expire_overdue_trials` self-heal
+ *   is gone (RPC dropped by 0039 §5).
  */
 import { useEffect, useRef } from 'react';
 
@@ -73,20 +76,25 @@ const REVENUECAT_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? '';
 let bootstrapped = false;
 
 /**
- * Read the user's subscription state from the DB profile and push it into
- * the store. Called on every per-user resolution path that has a userId.
- * Never throws — a failed read leaves the store defaults (none/locked).
+ * Read the user's subscription state from the DB profile and push the
+ * relevant flags into the store. Called on every per-user resolution
+ * path that has a userId. Never throws — a failed read leaves the store
+ * defaults (locked).
  * `isCurrent` is the per-user race guard: bails when the user flipped
  * while the profile read was in flight.
  *
- * Post-cutover (0039):
- *   - `subscription_status` is `('none'|'active')` only; 'trial' and
- *     'expired' are no longer representable (0039 §6 narrows the CHECK).
- *   - The `trial_ends_at` column is gone (0039 §7). The destructure still
- *     works because `trial_ends_at ?? null` becomes null.
- *   - The `expire_overdue_trials` self-heal call is REMOVED — that RPC
- *     is dropped (0039 §5). Trial expiry is now reconciled by the
- *     RevenueCat webhook `EXPIRATION` event.
+ * Post-cutover (0039, revenuecat-trial-migration slice B):
+ *   - The trial lifecycle surface is GONE. The DB profile carries
+ *     `subscription_status` ('none' | 'active') + `ever_paid` — no
+ *     `trial_ends_at` (column dropped by 0039 §7) and no `'trial'` /
+ *     `'expired'` values (CHECK narrowed by 0039 §6).
+ *   - The bootstrap's job reduces to seeding `everPaid` (the only field
+ *     the store still owns besides `isPro` + `isLoading`). The
+ *     `isPro` flip is driven by the webhook; this read is purely a
+ *     safety net so a returning paid user isn't briefly locked while
+ *     waiting for the webhook delivery.
+ *   - The pre-cutover `expire_overdue_trials` self-heal call is gone
+ *     (RPC dropped by 0039 §5).
  */
 async function syncSubscriptionFromDB(
   userId: string,
@@ -95,11 +103,13 @@ async function syncSubscriptionFromDB(
   const result = await readProfileRow(userId);
   if (!isCurrent()) return;
   if (result.status === 'ok' && result.data) {
-    const { subscription_status, trial_ends_at, ever_paid } = result.data;
-    const status = subscription_status ?? 'none';
-    const trialEndsAt = trial_ends_at ?? null;
-
-    useProStore.getState().setSubscriptionState(status, trialEndsAt, ever_paid);
+    const { ever_paid } = result.data;
+    // Mirror the DB flag so the paywall + CustomerInfo listener never
+    // offer a free trial to an ever-paid user. `setEverPaid` is monotonic:
+    // a previously-set true (e.g. by the SDK listener) is never reset.
+    if (ever_paid) {
+      useProStore.getState().setEverPaid(true);
+    }
   }
 }
 

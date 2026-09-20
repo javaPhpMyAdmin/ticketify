@@ -31,8 +31,7 @@ export default function ProfileScreen() {
   const setHousehold = useSettingsStore((s) => s.setHouseholdSharing);
   const signOut = useSessionStore((s) => s.signOut);
   const { email } = useSessionUser();
-  const { isPro, isLoading: proLoading, subscriptionStatus, trialEndsAt, daysRemaining, isFrozen, everPaid } =
-    useProEntitlement();
+  const { isPro, isLoading: proLoading, everPaid } = useProEntitlement();
   const localeOverride = useLocaleStore((s) => s.override);
 
   const householdName = useHouseholdStore((s) => s.household?.name);
@@ -227,9 +226,11 @@ export default function ProfileScreen() {
             name={user.full_name ?? 'Tú'}
             avatarUrl={user.avatar_url}
             tier={user.tier}
-            // A frozen trial (expired) is no longer a paying Pro user; show
-            // the real lifecycle state instead of the access-tier chip.
-            tierLabel={isFrozen ? 'Prueba expirada' : undefined}
+            // Post-cutover (0039): no `'frozen'` state — the gate is binary
+            // (`locked | unlocked`), so the header shows only the access-tier
+            // chip. Slice C adds the trial pill (REQ-PRO-TRIAL-PILL) sourced
+            // from `CustomerInfo` as a sibling of the chip.
+            tierLabel={undefined}
           />
         ) : null}
 
@@ -237,8 +238,9 @@ export default function ProfileScreen() {
         {(() => {
           if (proLoading) return null;
 
-          // Active paid subscriber
-          if (subscriptionStatus === 'active') {
+          // Active paid subscriber (binary post-cutover: gate is `unlocked`
+          // → render the manage-subscription row with the PRO badge).
+          if (isPro) {
             return (
               <View style={styles.statusGroup}>
                 <View style={styles.statusRow}>
@@ -266,84 +268,13 @@ export default function ProfileScreen() {
             );
           }
 
-          // Active trial
-          if (subscriptionStatus === 'trial' && !isFrozen) {
-            return (
-              <Pressable
-                onPress={() => router.push('/pro')}
-                style={({ pressed }) => [
-                  styles.statusRow,
-                  pressed && styles.statusRowPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={t('settings:seePlans')}
-              >
-                <View style={styles.statusBadgeTrial}>
-                  <Text style={styles.statusBadgeTrialText}>
-                    {daysRemaining}
-                  </Text>
-                </View>
-                <View style={styles.statusTextCol}>
-                  <Text style={styles.statusLabel}>{t('settings:trialActive')}</Text>
-                  <Text style={styles.statusHint}>
-                    {t('common:subscription.daysRemaining', { count: daysRemaining })}
-                  </Text>
-                </View>
-                <Text style={styles.statusLink}>{t('settings:seePlans')}</Text>
-              </Pressable>
-            );
-          }
-
-          // Expired trial
-          if (isFrozen) {
-            return (
-              <Pressable
-                onPress={() => router.push('/pro')}
-                style={({ pressed }) => [
-                  styles.statusRow,
-                  styles.statusRowExpired,
-                  pressed && styles.statusRowPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={t('settings:seePlans')}
-              >
-                <Text style={styles.statusLabelExpired}>
-                  {t('settings:trialExpired')}
-                </Text>
-                <Text style={styles.statusLink}>{t('settings:seePlans')}</Text>
-              </Pressable>
-            );
-          }
-
-          // Expired trial — but NOT frozen (trial ran out and the account was
-          // normalized back to Free): already used the free trial, so this is
-          // a past user, not a prospect. Show the real lifecycle state instead
-          // of wrongly offering "Empezar prueba gratis" again (the paywall
-          // allows a fresh trial only when `status === 'none'` AND no
-          // trialEndsAt AND not frozen). "Ver planes" still routes to the
-          // paywall for a paid upgrade.
-          if (subscriptionStatus === 'expired') {
-            return (
-              <Pressable
-                onPress={() => router.push('/pro')}
-                style={({ pressed }) => [
-                  styles.statusRow,
-                  pressed && styles.statusRowPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={t('settings:seePlans')}
-              >
-                <Text style={styles.statusLabel}>{t('settings:freePlan')}</Text>
-                <Text style={styles.statusLink}>{t('settings:seePlans')}</Text>
-              </Pressable>
-            );
-          }
-
-          // Free user (no trial used). If the user has EVER paid (monotonic
-          // flag, 0021) they cannot start a free trial again — show the same
-          // "Plan Gratis / Ver planes" as the expired branch instead of
-          // offering a trial that the server would reject.
-          return everPaid ? (
+          // Free / not-yet-Pro. Post-cutover (0039) the trial lifecycle is
+          // gone — slice C refines the inactive copy with the trial pill
+          // sourced from `CustomerInfo` (REQ-PRO-TRIAL-PILL). For now:
+          // always route to /pro with the "Ver planes" CTA.
+          // The pre-cutover 5-branch block (trial + frozen + expired + free
+          // + free-ever-paid) is collapsed to a single 2-branch rendering.
+          return (
             <Pressable
               onPress={() => router.push('/pro')}
               style={({ pressed }) => [
@@ -355,19 +286,6 @@ export default function ProfileScreen() {
             >
               <Text style={styles.statusLabel}>{t('settings:freePlan')}</Text>
               <Text style={styles.statusLink}>{t('settings:seePlans')}</Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={() => router.push('/pro')}
-              style={({ pressed }) => [
-                styles.statusRow,
-                pressed && styles.statusRowPressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={t('settings:startFreeTrial')}
-            >
-              <Text style={styles.statusLabel}>{t('settings:free')}</Text>
-              <Text style={styles.statusLink}>{t('settings:startFreeTrial')}</Text>
             </Pressable>
           );
         })()}

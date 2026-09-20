@@ -11,6 +11,12 @@
  *   - `isLoading === false && isPro === true`  → 'unlocked'.
  *   - `isLoading === false && isPro === false` → 'locked'.
  *
+ * Post-cutover (0039, revenuecat-trial-migration slice B): the gate is
+ * binary. The DB trial lifecycle is gone (the `'frozen'` state existed
+ * ONLY to block writes between DB trial expiry and a paid subscription;
+ * with no DB trial there is no frozen window). `resolveGateState` is
+ * 2-arg `(isPro, isLoading)`; `GateState = 'locked' | 'unlocked'`.
+ *
  * The truth table is enumerated explicitly (4 combinations) AND verified
  * via a parametric loop so the contract is pinned in code, not just in
  * design prose.
@@ -137,27 +143,27 @@ async function run() {
     setOverride(originalOverride);
   });
 
-  console.log('\n[tests] REQ-GATE-5 truth table\n');
+  console.log('\n[tests] REQ-GATE-5 binary truth table (post-cutover 0039)\n');
 
   await test('isLoading=true, isPro=true → locked (loading wins, no flash)', () => {
-    assert.equal(resolveGateState(true, false, true), 'locked');
+    assert.equal(resolveGateState(true, true), 'locked');
   });
 
   await test('isLoading=true, isPro=false → locked', () => {
-    assert.equal(resolveGateState(false, false, true), 'locked');
+    assert.equal(resolveGateState(false, true), 'locked');
   });
 
   await test('isLoading=false, isPro=true → unlocked', () => {
-    assert.equal(resolveGateState(true, false, false), 'unlocked');
+    assert.equal(resolveGateState(true, false), 'unlocked');
   });
 
   await test('isLoading=false, isPro=false → locked', () => {
-    assert.equal(resolveGateState(false, false, false), 'locked');
+    assert.equal(resolveGateState(false, false), 'locked');
   });
 
-  console.log('\n[tests] exhaustive 4-row truth table\n');
+  console.log('\n[tests] exhaustive 4-row truth table (2×2)\n');
 
-  await test('all 4 (isPro × isLoading) combinations match the contract', () => {
+  await test('all 4 (isPro × isLoading) combinations match the binary contract', () => {
     const cases = [
       { isPro: false, isLoading: false, expected: 'locked' },
       { isPro: false, isLoading: true, expected: 'locked' },
@@ -165,7 +171,7 @@ async function run() {
       { isPro: true, isLoading: true, expected: 'locked' },
     ];
     for (const { isPro, isLoading, expected } of cases) {
-      const actual = resolveGateState(isPro, false, isLoading);
+      const actual = resolveGateState(isPro, isLoading);
       assert.equal(
         actual,
         expected,
@@ -175,34 +181,35 @@ async function run() {
   });
 
   await test('isLoading always wins — both isPro=true cases collapse to locked when loading', () => {
-    assert.equal(resolveGateState(true, false, true), 'locked');
+    assert.equal(resolveGateState(true, true), 'locked');
   });
 
   await test('only isLoading=false AND isPro=true yields unlocked (single source of truth)', () => {
     // Negative assertion: any other combination MUST NOT yield 'unlocked'.
     const combinations = [
-      [false, false, false],
-      [false, false, true],
-      [true, false, true],
+      [false, false],
+      [false, true],
+      [true, true],
     ];
-    for (const [isPro, isFrozen, isLoading] of combinations) {
+    for (const [isPro, isLoading] of combinations) {
       assert.notEqual(
-        resolveGateState(isPro, isFrozen, isLoading),
+        resolveGateState(isPro, isLoading),
         'unlocked',
         `isPro=${isPro}, isLoading=${isLoading} must NOT be unlocked`,
       );
     }
   });
 
-  console.log('\n[tests] return-type guard\n');
+  console.log('\n[tests] return-type guard (binary: locked | unlocked)\n');
 
-  await test('result is always one of the three literal states (no surprises)', () => {
-    const allowed = new Set(['locked', 'unlocked', 'frozen']);
+  await test('result is always one of the two literal states (no surprises, no legacy "frozen")', () => {
+    const allowed = new Set(['locked', 'unlocked']);
     for (const isPro of [false, true]) {
       for (const isLoading of [false, true]) {
+        const actual = resolveGateState(isPro, isLoading);
         assert.ok(
-          allowed.has(resolveGateState(isPro, false, isLoading)),
-          `Unexpected state for isPro=${isPro}, isLoading=${isLoading}`,
+          allowed.has(actual),
+          `Unexpected state '${actual}' for isPro=${isPro}, isLoading=${isLoading} (post-cutover the binary gate must NEVER return 'frozen')`,
         );
       }
     }
@@ -214,7 +221,7 @@ async function run() {
     // fast-path and pin the "loading wins" invariant in code.
     for (let i = 0; i < 1000; i++) {
       const isPro = i % 2 === 0;
-      assert.equal(resolveGateState(isPro, false, true), 'locked');
+      assert.equal(resolveGateState(isPro, true), 'locked');
     }
   });
 
@@ -224,28 +231,24 @@ async function run() {
     for (let i = 0; i < 1000; i++) {
       const isPro = i % 2 === 0;
       const expected = isPro ? 'unlocked' : 'locked';
-      assert.equal(resolveGateState(isPro, false, false), expected);
+      assert.equal(resolveGateState(isPro, false), expected);
     }
   });
 
-  console.log('\n[tests] frozen state\n');
-
-  await test('isFrozen=true, isLoading=false → frozen (trial expired)', () => {
-    assert.equal(resolveGateState(false, true, false), 'frozen');
-  });
-
-  await test('isFrozen=true, isLoading=true → locked (loading wins over frozen)', () => {
-    assert.equal(resolveGateState(false, true, true), 'locked');
-  });
-
-  await test('isFrozen=true, isPro=true, isLoading=false → frozen (frozen wins over pro)', () => {
-    assert.equal(resolveGateState(true, true, false), 'frozen');
-  });
-
-  await test('isFrozen only matters when isLoading=false', () => {
-    for (let i = 0; i < 500; i++) {
-      const isPro = i % 2 === 0;
-      assert.equal(resolveGateState(isPro, true, true), 'locked');
+  await test('"frozen" never appears in the output (binary gate contract, post-cutover 0039)', () => {
+    // Negative property: the binary gate never returns 'frozen' for any
+    // combination. The 'frozen' state existed only to block writes during
+    // the DB trial window (which is gone) — pins the contract that no
+    // input combination can resurrect it.
+    for (let i = 0; i < 1000; i++) {
+      const isPro = i % 3 === 0;
+      const isLoading = i % 5 === 0;
+      const actual = resolveGateState(isPro, isLoading);
+      assert.notEqual(
+        actual,
+        'frozen',
+        `'frozen' is not a valid post-cutover gate state (i=${i}, isPro=${isPro}, isLoading=${isLoading})`,
+      );
     }
   });
 
@@ -258,8 +261,8 @@ async function run() {
       [true, false],
       [true, true],
     ]) {
-      const a = resolveGateState(isPro, false, isLoading);
-      const b = resolveGateState(isPro, false, isLoading);
+      const a = resolveGateState(isPro, isLoading);
+      const b = resolveGateState(isPro, isLoading);
       assert.equal(a, b, `divergent result for isPro=${isPro}, isLoading=${isLoading}`);
     }
   });

@@ -31,15 +31,18 @@ export type CategoryKind = 'need' | 'want';
 export type ScanTier = 'free' | 'pro';
 
 /**
- * Business lifecycle of the subscription. Mirrors the DB CHECK constraint
- * in `profiles.subscription_status` (migration 0016).
+ * Business lifecycle of the subscription. Mirrors the post-cutover
+ * DB CHECK constraint in `profiles.subscription_status` (migration
+ * 0039): only `'none'` and `'active'` are representable. The
+ * pre-cutover `'trial'` and `'expired'` values are gone — trial
+ * eligibility is owned by Play Console / App Store Connect native
+ * intro offers (REQ-PRO-INTRO-CAPTION); expiry detection is the
+ * RevenueCat webhook's `EXPIRATION` event.
  *
- * - `'none'`    — free user, no trial
- * - `'trial'`   — trial active (tier is 'pro' while trial_ends_at > now)
- * - `'active'`  — paid subscriber
- * - `'expired'` — trial expired (tier reverts to 'free', data visible, writes blocked)
+ * - `'none'`    — free user, no paid subscription
+ * - `'active'`  — paid subscriber (webhook-asserted)
  */
-export type SubscriptionStatus = 'none' | 'trial' | 'active' | 'expired';
+export type SubscriptionStatus = 'none' | 'active';
 
 // ---------------------------------------------------------------------------
 // Database rows
@@ -57,15 +60,14 @@ export interface User {
   /** Household FK — set by migration 0014 when the user joins a household. */
   household_id: string | null;
   /**
-   * Business lifecycle of the subscription (migration 0016).
+   * Business lifecycle of the subscription (post-cutover 0039).
    * `tier` is the access-control primitive; this tracks the lifecycle.
+   * `'none' | 'active'` only — `'trial'` and `'expired'` are no longer
+   * representable (trial eligibility is owned by Play Console / App
+   * Store Connect native intro offers; expiry detection is the
+   * RevenueCat webhook's `EXPIRATION` event).
    */
   subscription_status: SubscriptionStatus;
-  /**
-   * Trial expiry timestamp (migration 0016). Set on trial start, null otherwise.
-   * Used for client-side offline expiry checks.
-   */
-  trial_ends_at: string | null;
   /**
    * Monotonic flag: true once the user has EVER made a real paid purchase
    * (migration 0021). Set server-side only (mark_ever_paid). A former paid

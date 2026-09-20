@@ -1,58 +1,38 @@
 /**
- * `useFrozenGuard` — intercept-based frozen-state write guard
- * (subscription-trial spec — REQ-FROZEN-1).
+ * `useFrozenGuard` — STUB (post-cutover migration 0039,
+ * revenuecat-trial-migration slice B).
  *
- * Instead of overlaying entire screens, this hook intercepts individual
- * write actions: if the user's trial is expired, the action is blocked
- * and a centered dialog offers an upgrade CTA. Reads remain unaffected.
+ * The pre-cutover implementation intercepted individual write actions
+ * with a `guard()` wrapper that surfaced an upgrade dialog when the
+ * user's trial was expired (the `'frozen'` state — trial window past
+ * but DB still carried `trial_ends_at` so the cron hadn't normalized
+ * yet). The frozen window existed ONLY to block writes between DB
+ * trial expiry and a paid subscription.
  *
- * Usage:
- *   const { guard, isFrozen } = useFrozenGuard();
- *   guard(() => router.push('/ticket/camera'));
- *   // or guard(async () => { await save(...) });
+ * Post-cutover there is no DB trial surface. Trial eligibility is owned
+ * by Play Console / App Store Connect native intro offers; expiry is
+ * reconciled by the RevenueCat webhook's `EXPIRATION` event. The
+ * `isFrozen` gate state is gone (gate is binary: `locked | unlocked`).
+ *
+ * This stub keeps the same exported shape (`{ isFrozen, guard }`) so
+ * existing call sites in `(tabs)/index.tsx` and the settings screens
+ * continue to compile. `guard` is now a pass-through that always
+ * invokes the action immediately, and `isFrozen` is always `false`.
+ * Slice C will remove the call sites entirely.
  */
-import { useCallback } from 'react';
-import { useRouter } from 'expo-router';
-
-import { useDialogStore } from '@/stores/use-dialog-store';
-
-import { useProEntitlement } from './useProEntitlement';
-
 export interface FrozenGuardResult {
-  /** True when the user's trial is expired and writes are blocked. */
+  /** Always `false` post-cutover (frozen state no longer exists). */
   isFrozen: boolean;
   /**
-   * Wraps a write action: when frozen, shows an upgrade dialog and does
-   * NOT call the action. When not frozen, calls the action immediately.
-   * Supports both sync and async callbacks.
+   * Pass-through: invokes the action immediately. No upgrade dialog
+   * can fire because there is no frozen state to surface.
    */
-  guard: <T>(action: () => T | Promise<T>) => T | Promise<T> | undefined;
+  guard: <T>(action: () => T | Promise<T>) => T | Promise<T>;
 }
 
-const FROZEN_TITLE = 'Prueba expirada';
-const FROZEN_MESSAGE =
-  'Suscribite a PRO para continuar usando esta función.';
-
 export function useFrozenGuard(): FrozenGuardResult {
-  const { isFrozen } = useProEntitlement();
-  const router = useRouter();
-
-  const guard = useCallback(
-    <T>(action: () => T | Promise<T>): T | Promise<T> | undefined => {
-      if (isFrozen) {
-        useDialogStore.getState().show({
-          title: FROZEN_TITLE,
-          message: FROZEN_MESSAGE,
-          primaryLabel: 'Ver planes',
-          onPrimary: () => router.push('/pro'),
-          secondaryLabel: 'Cancelar',
-        });
-        return undefined;
-      }
-      return action();
-    },
-    [isFrozen, router],
-  );
-
-  return { isFrozen, guard };
+  return {
+    isFrozen: false,
+    guard: <T,>(action: () => T | Promise<T>) => action(),
+  };
 }
