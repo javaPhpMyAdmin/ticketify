@@ -53,7 +53,6 @@ import {
   REVENUECAT_CALL_TIMEOUT_MS,
 } from '@/lib/revenuecat';
 import {
-  expireOverdueTrials,
   readProfileRow,
 } from '@/lib/supabase/feature-access';
 import { withTimeout } from '@/lib/with-timeout';
@@ -79,6 +78,15 @@ let bootstrapped = false;
  * Never throws — a failed read leaves the store defaults (none/locked).
  * `isCurrent` is the per-user race guard: bails when the user flipped
  * while the profile read was in flight.
+ *
+ * Post-cutover (0039):
+ *   - `subscription_status` is `('none'|'active')` only; 'trial' and
+ *     'expired' are no longer representable (0039 §6 narrows the CHECK).
+ *   - The `trial_ends_at` column is gone (0039 §7). The destructure still
+ *     works because `trial_ends_at ?? null` becomes null.
+ *   - The `expire_overdue_trials` self-heal call is REMOVED — that RPC
+ *     is dropped (0039 §5). Trial expiry is now reconciled by the
+ *     RevenueCat webhook `EXPIRATION` event.
  */
 async function syncSubscriptionFromDB(
   userId: string,
@@ -90,20 +98,6 @@ async function syncSubscriptionFromDB(
     const { subscription_status, trial_ends_at, ever_paid } = result.data;
     const status = subscription_status ?? 'none';
     const trialEndsAt = trial_ends_at ?? null;
-
-    // If the DB still says 'trial' but the trial has already expired by
-    // date, materialize the transition server-side via the shared
-    // `expire_overdue_trials` RPC (sets expired + free tier + resets the
-    // current-month scan quota). This keeps the DB (the source of truth)
-    // consistent even before the cron runs, so a reboot/re-login does not
-    // resurrect a stale 'trial' → PRO.
-    const isOverdueTrial =
-      status === 'trial' &&
-      trialEndsAt !== null &&
-      new Date(trialEndsAt).getTime() <= Date.now();
-    if (isOverdueTrial) {
-      void expireOverdueTrials();
-    }
 
     useProStore.getState().setSubscriptionState(status, trialEndsAt, ever_paid);
   }

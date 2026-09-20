@@ -67,43 +67,39 @@
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
--- §1. Backfill — in-window + past-window trial rows → (active, pro,
---     trial_ends_at=NULL).
+-- §1. Backfill — every profile with subscription_status='trial' →
+--     (active, pro, trial_ends_at=NULL). Single UPDATE covers:
+--       (a) in-window rows (trial_ends_at > now()),
+--       (b) past-window / cron-lag rows (trial_ends_at <= now()),
+--       (c) the `trial_ends_at IS NULL` edge case (R1-6) — a row that
+--           somehow ended up `'trial'` with a NULL window (the 0016 default
+--           is `trial_ends_at default null`, so a row inserted directly
+--           with `subscription_status='trial'` and no `trial_ends_at`
+--           value would slip through a `trial_ends_at > now()` predicate).
+--     ADR-2 (backfill semantics): the past-window + NULL-window edges are
+--     also flipped because there is no DB trial anymore and the user
+--     keeps Pro until they re-subscribe via Play. Step (a) of ADR-2
+--     keeps Pro access past `trial_ends_at` consistent.
 --
--- ADR-2 (backfill semantics): the past-window edge is also flipped per
--- the design + task — the cron-lag window where a row stays `'trial'`
--- while past its end-date (between the last cron tick and the next one)
--- would otherwise be stranded with no scheduled charge. Flipping past
--- expiry is consistent with the cutover intent (no DB trial exists
--- anymore) and the user keeps Pro until they re-subscribe via Play.
+--     Idempotency: after §6 narrows the CHECK to ('none','active'), no
+--     new row can ever satisfy `subscription_status = 'trial'`, so a
+--     re-run matches zero rows — the §5 backfill idempotency scenario
+--     in the spec holds trivially.
 -- ---------------------------------------------------------------------------
 
 update public.profiles
    set subscription_status = 'active',
        tier                = 'pro',
        trial_ends_at       = null
- where subscription_status = 'trial'
-   and trial_ends_at > now();
-
--- Also cover the cron-lag past-window edge (ADR-2): a row still marked
--- `'trial'` but past `trial_ends_at` was already overdue — flipping it
--- to (active, pro) gives the user exactly what the in-window path
--- gives them, with the same downstream subscribe-via-Play path. Step
--- (a) of ADR-2 keeps Pro access past `trial_ends_at` consistent.
-update public.profiles
-   set subscription_status = 'active',
-       tier                = 'pro',
-       trial_ends_at       = null
- where subscription_status = 'trial'
-   and trial_ends_at <= now();
+ where subscription_status = 'trial';
 
 -- ---------------------------------------------------------------------------
 -- §2. ALTER COLUMN trial_ends_at DROP NOT NULL
 --
 -- Preserves the column for the rollback path (the design §"Rollback
 -- Runbook (<1h)" pins this as the precursor to the column drop in §7).
--- No data loss: every row already has either NULL (free / active / past
--- expiry) or a future timestamp (in-window trial — but those are
+-- No data loss: every row already has either NULL (free / active /
+-- past expiry) or a future timestamp (in-window trial — but those are
 -- cleared in §1).
 -- ---------------------------------------------------------------------------
 
@@ -117,10 +113,22 @@ alter table public.profiles
 -- (before the drops) keeps the window of "the function exists with
 -- PUBLIC EXECUTE" zero — anon/authenticated cannot race a drop with a
 -- last-second call. The drops in §4/§5 close the race definitively.
+--
+-- The 3-arg `sync_subscription_status(uuid, text, timestamptz)` overload
+-- is also REVOKED here. The migration window (between §6 narrowing the
+-- CHECK and §9a dropping the overload) leaves the 3-arg function live
+-- with its pre-cutover 4-state allow-list (`'none','trial','active','expired'`).
+-- A delivery from the pre-slim webhook with `p_status = 'trial'` during
+-- that window would UPDATE subscription_status='trial' — which §6
+-- rejects (23514) — and the migration aborts. Revoking the overload
+-- up-front (the REVOKE succeeds even though the function still exists —
+-- the DROP comes in §9a) closes that race.
 -- ---------------------------------------------------------------------------
 
 revoke execute on function public.start_free_trial() from public, anon, authenticated, service_role;
 revoke execute on function public.expire_overdue_trials() from public, anon, authenticated, service_role;
+revoke execute on function public.sync_subscription_status(uuid, text, timestamptz)
+  from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- §4. DROP FUNCTION start_free_trial()
@@ -397,6 +405,20 @@ begin
   return old;
 end;
 $$;
+
+-- 0029 §4 trap (R1-3): `create or replace function` resets EXECUTE to
+-- PUBLIC. The trigger function is INTERNAL — clients never call it
+-- directly (the trigger fires on INSERT/UPDATE), but PostgreSQL still
+-- grants EXECUTE to PUBLIC by default. A direct call to
+-- `protect_profile_tier()` from an anon/authenticated session would
+-- execute the trigger body without `current_user = 'postgres'`, hit
+-- the INSERT/UPDATE guard branches, and raise one of the
+-- 'managed server-side' exceptions — a noisy signal with no
+-- exploit value, but an oracle nonetheless. Revoke EXECUTE from PUBLIC
+-- to close the oracle. The trigger itself still fires for the
+-- legitimate INSERT/UPDATE paths (triggers don't require EXECUTE on
+-- the trigger function to fire on table writes).
+revoke all on function public.protect_profile_tier() from public;
 
 -- §9d. sync_client_subscription: narrow allow-list to ('none') and
 --      drop the `trial_ends_at` SELECT + active-trial guard. The

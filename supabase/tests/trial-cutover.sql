@@ -95,6 +95,41 @@ begin
   assert to_regprocedure('public.expire_overdue_trials()') is null,
     'public.expire_overdue_trials() must be DROPPED (REQ-DATA-RPC-TRIAL-REMOVAL, 0039 §5)';
 
+  -- §1e. sync_subscription_status(uuid, text, timestamptz) 3-arg overload
+  --      is DROPPED. Without this, the 2-arg version created in §9a coexists
+  --      with the 3-arg version and a 2-arg call hits SQLSTATE 42725
+  --      "function ... is not unique". The overload drop is the first line
+  --      of §9a; this assertion pins it.
+  assert to_regprocedure('public.sync_subscription_status(uuid, text, timestamptz)') is null,
+    'sync_subscription_status(uuid, text, timestamptz) 3-arg overload must be DROPPED (0039 §9a — overload ambiguity trap, R3-2)';
+
+  -- §1f. REVOKE enforcement on PUBLIC/anon/authenticated (R1-3 + R1-4).
+  --      ADAPTATION NOTE: the review-fix R1-4 snippet used
+  --      `perform public.start_free_trial()` to exercise the REVOKE
+  --      pattern via `set role anon` + `when insufficient_privilege`.
+  --      That snippet assumes the function EXISTS but with EXECUTE
+  --      REVOKED — a transient state between §3 (REVOKE) and §4 (DROP)
+  --      of the migration. Once the migration completes, §4 has dropped
+  --      the function, so the snippet cannot run post-cutover
+  --      (`perform start_free_trial()` would raise `function does not
+  --      exist` SQLSTATE 42883, not `insufficient_privilege`).
+  --
+  --      The ONLY REVOKE that survives the migration is the
+  --      REVOKE ALL on PUBLIC for `protect_profile_tier` (R1-3). The
+  --      catalog-query form below pins that contract using the same
+  --      `has_function_privilege` idiom the other smokes use
+  --      (delete-account.sql §1, household-gate-tier.sql §1). Pre-cutover
+  --      the trigger function has EXECUTE granted to PUBLIC (the
+  --      0029 §4 trap), so this assertion is RED before the migration
+  --      applies and GREEN after — the strict-TDD RED→GREEN signal
+  --      for R1-3 + R1-4.
+  assert not has_function_privilege('public', 'public.protect_profile_tier()', 'EXECUTE'),
+    'public must NOT be able to execute protect_profile_tier (REVOKE ALL on PUBLIC, R1-3 + R1-4, 0029 §4 trap)';
+  assert not has_function_privilege('anon', 'public.protect_profile_tier()', 'EXECUTE'),
+    'anon must NOT be able to execute protect_profile_tier (REVOKE ALL on PUBLIC, R1-3 + R1-4)';
+  assert not has_function_privilege('authenticated', 'public.protect_profile_tier()', 'EXECUTE'),
+    'authenticated must NOT be able to execute protect_profile_tier (REVOKE ALL on PUBLIC, R1-3 + R1-4)';
+
   -- §1d. cron.job 'trial-expiry' entry is REMOVED (best-effort: the pg_cron
   -- extension is platform-optional, so the assertion is SKIPPED — not
   -- failed — when the extension is not installed on this stack).
@@ -217,6 +252,11 @@ begin
 
   -- §4a. sync_subscription_status('trial') RAISES post-cutover (was a no-op
   --      success pre-cutover — primary RED→GREEN signal for §9 of 0039).
+  --      Tightened (R3-3): the assertion pins the exact SQLSTATE P0001
+  --      that the §9a-narrowed RPC raises (errcode = 'P0001' in the
+  --      validation branch). A bare 'any exception' check could pass on
+  --      SQLSTATE 23514 (CHECK violation, which would mean the allow-list
+  --      was somehow bypassed) — that's a regression, not a pass.
   v_sqlstate := null;
   v_errmsg   := null;
   begin
@@ -226,12 +266,12 @@ begin
       v_sqlstate := sqlstate;
       v_errmsg   := sqlerrm;
   end;
-  assert v_sqlstate is not null and v_sqlstate <> '00000',
-    format('sync_subscription_status(''trial'') must RAISE post-cutover, got: sqlstate=%s msg=%s',
-      coalesce(v_sqlstate, 'null'), coalesce(v_errmsg, 'null'));
+  assert v_sqlstate = 'P0001',
+    format('sync_subscription_status(''trial'') must RAISE P0001 (RPC allow-list), got: %s',
+      coalesce(v_sqlstate, 'null'));
 
   -- §4b. sync_subscription_status('expired') RAISES post-cutover (was
-  --      accepted pre-cutover).
+  --      accepted pre-cutover). Same R3-3 P0001 pin.
   v_sqlstate := null;
   v_errmsg   := null;
   begin
@@ -241,9 +281,9 @@ begin
       v_sqlstate := sqlstate;
       v_errmsg   := sqlerrm;
   end;
-  assert v_sqlstate is not null and v_sqlstate <> '00000',
-    format('sync_subscription_status(''expired'') must RAISE post-cutover, got: sqlstate=%s msg=%s',
-      coalesce(v_sqlstate, 'null'), coalesce(v_errmsg, 'null'));
+  assert v_sqlstate = 'P0001',
+    format('sync_subscription_status(''expired'') must RAISE P0001 (RPC allow-list), got: %s',
+      coalesce(v_sqlstate, 'null'));
 
   -- §4c. sync_subscription_status('active') accepted and applied (sanity).
   perform public.sync_subscription_status(v_user_rpc, 'active');
@@ -254,6 +294,38 @@ begin
   perform public.sync_subscription_status(v_user_rpc, 'none');
   select subscription_status into v_status from public.profiles where id = v_user_rpc;
   assert v_status = 'none', 'sync_subscription_status(''none'') must APPLY post-cutover';
+
+  -- §4e. sync_client_subscription('trial') RAISES post-cutover. The
+  --      §9d-narrowed allow-list is `('none')`; 'trial' is no longer
+  --      representable in the narrowed CHECK (§6) so the RPC-level gate
+  --      rejects it explicitly with P0001 (REQ-DATA-RPC-TRIAL-REMOVAL).
+  --      Pin: the RPC body raises P0001 (errcode = 'P0001' in the
+  --      validation branch), not 23514 (CHECK) — the RPC validates
+  --      BEFORE the UPDATE runs.
+  v_sqlstate := null;
+  begin
+    perform public.sync_client_subscription('trial');
+  exception
+    when others then
+      v_sqlstate := sqlstate;
+  end;
+  assert v_sqlstate = 'P0001',
+    format('sync_client_subscription(''trial'') must RAISE P0001 (§9d allow-list narrowing), got: %s',
+      coalesce(v_sqlstate, 'null'));
+
+  -- §4f. sync_client_subscription('expired') RAISES post-cutover. Same
+  --      P0001 pin as §4e — the allow-list is `('none')`, so 'expired'
+  --      is rejected at the RPC validation gate.
+  v_sqlstate := null;
+  begin
+    perform public.sync_client_subscription('expired');
+  exception
+    when others then
+      v_sqlstate := sqlstate;
+  end;
+  assert v_sqlstate = 'P0001',
+    format('sync_client_subscription(''expired'') must RAISE P0001 (§9d allow-list narrowing), got: %s',
+      coalesce(v_sqlstate, 'null'));
 
   -- -------------------------------------------------------------------------
   -- §5. Backfill idempotency (REQ-DATA-TRIAL-CUTOVER) — the post-cutover

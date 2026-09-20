@@ -348,27 +348,51 @@ export async function showManageSubscriptions(): Promise<ManageSubscriptionsResu
   }
 }
 
+/**
+ * A single purchasable package surfaced by the current offering. The
+ * `identifier` is what `purchasePackage()` consumes; `priceString` is the
+ * localized price (e.g. "$5.99", "ARS 1.499,00") formatted by the Play
+ * Store — Play requires the actual price (not a free-form label) on
+ * the subscription disclosure. `period` is a localized suffix like
+ * "/month" or "/year" — we use the package type (`MONTHLY` / `ANNUAL`)
+ * since the SDK already maps it for us.
+ */
+export interface OfferingPackage {
+  /** The package identifier passed to `purchasePackage()`. */
+  identifier: string;
+  /** Localized price from the store (includes currency symbol/format). */
+  priceString: string;
+}
+
 export interface OfferingsSnapshot {
-  /** The `monthly` package identifier, or null when missing / unavailable. */
-  monthly: string | null;
-  /** The `annual` package identifier, or null when missing / unavailable. */
-  annual: string | null;
+  /** The `monthly` package, or null when missing / unavailable. */
+  monthly: OfferingPackage | null;
+  /** The `annual` package, or null when missing / unavailable. */
+  annual: OfferingPackage | null;
 }
 
 /**
  * Reads the current offering and projects its `monthly` / `annual`
- * packages to their identifiers. The paywall uses these identifiers to
- * render the buy buttons and to call `purchasePackage(identifier)`. Returns
- * `null` when the native module is not linked.
+ * packages to `{ identifier, priceString }`. The paywall uses the
+ * identifier to call `purchasePackage()` and the priceString to render
+ * the Play-compliant price disclosure. Returns `null` when the native
+ * module is not linked.
  */
 export async function getOfferings(): Promise<OfferingsSnapshot | null> {
   if (!Purchases) return null;
   try {
     const offerings = await Purchases.getOfferings();
     const current = offerings?.current;
+    const toPackage = (pkg: typeof current.monthly): OfferingPackage | null =>
+      pkg
+        ? {
+            identifier: pkg.identifier,
+            priceString: pkg.product.priceString ?? '',
+          }
+        : null;
     return {
-      monthly: current?.monthly?.identifier ?? null,
-      annual: current?.annual?.identifier ?? null,
+      monthly: toPackage(current?.monthly),
+      annual: toPackage(current?.annual),
     };
   } catch (err) {
     console.warn('[revenuecat] getOfferings failed:', err);
