@@ -1,10 +1,11 @@
 /**
  * `useProEntitlement` — the single hook screens consume for Pro
- * gating (pro-subscription spec — REQ-PRO-1, REQ-GATE-5).
+ * gating (pro-subscription spec — REQ-PRO-1, REQ-GATE-5) and the
+ * profile trial pill (REQ-PRO-TRIAL-PILL).
  *
- * The hook reads `isPro`, `isLoading`, and the monotonic `everPaid`
- * flag from `useProStore` via selector subscriptions so the component
- * only re-renders when those values actually change (zustand's
+ * The hook reads `isPro`, `isLoading`, `trialEndsAt`, and the monotonic
+ * `everPaid` flag from `useProStore` via selector subscriptions so the
+ * component only re-renders when those values actually change (zustand's
  * shallow-equality default on selector results is sufficient for
  * primitives).
  *
@@ -13,10 +14,12 @@
  * the next `refresh()` reflects the new entitlement state.
  *
  * Post-cutover (0039, revenuecat-trial-migration slice B): the trial
- * fields (`subscriptionStatus`, `trialEndsAt`, `isTrialing`, `isFrozen`,
- * `daysRemaining`) are GONE. The trial surface moved into
- * `getOfferings().introPhase` (intro caption projection) — screens
- * that need trial-window info read the offering snapshot directly.
+ * fields (`subscriptionStatus`, `isTrialing`, `isFrozen`,
+ * `daysRemaining`) are GONE.
+ *
+ * Post-cutover (slice C): `trialEndsAt` is RE-INTRODUCED, sourced from
+ * CustomerInfo (NOT the DB — the DB column was dropped). The profile
+ * pill consumer reads it; null when not on a free trial.
  */
 import { useProStore } from '@/stores/use-pro-store';
 
@@ -24,6 +27,15 @@ export interface ProEntitlement {
   isPro: boolean;
   isLoading: boolean;
   refresh: () => Promise<void>;
+
+  /**
+   * Trial-end ISO timestamp (CustomerInfo-derived). The profile
+   * trial pill renders `t('trialPill', { date })` when this is a
+   * non-null string (i.e. user is on an active FREE TRIAL). null for
+   * paid subscribers, free users, intro-phase subscribers, or
+   * expired trials — the pill is hidden.
+   */
+  trialEndsAt: string | null;
 
   /**
    * True once the user has EVER made a real paid purchase (monotonic,
@@ -37,11 +49,13 @@ export function useProEntitlement(): ProEntitlement {
   const isPro = useProStore((s) => s.isPro);
   const isLoading = useProStore((s) => s.isLoading);
   const refresh = useProStore((s) => s.refresh);
+  const trialEndsAt = useProStore((s) => s.trialEndsAt);
   const everPaid = useProStore((s) => s.everPaid);
   return {
     isPro,
     isLoading,
     refresh,
+    trialEndsAt,
     everPaid,
   };
 }

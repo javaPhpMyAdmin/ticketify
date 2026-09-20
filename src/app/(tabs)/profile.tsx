@@ -14,8 +14,9 @@ import {
   type AccountSettingRow,
 } from '@/features/profile';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
+import { formatDayMonth } from '@/lib/format';
 import { openLegalDocument } from '@/lib/legal-navigation';
-import { showManageSubscriptions } from '@/lib/revenuecat';
+import { getTrialPillState, showManageSubscriptions } from '@/lib/revenuecat';
 import { leaveHousehold } from '@/lib/supabase/feature-access';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
@@ -31,8 +32,9 @@ export default function ProfileScreen() {
   const setHousehold = useSettingsStore((s) => s.setHouseholdSharing);
   const signOut = useSessionStore((s) => s.signOut);
   const { email } = useSessionUser();
-  const { isPro, isLoading: proLoading, everPaid } = useProEntitlement();
+  const { isPro, isLoading: proLoading, trialEndsAt, everPaid } = useProEntitlement();
   const localeOverride = useLocaleStore((s) => s.override);
+  const activeLocale = useLocaleStore((s) => s.activeLocale);
 
   const householdName = useHouseholdStore((s) => s.household?.name);
 
@@ -234,6 +236,31 @@ export default function ProfileScreen() {
           />
         ) : null}
 
+        {/* ── Trial pill (REQ-PRO-TRIAL-PILL, slice C) ── */}
+        {/* Sourced from CustomerInfo (NOT the DB — the trial_ends_at
+            column was dropped by migration 0039 §7). The store
+            exposes `trialEndsAt: string | null` via
+            `useProEntitlement`; the pill helper decides whether the
+            entitlement is on an active FREE TRIAL. Hidden for paid
+            subscribers, free users, intro-phase subscribers, and
+            expired trials. */}
+        {(() => {
+          const pill = getTrialPillState({
+            isActive: isPro,
+            expirationDate: trialEndsAt,
+          });
+          if (!pill.show || !pill.trialEndsAt) return null;
+          return (
+            <View style={styles.trialPill}>
+              <Text style={styles.trialPillText}>
+                {t('pro:trialPill', {
+                  date: formatDayMonth(activeLocale, pill.trialEndsAt),
+                })}
+              </Text>
+            </View>
+          );
+        })()}
+
         {/* ── Subscription status ── */}
         {(() => {
           if (proLoading) return null;
@@ -394,6 +421,19 @@ const styles = StyleSheet.create({
     ...typography.labelSm,
     color: colors.danger,
     fontWeight: '700',
+  },
+  // ── Trial pill (REQ-PRO-TRIAL-PILL, slice C) ──
+  trialPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: 999, // pill shape
+    backgroundColor: colors.primaryContainer,
+  },
+  trialPillText: {
+    ...typography.labelSm,
+    color: colors.primaryDark,
+    fontWeight: '600',
   },
   // ── Subscription status ──
   statusGroup: {

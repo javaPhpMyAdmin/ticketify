@@ -167,6 +167,7 @@ async function run() {
     projectIosIntroPhase,
     buildIntroCaption,
     getTrialPillState,
+    deriveCustomerInfoSnapshot,
     getOfferings,
   } = revenuecatModule;
   // The mock module is also loaded via `liveRequire` so the integration
@@ -610,6 +611,90 @@ async function run() {
         expirationDate: '',
       }),
       { show: false,      trialEndsAt: null },
+    );
+  });
+
+  console.log('\n[tests] deriveCustomerInfoSnapshot (REQ-PRO-TRIAL-PILL source)\n');
+
+  // Reusable fixtures — the SDK's entitlement shape is consistent
+  // across Android + iOS per the SDK's CustomerInfo contract.
+  const ENT_TRIAL = {
+    isActive: true,
+    periodType: 'TRIAL',
+    expirationDate: '2026-10-25T00:00:00.000Z',
+  };
+  const ENT_NORMAL = {
+    isActive: true,
+    periodType: 'NORMAL',
+    expirationDate: '2026-11-25T00:00:00.000Z',
+  };
+  const ENT_INTRO = {
+    isActive: true,
+    periodType: 'INTRO',
+    expirationDate: '2026-10-25T00:00:00.000Z',
+  };
+  const ENT_INACTIVE_TRIAL = {
+    isActive: false,
+    periodType: 'TRIAL',
+    expirationDate: '2026-10-25T00:00:00.000Z',
+  };
+
+  await test('null customerInfo → isPro=false, trialEndsAt=null (safe default)', () => {
+    assert.deepEqual(deriveCustomerInfoSnapshot(null), {
+      isPro: false,
+      trialEndsAt: null,
+    });
+  });
+
+  await test('customerInfo without the pro entitlement → isPro=false, trialEndsAt=null', () => {
+    assert.deepEqual(
+      deriveCustomerInfoSnapshot({
+        entitlements: { all: { other: { isActive: true } } },
+      }),
+      { isPro: false, trialEndsAt: null },
+    );
+  });
+
+  await test('active TRIAL entitlement → isPro=true, trialEndsAt=expirationDate (PRIMARY)', () => {
+    assert.deepEqual(
+      deriveCustomerInfoSnapshot({
+        entitlements: { all: { pro: ENT_TRIAL } },
+      }),
+      { isPro: true, trialEndsAt: '2026-10-25T00:00:00.000Z' },
+    );
+  });
+
+  await test('active NORMAL entitlement → isPro=true, trialEndsAt=null (paid subscriber)', () => {
+    assert.deepEqual(
+      deriveCustomerInfoSnapshot({
+        entitlements: { all: { pro: ENT_NORMAL } },
+      }),
+      { isPro: true, trialEndsAt: null },
+    );
+  });
+
+  await test('active INTRO entitlement → isPro=true, trialEndsAt=null (introductory-price phase, not free trial)', () => {
+    assert.deepEqual(
+      deriveCustomerInfoSnapshot({
+        entitlements: { all: { pro: ENT_INTRO } },
+      }),
+      { isPro: true, trialEndsAt: null },
+    );
+  });
+
+  await test('inactive TRIAL entitlement → isPro=false, trialEndsAt=null (defensive — expired)', () => {
+    assert.deepEqual(
+      deriveCustomerInfoSnapshot({
+        entitlements: { all: { pro: ENT_INACTIVE_TRIAL } },
+      }),
+      { isPro: false, trialEndsAt: null },
+    );
+  });
+
+  await test('customerInfo with completely missing entitlements → isPro=false, trialEndsAt=null (defensive)', () => {
+    assert.deepEqual(
+      deriveCustomerInfoSnapshot({}),
+      { isPro: false, trialEndsAt: null },
     );
   });
 

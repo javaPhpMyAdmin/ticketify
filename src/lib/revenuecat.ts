@@ -95,6 +95,39 @@ export function configure(apiKey: string): boolean {
 /** Shape we surface to callers — narrow enough to test in M8.1. */
 export interface CustomerInfoSnapshot {
   isPro: boolean;
+  /**
+   * Trial-end ISO timestamp, sourced from
+   * `entitlements.all.pro.expirationDate` when the user is on an
+   * active FREE TRIAL (periodType === 'TRIAL'). `null` for paid
+   * subscribers, free users, intro-phase subscribers, or expired
+   * trials — the trial pill consumer hides on null (REQ-PRO-TRIAL-PILL).
+   */
+  trialEndsAt: string | null;
+}
+
+/**
+ * Pure projection of `CustomerInfo` → the snapshot shape consumers
+ * (the bootstrap, `useProEntitlement`, the profile pill) consume.
+ * Extracted from `getCustomerInfo` + the SDK listener so the harness
+ * can test the projection directly without rendering.
+ *
+ * Trial-window derivation reuses `getTrialPillState` for the
+ * periodType + expirationDate contract — one source of truth for
+ * "is the user on a free trial RIGHT NOW".
+ */
+export function deriveCustomerInfoSnapshot(
+  customerInfo: unknown,
+): CustomerInfoSnapshot {
+  const proEntitlement = (customerInfo as any)?.entitlements?.all?.[
+    PRO_ENTITLEMENT
+  ];
+  const isPro = proEntitlement?.isActive === true;
+  // Reuse the trial-pill helper — single source of truth for the
+  // "active TRIAL with a non-empty expirationDate" contract. The
+  // profile screen will re-derive the same state via the hook to
+  // decide whether to render the pill.
+  const pill = isPro ? getTrialPillState(proEntitlement) : { trialEndsAt: null };
+  return { isPro, trialEndsAt: pill.trialEndsAt };
 }
 
 /**
@@ -114,8 +147,7 @@ export async function getCustomerInfo(): Promise<CustomerInfoSnapshot | null> {
   if (!Purchases) return null;
   try {
     const customerInfo = await Purchases.getCustomerInfo();
-    const isPro = customerInfo?.entitlements?.all?.[PRO_ENTITLEMENT]?.isActive === true;
-    return { isPro };
+    return deriveCustomerInfoSnapshot(customerInfo);
   } catch (err) {
     console.warn('[revenuecat] getCustomerInfo failed:', err);
     return null;
@@ -211,11 +243,14 @@ export async function logOutRevenueCat(): Promise<RevenueCatIdentityResult> {
 }
 
 /**
- * Entitlement-change listener callback projected to the `pro` boolean.
- * The SDK's `customerInfoUpdate` fires on renewal, refund, family-share
- * transfer, etc. Consumers still guard on the current user identity.
+ * Entitlement-change listener callback projected to the
+ * \`CustomerInfoSnapshot\` shape (REQ-PRO-TRIAL-PILL — the profile
+ * pill reads \`trialEndsAt\` from this snapshot). The SDK's
+ * \`customerInfoUpdate\` fires on renewal, refund, family-share
+ * transfer, etc. Consumers still guard on the current user identity
+ * (the bootstrap's per-user ref).
  */
-export type CustomerInfoUpdateListener = (isPro: boolean) => void;
+export type CustomerInfoUpdateListener = (snapshot: CustomerInfoSnapshot) => void;
 
 /**
  * Attaches the SDK's `customerInfoUpdate` listener. Resolves the CJS
@@ -233,8 +268,7 @@ export function attachCustomerInfoListener(
   if (!Purchases?.addCustomerInfoUpdateListener) return null;
   try {
     const handle = Purchases.addCustomerInfoUpdateListener((ci: any) => {
-      const isPro = ci?.entitlements?.all?.[PRO_ENTITLEMENT]?.isActive === true;
-      listener(isPro);
+      listener(deriveCustomerInfoSnapshot(ci));
     });
     return () => {
       try {
