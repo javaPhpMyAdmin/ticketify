@@ -514,6 +514,72 @@ export function projectIosIntroPhase(pkg: unknown): IntroPhase | null {
   };
 }
 
+/**
+ * Render the paywall intro caption by substituting \`{{trialDays}}\` and
+ * \`{{priceAfterTrial}}\` tokens in the i18n template. Returns \`null\` when
+ * the package has no intro offer configured (the paywall MUST hide
+ * its caption in that case — REQ-PRO-INTRO-CAPTION).
+ *
+ * Pure / no React / no I/O so the harness can test the substitution
+ * directly without rendering. The template is supplied by the caller
+ * (typically \`t('planIntroCaption')\` from the `pro` namespace) — the
+ * helper does NOT call i18n itself. Splitting concerns this way keeps
+ * the test scope tight (substitution rules) and the production scope
+ * tight (one helper for the rendering surface).
+ */
+export function buildIntroCaption(
+  introPhase: IntroPhase | null,
+  template: string,
+): string | null {
+  if (!introPhase) return null;
+  return template
+    .replace(/\{\{trialDays\}\}/g, String(introPhase.trialDays))
+    .replace(/\{\{priceAfterTrial\}\}/g, introPhase.priceAfterTrial);
+}
+
+/**
+ * Project the trial-pill display state from a raw SDK entitlement
+ * object (the shape returned by \`CustomerInfo.entitlements.all.pro\`).
+ * Returns \`{ show: true, trialEndsAt }\` only when the entitlement is
+ * ACTIVE AND the periodType is \`'TRIAL'\` AND \`expirationDate\` is a
+ * non-empty string. Any other shape (no trial, normal subscription,
+ * inactive trial, missing expirationDate) returns \`{ show: false,
+ * trialEndsAt: null }\` — the pill is hidden.
+ *
+ * Pure / no React / no I/O so the harness can test it without
+ * rendering or touching the SDK. The pill's date-formatting layer
+ * (which locale-aware format to use, e.g. \`formatDayMonth\` for
+ * es-AR) is the caller's concern — this helper only decides whether
+ * the pill should show AND carries the raw ISO string.
+ *
+ * REQ-PRO-TRIAL-PILL: the pill surfaces the active intro-phase end
+ * date so users mid-Play/App-Store trial see \"Prueba · Termina
+ * 25 sep\" rather than the access-tier chip alone.
+ */
+export interface TrialPillState {
+  show: boolean;
+  trialEndsAt: string | null;
+}
+
+export function getTrialPillState(entitlement: unknown): TrialPillState {
+  const e = entitlement as {
+    isActive?: boolean;
+    periodType?: string;
+    expirationDate?: string | null;
+  } | null;
+  if (
+    e !== null &&
+    e !== undefined &&
+    e.isActive === true &&
+    e.periodType === 'TRIAL' &&
+    typeof e.expirationDate === 'string' &&
+    e.expirationDate.length > 0
+  ) {
+    return { show: true, trialEndsAt: e.expirationDate };
+  }
+  return { show: false, trialEndsAt: null };
+}
+
 /** ISO 8601 duration → days. Handles the 4 unit forms the SDK emits. */
 function iso8601ToDays(iso: string): number {
   // Patterns observed: P1D, P7D, P1W, P1M, P3M, P1Y. We parse the leading

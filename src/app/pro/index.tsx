@@ -16,10 +16,25 @@
  * On a successful purchase the screen calls `useProEntitlement().refresh()`
  * so the gate flips to `'unlocked'` and any screen behind a
  * `ProRouteGuard` re-renders its children in place.
+ *
+ * Intro caption (REQ-PRO-INTRO-CAPTION, slice C):
+ * When a package has an intro offer configured (Play Console / App Store
+ * Connect native intro offer), `PlanButton` renders a caption line above
+ * the price reading "{{trialDays}} días gratis, después $X.XX/mes"
+ * (locale-aware copy). The caption is hidden when no intro offer is
+ * configured. Android returns `UNKNOWN` for intro eligibility (the SDK
+ * can't tell on Android), so the simpler implementation is to show
+ * the caption whenever `introPhase !== null` and let Play re-state
+ * the terms at checkout time.
+ *
+ * Post-cutover (0039): trial CTA + billing note + frozen card + trial
+ * countdown are all gone — the trial lifecycle moved to Play Console /
+ * App Store Connect native intro offers + the RevenueCat webhook.
  */
 import { Stack, router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -34,29 +49,22 @@ import {
 import { useProEntitlement } from '@/features/pro';
 import { syncSubscriptionStatus } from '@/lib/supabase/feature-access';
 import {
+  buildIntroCaption,
   getOfferings,
   isNativeAvailable,
   purchasePackage,
   restorePurchases,
+  type OfferingsSnapshot,
 } from '@/lib/revenuecat';
 import { colors, radii, spacing, typography } from '@/theme';
 
 type PaywallState = 'loading' | 'ready' | 'purchasing' | 'error';
 
-interface OfferingsView {
-  monthly: { identifier: string; priceString: string } | null;
-  annual: { identifier: string; priceString: string } | null;
-}
-
 export default function PaywallScreen() {
   const { refresh } = useProEntitlement();
-  // Post-cutover (0039): trial countdown, frozen card, trial CTA, and
-  // `canStartTrial` derivation are gone — trial eligibility is owned by
-  // Play Console / App Store Connect native intro offers (REQ-PRO-INTRO-CAPTION).
-  // The paywall surfaces the intro offer via the PlanButton caption (slice C);
-  // for slice A we just remove the dead trial surface so the migration can land.
+  const { t } = useTranslation('pro');
   const [state, setState] = useState<PaywallState>('loading');
-  const [offerings, setOfferings] = useState<OfferingsView | null>(null);
+  const [offerings, setOfferings] = useState<OfferingsSnapshot | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
 
@@ -64,19 +72,19 @@ export default function PaywallScreen() {
     setState('loading');
     setErrorMessage(null);
     if (!isNativeAvailable()) {
-      setErrorMessage('Compras no disponibles en este entorno.');
+      setErrorMessage(t('errorNotAvailable'));
       setState('error');
       return;
     }
     const next = await getOfferings();
     if (!next) {
-      setErrorMessage('No pudimos cargar los planes. Reintentá.');
+      setErrorMessage(t('errorGeneric'));
       setState('error');
       return;
     }
     setOfferings(next);
     setState('ready');
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void loadOfferings();
@@ -88,7 +96,7 @@ export default function PaywallScreen() {
     setErrorMessage(null);
     const result = await purchasePackage(identifier);
     if (!result.ok) {
-      setErrorMessage(result.error ?? 'No se pudo completar la compra.');
+      setErrorMessage(result.error ?? t('errorPurchaseFailed'));
       setState('error');
       return;
     }
@@ -102,9 +110,7 @@ export default function PaywallScreen() {
     if (result.isPro) {
       router.back();
     } else {
-      setErrorMessage(
-        'La compra se completó, pero la suscripción aún no se refleja. Reintentá en unos segundos.',
-      );
+      setErrorMessage(t('errorSyncDelayed'));
       setState('error');
     }
   };
@@ -116,7 +122,7 @@ export default function PaywallScreen() {
     const result = await restorePurchases();
     setRestoring(false);
     if (!result.ok) {
-      setErrorMessage(result.error ?? 'No se pudo restaurar la compra.');
+      setErrorMessage(result.error ?? t('errorRestoreFailed'));
       setState('error');
       return;
     }
@@ -129,36 +135,46 @@ export default function PaywallScreen() {
     if (result.isPro) {
       router.back();
     } else {
-      setErrorMessage('No encontramos compras activas para tu cuenta.');
+      setErrorMessage(t('errorRestoreNone'));
       setState('error');
     }
   };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      <Stack.Screen options={{ title: 'Pro', headerShown: true }} />
+      <Stack.Screen options={{ title: t('paywallTitle'), headerShown: true }} />
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <Text style={styles.title}>Suscribite a Pro</Text>
-          <Text style={styles.subtitle}>
-            Desbloqueá todas las funciones con un pago único mensual o anual.
-          </Text>
+          <Text style={styles.title}>{t('paywallHeaderTitle')}</Text>
+          <Text style={styles.subtitle}>{t('paywallHeaderSubtitle')}</Text>
         </View>
 
         <Card style={styles.benefitsCard}>
-          <Benefit icon="qr-code-scanner" label="Escaneos ilimitados" />
+          <Benefit
+            icon="qr-code-scanner"
+            label={t('benefitUnlimitedScans')}
+          />
           <Divider />
-          <Benefit icon="chart.bar.fill" label="Estadísticas avanzadas" />
+          <Benefit
+            icon="chart.bar.fill"
+            label={t('benefitAdvancedStats')}
+          />
           <Divider />
-          <Benefit icon="square.and.arrow.up" label="Exportar tickets" />
+          <Benefit
+            icon="square.and.arrow.up"
+            label={t('benefitExportTickets')}
+          />
           <Divider />
-          <Benefit icon="bolt.fill" label="Alertas de precio" />
+          <Benefit
+            icon="bolt.fill"
+            label={t('benefitPriceAlerts')}
+          />
         </Card>
 
         {state === 'loading' ? (
           <View style={styles.loadingRow}>
             <Spinner size="sm" color={colors.primary} />
-            <Text style={styles.loadingText}>Cargando planes…</Text>
+            <Text style={styles.loadingText}>{t('loadingPlans')}</Text>
           </View>
         ) : null}
 
@@ -166,22 +182,24 @@ export default function PaywallScreen() {
           <View style={styles.plans}>
             {offerings.monthly ? (
               <PlanButton
-                label="Mensual"
+                label={t('planMonthly')}
+                introPhase={offerings.monthly.introPhase}
                 onPress={() => handlePurchase(offerings.monthly!.identifier)}
                 busy={state === 'purchasing'}
               />
             ) : null}
             {offerings.annual ? (
               <PlanButton
-                label="Anual"
+                label={t('planAnnual')}
                 emphasis
+                introPhase={offerings.annual.introPhase}
                 onPress={() => handlePurchase(offerings.annual!.identifier)}
                 busy={state === 'purchasing'}
               />
             ) : null}
             {!offerings.monthly && !offerings.annual ? (
               <Text style={styles.emptyPlans}>
-                No hay planes disponibles por el momento.
+                {t('noPlansAvailable')}
               </Text>
             ) : null}
           </View>
@@ -202,7 +220,7 @@ export default function PaywallScreen() {
           onPress={handleRestore}
           disabled={restoring || state === 'purchasing'}
           accessibilityRole="button"
-          accessibilityLabel="Restaurar compras"
+          accessibilityLabel={t('restorePurchases')}
           style={({ pressed }) => [
             styles.restoreButton,
             pressed && styles.restorePressed,
@@ -211,20 +229,20 @@ export default function PaywallScreen() {
           {restoring ? (
             <Spinner size="sm" color={colors.primary} />
           ) : (
-            <Text style={styles.restoreText}>Restaurar compras</Text>
+            <Text style={styles.restoreText}>{t('restorePurchases')}</Text>
           )}
         </Pressable>
 
         <Pressable
           onPress={() => router.back()}
           accessibilityRole="button"
-          accessibilityLabel="Cancelar"
+          accessibilityLabel={t('cancelBack')}
           style={({ pressed }) => [
             styles.cancelButton,
             pressed && styles.cancelPressed,
           ]}
         >
-          <Text style={styles.cancelText}>Cancelar</Text>
+          <Text style={styles.cancelText}>{t('cancelBack')}</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -248,17 +266,45 @@ function Benefit({ icon, label }: BenefitProps) {
 interface PlanButtonProps {
   label: string;
   emphasis?: boolean;
+  /**
+   * Intro-offer projection from `getOfferings()` (slice B). When set,
+   * the caption "{{trialDays}} días gratis, después $X.XX/mes" renders
+   * above the price (REQ-PRO-INTRO-CAPTION). When null, no caption
+   * renders (no intro offer configured for this package).
+   */
+  introPhase: { priceAfterTrial: string; trialDays: number; cycles: number } | null;
   onPress: () => void;
   busy: boolean;
 }
 
-function PlanButton({ label, emphasis, onPress, busy }: PlanButtonProps) {
+function PlanButton({
+  label,
+  emphasis,
+  introPhase,
+  onPress,
+  busy,
+}: PlanButtonProps) {
+  const { t } = useTranslation('pro');
+  // Compute the intro caption via the pure substitution helper (slice C).
+  // The template is fetched once via i18n so each locale renders the
+  // appropriate copy. The helper itself does no formatting — trialDays
+  // is rendered as-is (integer) and priceAfterTrial as already-
+  // formatted by the SDK (e.g. "$5.99", "ARS 1.499,00").
+  const caption =
+    introPhase !== null
+      ? buildIntroCaption(introPhase, t('planIntroCaption'))
+      : null;
+
   return (
     <Pressable
       onPress={onPress}
       disabled={busy}
       accessibilityRole="button"
-      accessibilityLabel={`Suscribirse ${label}`}
+      accessibilityLabel={
+        caption !== null
+          ? `${t('subscribeAction')} · ${label} · ${caption}`
+          : `${t('subscribeAction')} · ${label}`
+      }
       style={({ pressed }) => [
         styles.planButton,
         emphasis && styles.planButtonEmphasis,
@@ -269,14 +315,21 @@ function PlanButton({ label, emphasis, onPress, busy }: PlanButtonProps) {
       {busy ? (
         <Spinner size="sm" color={emphasis ? colors.onPrimary : colors.primary} />
       ) : (
-        <Text
-          style={[
-            styles.planButtonText,
-            emphasis && styles.planButtonTextEmphasis,
-          ]}
-        >
-          Suscribirse · {label}
-        </Text>
+        <View style={styles.planButtonContent}>
+          {/* Intro caption renders ABOVE the price — the visual hierarchy
+              matches the consumer's intent: "free first, then $X.XX". */}
+          {caption !== null ? (
+            <Text style={styles.planButtonCaption}>{caption}</Text>
+          ) : null}
+          <Text
+            style={[
+              styles.planButtonText,
+              emphasis && styles.planButtonTextEmphasis,
+            ]}
+          >
+            {t('subscribeAction')} · {label}
+          </Text>
+        </View>
       )}
     </Pressable>
   );
@@ -337,6 +390,7 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     borderRadius: radii.lg,
     paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -348,6 +402,17 @@ const styles = StyleSheet.create({
   },
   planButtonBusy: {
     opacity: 0.7,
+  },
+  planButtonContent: {
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  // Caption sits visually above the price line. Smaller font + primary
+  // color so it reads as a hint, not a competing CTA.
+  planButtonCaption: {
+    ...typography.labelSm,
+    color: colors.primary,
+    fontWeight: '600',
   },
   planButtonText: {
     ...typography.bodyLg,
