@@ -45,7 +45,7 @@ import { colors, radii, spacing, typography } from '@/theme';
  */
 export default function DeleteAccountScreen() {
   const { t } = useTranslation(['settings', 'common', 'auth', 'pro']);
-  const { isPro, subscriptionStatus } = useProEntitlement();
+  const { isPro } = useProEntitlement();
 
   // Seed local state from the cross-route draft so a user who returned
   // from the household screen finds their typed value still there.
@@ -73,8 +73,11 @@ export default function DeleteAccountScreen() {
     };
   }, []);
 
-  const isSubscriptionActive =
-    subscriptionStatus === 'active' || subscriptionStatus === 'trial';
+  // Post-cutover (0039): subscriptionStatus is `'none' | 'active'` only
+  // (no 'trial'). The active check collapses to the binary `isPro` from
+  // the entitlement hook (which is `true` iff the SDK reports an active
+  // `pro` entitlement OR the DB says `subscription_status === 'active'`).
+  const isSubscriptionActive = isPro;
 
   const handleConfirm = async () => {
     if (deleting) return;

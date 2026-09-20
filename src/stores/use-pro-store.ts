@@ -13,14 +13,16 @@
  * `'locked'`, so pro content never flashes unlocked while the SDK
  * configuration is still in flight — REQ-GATE-5.
  *
- * Trial state (migration 0016 — subscription-trial):
- *   `subscriptionStatus`, `trialEndsAt`, `isTrialing`, `isFrozen` extend
- *   the store so the gate and entitlement hook can resolve the `'frozen'`
- *   state for expired trials.
+ * Post-cutover (0039, revenuecat-trial-migration slice B): the trial
+ * lifecycle fields (`subscriptionStatus`, `trialEndsAt`, `isFrozen`,
+ * `isTrialing`, `daysRemaining`) are GONE. Trial eligibility is owned
+ * by Play Console / App Store Connect native intro offers (the
+ * paywall reads them from `getOfferings().introPhase`). The store now
+ * holds just the binary pro/not-pro signal + the monotonic `everPaid`
+ * flag.
  */
 import { create } from 'zustand';
 
-import type { SubscriptionStatus } from '@/types';
 import { getCustomerInfo, type CustomerInfoSnapshot } from '@/lib/revenuecat';
 
 export interface ProState {
@@ -32,26 +34,12 @@ export interface ProState {
    */
   isLoading: boolean;
 
-  // --- Trial state (migration 0016) ---
-
-  /** Business lifecycle of the subscription. */
-  subscriptionStatus: SubscriptionStatus;
-  /** Trial expiry timestamp (ISO), null when no trial is active. */
-  trialEndsAt: string | null;
-  /** Derived: true when `subscriptionStatus === 'trial'` AND trial has not expired. */
-  isTrialing: boolean;
-  /**
-   * Derived: true when writes are blocked. Only true for an expired/
-   * overdue trial that still carries a `trial_ends_at` timestamp (the
-   * cron hasn't normalized yet). Once the cron clears `trial_ends_at`
-   * the profile is a legitimate FREE plan (quota reset) and NOT frozen.
-   */
-  isFrozen: boolean;
-
   /**
    * Monotonic flag: true once the user has EVER made a real paid purchase
    * (migration 0021). A former paid user can never start a free trial
-   * again — the UI must not offer a trial to ever-paid users.
+   * again (pre-cutover the trial surface used this; post-cutover the
+   * paywall hides the trial CTA from ever-paid users via the intro-phase
+   * projection in `getOfferings`).
    */
   everPaid: boolean;
 
@@ -61,48 +49,15 @@ export interface ProState {
   refresh: () => Promise<void>;
   /** Direct setter for the SDK's `customerInfoUpdate` listener (M5+). */
   setPro: (isPro: boolean) => void;
-  /**
-   * Set subscription lifecycle state from the DB profile. Called by
-   * `pro-bootstrap` on launch/foreground and by `startFreeTrial` on success.
-   */
-  setSubscriptionState: (
-    status: SubscriptionStatus,
-    trialEndsAt: string | null,
-    everPaid?: boolean,
-  ) => void;
   /** Direct setter for the monotonic ever-paid flag. */
   setEverPaid: (everPaid: boolean) => void;
   /**
    * Restore the full initial state (locked defaults). Called on SIGNED_OUT
    * and at the start of every per-user resolution so a previous user's
-   * `isPro` / `subscriptionStatus` / `everPaid` can never leak into the
-   * next session on the same device.
+   * `isPro` / `everPaid` can never leak into the next session on the same
+   * device.
    */
   reset: () => void;
-}
-
-/** Compute derived trial booleans from raw status + timestamp. */
-function deriveTrialState(
-  status: SubscriptionStatus,
-  trialEndsAt: string | null,
-): { isTrialing: boolean; isFrozen: boolean } {
-  const now = Date.now();
-  const trialEndsTs = trialEndsAt ? new Date(trialEndsAt).getTime() : 0;
-  // A trial whose timestamp is in the past is expired even if the DB still
-  // says 'trial' (the cron that persists 'expired' may not have run yet).
-  // This is the client-side safety net so an overdue trial drops to
-  // 'frozen' (→ paywall) immediately.
-  const isExpired = status === 'trial' && trialEndsAt !== null && trialEndsTs <= now;
-  const isTrialing = status === 'trial' && !isExpired;
-  // 'expired' means frozen ONLY while a trial_ends_at timestamp is still
-  // set — i.e. the cron `expire_overdue_trials` hasn't normalized the
-  // profile yet (blocked, upgrade CTA). Once the cron runs it clears
-  // trial_ends_at to null and the profile becomes a legitimate FREE plan
-  // (tier=free, monthly scan quota reset), so the user must NOT be frozen
-  // and must be able to scan up to the free monthly limit again.
-  const isFrozen =
-    (status === 'expired' && trialEndsAt !== null) || isExpired;
-  return { isTrialing, isFrozen };
 }
 
 export const useProStore = create<ProState>((set) => ({
@@ -112,10 +67,6 @@ export const useProStore = create<ProState>((set) => ({
   // is unavailable and we settle on the safe default).
   isLoading: true,
 
-  subscriptionStatus: 'none',
-  trialEndsAt: null,
-  isTrialing: false,
-  isFrozen: false,
   everPaid: false,
 
   refresh: async () => {
@@ -125,32 +76,12 @@ export const useProStore = create<ProState>((set) => ({
 
   setPro: (isPro) => set({ isPro }),
 
-  setSubscriptionState: (status, trialEndsAt, everPaid) => {
-    const { isTrialing, isFrozen } = deriveTrialState(status, trialEndsAt);
-    // isTrialing is false only when the trial is genuinely expired, so a
-    // non-expired trial OR an active subscription grants Pro access.
-    const isPro = status === 'active' || isTrialing;
-    set({
-      subscriptionStatus: status,
-      trialEndsAt,
-      isTrialing,
-      isFrozen,
-      isPro,
-      // everPaid is monotonic; only ever overwrite when the caller supplies it.
-      ...(everPaid !== undefined ? { everPaid } : {}),
-    });
-  },
-
   setEverPaid: (everPaid) => set({ everPaid }),
 
   reset: () =>
     set({
       isPro: false,
       isLoading: true,
-      subscriptionStatus: 'none',
-      trialEndsAt: null,
-      isTrialing: false,
-      isFrozen: false,
       everPaid: false,
     }),
 }));
