@@ -44,8 +44,6 @@
 import {
   isProductionEnvironment,
   mapTier,
-  mapTrialStatus,
-  TRIAL_EVENT_TYPES,
   isRealGrant,
   type Tier,
 } from './lib/event-types.ts';
@@ -370,41 +368,23 @@ Deno.serve(async (req: Request) => {
     return jsonResponse(500, { error: 'internal' });
   }
 
-  // ----- 11. Trial-specific sync (TRIAL_STARTED / TRIAL_ENDED) ----------
-  // For trial events, `set_profile_tier` alone does not set the correct
-  // subscription_status lifecycle value:
-  //   - TRIAL_STARTED: set_profile_tier('pro') → subscription_status='active'
-  //     but we need 'trial'. Call sync_subscription_status to correct it.
-  //   - TRIAL_ENDED: set_profile_tier('free') already sets status='expired'
-  //     (per §4 logic when current is 'trial'), but we call sync explicitly
-  //     for idempotency — a duplicate delivery won't hurt.
-  const trialStatus = mapTrialStatus(eventType);
-  if (trialStatus !== null) {
-    const { error: syncErr } = await svc.rpc('sync_subscription_status', {
-      p_user_id: appUserId,
-      p_status: trialStatus,
-    });
-    if (syncErr) {
-      // Non-fatal: the tier change from step 10 already applied. The
-      // trial_status sync is a refinement — a failure here means the
-      // subscription_status column may lag by one event, which the next
-      // delivery will reconcile.
-      console.error(
-        '[revenuecat-webhook]',
-        `sync_subscription_status failed for ${eventType}:`,
-        syncErr.message,
-      );
-    }
-  }
-
-  // ----- 11b. ever_paid (real grants only) ------------------------------
-  // A real paid grant (INITIAL_PURCHASE / RENEWAL / UNCANCELLATION) sets the
-  // monotonic `profiles.ever_paid` flag — a former paid user can never start
-  // a free trial again. TRIAL_STARTED is deliberately excluded (isRealGrant
-  // returns false): a trial is not a real payment. mark_ever_paid is
-  // monotonic (true is never unset) and SECURITY DEFINER, so re-deliveries
-  // and out-of-order events are safe. Non-fatal: a failure here must NOT 500
-  // — the tier change already applied and a future real grant will retry it.
+  // ----- 11. ever_paid (real grants only) --------------------------------
+  // Post-cutover (migration 0039, revenuecat-trial-migration slice A): the
+  // previous step 11 (TRIAL_STARTED/TRIAL_ENDED trial_status sync) is
+  // REMOVED — trial eligibility is owned by Play Console / App Store
+  // Connect native intro offers, and trial expiry detection is owned by
+  // the EXPIRATION webhook event. TRIAL_STARTED/TRIAL_ENDED are no
+  // longer in GRANT_EVENT_TYPES/REVOKE_EVENT_TYPES (event-types.ts) so
+  // they fall through `mapTier → null → 200 no-op` BEFORE reaching this
+  // section; the only path here is real paid events.
+  //
+  // A real paid grant (INITIAL_PURCHASE / RENEWAL / UNCANCELLATION) sets
+  // the monotonic `profiles.ever_paid` flag — a former paid user can
+  // never start a free trial again. mark_ever_paid is monotonic (true
+  // is never unset) and SECURITY DEFINER, so re-deliveries and
+  // out-of-order events are safe. Non-fatal: a failure here must NOT
+  // 500 — the tier change already applied and a future real grant will
+  // retry it.
   if (isRealGrant(eventType)) {
     const { error: everPaidErr } = await svc.rpc('mark_ever_paid', {
       p_user_id: appUserId,
