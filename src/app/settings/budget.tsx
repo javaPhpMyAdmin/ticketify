@@ -19,7 +19,6 @@ import {
   Text,
   View,
 } from '@/components';
-import { useFrozenGuard } from '@/features/pro';
 import { useProfile } from '@/features/profile';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -47,7 +46,6 @@ export default function BudgetEditorScreen() {
   const { t } = useTranslation(['settings', 'common']);
   const { user, setBudget } = useProfile();
   const currency = useSettingsStore((s) => s.currency);
-  const { guard } = useFrozenGuard();
 
   // Local string state so the user can clear the field and retype; an empty
   // string is a valid intermediate state and is sent as 0 only on save.
@@ -73,17 +71,20 @@ export default function BudgetEditorScreen() {
 
   const handleSave = async () => {
     if (saving || !valid) return;
-    return guard(async () => {
-      setSaving(true);
-      setError(null);
-      const result = await setBudget(parsed);
-      if (result.status === 'ok') {
-        router.back();
-      } else {
-        setSaving(false);
-        setError(result.message);
-      }
-    });
+    // Post-cutover (0039, revenuecat-trial-migration slice B + C): the
+    // gate is binary (no 'frozen' state). The route-level gate blocks
+    // frozen-trial users from reaching this screen — no per-action
+    // `guard()` is needed. The previous `useFrozenGuard().guard()` wrapper
+    // (migration 0035) is now a no-op pass-through; inlined for clarity.
+    setSaving(true);
+    setError(null);
+    const result = await setBudget(parsed);
+    if (result.status === 'ok') {
+      router.back();
+    } else {
+      setSaving(false);
+      setError(result.message);
+    }
   };
 
   return (

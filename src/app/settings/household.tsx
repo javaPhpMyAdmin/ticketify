@@ -24,7 +24,6 @@ import { useHousehold } from '@/features/household';
 import { CreateHouseholdModal } from '@/features/household/components/CreateHouseholdModal';
 import { InviteCodeModal } from '@/features/household/components/InviteCodeModal';
 import { JoinHouseholdModal } from '@/features/household/components/JoinHouseholdModal';
-import { useFrozenGuard } from '@/features/pro';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatMonthYear } from '@/lib/format';
 import {
@@ -66,7 +65,6 @@ function HouseholdScreenContent({
   const activeLocale = useLocaleStore((s) => s.activeLocale);
   const { household, members, role, isLoading } = useHousehold();
   const setHouseholdSharing = useSettingsStore((s) => s.setHouseholdSharing);
-  const { guard } = useFrozenGuard();
 
   const [leaving, setLeaving] = useState(false);
   const [disbanding, setDisbanding] = useState(false);
@@ -105,10 +103,14 @@ function HouseholdScreenContent({
   };
 
   // ── Disband household (owner only) ─────────────────────────────────────
+  // Post-cutover (0039, revenuecat-trial-migration slice B + C): the gate
+  // is binary (no 'frozen' state). The route-level gate blocks frozen-
+  // trial users from reaching this screen — no per-action `guard()`
+  // wrapper is needed. The previous `useFrozenGuard().guard()` wrapper
+  // (migration 0035) is now a no-op pass-through; inlined for clarity.
   const handleDisband = () => {
     if (!household) return;
-    guard(() => {
-      useDialogStore.getState().show({
+    useDialogStore.getState().show({
         title: t('settings:householdDisbandConfirmTitle'),
         message: t('settings:householdDisbandConfirmBody'),
         primaryLabel: t('settings:householdDisbandAction'),
@@ -135,12 +137,11 @@ function HouseholdScreenContent({
           setDisbanding(false);
         },
       });
-    });
   };
 
   // ── Create household (via modal) ──────────────────────────────────────
   const handleCreate = () => {
-    guard(() => onOpenCreate());
+    onOpenCreate();
   };
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -201,7 +202,7 @@ function HouseholdScreenContent({
             </Pressable>
 
             <Pressable
-              onPress={() => guard(() => onOpenJoin())}
+              onPress={onOpenJoin}
               style={({ pressed }) => [
                 styles.joinButton,
                 pressed && styles.joinButtonPressed,
@@ -275,7 +276,7 @@ function HouseholdScreenContent({
         <View style={styles.section}>
           {isOwner && members.length < MAX_MEMBERS ? (
             <Pressable
-              onPress={() => guard(() => onOpenInvite())}
+              onPress={onOpenInvite}
               style={({ pressed }) => [
                 styles.actionRow,
                 pressed && styles.actionRowPressed,

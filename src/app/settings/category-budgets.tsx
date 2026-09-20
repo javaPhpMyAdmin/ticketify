@@ -24,7 +24,6 @@ import {
   EXPENSE_CATEGORIES,
   resolveCategoryDisplay,
 } from '@/features/home/categories';
-import { useFrozenGuard } from '@/features/pro';
 import { colors, radii, spacing, typography } from '@/theme';
 
 /**
@@ -67,7 +66,6 @@ export default function CategoryBudgetsScreen() {
   // consumes for rollover validKeys — one shared query key, so this second
   // mount resolves from cache without an extra network read.
   const { catalog, isLoading: catalogLoading } = useCategoryCatalog();
-  const { guard } = useFrozenGuard();
 
   // Editable rows: merged catalog keys once loaded, canonical keys while
   // unknown (pre-PR7 shape during the load window).
@@ -139,22 +137,26 @@ export default function CategoryBudgetsScreen() {
     ) {
       return;
     }
-    return guard(async () => {
-      setSubmitting(true);
-      setError(null);
+    // Post-cutover (0039, revenuecat-trial-migration slice B + C): the
+    // gate is binary (no 'frozen' state). The route-level gate blocks
+    // frozen-trial users from reaching this screen — no per-action
+    // `guard()` wrapper is needed. The previous `useFrozenGuard().guard()`
+    // wrapper (migration 0035) is now a no-op pass-through; inlined for
+    // clarity.
+    setSubmitting(true);
+    setError(null);
 
-      // Every catalog row mapped to its parsed amount; empty/invalid inputs
-      // become 0, which the API layer converts into delete-on-zero.
-      const budgetsToSave = budgetSavePayload(categoryKeys, drafts);
+    // Every catalog row mapped to its parsed amount; empty/invalid inputs
+    // become 0, which the API layer converts into delete-on-zero.
+    const budgetsToSave = budgetSavePayload(categoryKeys, drafts);
 
-      try {
-        await save(budgetsToSave);
-        router.back();
-      } catch {
-        setSubmitting(false);
-        setError(t('settings:categoryBudgetSaveError'));
-      }
-    });
+    try {
+      await save(budgetsToSave);
+      router.back();
+    } catch {
+      setSubmitting(false);
+      setError(t('settings:categoryBudgetSaveError'));
+    }
   };
 
   return (
