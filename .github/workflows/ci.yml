@@ -94,16 +94,16 @@ jobs:
         # never change tier; anon/public have no EXECUTE on either definer RPC.
         run: supabase db query --local --file supabase/tests/household-gate-tier.sql
 
-      - name: Run trial-freeze-guard SQL smoke test
-        # Pins the 0035 security contract: sync_client_subscription rejects
-        # ANY move off an ACTIVE trial ('none'/'expired' — the trial-freeze
-        # vector) while non-trial claims keep working (free lifecycle
-        # preserved); expire_overdue_trials keys on the trial window
-        # (trial_ends_at <= now() AND tier='pro') regardless of
-        # subscription_status so pre-fix frozen rows self-heal, and real
-        # paid subscribers (status='active' / ever_paid) are never
-        # downgraded.
-        run: supabase db query --local --file supabase/tests/trial-freeze-guard.sql
+      - name: Run trial-cutover SQL smoke test
+        # Pins the 0039 contract (revenuecat-trial-migration slice A): the
+        # narrowed subscription_status CHECK rejects 'trial'/'frozen'/
+        # 'expired' (SQLSTATE 23514); start_free_trial and
+        # expire_overdue_trials are DROPPED; trial_ends_at column is
+        # DROPPED; cron.job 'trial-expiry' is UNSCHEDULED (best-effort);
+        # sync_subscription_status rejects 'trial'/'expired' (allow-list
+        # narrowed to 'none'/'active'); backfill-equivalent UPDATE
+        # matches zero rows post-cutover (idempotency).
+        run: supabase db query --local --file supabase/tests/trial-cutover.sql
 
       - name: Run legal-acceptances SQL smoke test
         # Pins the 0038 contract (legal-compliance U1): append-only

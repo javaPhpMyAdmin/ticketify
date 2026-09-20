@@ -14,8 +14,11 @@
 --
 -- Coverage (WARNING-7 / REQ-PROF / REQ-QUOTA / REQ-SYNC):
 --   1. profiles exposes the server-managed tier lifecycle columns
---      (`tier` from 0001, `subscription_status` + `trial_ends_at` from 0016,
---      `ever_paid` from 0021).
+--      (`tier` from 0001, `subscription_status` from 0016, `ever_paid`
+--      from 0021). The `trial_ends_at` column was DROPPED by migration
+--      0039 (revenuecat-trial-migration slice A — `trial_ends_at` no
+--      longer exists; trial eligibility is owned by Play Console / App
+--      Store Connect native intro offers).
 --   2. `set_profile_tier(uuid, text)` exists and is grant-protected
 --      (REVOKEd from anon/authenticated — service_role only).
 --   3. `webhook_events` ledger exists with the (user_id, event_id) PK and
@@ -57,11 +60,7 @@ begin
     where table_schema = 'public' and table_name = 'profiles' and column_name = 'subscription_status'
   ), 'profiles.subscription_status column is missing (expected from migration 0016)';
 
-  -- `trial_ends_at` (0016): nullable trial deadline.
-  assert exists (
-    select 1 from information_schema.columns
-    where table_schema = 'public' and table_name = 'profiles' and column_name = 'trial_ends_at'
-  ), 'profiles.trial_ends_at column is missing (expected from migration 0016)';
+  -- `trial_ends_at` (0016) was DROPPED by migration 0039 — see header §1.
 
   -- `ever_paid` (0021): monotonic paid-once tri-state for trial eligibility.
   assert exists (

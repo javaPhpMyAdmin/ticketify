@@ -9,8 +9,6 @@ export type { ProRouteGuardProps } from './ProRouteGuard';
 export { ProLock } from './components/ProLock';
 export type { ProLockProps } from './components/ProLock';
 
-export { TrialBanner } from './components/TrialBanner';
-
 export { useProEntitlement } from './hooks/useProEntitlement';
 export type { ProEntitlement } from './hooks/useProEntitlement';
 

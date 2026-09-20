@@ -14,6 +14,16 @@
  *
  * Pure functions, no Deno globals, no I/O — mirrorable in the future
  * node `.mjs` test harness (M8.1).
+ *
+ * Post-cutover note (migration 0039, revenuecat-trial-migration slice A):
+ *   `TRIAL_STARTED` and `TRIAL_ENDED` are NO LONGER in the GRANT/REVOKE
+ *   sets — trial eligibility is owned by Play Console / App Store
+ *   Connect native intro offers, surfaced via REQ-PRO-INTRO-CAPTION.
+ *   `mapTrialStatus` is GONE. A webhook delivery for TRIAL_STARTED or
+ *   TRIAL_ENDED now falls through to `mapTier → null → 200 no-op`,
+ *   which is the desired behavior: the event still arrives in the
+ *   webhook ledger (idempotency audit trail) but no DB tier/status
+ *   write occurs.
  */
 
 /**
@@ -31,55 +41,33 @@ export const ALLOWED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'CANCELLATION',
   'EXPIRATION',
   'BILLING_ISSUE',
-  'TRIAL_STARTED',
-  'TRIAL_ENDED',
 ]);
 
 /**
- * Events that grant Pro entitlement (REQ-SYNC-1).
- * `TRIAL_STARTED` grants Pro during the trial window.
+ * Events that grant Pro entitlement (REQ-SYNC-1). Post-cutover
+ * (0039): TRIAL_STARTED is removed — trial grants are owned by native
+ * intro offers, not the DB.
  */
 export const GRANT_EVENT_TYPES: ReadonlySet<string> = new Set([
   'INITIAL_PURCHASE',
   'RENEWAL',
   'UNCANCELLATION',
-  'TRIAL_STARTED',
 ]);
 
 /**
  * Events that revoke Pro entitlement (REQ-SYNC-2). `BILLING_ISSUE`
  * is intentionally in this set — REQ-SYNC-2's BILLING_ISSUE scenario
- * pins it as a free transition. `TRIAL_ENDED` revokes Pro when the
- * trial period expires.
+ * pins it as a free transition. Post-cutover (0039): TRIAL_ENDED is
+ * removed — trial expiry detection is owned by the EXPIRATION event
+ * delivered by RevenueCat when the subscription actually ends.
  */
 export const REVOKE_EVENT_TYPES: ReadonlySet<string> = new Set([
   'CANCELLATION',
   'EXPIRATION',
   'BILLING_ISSUE',
-  'TRIAL_ENDED',
 ]);
 
 export type Tier = 'pro' | 'free';
-
-/**
- * Events that carry trial-specific subscription_status values.
- * The webhook handler calls `sync_subscription_status` in addition to
- * `set_profile_tier` for these events so the lifecycle column reflects
- * the trial state accurately.
- */
-export const TRIAL_EVENT_TYPES: ReadonlySet<string> = new Set([
-  'TRIAL_STARTED',
-  'TRIAL_ENDED',
-]);
-
-/**
- * Map a trial event type to the subscription_status value to persist.
- */
-export function mapTrialStatus(eventType: string): string | null {
-  if (eventType === 'TRIAL_STARTED') return 'trial';
-  if (eventType === 'TRIAL_ENDED') return 'expired';
-  return null;
-}
 
 /**
  * Map a RevenueCat event type to the target tier.

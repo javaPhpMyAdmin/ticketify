@@ -3,7 +3,7 @@
  * supabase/tests/household-totals.sql, supabase/tests/user-categories.sql,
  * supabase/tests/recalculate-on-purchase-items-update.sql,
  * supabase/tests/household-gate-tier.sql,
- * supabase/tests/trial-freeze-guard.sql,
+ * supabase/tests/trial-cutover.sql,
  * supabase/tests/delete-account.sql and
  * supabase/tests/legal-acceptances.sql).
  *
@@ -148,8 +148,8 @@ run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'user-categor
 console.log('\n== Running household-gate-tier SQL smoke test ==\n');
 run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'household-gate-tier.sql')]);
 
-console.log('\n== Running trial-freeze-guard SQL smoke test ==\n');
-run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'trial-freeze-guard.sql')]);
+console.log('\n== Running trial-cutover SQL smoke test ==\n');
+run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'trial-cutover.sql')]);
 
 console.log('\n== Running delete-account SQL smoke test ==\n');
 run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'delete-account.sql')]);

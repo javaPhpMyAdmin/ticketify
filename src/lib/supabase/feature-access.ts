@@ -864,29 +864,19 @@ export async function readHouseholdCategoryItems(
 }
 
 // ---------------------------------------------------------------------------
-// Subscription trial (migration 0016)
+// Subscription sync (migration 0018 + post-cutover 0039 §9d narrowing)
 // ---------------------------------------------------------------------------
-
-/**
- * Activate the user's one-time free trial. Calls the `start_free_trial`
- * RPC which sets `trial_ends_at = now() + 5 days` and
- * `subscription_status = 'trial'`. The RPC validates one-trial-per-user:
- * if `trial_ends_at IS NOT NULL`, the RPC rejects with an error.
- */
-export async function startFreeTrial(): Promise<FeatureReadResult<void>> {
-  if (!isSupabaseConfigured) return { status: 'unconfigured' };
-  const { error } = await supabase.rpc('start_free_trial');
-  if (error) {
-    console.warn('[write] start_free_trial failed:', error.code, error.message);
-    return { status: 'error', message: error.message };
-  }
-  return { status: 'ok', data: undefined };
-}
 
 /**
  * Optimistically sync subscription_status to the DB after a purchase,
  * restore, or trial activation. Calls `sync_client_subscription` which
  * uses `auth.uid()` to scope the update to the caller's own profile.
+ *
+ * Post-cutover (0039 §9d): the RPC allow-list is narrowed to `('none')` —
+ * `startFreeTrial` is gone (no DB trial surface), `expireOverdueTrials`
+ * is gone (trial expiry is reconciled by the webhook `EXPIRATION` event).
+ * The only client-claimable value is 'none' (set after a successful
+ * sync from a free lifecycle event). Paid status is webhook-only.
  *
  * This runs BEFORE the RevenueCat webhook arrives so the local store
  * reflects the new state immediately. The webhook is the authoritative
@@ -904,26 +894,6 @@ export async function syncSubscriptionStatus(
     return { status: 'error', message: error.message };
   }
   return { status: 'ok', data: undefined };
-}
-
-/**
- * Materialize any overdue trial to the expired/free state, resetting the
- * current-month scan quota for affected users. Calls `expire_overdue_trials`
- * (migration 0020) — SECURITY DEFINER so it can transition tier/status and
- * reset scans even though those columns are server-managed. Idempotent:
- * users already expired are skipped. Returns the number of profiles expired.
- *
- * This is the client-side safety net on app open; the server cron runs the
- * same RPC every 6 hours for users who never open the app again.
- */
-export async function expireOverdueTrials(): Promise<FeatureReadResult<number>> {
-  if (!isSupabaseConfigured) return { status: 'unconfigured' };
-  const { data, error } = await supabase.rpc('expire_overdue_trials');
-  if (error) {
-    console.warn('[expireOverdueTrials] failed:', error.code, error.message);
-    return { status: 'error', message: error.message };
-  }
-  return { status: 'ok', data: (data ?? 0) as number };
 }
 
 // ---------------------------------------------------------------------------

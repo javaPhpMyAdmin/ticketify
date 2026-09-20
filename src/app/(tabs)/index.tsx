@@ -42,7 +42,6 @@ import {
   useHousehold,
 } from '@/features/household';
 import { useFrozenGuard } from '@/features/pro';
-import { TrialBanner } from '@/features/pro/components/TrialBanner';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -214,8 +213,6 @@ export default function HomeScreen() {
                 )}
               </Pressable>
             </View>
-
-            <TrialBanner />
 
             {/* Month selector — lets you browse any month. The current month is
                 always reachable via the "newer" chevron even when it has no

@@ -21,7 +21,6 @@ import { Stack, router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTranslation } from 'react-i18next';
 
 import {
   Card,
@@ -33,10 +32,7 @@ import {
   View,
 } from '@/components';
 import { useProEntitlement } from '@/features/pro';
-import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
-import { formatDayMonth } from '@/lib/format';
-import { startFreeTrial, syncSubscriptionStatus } from '@/lib/supabase/feature-access';
-import { useProStore } from '@/stores/use-pro-store';
+import { syncSubscriptionStatus } from '@/lib/supabase/feature-access';
 import {
   getOfferings,
   isNativeAvailable,
@@ -48,26 +44,21 @@ import { colors, radii, spacing, typography } from '@/theme';
 type PaywallState = 'loading' | 'ready' | 'purchasing' | 'error';
 
 interface OfferingsView {
-  monthly: string | null;
-  annual: string | null;
+  monthly: { identifier: string; priceString: string } | null;
+  annual: { identifier: string; priceString: string } | null;
 }
 
 export default function PaywallScreen() {
-  const { refresh, subscriptionStatus, trialEndsAt, isFrozen, daysRemaining, everPaid } =
-    useProEntitlement();
-  // The active-trial countdown reads its pluralized copy from the `pro`
-  // namespace (`_one` / `_other`).
-  const { t } = useTranslation('pro');
-  // The active UI locale comes from the locale store so the trial-expiry
-  // date renders in the active language (es-AR / en / pt-BR), not a
-  // hardcoded Spanish month name.
-  const activeLocale = useLocaleStore((s) => s.activeLocale);
-  const setSubscriptionState = useProStore((s) => s.setSubscriptionState);
+  const { refresh } = useProEntitlement();
+  // Post-cutover (0039): trial countdown, frozen card, trial CTA, and
+  // `canStartTrial` derivation are gone — trial eligibility is owned by
+  // Play Console / App Store Connect native intro offers (REQ-PRO-INTRO-CAPTION).
+  // The paywall surfaces the intro offer via the PlanButton caption (slice C);
+  // for slice A we just remove the dead trial surface so the migration can land.
   const [state, setState] = useState<PaywallState>('loading');
   const [offerings, setOfferings] = useState<OfferingsView | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
-  const [trialLoading, setTrialLoading] = useState(false);
 
   const loadOfferings = useCallback(async () => {
     setState('loading');
@@ -143,38 +134,6 @@ export default function PaywallScreen() {
     }
   };
 
-  const handleStartTrial = async () => {
-    if (trialLoading) return;
-    setTrialLoading(true);
-    setErrorMessage(null);
-    const result = await startFreeTrial();
-    setTrialLoading(false);
-    if (result.status === 'error') {
-      setErrorMessage(
-        result.message.includes('already')
-          ? 'Ya usaste tu prueba gratuita.'
-          : 'No se pudo activar la prueba. Inténtalo de nuevo.',
-      );
-      setState('error');
-      return;
-    }
-    if (result.status === 'ok') {
-      // Set trial state in the store so the gate flips immediately.
-      const now = new Date();
-      const trialEnd = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000);
-      setSubscriptionState('trial', trialEnd.toISOString());
-      router.back();
-    }
-  };
-
-  // Can start trial: not pro, no active trial, no previous trial (trial_ends_at is null)
-  // and never ever paid (a former paid user cannot start a free trial again, 0021).
-  const canStartTrial =
-    subscriptionStatus === 'none' &&
-    trialEndsAt === null &&
-    !isFrozen &&
-    !everPaid;
-
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <Stack.Screen options={{ title: 'Pro', headerShown: true }} />
@@ -196,66 +155,6 @@ export default function PaywallScreen() {
           <Benefit icon="bolt.fill" label="Alertas de precio" />
         </Card>
 
-        {/* ── Trial expired message ── */}
-        {isFrozen ? (
-          <View style={styles.expiredCard}>
-            <Icon
-              name="clock.fill"
-              size={24}
-              color={colors.danger}
-            />
-            <View style={styles.expiredContent}>
-              <Text style={styles.expiredTitle}>{t('trialExpiredTitle')}</Text>
-              {trialEndsAt ? (
-                <Text style={styles.expiredSubtitle}>
-                  {t('trialExpiredSubtitle', {
-                    date: formatDayMonth(activeLocale, trialEndsAt),
-                  })}
-                </Text>
-              ) : null}
-            </View>
-          </View>
-        ) : null}
-
-        {/* ── Active trial countdown ── */}
-        {subscriptionStatus === 'trial' && !isFrozen ? (
-          <View style={styles.trialActiveCard}>
-            <Icon name="sparkles" size={20} color={colors.primary} />
-            <Text style={styles.trialActiveText}>
-              {t('trialActiveDays', { count: daysRemaining })}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* ── Start free trial CTA ── */}
-        {canStartTrial ? (
-          <Pressable
-            onPress={handleStartTrial}
-            disabled={trialLoading || state === 'purchasing'}
-            accessibilityRole="button"
-            accessibilityLabel="Empezar prueba gratis"
-            style={({ pressed }) => [
-              styles.trialButton,
-              pressed && styles.trialButtonPressed,
-              (trialLoading || state === 'purchasing') &&
-                styles.trialButtonBusy,
-            ]}
-          >
-            {trialLoading ? (
-              <Spinner size="sm" color={colors.primary} />
-            ) : (
-              <View style={styles.trialButtonContent}>
-                <Text style={styles.trialButtonText}>
-                  Empezar prueba gratis
-                </Text>
-                <Text style={styles.trialButtonSubtitle}>
-                  5 días gratis
-                </Text>
-              </View>
-            )}
-          </Pressable>
-        ) : null}
-
         {state === 'loading' ? (
           <View style={styles.loadingRow}>
             <Spinner size="sm" color={colors.primary} />
@@ -268,7 +167,7 @@ export default function PaywallScreen() {
             {offerings.monthly ? (
               <PlanButton
                 label="Mensual"
-                onPress={() => handlePurchase(offerings.monthly!)}
+                onPress={() => handlePurchase(offerings.monthly!.identifier)}
                 busy={state === 'purchasing'}
               />
             ) : null}
@@ -276,7 +175,7 @@ export default function PaywallScreen() {
               <PlanButton
                 label="Anual"
                 emphasis
-                onPress={() => handlePurchase(offerings.annual!)}
+                onPress={() => handlePurchase(offerings.annual!.identifier)}
                 busy={state === 'purchasing'}
               />
             ) : null}
@@ -497,74 +396,5 @@ const styles = StyleSheet.create({
   cancelText: {
     ...typography.bodyMd,
     color: colors.textSecondary,
-  },
-  // ── Trial CTA ──
-  trialButton: {
-    borderWidth: 2,
-    borderColor: colors.primary,
-    borderStyle: 'dashed',
-    borderRadius: radii.lg,
-    paddingVertical: spacing.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  trialButtonPressed: {
-    opacity: 0.85,
-  },
-  trialButtonBusy: {
-    opacity: 0.7,
-  },
-  trialButtonContent: {
-    alignItems: 'center',
-    gap: 2,
-  },
-  trialButtonText: {
-    ...typography.bodyLg,
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  trialButtonSubtitle: {
-    ...typography.labelSm,
-    color: colors.primaryDark,
-  },
-  // ── Trial expired ──
-  expiredCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    borderRadius: radii.lg,
-    padding: spacing.lg,
-  },
-  expiredContent: {
-    flex: 1,
-    gap: 2,
-  },
-  expiredTitle: {
-    ...typography.bodyLg,
-    fontWeight: '700',
-    color: colors.danger,
-  },
-  expiredSubtitle: {
-    ...typography.labelSm,
-    color: colors.textSecondary,
-  },
-  // ── Active trial countdown ──
-  trialActiveCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.primaryContainer,
-    borderRadius: radii.lg,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-  },
-  trialActiveText: {
-    ...typography.bodyMd,
-    fontWeight: '600',
-    color: colors.primaryDark,
-    flex: 1,
   },
 });
