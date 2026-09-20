@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup rules for Android 6.0 – 11 (API 23–30).
+
+  expo-secure-store ships its own default rules that include everything
+  EXCEPT the `SecureStore` sharedpref (which holds the Supabase session +
+  RevenueCat purchase tokens, AES-encrypted via Android Keystore). We
+  mirror that here so the app's manifest-level `fullBackupContent` keeps
+  the same scope.
+-->
+<full-backup-content>
+    <include domain="sharedpref" path="."/>
+    <exclude domain="sharedpref" path="SecureStore"/>
+</full-backup-content>
