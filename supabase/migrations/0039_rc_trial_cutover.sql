@@ -414,11 +414,27 @@ $$;
 -- execute the trigger body without `current_user = 'postgres'`, hit
 -- the INSERT/UPDATE guard branches, and raise one of the
 -- 'managed server-side' exceptions — a noisy signal with no
--- exploit value, but an oracle nonetheless. Revoke EXECUTE from PUBLIC
--- to close the oracle. The trigger itself still fires for the
--- legitimate INSERT/UPDATE paths (triggers don't require EXECUTE on
--- the trigger function to fire on table writes).
-revoke all on function public.protect_profile_tier() from public;
+-- exploit value, but an oracle nonetheless.
+--
+-- The REVOKE targets PUBLIC, anon, AND authenticated. The PUBLIC grant
+-- is the default; explicit grants to anon / authenticated are NOT
+-- covered by `revoke ... from public` — they persist independently.
+-- Older migrations (0002 / 0011 / 0016, each `create or replace
+-- function`) leave no explicit anon/authenticated grant in the
+-- migration SQL itself, but Supabase environments where the function
+-- body was previously exercised by those roles (or where a CI init
+-- script installed an explicit grant) can land in a state where
+-- `has_function_privilege('anon', ..., 'EXECUTE')` returns TRUE even
+-- after `revoke ... from public`. Broadening the REVOKE to anon +
+-- authenticated is defensive — it closes the oracle on any environment
+-- regardless of how the prior grants accumulated.
+--
+-- The trigger itself still fires for the legitimate INSERT/UPDATE
+-- paths (triggers don't require EXECUTE on the trigger function to
+-- fire on table writes), so the SECURITY DEFINER writers owned by
+-- postgres (`set_profile_tier`, `sync_subscription_status`, etc.)
+-- continue to write through the trigger exactly as before.
+revoke all on function public.protect_profile_tier() from public, anon, authenticated;
 
 -- §9d. sync_client_subscription: narrow allow-list to ('none') and
 --      drop the `trial_ends_at` SELECT + active-trial guard. The

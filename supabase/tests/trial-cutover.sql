@@ -115,20 +115,31 @@ begin
   --      exist` SQLSTATE 42883, not `insufficient_privilege`).
   --
   --      The ONLY REVOKE that survives the migration is the
-  --      REVOKE ALL on PUBLIC for `protect_profile_tier` (R1-3). The
+  --      REVOKE ALL on protect_profile_tier (R1-3 + CI fix). The
   --      catalog-query form below pins that contract using the same
   --      `has_function_privilege` idiom the other smokes use
   --      (delete-account.sql §1, household-gate-tier.sql §1). Pre-cutover
   --      the trigger function has EXECUTE granted to PUBLIC (the
-  --      0029 §4 trap), so this assertion is RED before the migration
-  --      applies and GREEN after — the strict-TDD RED→GREEN signal
-  --      for R1-3 + R1-4.
+  --      0029 §4 trap) — and in some CI environments ALSO granted
+  --      explicitly to anon / authenticated by older migration history.
+  --      The §9c REVOKE targets all three (`from public, anon,
+  --      authenticated`) so the contract holds regardless of which
+  --      specific role(s) inherited the grant.
+  --
+  --      The trigger function still fires for the legitimate
+  --      INSERT/UPDATE paths regardless of grants (triggers don't
+  --      require EXECUTE on the trigger function to fire on table
+  --      writes). Pre-cutover this assertion is RED in CI environments
+  --      where anon / authenticated had explicit EXECUTE (one such
+  --      environment flipped the §1f assertion to TRUE on PR #124 —
+  --      the CI fix landed this REVOKE broadening); locally the
+  --      assertion is already GREEN after the migration applies.
   assert not has_function_privilege('public', 'public.protect_profile_tier()', 'EXECUTE'),
-    'public must NOT be able to execute protect_profile_tier (REVOKE ALL on PUBLIC, R1-3 + R1-4, 0029 §4 trap)';
+    'public must NOT be able to execute protect_profile_tier (REVOKE ALL from public + anon + authenticated, R1-3+R1-4, 0029 §4 trap)';
   assert not has_function_privilege('anon', 'public.protect_profile_tier()', 'EXECUTE'),
-    'anon must NOT be able to execute protect_profile_tier (REVOKE ALL on PUBLIC, R1-3 + R1-4)';
+    'anon must NOT be able to execute protect_profile_tier (REVOKE ALL from public + anon + authenticated, R1-3+R1-4)';
   assert not has_function_privilege('authenticated', 'public.protect_profile_tier()', 'EXECUTE'),
-    'authenticated must NOT be able to execute protect_profile_tier (REVOKE ALL on PUBLIC, R1-3 + R1-4)';
+    'authenticated must NOT be able to execute protect_profile_tier (REVOKE ALL from public + anon + authenticated, R1-3+R1-4)';
 
   -- §1d. cron.job 'trial-expiry' entry is REMOVED (best-effort: the pg_cron
   -- extension is platform-optional, so the assertion is SKIPPED — not
