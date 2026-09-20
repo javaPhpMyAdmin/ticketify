@@ -11,27 +11,27 @@
       {
         "id": "dataCollected",
         "title": "2. Datos que recopilamos",
-        "body": "Recopilamos los datos que nos proporcionás directamente: tu correo electrónico, tu nombre y los tickets y comprobantes que cargás o escaneás en la aplicación. También guardamos los datos que se generan con tu uso, como categorías, presupuestos, hogares y preferencias. Cuando contratás la suscripción Pro, recibimos de la tienda de aplicaciones la confirmación de tu compra."
+        "body": "Recopilamos los datos que nos proporcionás directamente: tu correo electrónico y tu nombre. Si iniciás sesión con Google o Apple, recibimos desde ese proveedor tu correo electrónico y el nombre asociado a tu cuenta. Para escanear tickets, capturás fotos con la cámara del dispositivo o elegís imágenes de tu biblioteca; esas fotos se almacenan asociadas a tu cuenta. También podés cargar tickets manualmente con su monto, comercio y categoría. Con tu uso se generan datos adicionales: categorías personalizadas, presupuestos, hogares compartidos y preferencias de la aplicación. Si contratás la suscripción Pro, la tienda de aplicaciones nos confirma la compra."
       },
       {
         "id": "purposes",
         "title": "3. Finalidades del tratamiento",
-        "body": "Usamos tus datos para brindarte el servicio: sincronizar tus tickets entre dispositivos, calcular tus presupuestos y estadísticas y gestionar tu cuenta. También usamos datos agregados y anónimos para mejorar la aplicación. Los registros de aceptación de documentos legales se conservan para cumplir con nuestras obligaciones de auditoría."
+        "body": "Usamos tus datos para brindarte el servicio: sincronizar tus tickets entre dispositivos, calcular tus presupuestos y estadísticas y gestionar tu cuenta. Si activás la autenticación biométrica, los datos biométricos se procesan localmente en tu dispositivo y nunca salen de él. También usamos datos agregados y anónimos para mejorar la aplicación. Los registros de aceptación de documentos legales se conservan para cumplir con nuestras obligaciones de auditoría."
       },
       {
         "id": "thirdParties",
         "title": "4. Terceros",
-        "body": "Para operar el servicio trabajamos con proveedores de confianza: Supabase aloja la base de datos y gestiona la autenticación; RevenueCat gestiona las suscripciones dentro de la aplicación; y Apple App Store y Google Play procesan los pagos. Estos proveedores procesan tus datos únicamente para prestar sus servicios y bajo nuestras instrucciones."
+        "body": "Para operar el servicio trabajamos con proveedores de confianza: Supabase aloja la base de datos y gestiona la autenticación; RevenueCat gestiona las suscripciones dentro de la aplicación; Apple App Store y Google Play procesan los pagos de la suscripción; y, cuando iniciás sesión con una cuenta externa, Google o Apple actúan como proveedores de identidad. Estos proveedores procesan tus datos únicamente para prestar sus servicios y bajo nuestras instrucciones."
       },
       {
         "id": "retention",
         "title": "5. Conservación de los datos",
-        "body": "Conservamos tus datos mientras tu cuenta esté activa y durante el tiempo necesario para cumplir con las finalidades de esta política. Los registros de aceptación de documentos legales se conservan de forma inmutable con fines de auditoría. Al eliminar tu cuenta, tus datos se borran, salvo aquellos que debamos conservar por obligación legal."
+        "body": "Conservamos los datos de tu cuenta mientras esté activa y durante 30 días posteriores a tu solicitud de eliminación, tras los cuales se borran definitivamente, salvo aquellos que debamos conservar por obligación legal. Los registros de aceptación de documentos legales se conservan de forma inmutable con fines de auditoría, sin plazo de retención."
       },
       {
         "id": "accountDeletion",
         "title": "6. Eliminación de la cuenta",
-        "body": "Podés eliminar tu cuenta cuando quieras desde Configuración en la aplicación. La eliminación borra tus tickets, presupuestos, hogares y datos asociados. La cancelación de la suscripción de pago se gestiona por separado desde la tienda de aplicaciones."
+        "body": "Podés eliminar tu cuenta cuando quieras desde Configuración en la aplicación. Si sos el creador de un hogar, todos los miembros quedan desvinculados y los datos del hogar se borran junto con tu cuenta. Si solo sos miembro de un hogar ajeno, tu perfil se desvincula pero el hogar sobrevive para los demás integrantes. En todos los casos se borran tus tickets, presupuestos y datos personales asociados. La cancelación de la suscripción de pago se gestiona por separado desde la tienda de aplicaciones."
       },
       {
         "id": "rights",
@@ -39,8 +39,28 @@
         "body": "Tenés derecho a acceder, corregir, exportar y eliminar tus datos personales, y a oponerte o limitar su tratamiento. Podés exportar tus datos desde la aplicación o escribirnos por el medio de contacto indicado abajo para ejercer cualquiera de estos derechos."
       },
       {
+        "id": "security",
+        "title": "8. Cómo protegemos tus datos",
+        "body": "Los datos viajan cifrados por HTTPS/TLS entre tu dispositivo y nuestros servidores. En tu dispositivo, los tokens de sesión y datos sensibles se almacenan cifrados mediante SecureStore (AES vía Android Keystore e iOS Keychain). En nuestros servidores, Supabase gestiona cifrado en reposo y políticas de acceso estrictas. Realizamos auditorías periódicas de nuestras prácticas de seguridad. Si detectás una vulnerabilidad, podés reportarla a [security@ticketify.app]."
+      },
+      {
+        "id": "transfers",
+        "title": "9. Transferencias internacionales",
+        "body": "Tus datos pueden ser transferidos y procesados en servidores fuera de tu país de residencia donde operen Supabase o nuestros otros proveedores. Cuando realizamos estas transferencias, lo hacemos bajo cláusulas contractuales estándar o mecanismos equivalentes que garantizan un nivel adecuado de protección conforme al RGPD, la LGPD y demás normativa aplicable."
+      },
+      {
+        "id": "minors",
+        "title": "10. Menores",
+        "body": "Ticketify no está dirigido a menores de 13 años. No recopilamos conscientemente datos personales de menores de edad. Si un progenitor o tutor detecta que un menor nos proporcionó datos sin su consentimiento, puede escribirnos al medio de contacto indicado abajo para solicitar su eliminación."
+      },
+      {
+        "id": "policyChanges",
+        "title": "11. Cambios a esta política",
+        "body": "Podemos actualizar esta política cuando sea necesario. Cuando haya un cambio material, te avisaremos en la aplicación y te pediremos que vuelvas a aceptar la versión actualizada. Si seguís usando Ticketify después del aviso, se considera que aceptaste la nueva versión."
+      },
+      {
         "id": "contact",
-        "title": "8. Contacto",
+        "title": "12. Contacto",
         "body": "Si tenés preguntas sobre esta política o sobre el tratamiento de tus datos, escribinos a [contacto@ticketify.app]. Recordá que este es un texto borrador: la versión final se publicará después de la revisión legal."
       }
     ]
@@ -57,27 +77,27 @@
       {
         "id": "serviceDescription",
         "title": "2. Descripción del servicio",
-        "body": "Ticketify te permite guardar tus compras escaneando o cargando tickets, armar presupuestos mensuales por categoría y consultar estadísticas de tus gastos. Si creás o te unís a un hogar, tus datos se comparten con los miembros de ese hogar."
+        "body": "Ticketify te permite guardar tus compras escaneando tickets con la cámara o cargándolos manualmente, armar presupuestos mensuales por categoría, consultar estadísticas de tus gastos (totales mensuales, tendencias por categoría, por comercio, promedios diarios) y exportar tus tickets en un archivo descargable. La suscripción Pro agrega funcionalidades como alertas de precio y estadísticas avanzadas. Si creás o te unís a un hogar, tus datos se comparten con los miembros de ese hogar."
       },
       {
         "id": "account",
         "title": "3. Tu cuenta",
-        "body": "Sos responsable de mantener la confidencialidad de tu cuenta y de la actividad que ocurra en ella. No podés usar la aplicación para actividades ilegales ni para cargar información falsa o de terceros sin autorización."
+        "body": "Sos responsable de mantener la confidencialidad de tu cuenta y de la actividad que ocurra en ella. No podés usar la aplicación para actividades ilegales ni para cargar información falsa o datos de terceros sin su autorización. Tampoco podés realizar ingeniería inversa, scraping automatizado ni revender el acceso a las funciones Pro."
       },
       {
         "id": "subscriptions",
         "title": "4. Suscripciones y pagos",
-        "body": "La suscripción Pro se cobra a través de la tienda de aplicaciones y se renueva automáticamente hasta que la canceles. Podés cancelarla en cualquier momento desde la tienda; el acceso a las funciones Pro continúa hasta el final del período pagado."
+        "body": "La suscripción Pro se cobra a través de la tienda de aplicaciones y se renueva automáticamente hasta que la canceles. El precio actual y los planes disponibles se muestran en la pantalla de suscripción dentro de la aplicación. Podemos ofrecer un período de prueba gratuito; su duración se indica en la pantalla de suscripción al iniciarlo y, al finalizar, si no cancelaste antes, se renueva automáticamente al precio del plan elegido. Podés cancelarla en cualquier momento desde la tienda de aplicaciones (Apple App Store o Google Play, según tu plataforma); el acceso a las funciones Pro continúa hasta el final del período pagado. Las políticas de reembolso son las que aplican en cada tienda."
       },
       {
         "id": "license",
         "title": "5. Licencia de uso",
-        "body": "Te otorgamos una licencia limitada, no exclusiva e intransferible para usar la aplicación de acuerdo con estos términos. No podés copiar, modificar, distribuir ni explotar comercialmente la aplicación o sus contenidos."
+        "body": "Te otorgamos una licencia limitada, no exclusiva e intransferible para usar la aplicación de acuerdo con estos términos. Vos retenés los derechos sobre el contenido que cargás (fotos de tickets, datos de gastos); al cargarlo, nos otorgás una licencia limitada para almacenarlo y procesarlo con el único fin de brindarte el servicio. No podés copiar, modificar, distribuir ni explotar comercialmente la aplicación o sus contenidos."
       },
       {
         "id": "liability",
         "title": "6. Limitación de responsabilidad",
-        "body": "La aplicación se brinda «tal cual». En la medida máxima permitida por la ley, no somos responsables por daños indirectos o consecuentes derivados de su uso. Los tickets y presupuestos los cargás vos: verificá tus datos antes de tomar decisiones basadas en ellos."
+        "body": "La aplicación se brinda «tal cual» y «según disponibilidad». No garantizamos un nivel de servicio específico ni un tiempo de actividad determinado; podemos realizar mantenimientos, actualizaciones o enfrentar interrupciones sin previo aviso. En la medida máxima permitida por la ley, no somos responsables por daños indirectos o consecuentes derivados de su uso. Los tickets y presupuestos los cargás vos: verificá tus datos antes de tomar decisiones basadas en ellos."
       },
       {
         "id": "changes",
