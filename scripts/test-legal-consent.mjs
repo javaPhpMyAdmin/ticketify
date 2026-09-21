@@ -837,6 +837,33 @@ await test('openLegalDocument routes in-app to /legal/{privacy,terms}', async ()
     }
   });
 
+  await test('ConsentGate: no session (userId null) → overlay never renders even on non-legal routes', async () => {
+    // Regression: sign-out lands on /sign-in. With userId null the consent
+    // query is disabled and the hook DERIVES `gated` from the empty read
+    // (fail-closed R-5), so without the null-user guard the overlay would
+    // cover the sign-in screen forever — no account to accept with, no way
+    // to dismiss (v6 report: "login at the bottom, consent modal always on
+    // top").
+    const stub = await load('scripts/test-stubs/supabase.js');
+    resetSupabase(stub);
+    stub.__setTableRead('legal_acceptances', { rows: [], error: null });
+    stub.__setRpcResult('record_legal_acceptance', { rows: [], error: null });
+    const g = await mountGate({ stub, userId: null, pathname: '/sign-in', onSignOut: () => {} });
+    try {
+      // Flush microtasks/effects so the disabled consent query settles; the
+      // overlay must STAY nil (tree() === null) even on a non-legal route.
+      for (let i = 0; i < 3; i += 1) {
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 0));
+        });
+      }
+      assert.equal(g.tree(), null, 'overlay must not render without a session');
+      assert.equal(rpcCalls(stub).length, 0, 'no session → no accept writes possible');
+    } finally {
+      g.unmount();
+    }
+  });
+
   await test('ConsentGate: complete → overlay never renders', async () => {
     const stub = await load('scripts/test-stubs/supabase.js');
     resetSupabase(stub);

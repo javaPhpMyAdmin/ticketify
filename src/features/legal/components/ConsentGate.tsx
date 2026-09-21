@@ -39,6 +39,14 @@ export function ConsentGate({ userId, onSignOut }: ConsentGateProps) {
   const pathname = usePathname();
   const { status, accept, isAccepting, isError } = useLegalConsent(userId ?? '');
 
+  // No session → no gate. With `userId` null the consent query is disabled
+  // and the hook DERIVES `gated` from the empty read (fail-closed R-5), so
+  // without this guard the overlay would cover the sign-in screen forever —
+  // no account to accept with, no way to dismiss (v6 regression when the
+  // sign-out navigation landed on /sign-in). The gate only exists for a
+  // signed-in user without current-version consent rows.
+  if (userId == null) return null;
+
   if (!shouldShowConsentGate(status, pathname)) return null;
 
   return (
