@@ -17,9 +17,14 @@
  * lifecycle fields (`subscriptionStatus`, `trialEndsAt`, `isFrozen`,
  * `isTrialing`, `daysRemaining`) are GONE. Trial eligibility is owned
  * by Play Console / App Store Connect native intro offers (the
- * paywall reads them from `getOfferings().introPhase`). The store now
- * holds just the binary pro/not-pro signal + the monotonic `everPaid`
- * flag.
+ * paywall reads them from `getOfferings().introPhase`).
+ *
+ * Post-cutover (slice C, REQ-PRO-TRIAL-PILL): the store re-introduces
+ * a single `trialEndsAt` field, sourced from
+ * `CustomerInfo.entitlements.all.pro.expirationDate` when the user is
+ * on an active FREE TRIAL. This is NOT the pre-cutover DB-derived
+ * field — it's CustomerInfo-derived (per the spec) and the profile
+ * pill consumer reads it via the `useProEntitlement` hook.
  */
 import { create } from 'zustand';
 
@@ -35,6 +40,13 @@ export interface ProState {
   isLoading: boolean;
 
   /**
+   * Trial-end ISO timestamp (sourced from CustomerInfo, not the DB —
+   * the DB column was dropped by migration 0039 §7). The profile
+   * pill consumer reads this; null when not on a free trial.
+   */
+  trialEndsAt: string | null;
+
+  /**
    * Monotonic flag: true once the user has EVER made a real paid purchase
    * (migration 0021). A former paid user can never start a free trial
    * again (pre-cutover the trial surface used this; post-cutover the
@@ -47,15 +59,19 @@ export interface ProState {
 
   /** Re-reads `CustomerInfo` from the SDK and updates `isPro`. */
   refresh: () => Promise<void>;
-  /** Direct setter for the SDK's `customerInfoUpdate` listener (M5+). */
-  setPro: (isPro: boolean) => void;
+  /**
+   * Direct setter for the SDK's `customerInfoUpdate` listener (slice C:
+   * accepts the full snapshot — both `isPro` and `trialEndsAt` are
+   * updated atomically so the gate + the pill never disagree).
+   */
+  setProEntitlement: (snapshot: { isPro: boolean; trialEndsAt: string | null }) => void;
   /** Direct setter for the monotonic ever-paid flag. */
   setEverPaid: (everPaid: boolean) => void;
   /**
    * Restore the full initial state (locked defaults). Called on SIGNED_OUT
    * and at the start of every per-user resolution so a previous user's
-   * `isPro` / `everPaid` can never leak into the next session on the same
-   * device.
+   * `isPro` / `trialEndsAt` / `everPaid` can never leak into the next
+   * session on the same device.
    */
   reset: () => void;
 }
@@ -67,14 +83,25 @@ export const useProStore = create<ProState>((set) => ({
   // is unavailable and we settle on the safe default).
   isLoading: true,
 
+  trialEndsAt: null,
   everPaid: false,
 
   refresh: async () => {
     const info: CustomerInfoSnapshot | null = await getCustomerInfo();
-    set({ isPro: info?.isPro ?? false, isLoading: false });
+    set({
+      isPro: info?.isPro ?? false,
+      trialEndsAt: info?.trialEndsAt ?? null,
+      isLoading: false,
+    });
   },
 
-  setPro: (isPro) => set({ isPro }),
+  // Slice C: rename + reshape from `setPro(isPro)` to accept the full
+  // snapshot. The bootstrap listener fires this on every SDK update
+  // (purchase, renewal, refund, family-share transfer). The atomic
+  // `set` keeps `isPro` and `trialEndsAt` consistent — a partial update
+  // would let the gate say "unlocked" while the pill says "no trial".
+  setProEntitlement: (snapshot) =>
+    set({ isPro: snapshot.isPro, trialEndsAt: snapshot.trialEndsAt }),
 
   setEverPaid: (everPaid) => set({ everPaid }),
 
@@ -82,6 +109,7 @@ export const useProStore = create<ProState>((set) => ({
     set({
       isPro: false,
       isLoading: true,
+      trialEndsAt: null,
       everPaid: false,
     }),
 }));

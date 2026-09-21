@@ -95,6 +95,39 @@ export function configure(apiKey: string): boolean {
 /** Shape we surface to callers — narrow enough to test in M8.1. */
 export interface CustomerInfoSnapshot {
   isPro: boolean;
+  /**
+   * Trial-end ISO timestamp, sourced from
+   * `entitlements.all.pro.expirationDate` when the user is on an
+   * active FREE TRIAL (periodType === 'TRIAL'). `null` for paid
+   * subscribers, free users, intro-phase subscribers, or expired
+   * trials — the trial pill consumer hides on null (REQ-PRO-TRIAL-PILL).
+   */
+  trialEndsAt: string | null;
+}
+
+/**
+ * Pure projection of `CustomerInfo` → the snapshot shape consumers
+ * (the bootstrap, `useProEntitlement`, the profile pill) consume.
+ * Extracted from `getCustomerInfo` + the SDK listener so the harness
+ * can test the projection directly without rendering.
+ *
+ * Trial-window derivation reuses `getTrialPillState` for the
+ * periodType + expirationDate contract — one source of truth for
+ * "is the user on a free trial RIGHT NOW".
+ */
+export function deriveCustomerInfoSnapshot(
+  customerInfo: unknown,
+): CustomerInfoSnapshot {
+  const proEntitlement = (customerInfo as any)?.entitlements?.all?.[
+    PRO_ENTITLEMENT
+  ];
+  const isPro = proEntitlement?.isActive === true;
+  // Reuse the trial-pill helper — single source of truth for the
+  // "active TRIAL with a non-empty expirationDate" contract. The
+  // profile screen will re-derive the same state via the hook to
+  // decide whether to render the pill.
+  const pill = isPro ? getTrialPillState(proEntitlement) : { trialEndsAt: null };
+  return { isPro, trialEndsAt: pill.trialEndsAt };
 }
 
 /**
@@ -114,8 +147,7 @@ export async function getCustomerInfo(): Promise<CustomerInfoSnapshot | null> {
   if (!Purchases) return null;
   try {
     const customerInfo = await Purchases.getCustomerInfo();
-    const isPro = customerInfo?.entitlements?.all?.[PRO_ENTITLEMENT]?.isActive === true;
-    return { isPro };
+    return deriveCustomerInfoSnapshot(customerInfo);
   } catch (err) {
     console.warn('[revenuecat] getCustomerInfo failed:', err);
     return null;
@@ -211,11 +243,14 @@ export async function logOutRevenueCat(): Promise<RevenueCatIdentityResult> {
 }
 
 /**
- * Entitlement-change listener callback projected to the `pro` boolean.
- * The SDK's `customerInfoUpdate` fires on renewal, refund, family-share
- * transfer, etc. Consumers still guard on the current user identity.
+ * Entitlement-change listener callback projected to the
+ * \`CustomerInfoSnapshot\` shape (REQ-PRO-TRIAL-PILL — the profile
+ * pill reads \`trialEndsAt\` from this snapshot). The SDK's
+ * \`customerInfoUpdate\` fires on renewal, refund, family-share
+ * transfer, etc. Consumers still guard on the current user identity
+ * (the bootstrap's per-user ref).
  */
-export type CustomerInfoUpdateListener = (isPro: boolean) => void;
+export type CustomerInfoUpdateListener = (snapshot: CustomerInfoSnapshot) => void;
 
 /**
  * Attaches the SDK's `customerInfoUpdate` listener. Resolves the CJS
@@ -233,8 +268,7 @@ export function attachCustomerInfoListener(
   if (!Purchases?.addCustomerInfoUpdateListener) return null;
   try {
     const handle = Purchases.addCustomerInfoUpdateListener((ci: any) => {
-      const isPro = ci?.entitlements?.all?.[PRO_ENTITLEMENT]?.isActive === true;
-      listener(isPro);
+      listener(deriveCustomerInfoSnapshot(ci));
     });
     return () => {
       try {
@@ -512,6 +546,72 @@ export function projectIosIntroPhase(pkg: unknown): IntroPhase | null {
       (intro.cycles ?? 1),
     cycles: intro.cycles ?? 1,
   };
+}
+
+/**
+ * Render the paywall intro caption by substituting \`{{trialDays}}\` and
+ * \`{{priceAfterTrial}}\` tokens in the i18n template. Returns \`null\` when
+ * the package has no intro offer configured (the paywall MUST hide
+ * its caption in that case — REQ-PRO-INTRO-CAPTION).
+ *
+ * Pure / no React / no I/O so the harness can test the substitution
+ * directly without rendering. The template is supplied by the caller
+ * (typically \`t('planIntroCaption')\` from the `pro` namespace) — the
+ * helper does NOT call i18n itself. Splitting concerns this way keeps
+ * the test scope tight (substitution rules) and the production scope
+ * tight (one helper for the rendering surface).
+ */
+export function buildIntroCaption(
+  introPhase: IntroPhase | null,
+  template: string,
+): string | null {
+  if (!introPhase) return null;
+  return template
+    .replace(/\{\{trialDays\}\}/g, String(introPhase.trialDays))
+    .replace(/\{\{priceAfterTrial\}\}/g, introPhase.priceAfterTrial);
+}
+
+/**
+ * Project the trial-pill display state from a raw SDK entitlement
+ * object (the shape returned by \`CustomerInfo.entitlements.all.pro\`).
+ * Returns \`{ show: true, trialEndsAt }\` only when the entitlement is
+ * ACTIVE AND the periodType is \`'TRIAL'\` AND \`expirationDate\` is a
+ * non-empty string. Any other shape (no trial, normal subscription,
+ * inactive trial, missing expirationDate) returns \`{ show: false,
+ * trialEndsAt: null }\` — the pill is hidden.
+ *
+ * Pure / no React / no I/O so the harness can test it without
+ * rendering or touching the SDK. The pill's date-formatting layer
+ * (which locale-aware format to use, e.g. \`formatDayMonth\` for
+ * es-AR) is the caller's concern — this helper only decides whether
+ * the pill should show AND carries the raw ISO string.
+ *
+ * REQ-PRO-TRIAL-PILL: the pill surfaces the active intro-phase end
+ * date so users mid-Play/App-Store trial see \"Prueba · Termina
+ * 25 sep\" rather than the access-tier chip alone.
+ */
+export interface TrialPillState {
+  show: boolean;
+  trialEndsAt: string | null;
+}
+
+export function getTrialPillState(entitlement: unknown): TrialPillState {
+  const e = entitlement as {
+    isActive?: boolean;
+    periodType?: string;
+    expirationDate?: string | null;
+  } | null;
+  if (
+    e !== null &&
+    e !== undefined &&
+    e.isActive === true &&
+    e.periodType === 'TRIAL' &&
+    typeof e.expirationDate === 'string' &&
+    e.expirationDate.length > 0
+  ) {
+    return { show: true, trialEndsAt: e.expirationDate };
+  }
+  return { show: false, trialEndsAt: null };
 }
 
 /** ISO 8601 duration → days. Handles the 4 unit forms the SDK emits. */

@@ -31,8 +31,6 @@
   "configureBudgetsA11y": "Configurar orçamentos por categoria",
   "editBudgets": "Editar",
   "configureBudgets": "Configurar",
-  "trialActiveDays_one": "Seu teste PRO está ativo — {{count}} dia restante",
-  "trialActiveDays_other": "Seu teste PRO está ativo — {{count}} dias restantes",
   "manageSubscription": "Gerenciar assinatura",
   "manageSubscriptionHint": "Cancele ou altere seu plano na Google Play",
   "paywallHeaderTitle": "Assine o Pro",
@@ -58,5 +56,11 @@
   "errorSyncDelayed": "A compra foi concluída, mas a assinatura ainda não apareceu. Tente novamente em alguns segundos.",
   "errorPurchaseCancelled": "Compra cancelada.",
   "errorNetwork": "Sem conexão. Tente a compra de novo.",
-  "errorGeneric": "Não conseguimos carregar os planos. Tente novamente."
+  "errorGeneric": "Não conseguimos carregar os planos. Tente novamente.",
+  "benefitUnlimitedScans": "Escaneamentos ilimitados",
+  "benefitAdvancedStats": "Estatísticas avançadas",
+  "benefitExportTickets": "Exportar tickets",
+  "benefitPriceAlerts": "Alertas de preço",
+  "planIntroCaption": "{{trialDays}} dias grátis, depois {{priceAfterTrial}}/mês",
+  "trialPill": "Teste · Termina em {{date}}"
 }

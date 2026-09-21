@@ -41,7 +41,6 @@ import {
   HouseholdCardSkeleton,
   useHousehold,
 } from '@/features/household';
-import { useFrozenGuard } from '@/features/pro';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -92,7 +91,6 @@ export default function HomeScreen() {
   // feed's category rows with the other tabs — same hook, same query key,
   // same static-first resolution for canonical slugs (W-2).
   const { catalog } = useCategoryCatalog();
-  const { guard } = useFrozenGuard();
   const insets = useSafeAreaInsets();
   const { session } = useSessionStore();
   const { household, members: householdMembers } = useHousehold();
@@ -361,7 +359,13 @@ export default function HomeScreen() {
         <Fab
           icon="camera.fill"
           iconSize={32}
-          onPress={() => guard(() => router.push('/ticket/camera'))}
+          // Post-cutover (0039, revenuecat-trial-migration slice B + C):
+          // the gate is binary (no 'frozen' state). The route-level gate
+          // blocks frozen-trial users from reaching this screen — no per-
+          // action `guard()` wrapper is needed. The previous
+          // `useFrozenGuard().guard()` wrapper (migration 0035) is now a
+          // no-op pass-through; inlined for clarity.
+          onPress={() => router.push('/ticket/camera')}
           accessibilityLabel={t('receipts:scanA11y')}
           style={styles.fabCircle}
         />
@@ -369,11 +373,9 @@ export default function HomeScreen() {
           icon="plus"
           iconSize={32}
           onPress={() =>
-            guard(() =>
-              // `/ticket/manual` is now registered on disk (ticket/manual.tsx),
-              // so typed routes resolve it without a cast.
-              router.push('/ticket/manual'),
-            )
+            // `/ticket/manual` is now registered on disk (ticket/manual.tsx),
+            // so typed routes resolve it without a cast.
+            router.push('/ticket/manual')
           }
           accessibilityLabel={t('tickets:manualTitle')}
           style={styles.fabCircle}

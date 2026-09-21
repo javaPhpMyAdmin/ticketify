@@ -165,6 +165,9 @@ async function run() {
   const {
     projectAndroidIntroPhase,
     projectIosIntroPhase,
+    buildIntroCaption,
+    getTrialPillState,
+    deriveCustomerInfoSnapshot,
     getOfferings,
   } = revenuecatModule;
   // The mock module is also loaded via `liveRequire` so the integration
@@ -468,6 +471,231 @@ async function run() {
       trialDays: 90,
       cycles: 3,
     });
+  });
+
+  console.log('\n[tests] buildIntroCaption (REQ-PRO-INTRO-CAPTION)\n');
+
+  await test('null introPhase → null (no caption, paywall hides it)', () => {
+    assert.equal(
+      buildIntroCaption(null, '{{trialDays}} días gratis, después {{priceAfterTrial}}/mes'),
+      null,
+    );
+  });
+
+  await test('renders the {{trialDays}} + {{priceAfterTrial}} tokens', () => {
+    const result = buildIntroCaption(
+      { priceAfterTrial: '$5.99', trialDays: 7, cycles: 1 },
+      '{{trialDays}} días gratis, después {{priceAfterTrial}}/mes',
+    );
+    assert.equal(result, '7 días gratis, después $5.99/mes');
+  });
+
+  await test('en locale template renders correctly (regression check on the en string)', () => {
+    const result = buildIntroCaption(
+      { priceAfterTrial: '$5.99', trialDays: 7, cycles: 1 },
+      '{{trialDays}} days free, then {{priceAfterTrial}}/month',
+    );
+    assert.equal(result, '7 days free, then $5.99/month');
+  });
+
+  await test('substitutes BOTH tokens when they appear multiple times (idempotent / global replace)', () => {
+    const result = buildIntroCaption(
+      { priceAfterTrial: '$9.99', trialDays: 30, cycles: 1 },
+      '{{trialDays}}-day free trial at {{priceAfterTrial}}/mo after {{trialDays}} days',
+    );
+    assert.equal(result, '30-day free trial at $9.99/mo after 30 days');
+  });
+
+  await test('large trialDays + non-USD price renders verbatim (no formatting applied by helper)', () => {
+    // The helper does NO number / currency formatting — it just does
+    // the token substitution. The caller (PaywallScreen) renders
+    // trialDays as-is (it's an integer) and priceAfterTrial as already-
+    // formatted by the SDK (e.g. "€12.99" or "ARS 1.499,00").
+    const result = buildIntroCaption(
+      { priceAfterTrial: 'ARS 1.499,00', trialDays: 365, cycles: 1 },
+      '{{trialDays}} días gratis, después {{priceAfterTrial}}/mes',
+    );
+    assert.equal(result, '365 días gratis, después ARS 1.499,00/mes');
+  });
+
+  console.log('\n[tests] getTrialPillState (REQ-PRO-TRIAL-PILL)\n');
+
+  await test('null entitlement → no pill (defensive)', () => {
+    assert.deepEqual(getTrialPillState(null), {
+      show: false,
+      trialEndsAt: null,
+    });
+  });
+
+  await test('undefined entitlement → no pill', () => {
+    assert.deepEqual(getTrialPillState(undefined), {
+      show: false,
+      trialEndsAt: null,
+    });
+  });
+
+  await test('active + TRIAL + expirationDate → pill (the primary contract)', () => {
+    assert.deepEqual(
+      getTrialPillState({
+        isActive: true,
+        periodType: 'TRIAL',
+        expirationDate: '2026-10-25T00:00:00.000Z',
+      }),
+      { show: true, trialEndsAt: '2026-10-25T00:00:00.000Z' },
+    );
+  });
+
+  await test('active + NORMAL + expirationDate → no pill (paid subscriber)', () => {
+    assert.deepEqual(
+      getTrialPillState({
+        isActive: true,
+        periodType: 'NORMAL',
+        expirationDate: '2026-11-25T00:00:00.000Z',
+      }),
+      { show: false, trialEndsAt: null },
+    );
+  });
+
+  await test('active + INTRO → no pill (introductory-price phase, not free trial)', () => {
+    // The pill is SPECIFICALLY for free trials (periodType === 'TRIAL').
+    // An introductory-price phase (periodType === 'INTRO') is a
+    // discounted first period — different UX surface (the paywall intro
+    // caption), different pill semantics.
+    assert.deepEqual(
+      getTrialPillState({
+        isActive: true,
+        periodType: 'INTRO',
+        expirationDate: '2026-10-25T00:00:00.000Z',
+      }),
+      { show: false, trialEndsAt: null },
+    );
+  });
+
+  await test('inactive + TRIAL → no pill (trial expired, entitlement not active anymore)', () => {
+    // The user upgraded or the trial ended. isActive=false means the
+    // entitlement doesn't grant access — no pill should show even if
+    // the SDK still carries the historical periodType === 'TRIAL' state.
+    assert.deepEqual(
+      getTrialPillState({
+        isActive: false,
+        periodType: 'TRIAL',
+        expirationDate: '2026-10-25T00:00:00.000Z',
+      }),
+      { show: false,      trialEndsAt: null },
+    );
+  });
+
+  await test('active + TRIAL + null expirationDate → no pill (defensive)', () => {
+    // The SDK normally always populates expirationDate for an active
+    // entitlement, but the contract is defensive: a null expirationDate
+    // means "we can't display a date", which collapses to no pill.
+    assert.deepEqual(
+      getTrialPillState({
+        isActive: true,
+        periodType: 'TRIAL',
+        expirationDate: null,
+      }),
+      { show: false,      trialEndsAt: null },
+    );
+  });
+
+  await test('active + TRIAL + empty expirationDate string → no pill (defensive)', () => {
+    // Same as above but with an empty string — TypeScript-wise the
+    // field is `string | null` so an empty string is a runtime guard
+    // case. The helper explicitly rejects empty strings to avoid
+    // rendering "Trial · Ends " (empty date) in the UI.
+    assert.deepEqual(
+      getTrialPillState({
+        isActive: true,
+        periodType: 'TRIAL',
+        expirationDate: '',
+      }),
+      { show: false,      trialEndsAt: null },
+    );
+  });
+
+  console.log('\n[tests] deriveCustomerInfoSnapshot (REQ-PRO-TRIAL-PILL source)\n');
+
+  // Reusable fixtures — the SDK's entitlement shape is consistent
+  // across Android + iOS per the SDK's CustomerInfo contract.
+  const ENT_TRIAL = {
+    isActive: true,
+    periodType: 'TRIAL',
+    expirationDate: '2026-10-25T00:00:00.000Z',
+  };
+  const ENT_NORMAL = {
+    isActive: true,
+    periodType: 'NORMAL',
+    expirationDate: '2026-11-25T00:00:00.000Z',
+  };
+  const ENT_INTRO = {
+    isActive: true,
+    periodType: 'INTRO',
+    expirationDate: '2026-10-25T00:00:00.000Z',
+  };
+  const ENT_INACTIVE_TRIAL = {
+    isActive: false,
+    periodType: 'TRIAL',
+    expirationDate: '2026-10-25T00:00:00.000Z',
+  };
+
+  await test('null customerInfo → isPro=false, trialEndsAt=null (safe default)', () => {
+    assert.deepEqual(deriveCustomerInfoSnapshot(null), {
+      isPro: false,
+      trialEndsAt: null,
+    });
+  });
+
+  await test('customerInfo without the pro entitlement → isPro=false, trialEndsAt=null', () => {
+    assert.deepEqual(
+      deriveCustomerInfoSnapshot({
+        entitlements: { all: { other: { isActive: true } } },
+      }),
+      { isPro: false, trialEndsAt: null },
+    );
+  });
+
+  await test('active TRIAL entitlement → isPro=true, trialEndsAt=expirationDate (PRIMARY)', () => {
+    assert.deepEqual(
+      deriveCustomerInfoSnapshot({
+        entitlements: { all: { pro: ENT_TRIAL } },
+      }),
+      { isPro: true, trialEndsAt: '2026-10-25T00:00:00.000Z' },
+    );
+  });
+
+  await test('active NORMAL entitlement → isPro=true, trialEndsAt=null (paid subscriber)', () => {
+    assert.deepEqual(
+      deriveCustomerInfoSnapshot({
+        entitlements: { all: { pro: ENT_NORMAL } },
+      }),
+      { isPro: true, trialEndsAt: null },
+    );
+  });
+
+  await test('active INTRO entitlement → isPro=true, trialEndsAt=null (introductory-price phase, not free trial)', () => {
+    assert.deepEqual(
+      deriveCustomerInfoSnapshot({
+        entitlements: { all: { pro: ENT_INTRO } },
+      }),
+      { isPro: true, trialEndsAt: null },
+    );
+  });
+
+  await test('inactive TRIAL entitlement → isPro=false, trialEndsAt=null (defensive — expired)', () => {
+    assert.deepEqual(
+      deriveCustomerInfoSnapshot({
+        entitlements: { all: { pro: ENT_INACTIVE_TRIAL } },
+      }),
+      { isPro: false, trialEndsAt: null },
+    );
+  });
+
+  await test('customerInfo with completely missing entitlements → isPro=false, trialEndsAt=null (defensive)', () => {
+    assert.deepEqual(
+      deriveCustomerInfoSnapshot({}),
+      { isPro: false, trialEndsAt: null },
+    );
   });
 
   console.log('\n[tests] getOfferings() integration (REQ-PRO-INTRO-CAPTION — paywall caption consumer)\n');

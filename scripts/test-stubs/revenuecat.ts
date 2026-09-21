@@ -20,6 +20,16 @@
  */
 export interface CustomerInfoSnapshot {
   isPro: boolean;
+  /**
+   * Post-cutover (0039 + slice C REQ-PRO-TRIAL-PILL): the pro store
+   * reads `trialEndsAt` from the snapshot to drive the profile pill.
+   * The delete-account harness never exercises that code path, but
+   * the stub interface MUST match the real module's shape or
+   * `use-pro-store.ts` fails to compile against this stub.
+   * Always null here — no test on the delete-account path cares
+   * about trial state.
+   */
+  trialEndsAt: string | null;
 }
 
 /**

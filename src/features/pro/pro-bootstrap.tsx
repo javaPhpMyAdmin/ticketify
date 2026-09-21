@@ -182,7 +182,7 @@ async function resolveProSession(
  */
 export function ProBootstrap(): null {
   const { userId } = useSessionUser();
-  const setPro = useProStore((s) => s.setPro);
+  const setProEntitlement = useProStore((s) => s.setProEntitlement);
   const setEverPaid = useProStore((s) => s.setEverPaid);
   const isPro = useProStore((s) => s.isPro);
 
@@ -218,20 +218,25 @@ export function ProBootstrap(): null {
     // ONLY for the current bridged user: a callback from a previous user's
     // session or from the anonymous identity must never overwrite the
     // current user's store state.
-    attachCustomerInfoListener((isPro) => {
+    //
+    // Slice C: the listener now receives the full CustomerInfoSnapshot
+    // ({ isPro, trialEndsAt }) instead of just the boolean. The store
+    // setter is atomic — both fields are written in a single `set`
+    // call so the gate + the profile pill never disagree mid-update.
+    attachCustomerInfoListener((snapshot) => {
       if (activeUserIdRef.current === null || !identityBridgedRef.current) {
         return;
       }
-      setPro(isPro);
+      setProEntitlement(snapshot);
       // A real purchase activating the `pro` entitlement is a MONOTONIC
       // event (migration 0021): the webhook sets ever_paid=true in the DB,
       // but `syncSubscriptionFromDB` only runs per session — NOT on this
       // listener. Mirror the DB flag immediately so the store never offers
       // a free trial the server would reject for an ever-paid user. This
       // is the only caller of `setEverPaid`.
-      if (isPro) setEverPaid(true);
+      if (snapshot.isPro) setEverPaid(true);
     });
-  }, [userId, setPro, setEverPaid]);
+  }, [userId, setProEntitlement, setEverPaid]);
 
   // Effect 2 — PER-USER identity bridge + resolution. Keyed on `[userId]`
   // so it runs on EVERY userId change, including the null (sign-out) case.

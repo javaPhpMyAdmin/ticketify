@@ -31,8 +31,6 @@
   "configureBudgetsA11y": "Set category budgets",
   "editBudgets": "Edit",
   "configureBudgets": "Set up",
-  "trialActiveDays_one": "Your PRO trial is active — {{count}} day left",
-  "trialActiveDays_other": "Your PRO trial is active — {{count}} days left",
   "manageSubscription": "Manage subscription",
   "manageSubscriptionHint": "Cancel or change your plan in Google Play",
   "paywallHeaderTitle": "Subscribe to Pro",
@@ -58,5 +56,11 @@
   "errorSyncDelayed": "The purchase completed but the subscription hasn't synced yet. Try again in a few seconds.",
   "errorPurchaseCancelled": "Purchase cancelled.",
   "errorNetwork": "No connection. Please retry the purchase.",
-  "errorGeneric": "We couldn't load the plans. Please try again."
+  "errorGeneric": "We couldn't load the plans. Please try again.",
+  "benefitUnlimitedScans": "Unlimited scans",
+  "benefitAdvancedStats": "Advanced stats",
+  "benefitExportTickets": "Export tickets",
+  "benefitPriceAlerts": "Price alerts",
+  "planIntroCaption": "{{trialDays}} days free, then {{priceAfterTrial}}/month",
+  "trialPill": "Trial · Ends {{date}}"
 }
