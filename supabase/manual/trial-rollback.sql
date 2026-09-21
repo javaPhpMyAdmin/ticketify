@@ -1,12 +1,12 @@
 -- ============================================================================
--- supabase/tests/trial-rollback.sql
+-- supabase/manual/trial-rollback.sql
 -- Ticketify — Smoke for the 0040_rc_trial_rollback.sql rollback migration.
 --
 -- Paired with supabase/tests/trial-cutover.sql (0039 forward smoke). This
 -- file asserts the PRE-CUTOVER catalog state is restored after 0040 applies.
 -- On a fresh `supabase db reset --local` + `0039 → 0040` sequence, all
 -- assertions here are GREEN. On a post-cutover DB that just had 0040 applied
--- (no 0039), all assertions are GREEN.
+-- (no 0039), all assertions here are GREEN.
 --
 -- Like the cutover smoke, this file is safe to re-run (idempotent: it
 -- only reads + asserts; it never mutates catalog or data).
@@ -14,6 +14,44 @@
 -- The file uses `do $$ ... $$` blocks + `perform` for catalog reads (the
 -- pre-cutover conventions + the project-wide smoke style documented in
 -- supabase/tests/README.md).
+--
+-- Why this file lives in supabase/manual/ (NOT in supabase/tests/)
+-- ----------------------------------------------------------------
+-- The 0039 forward smoke (trial-cutover.sql) and this 0040 rollback
+-- smoke (trial-rollback.sql) are MUTUAL INVERSES — they assert opposite
+-- catalog states. Both cannot run against the same DB without one
+-- reversing the other between them. `supabase db reset --local` applies
+-- ALL migrations in supabase/migrations/ atomically BEFORE any smoke
+-- runs, so both 0039 + 0040 are applied — the rollback re-adds the
+-- trial_ends_at column that the cutover just dropped, breaking the
+-- cutover smoke.
+--
+-- Therefore the 0040 rollback migration lives in supabase/manual/
+-- (NOT in supabase/migrations/) — the supabase CLI does not auto-apply
+-- it during `db reset`. This smoke file lives in supabase/manual/
+-- alongside its migration as documentation. It is NOT wired into the
+-- standard CI db-smoke chain (scripts/test-db-smoke.mjs +
+-- .github/workflows/ci.yml) for the reason above.
+--
+-- How to run this smoke manually (the operational rollback test path)
+-- ----------------------------------------------------------------
+--   1. From a clean `supabase db reset --local` state (post-0039 cutover):
+--      $ supabase db reset --local
+--   2. Apply the rollback migration:
+--      $ supabase db query --local --file supabase/manual/0040_rc_trial_rollback.sql
+--   3. Run the rollback smoke:
+--      $ supabase db query --local --file supabase/manual/trial-rollback.sql
+--   4. All assertions should pass (GREEN).
+--
+-- Operational rollback (when to apply 0040): if the 0039 cutover needs
+-- to be reverted in production. The full <1h restore path is:
+--   1. Apply this migration to production (or a fork of it).
+--   2. `git revert <merge-sha>` the merged code (the dashed trial CTA,
+--      banner, `'frozen'` gate state come back).
+--   3. Restart the app process.
+--   4. Disable intro offers in Play Console + App Store Connect + RC dashboard.
+--   5. Existing paid users unaffected (`subscription_status` was `'active'`
+--      before AND after the cutover).
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
