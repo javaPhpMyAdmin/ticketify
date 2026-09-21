@@ -362,28 +362,31 @@ await test('success → { status: ok } and rpc receives exact fn + params', asyn
   assert.equal(rpcCalls(stub).length, 1);
 });
 
-await test('rpc error → { status: error } with a user-safe message', async () => {
+await test('rpc error → { status: error }', async () => {
   const stub = await load('scripts/test-stubs/supabase.js');
   resetSupabase(stub);
   stub.__setRpcResult('record_legal_acceptance', { rows: null, error: { message: 'boom' } });
-  const { recordAcceptance, ACCEPTANCE_WRITE_ERROR_MESSAGE } = await load(
+  const { recordAcceptance } = await load(
     'src/features/legal/record-acceptance.js',
   );
   const result = await recordAcceptance('terms', LATEST.terms);
+  // The user-safe message is now rendered by the caller via i18n
+  // (see ConsentGate: `t('legal:acceptanceErrorMessage')`). The record
+  // layer only signals status — the copy lives in the locale catalog.
   assert.equal(result.status, 'error');
-  assert.equal(result.message, ACCEPTANCE_WRITE_ERROR_MESSAGE);
+  assert.equal(result.message, undefined);
 });
 
 await test('unconfigured → { status: error } and NO rpc call', async () => {
   const stub = await load('scripts/test-stubs/supabase.js');
   resetSupabase(stub);
   stub.__setSupabaseConfigInputs('https://YOUR-PROJECT.supabase.co', 'YOUR-ANON-KEY');
-  const { recordAcceptance, ACCEPTANCE_WRITE_ERROR_MESSAGE } = await load(
+  const { recordAcceptance } = await load(
     'src/features/legal/record-acceptance.js',
   );
   const result = await recordAcceptance('privacy', LATEST.privacy);
   assert.equal(result.status, 'error');
-  assert.equal(result.message, ACCEPTANCE_WRITE_ERROR_MESSAGE);
+  assert.equal(result.message, undefined);
   assert.equal(rpcCalls(stub).length, 0);
 });
 
@@ -559,7 +562,8 @@ console.log('\n[tests] 6 — useLegalConsent hook (REAL TanStack Query + react-t
       stub.__setTableRead('legal_acceptances', { rows: fullRows(), error: null });
       h.queryClient.invalidateQueries({ queryKey: ['legal', 'user-1'] });
       await h.waitFor((r) => r.status === 'complete');
-      assert.equal(h.ref.current.error, null);
+      // Post-fix: the hook exposes `isError: boolean` (not the raw message).
+      assert.equal(h.ref.current.isError, false);
     } finally {
       h.unmount();
     }
@@ -622,7 +626,10 @@ console.log('\n[tests] 6 — useLegalConsent hook (REAL TanStack Query + react-t
         });
       });
       await h.waitFor((r) => r.status === 'gated');
-      await h.waitFor((r) => r.error != null);
+      // Post-cutover (legal-fix): the hook exposes `isError: boolean`,
+      // not the raw error message — the caller renders the user-safe
+      // copy via `t('legal:acceptanceErrorMessage')`.
+      await h.waitFor((r) => r.isError === true);
     } finally {
       h.unmount();
     }
@@ -715,9 +722,6 @@ await test('openLegalDocument routes in-app to /legal/{privacy,terms}', async ()
   // harness pins (F2), so a rendered assertion can never drift from disk.
   const esARLegal = JSON.parse(
     readFileSync(join(root, 'src/i18n/locales/es-AR/legal.json'), 'utf8'),
-  );
-  const { ACCEPTANCE_WRITE_ERROR_MESSAGE } = await load(
-    'src/features/legal/record-acceptance.js',
   );
 
   function makeGateClient() {
@@ -911,7 +915,9 @@ await test('openLegalDocument routes in-app to /legal/{privacy,terms}', async ()
     try {
       await g.waitFor(() => g.findText(esARLegal.consentGateTitle) != null);
       g.press(g.findPressableByText(esARLegal.consentGateAccept));
-      await g.waitFor(() => g.findText(ACCEPTANCE_WRITE_ERROR_MESSAGE) != null);
+      // Post-fix: the error copy lives in the legal.json catalog
+      // (`acceptanceErrorMessage`) — the consent gate renders it via i18n.
+      await g.waitFor(() => g.findText(esARLegal.acceptanceErrorMessage) != null);
       // Still gated: the title and sign-out remain visible.
       assert.ok(g.findText(esARLegal.consentGateTitle) != null);
       assert.ok(g.findText(esARLegal.consentGateSignOut) != null);

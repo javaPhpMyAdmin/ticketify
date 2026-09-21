@@ -78,6 +78,28 @@ export default function LegalScreen({ document }: LegalScreenProps) {
             <Text style={styles.sectionBody}>{section.body}</Text>
           </View>
         ))}
+
+        {/* Safety-net footer: the legal docs are reachable pre-auth and
+            post-gate, but `router.back()` is a dead-end if there's no Stack
+            history (e.g. user signs out from the consent gate — the
+            post-signOut landing was /legal/privacy with no way out). A
+            explicit sign-in link gives the user an escape hatch regardless
+            of how they landed here. i18n: `legalScreenSignIn` /
+            `legalScreenSignInHint`. */}
+        <View style={styles.footer}>
+          <Text style={styles.footerHint}>
+            {t('legal:legalScreenSignInHint') as string}
+          </Text>
+          <Pressable
+            onPress={() => router.replace('/sign-in')}
+            accessibilityRole="link"
+            accessibilityLabel={t('legal:legalScreenSignIn') as string}
+          >
+            <Text style={styles.footerLinkText}>
+              {t('legal:legalScreenSignIn') as string}
+            </Text>
+          </Pressable>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -123,5 +145,27 @@ const styles = StyleSheet.create({
   sectionBody: {
     ...typography.bodyMd,
     color: colors.textSecondary,
+  },
+  footer: {
+    marginTop: spacing.lg,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  footerHint: {
+    ...typography.labelSm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  footerLink: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  footerLinkText: {
+    ...typography.bodyMd,
+    color: colors.primary,
+    fontWeight: '700',
   },
 });

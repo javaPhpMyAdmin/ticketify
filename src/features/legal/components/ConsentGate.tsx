@@ -37,7 +37,7 @@ interface ConsentGateProps {
 export function ConsentGate({ userId, onSignOut }: ConsentGateProps) {
   const { t } = useTranslation(['legal', 'settings', 'auth']);
   const pathname = usePathname();
-  const { status, accept, isAccepting, error } = useLegalConsent(userId ?? '');
+  const { status, accept, isAccepting, isError } = useLegalConsent(userId ?? '');
 
   if (!shouldShowConsentGate(status, pathname)) return null;
 
@@ -68,7 +68,11 @@ export function ConsentGate({ userId, onSignOut }: ConsentGateProps) {
           </Pressable>
         </View>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {isError ? (
+          <Text style={styles.error}>
+            {t('legal:acceptanceErrorMessage') as string}
+          </Text>
+        ) : null}
 
         <Pressable
           style={styles.acceptButton}

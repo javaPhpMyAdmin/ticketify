@@ -277,8 +277,14 @@ export const useSessionStore = create<SessionState>((set) => ({
       if (!useSessionStore.getState().session) return;
       throw new Error(error.message);
     }
-    // SIGNED_OUT fires through onAuthStateChange and clears the session; the
-    // gate then shows the sign-in screen.
+    // SIGNED_OUT fires through onAuthStateChange and clears the session;
+    // explicitly navigate to the auth landing so the user never lands on
+    // an unauthenticated root route (the legal docs are reachable pre-auth
+    // but their back-arrow is a dead-end without a Stack history). The
+    // dynamic import keeps router out of the store's module-graph so SSR
+    // / non-RN consumers don't break.
+    const { router } = await import('expo-router');
+    router.replace('/sign-in');
   },
 
   deleteAccount: async () => {

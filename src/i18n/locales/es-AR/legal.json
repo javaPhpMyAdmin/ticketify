@@ -120,5 +120,8 @@
   "consentGateBody": "Para continuar usando Ticketify necesitás aceptar la Política de privacidad y los Términos y condiciones actualizados.",
   "consentGateAccept": "Aceptar",
   "consentGateSignOut": "Cerrar sesión",
-  "signUpConsentRequired": "Tenés que aceptar la Política de privacidad y los Términos y condiciones para continuar."
+  "signUpConsentRequired": "Tenés que aceptar la Política de privacidad y los Términos y condiciones para continuar.",
+  "acceptanceErrorMessage": "No pudimos registrar tu aceptación. Intentá de nuevo.",
+  "legalScreenSignIn": "Iniciar sesión",
+  "legalScreenSignInHint": "Volvé al inicio para iniciar sesión o crear una cuenta."
 }

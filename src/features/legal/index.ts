@@ -20,4 +20,3 @@ export {
 } from './pending-acceptance';
 export type { PendingAcceptanceStore } from './pending-acceptance';
 export { useLegalConsent } from './use-legal-consent';
-export { ACCEPTANCE_WRITE_ERROR_MESSAGE } from './record-acceptance';

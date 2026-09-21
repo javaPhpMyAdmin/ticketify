@@ -13,6 +13,7 @@
  * without a session.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { queryKeys } from '@/lib/query-keys';
@@ -23,7 +24,7 @@ import {
   type LegalConsentStatus,
 } from './legal-consent';
 import { LATEST_LEGAL_VERSIONS } from './legal-versions';
-import { ACCEPTANCE_WRITE_ERROR_MESSAGE, recordAcceptance } from './record-acceptance';
+import { recordAcceptance } from './record-acceptance';
 
 async function readLegalAcceptances(userId: string): Promise<LegalAcceptanceRow[]> {
   if (!isSupabaseConfigured) {
@@ -46,12 +47,16 @@ export interface UseLegalConsentResult {
   /** Records both acceptances at the LATEST versions, then re-reads. */
   accept: () => Promise<void>;
   isAccepting: boolean;
-  /** User-safe message when the last accept() write failed. */
-  error: string | null;
+  /** True if the last accept() write failed (caller renders via i18n). */
+  isError: boolean;
 }
 
 export function useLegalConsent(userId: string): UseLegalConsentResult {
   const queryClient = useQueryClient();
+  // Errors render via `legal:acceptanceErrorMessage` (was hardcoded English
+  // in a constant before — see PR fix). The boolean here is the source of
+  // truth; the i18n lookup is the caller's responsibility.
+  void useTranslation('legal'); // ensure the namespace is loaded so t() works
 
   const acceptancesQuery = useQuery({
     queryKey: queryKeys.legal(userId),
@@ -65,8 +70,9 @@ export function useLegalConsent(userId: string): UseLegalConsentResult {
         recordAcceptance('privacy', LATEST_LEGAL_VERSIONS.privacy),
         recordAcceptance('terms', LATEST_LEGAL_VERSIONS.terms),
       ]);
-      const failed = results.find((result) => result.status === 'error');
-      if (failed) throw new Error(failed.message);
+      if (results.some((r) => r.status === 'error')) {
+        throw new Error('recording failed');
+      }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.legal(userId) });
@@ -83,10 +89,6 @@ export function useLegalConsent(userId: string): UseLegalConsentResult {
     status,
     accept: () => acceptMutation.mutateAsync(),
     isAccepting: acceptMutation.isPending,
-    error: acceptMutation.isError
-      ? (acceptMutation.error instanceof Error
-          ? acceptMutation.error.message
-          : ACCEPTANCE_WRITE_ERROR_MESSAGE)
-      : null,
+    isError: acceptMutation.isError,
   };
 }
