@@ -8,17 +8,13 @@
       "distribution": "internal",
       "android": {
         "buildType": "app-bundle",
-        "versionCode": {
-          "autoincrement": true
-        }
+        "autoIncrement": "versionCode"
       }
     },
     "production": {
       "android": {
         "buildType": "app-bundle",
-        "versionCode": {
-          "autoincrement": true
-        }
+        "autoIncrement": "versionCode"
       }
     }
   },
