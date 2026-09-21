@@ -1,10 +1,8 @@
-# Pro Subscription Specification
+# Delta for Pro Subscription
 
-## Purpose
+> **External Dependency (release precondition)** — Play Console + App Store Connect must each have intro offer "Free trial, 7 days" configured per product (monthly + annual). Owner action, gates release. No code task. Rollback: disable intro offers in store dashboards; existing paid users unaffected.
 
-Server-side tier model, tier-aware scan quota, RevenueCat webhook ledger, subscription lifecycle, and RLS posture for the Ticketify paywall and gating system. Covers the database layer and RPCs that enforce the Pro/Free access boundary; client-side gate infrastructure, charts, meters, and UI are out of scope (covered by other specs).
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Tier Model
 
@@ -13,13 +11,12 @@ The system SHALL expose a `profiles.tier` column with exactly two allowed values
 (Previously: Grant also cleared `profiles.trial_ends_at`; revoke set `'expired'` if current was `'trial'`, else `'none'`.)
 (REQ-PRO-1..5, REQ-SYNC-5)
 
-> Source: change `revenuecat-trial-migration` (archived 2026-09-20). Merged from delta `openspec/changes/archive/2026-09-20-revenuecat-trial-migration/specs/pro-subscription/spec.md`.
-
 #### Scenario: Pro grant normalizes scan limit
 
 - GIVEN a free user with `scans_limit = 15` for the current month
 - WHEN `set_profile_tier(user_id, 'pro')` is called via service_role
 - THEN `profiles.tier = 'pro'` and `scan_usage.scans_limit = NULL` for current and future months
+- AND `profiles.subscription_status = 'active'`
 - AND the `protect_profile_tier` trigger allows the write (current_user = 'postgres')
 
 #### Scenario: Revoke re-imposes free cap
@@ -41,59 +38,11 @@ The system SHALL expose a `profiles.tier` column with exactly two allowed values
 - WHEN `set_profile_tier(user_id, 'pro')` is called
 - THEN the RPC raises an exception with SQLSTATE `P0002`
 
-### Requirement: Tier-Aware Scan Quota
-
-The system SHALL maintain a `scan_usage` table with a nullable `scans_limit` column (default 15). A `scans_limit = NULL` row is the Pro unlimited marker; a numeric value is the free cap. The `try_consume_scan(user_id, year_month)` RPC SHALL be tier-aware: it reads `profiles.tier` server-side, and the guarded UPDATE accepts the increment when `v_tier = 'pro'` OR `scans_used < coalesce(scans_limit, 15)`. The `coalesce` defends against any row that drifted out of the normalization invariant. On success, the RPC returns `(true, scans_used, scans_limit)`. When the cap is reached, the RPC returns `(false, scans_used, scans_limit)` — it MUST NOT raise. The RPC is service-role only (REVOKE from anon/authenticated).
-
-(REQ-QUOTA-1..7)
-
-#### Scenario: Pro user consumes unlimited
-
-- GIVEN a Pro user with `scans_limit = NULL` for the current month
-- WHEN `try_consume_scan` is called
-- THEN the UPDATE succeeds and returns `(true, scans_used, NULL)`
-
-#### Scenario: Free user reaches cap
-
-- GIVEN a free user with `scans_used = 15` and `scans_limit = 15`
-- WHEN `try_consume_scan` is called
-- THEN the RPC returns `(false, 15, 15)` — no exception raised
-
-#### Scenario: New month row respects tier
-
-- GIVEN a Pro user with no row for the target month
-- WHEN `try_consume_scan` is called for a new month
-- THEN the INSERT creates a row with `scans_limit = NULL` (Pro marker), not the default 15
-
-#### Scenario: Race at boundary
-
-- GIVEN a free user at `scans_used = 14` with `scans_limit = 15`
-- WHEN two concurrent `try_consume_scan` calls arrive
-- THEN exactly one succeeds (scans_used becomes 15) and one returns `(false, 15, 15)`
-
-### Requirement: Save-Time Scan Consumption
-
-The system SHALL expose a `consume_scan_on_save()` RPC that atomically consumes one scan slot scoped to `auth.uid()` at the point of purchase save (not at parse time). The RPC is SECURITY DEFINER and callable by `authenticated`. It reads `profiles.tier` server-side via a correlated subselect in the UPDATE to prevent TOCTOU drift. The RPC returns `(ok, scans_used, scans_limit)` and MUST NOT raise when the cap is reached.
-
-#### Scenario: Successful save consumes one slot
-
-- GIVEN a free user with `scans_used = 5` and `scans_limit = 15`
-- WHEN `consume_scan_on_save()` is called
-- THEN `scans_used` becomes 6 and the RPC returns `(true, 6, 15)`
-
-#### Scenario: Save at cap returns false
-
-- GIVEN a free user at `scans_used = 15`
-- WHEN `consume_scan_on_save()` is called
-- THEN the RPC returns `(false, 15, 15)` — no exception
-
 ### Requirement: Subscription Lifecycle
 
 The system SHALL maintain `profiles.subscription_status` with exactly two states: `'none'` and `'active'`. The `sync_subscription_status(user_id, status)` RPC SHALL be called by the RevenueCat webhook (service-role only) to update `subscription_status` and is SECURITY DEFINER (bypasses the `protect_profile_tier` trigger). The RPC MUST validate the `status` argument against the allowlist `('none', 'active')` and reject anything else before touching the row. The DB-driven `start_free_trial()` RPC is removed; trial activation is performed exclusively via Play Console / App Store Connect intro offers, surfaced in the app via `REQ-PRO-INTRO-CAPTION`. The `expire_overdue_trials()` RPC is removed; expiry is reconciled from the RevenueCat webhook.
 
 (Previously: Maintained four states `'none' | 'trial' | 'active' | 'expired'`; exposed `start_free_trial()` for a 5-day DB trial with one-trial-per-user enforcement; accepted `trial_ends_at` as an optional `sync_subscription_status` argument.)
-
-> Source: change `revenuecat-trial-migration` (archived 2026-09-20). Merged from delta `openspec/changes/archive/2026-09-20-revenuecat-trial-migration/specs/pro-subscription/spec.md`.
 
 #### Scenario: Webhook syncs subscription status to active
 
@@ -113,59 +62,12 @@ The system SHALL maintain `profiles.subscription_status` with exactly two states
 - WHEN the RevenueCat webhook calls `sync_subscription_status(user_id, 'none')`
 - THEN `subscription_status` becomes `'none'`
 
-### Requirement: Ever-Paid Flag
-
-The system SHALL maintain a `profiles.ever_paid` boolean column (NOT NULL, default false) that is monotonic — once set to true, it MUST NOT be unset. The flag is set only server-side by the `mark_ever_paid(user_id)` RPC (SECURITY DEFINER, service-role only). It is backfilled from existing active paid profiles and webhook_events ledger rows for `INITIAL_PURCHASE`, `RENEWAL`, or `UNCANCELLATION` event types. The `ever_paid` flag is used by `start_free_trial()` to prevent former paid users from starting a free trial.
-
-#### Scenario: Webhook marks ever_paid
-
-- GIVEN a user with `ever_paid = false`
-- WHEN a RevenueCat `INITIAL_PURCHASE` webhook calls `mark_ever_paid(user_id)`
-- THEN `ever_paid` becomes `true`
-- AND a subsequent `start_free_trial()` call is rejected
-
-#### Scenario: Client cannot set ever_paid
-
-- GIVEN any authenticated user
-- WHEN the user attempts to UPDATE `ever_paid` on their profile
-- THEN the `protect_profile_tier` trigger rejects the write
-
-### Requirement: Webhook Events Ledger
-
-The system SHALL maintain a `webhook_events` table keyed by `(user_id, event_id)` as a composite primary key. Columns: `event_ts timestamptz`, `event_type text`, `applied_at timestamptz default now()`. The ledger is the idempotency and ordering source of truth for RevenueCat webhook processing: the webhook inserts with `ON CONFLICT DO NOTHING` and checks whether a row was returned. No row returned = already-seen event = 200 no-op. After a successful insert, the webhook checks `max(event_ts)` for the user; if `event_ts < max(event_ts)`, the event is out-of-order and treated as a 200 no-op. An index on `(user_id, event_ts desc)` makes the ordering query index-only. RLS is enabled: authenticated users may SELECT their own rows only (`auth.uid() = user_id`). No write policy exists — all inserts go through service_role which bypasses RLS. The table has no retention policy (small, grows monotonically).
-
-(REQ-SYNC-1..7)
-
-#### Scenario: Duplicate event deduplicated
-
-- GIVEN a user with an existing `(user_id, event_id)` row in `webhook_events`
-- WHEN the webhook delivers the same event again (retry)
-- THEN the INSERT returns no row (ON CONFLICT DO NOTHING)
-- AND the webhook returns 200 no-op
-
-#### Scenario: Out-of-order event skipped
-
-- GIVEN a user with `max(event_ts) = '2026-08-15T10:00:00Z'` in `webhook_events`
-- WHEN a webhook delivers an event with `event_ts = '2026-08-14T10:00:00Z'`
-- THEN the INSERT succeeds (new event_id)
-- BUT the ordering check detects `event_ts < max(event_ts)`
-- AND the webhook returns 200 no-op without calling `set_profile_tier`
-
-#### Scenario: User can read own ledger
-
-- GIVEN a user with rows in `webhook_events`
-- WHEN the user queries the table via authenticated client
-- THEN their own rows are returned
-- AND other users' rows are not visible
-
 ### Requirement: RLS Posture — Server-Managed Columns
 
 The `protect_profile_tier` trigger SHALL fire on every INSERT and UPDATE to `profiles` and enforce that `tier`, `subscription_status`, and `ever_paid` are managed exclusively by SECURITY DEFINER functions. The trigger recognizes `current_user = 'postgres'` (the SECURITY DEFINER owner) and allows the write; every other role is rejected. INSERT guards: `tier` must be `'free'` (the default), `subscription_status` must be `'none'`, `ever_paid` must be false. UPDATE guards: none of the three columns may change. The `profiles_update_own` RLS policy (0008) allows authenticated users to update their own profile row with `auth.uid() = id` — but the trigger blocks any change to the server-managed columns, so only non-server-managed fields (e.g., `full_name`, `monthly_budget`) pass through.
 
 (Previously: `trial_ends_at` was also server-managed and rejected on UPDATE; INSERT required `trial_ends_at IS NULL`. The trigger now guards three columns instead of four.)
 (REQ-SYNC-5, REQ-PROF-1..3)
-
-> Source: change `revenuecat-trial-migration` (archived 2026-09-20). Merged from delta `openspec/changes/archive/2026-09-20-revenuecat-trial-migration/specs/pro-subscription/spec.md`.
 
 #### Scenario: Authenticated user updates allowed field
 
@@ -189,7 +91,7 @@ The `protect_profile_tier` trigger SHALL fire on every INSERT and UPDATE to `pro
 #### Scenario: Authenticated user rejected on ever_paid
 
 - GIVEN an authenticated user
-- WHEN the user attempts to set `ever_paid = true`
+- WHEN the user attempts to set `ever_paid = true` on their own profile
 - THEN the trigger raises `'ever_paid is managed server-side'`
 
 #### Scenario: Raw service_role UPDATE rejected
@@ -199,24 +101,11 @@ The `protect_profile_tier` trigger SHALL fire on every INSERT and UPDATE to `pro
 - THEN the trigger fires with `current_user = 'service_role'` (not 'postgres')
 - AND the trigger rejects the write
 
-### Requirement: Monthly Totals Cache Integration
-
-The pro-subscription smoke test (0011 + 0015) SHALL verify that `monthly_user_totals` cache table and `recalculate_monthly_totals` RPC exist as catalog objects. The `monthly_user_totals` table provides materialized spend totals maintained by a Postgres trigger on `purchases`. The cache is NOT written by the quota or tier system — it is maintained independently by the `trigger_recalculate_monthly_totals` trigger. The pro-subscription SQL smoke test covers the cache as a dependency check; the cache's full behavior is specified in the Monthly Totals Cache specification.
-
-#### Scenario: Smoke test verifies cache exists
-
-- GIVEN a scratch database with all migrations applied
-- WHEN the pro-subscription smoke test runs
-- THEN assertions confirm `monthly_user_totals` table exists
-- AND assertions confirm `recalculate_monthly_totals` function exists
+## ADDED Requirements
 
 ### Requirement: Plan Button Intro Caption (REQ-PRO-INTRO-CAPTION)
 
-> **External Dependency (release precondition)** — Play Console + App Store Connect must each have intro offer "Free trial, 7 days" configured per product (monthly + annual). Owner action, gates release. No code task. Rollback: disable intro offers in store dashboards; existing paid users unaffected.
-
 The paywall `PlanButton` MUST render an intro-offer caption `"X días gratis, después $Y.YY"` ABOVE the recurring price when the package is intro-eligible. The caption source is `getOfferings()`, extended for Android via `product.defaultOption.pricingPhases` filtering `offerPaymentMode === 'FREE_TRIAL'`, and for iOS via `product.discounts[]`. The caption MUST be hidden when `checkTrialOrIntroEligibility(identifier)` returns `INELIGIBLE` or `NO_INTRO_OFFER_EXISTS` for that package. On Android, `UNKNOWN` (always returned by the SDK) keeps the caption visible — Play re-states the intro terms at checkout. The recurring price line below the caption is unchanged.
-
-> Source: change `revenuecat-trial-migration` (archived 2026-09-20). Merged from delta `openspec/changes/archive/2026-09-20-revenuecat-trial-migration/specs/pro-subscription/spec.md`.
 
 #### Scenario: Eligible user sees caption above price
 
@@ -242,8 +131,6 @@ The paywall `PlanButton` MUST render an intro-offer caption `"X días gratis, de
 ### Requirement: Profile Trial Pill (REQ-PRO-TRIAL-PILL)
 
 The profile screen MUST display a "trial ends on {{date}}" pill sourced exclusively from `CustomerInfo.entitlements.all.pro` when the active entitlement is in an introductory-price phase. The pill MUST be hidden when the user is not on a trial or after trial conversion (entitlement is on the recurring phase). The pill MUST NOT read `profiles.trial_ends_at` — that column is removed. When the clean trial-end date is not derivable from `CustomerInfo`, the pill degrades to a plain "Pro" tier chip with no countdown.
-
-> Source: change `revenuecat-trial-migration` (archived 2026-09-20). Merged from delta `openspec/changes/archive/2026-09-20-revenuecat-trial-migration/specs/pro-subscription/spec.md`.
 
 #### Scenario: Active trial user sees pill
 
