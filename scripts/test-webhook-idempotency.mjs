@@ -179,6 +179,22 @@ async function run() {
     assert.equal(mapTier('PRODUCT_CHANGE'), null);
   });
 
+  // Post-cutover (0039 + slice A webhook slim): TRIAL_STARTED +
+  // TRIAL_ENDED are no-ops. They fall through `mapTier → null → 200
+  // no-op` because they were removed from GRANT_EVENT_TYPES and
+  // REVOKE_EVENT_TYPES (trial eligibility moved to Play Console /
+  // App Store Connect native intro offers). Pin the contract so a
+  // future re-introduction can't silently downgrade the webhook
+  // handler into writing to a no-longer-existent `subscription_status`
+  // / `trial_ends_at` surface.
+  await test('TRIAL_STARTED → null (post-cutover no-op — slice A webhook slim)', () => {
+    assert.equal(mapTier('TRIAL_STARTED'), null);
+  });
+
+  await test('TRIAL_ENDED → null (post-cutover no-op — slice A webhook slim)', () => {
+    assert.equal(mapTier('TRIAL_ENDED'), null);
+  });
+
   await test('NON_RENEWING_PURCHASE → null (unrecognized → 200 no-op)', () => {
     assert.equal(mapTier('NON_RENEWING_PURCHASE'), null);
   });

@@ -150,12 +150,13 @@ function resetAll() {
     editingId: null,
   });
   proStoreMod.useProStore.setState({
+    // Post-cutover (0039): the pro store no longer carries
+    // subscriptionStatus / isTrialing / isFrozen. Slice C
+    // re-introduced `trialEndsAt` (sourced from CustomerInfo) for
+    // REQ-PRO-TRIAL-PILL on the profile screen.
     isPro: false,
     isLoading: true,
-    subscriptionStatus: 'none',
     trialEndsAt: null,
-    isTrialing: false,
-    isFrozen: false,
     everPaid: false,
   });
   householdStoreMod.useHouseholdStore.setState({

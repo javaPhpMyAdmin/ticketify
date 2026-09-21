@@ -81,6 +81,26 @@ const REMOVED_SETTINGS_KEYS = [
   'startFreeTrial',
 ];
 
+// Pre-cutover pro namespace keys that were removed during slices A and
+// B (the trial CTA, the trial countdown, the trial-expired surfaces).
+// Slice D adds an orphan-regression check to prevent these keys from
+// silently creeping back into any locale (e.g. via a stray revert or
+// a partial re-merge). The keys are gone from the production code
+// AND from every locale's pro.json; this check makes "gone" explicit.
+const REMOVED_PRO_KEYS = [
+  'trialBannerDays_one',
+  'trialBannerDays_other',
+  'trialStartCTA',
+  'trialStartSubtitle',
+  'trialStartBillingNote',
+  'trialExpiredTitle',
+  'trialExpiredSubtitle',
+  'errorTrialAlreadyUsed',
+  'errorTrialStartFailed',
+  'trialActiveDays_one',
+  'trialActiveDays_other',
+];
+
 console.log('\n[tests] section 1 — pro.json catalog parity (REQ-1)\n');
 
 test('pro.json key sets are identical across the three locales', () => {
@@ -156,6 +176,30 @@ test('the 5-branch-source keys are absent in every locale (slice C cleanup)', ()
       assert.ok(
         !(key in catalog),
         `${where} should be removed (post-cutover the trial lifecycle is gone)`,
+      );
+    }
+  }
+});
+
+console.log('\n[tests] section 4 — pro orphan regression (slice D)\n');
+
+test('pre-cutover pro trial keys never leak back into any locale', () => {
+  // Defensive: the slice A R1-2 + slice B collateral removed every
+  // pre-cutover trial surface from production code. If a future revert
+  // or partial merge accidentally re-introduces one of these keys,
+  // this test catches it before the paywall renders a dead label.
+  // 11 keys covers the full pre-cutover trial lifecycle surface
+  // (trialBannerDays_one/_other, trialStartCTA / trialStartSubtitle /
+  // trialStartBillingNote, trialExpiredTitle / trialExpiredSubtitle,
+  // errorTrialAlreadyUsed / errorTrialStartFailed,
+  // trialActiveDays_one/_other).
+  for (const locale of LOCALES) {
+    const catalog = readCatalog(locale, 'pro');
+    for (const key of REMOVED_PRO_KEYS) {
+      const where = `${locale}/pro.json:${key}`;
+      assert.ok(
+        !(key in catalog),
+        `${where} should be absent (post-cutover the trial lifecycle is gone)`,
       );
     }
   }

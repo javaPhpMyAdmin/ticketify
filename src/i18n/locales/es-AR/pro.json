@@ -31,8 +31,6 @@
   "configureBudgetsA11y": "Configurar presupuestos por categoría",
   "editBudgets": "Editar",
   "configureBudgets": "Configurar",
-  "trialActiveDays_one": "Tu prueba PRO está activa — {{count}} día restante",
-  "trialActiveDays_other": "Tu prueba PRO está activa — {{count}} días restantes",
   "manageSubscription": "Administrar suscripción",
   "manageSubscriptionHint": "Cancelá o cambiá tu plan en Google Play",
   "paywallHeaderTitle": "Suscribite a Pro",
