@@ -103,6 +103,10 @@ jobs:
         # sync_subscription_status rejects 'trial'/'expired' (allow-list
         # narrowed to 'none'/'active'); backfill-equivalent UPDATE
         # matches zero rows post-cutover (idempotency).
+        # NOTE: the 0040 rollback migration + its paired smoke live in
+        # supabase/manual/ (NOT auto-applied by `db reset` — they're
+        # manual-only). See supabase/manual/0040_rc_trial_rollback.sql
+        # for the <1h rollback runbook header.
         run: supabase db query --local --file supabase/tests/trial-cutover.sql
 
       - name: Run legal-acceptances SQL smoke test

@@ -151,6 +151,11 @@ run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'household-ga
 console.log('\n== Running trial-cutover SQL smoke test ==\n');
 run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'trial-cutover.sql')]);
 
+// NOTE: trial-rollback.sql lives in supabase/manual/ — it's NOT in the
+// standard CI chain. The rollback migration + its paired smoke are
+// run manually when the operator invokes the <1h rollback runbook.
+// See supabase/manual/0040_rc_trial_rollback.sql for the runbook header.
+
 console.log('\n== Running delete-account SQL smoke test ==\n');
 run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'delete-account.sql')]);
 
