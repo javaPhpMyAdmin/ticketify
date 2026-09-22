@@ -190,6 +190,11 @@ export default function RootLayout() {
                    writes the user's profile row and renders their current
                    monthly cap, so it lives behind the session gate. */}
               <Stack.Screen name="settings/budget" />
+              {/* Same gate rationale: this screen reads AND deletes the
+                   user's own account data, so it must never be reachable
+                   pre-auth — keep it inside Stack.Protected alongside the
+                   currency/budget editors. */}
+              <Stack.Screen name="settings/delete-account" />
               {/* Pro paywall + Pro-gated charts placeholder. The paywall is
                   session-gated only (free users reach it to upgrade); the
                   charts screen enforces its Pro gate inside the screen body

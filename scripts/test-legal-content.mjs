@@ -503,7 +503,7 @@ async function run() {
     // OUTSIDE the guard is the U5 contract — moving a legal screen INTO the
     // block below still fails this assertion loudly.)
     const protectedBlock =
-      layoutSource.match(/<Stack\.Protected>[\s\S]*<\/Stack\.Protected>/)?.[0] ?? '';
+      layoutSource.match(/<Stack\.Protected[^>]*>[\s\S]*?<\/Stack\.Protected>/)?.[0] ?? '';
     assert.ok(
       !protectedBlock.includes('Stack.Screen name="legal'),
       'legal routes must NOT be registered inside Stack.Protected (public by absence)',

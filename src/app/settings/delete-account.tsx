@@ -55,6 +55,11 @@ export default function DeleteAccountScreen() {
     initialDraft?.typedValue ?? '',
   );
   const [deleting, setDeleting] = useState(false);
+  // Error from the platform-native subscription manager (REQ-ACCTDEL-7
+  // manage-subscription link). Rendered inline near the banner instead
+  // of a silent no-op — a misconfigured install must be observable
+  // (same contract as the profile screen's manage-subscription row).
+  const [manageSubscriptionError, setManageSubscriptionError] = useState<string | null>(null);
 
   // Write-through: every keystroke updates the store draft so a household
   // detour preserves the input verbatim (design §14 Decision 2 — store,
@@ -130,7 +135,11 @@ export default function DeleteAccountScreen() {
   };
 
   const handleManageSubscription = async () => {
-    await showManageSubscriptions();
+    setManageSubscriptionError(null);
+    const result = await showManageSubscriptions();
+    if (!result.ok && result.error) {
+      setManageSubscriptionError(result.error);
+    }
   };
 
   return (
@@ -183,6 +192,9 @@ export default function DeleteAccountScreen() {
               </Text>
               <Icon name="chevron.right" size={16} color={colors.primary} />
             </Pressable>
+          ) : null}
+          {manageSubscriptionError ? (
+            <Text style={styles.bannerError}>{manageSubscriptionError}</Text>
           ) : null}
         </Card>
 
@@ -302,6 +314,12 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '700',
     fontSize: 14,
+  },
+  // Manage-subscription failure readout — mirrors the profile screen's
+  // inline error contract so a dead deep-link is observable, not silent.
+  bannerError: {
+    ...typography.bodyMd,
+    color: colors.danger,
   },
   // ── Export nudge ─────────────────────────────────────────────────────
   exportNudge: {

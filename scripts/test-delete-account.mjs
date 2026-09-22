@@ -59,7 +59,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -675,6 +675,91 @@ async function run() {
     } finally {
       restore();
     }
+  });
+
+  // ---------------------------------------------------------------------
+  // (d) delete-account SCREEN wiring — manage-subscription error surface.
+  // The regression: `handleManageSubscription` awaited
+  // `showManageSubscriptions()` and IGNORED the result envelope, so a
+  // misconfigured install (RC not configured, native module missing)
+  // produced a dead button — no error, no feedback. The profile screen
+  // handles this right (result.error → local state → rendered inline);
+  // the delete-account screen must mirror it. Source-level pins (the
+  // F4 pattern from test-legal-content.mjs): the handler captures the
+  // result and stores its error; the error renders inline near the
+  // banner link.
+  // ---------------------------------------------------------------------
+  console.log('\n[tests] delete-account screen — manage-subscription error surface\n');
+
+  const deleteAccountScreen = readFileSync(
+    join(root, 'src', 'app', 'settings', 'delete-account.tsx'),
+    'utf8',
+  );
+
+  await test('handler captures the showManageSubscriptions() result (no more bare await)', () => {
+    assert.ok(
+      deleteAccountScreen.includes('const result = await showManageSubscriptions();'),
+      'handleManageSubscription must capture the result envelope',
+    );
+  });
+
+  await test('a failed result stores its error in local state', () => {
+    assert.ok(
+      deleteAccountScreen.includes('setManageSubscriptionError(result.error)'),
+      'a non-ok result.error must be stored into local state',
+    );
+    assert.ok(
+      deleteAccountScreen.includes('manageSubscriptionError'),
+      'local state for the manage-subscription error must exist',
+    );
+  });
+
+  await test('the error renders inline near the banner', () => {
+    assert.ok(
+      deleteAccountScreen.includes('<Text style={styles.bannerError}>'),
+      'the error must render inline as banner error text',
+    );
+    assert.ok(
+      deleteAccountScreen.includes('bannerError: {'),
+      'a bannerError style must exist (inline error copy pattern)',
+    );
+  });
+
+  // ---------------------------------------------------------------------
+  // (e) delete-account ROUTE registration — session-gate membership.
+  // `/settings/delete-account` reads AND deletes the user's own account
+  // data, so it must live INSIDE Stack.Protected like the currency /
+  // budget editors — without registration it auto-registers OUTSIDE the
+  // guard and a signed-out deep link would reach a destructive screen.
+  // Mirrors the F4 slicing technique from test-legal-content.mjs (which
+  // separately pins the LEGAL screens OUTSIDE the guard — that boundary
+  // is asserted there and must not move).
+  // ---------------------------------------------------------------------
+  console.log('\n[tests] delete-account route — session-gate registration\n');
+
+  const layoutSource = readFileSync(
+    join(root, 'src', 'app', '_layout.tsx'),
+    'utf8',
+  );
+  const protectedBlock =
+    layoutSource.match(/<Stack\.Protected[^>]*>[\s\S]*?<\/Stack\.Protected>/)?.[0] ?? '';
+
+  await test('settings/delete-account is registered INSIDE Stack.Protected', () => {
+    assert.ok(
+      protectedBlock.includes('Stack.Screen name="settings/delete-account"'),
+      'delete-account must be registered inside the session gate (it reads/writes the user\'s own data)',
+    );
+  });
+
+  await test('gate sanity: known protected siblings (settings/currency, settings/budget) are also inside', () => {
+    assert.ok(
+      protectedBlock.includes('Stack.Screen name="settings/currency"'),
+      'control: settings/currency must stay inside the protected block',
+    );
+    assert.ok(
+      protectedBlock.includes('Stack.Screen name="settings/budget"'),
+      'control: settings/budget must stay inside the protected block',
+    );
   });
 
   console.log('');

@@ -47,6 +47,12 @@ import {
   View,
 } from '@/components';
 import { useProEntitlement } from '@/features/pro';
+import {
+  isPlanBusy,
+  planCaptionColor,
+  type PlanKey,
+  type PaywallState,
+} from '@/features/pro/paywall-model';
 import { syncSubscriptionStatus } from '@/lib/supabase/feature-access';
 import {
   buildIntroCaption,
@@ -58,8 +64,6 @@ import {
 } from '@/lib/revenuecat';
 import { colors, radii, spacing, typography } from '@/theme';
 
-type PaywallState = 'loading' | 'ready' | 'purchasing' | 'error';
-
 export default function PaywallScreen() {
   const { refresh } = useProEntitlement();
   const { t } = useTranslation('pro');
@@ -67,6 +71,10 @@ export default function PaywallScreen() {
   const [offerings, setOfferings] = useState<OfferingsSnapshot | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
+  // Which plan's purchase is in flight. Per-plan busy (NOT the shared
+  // `state === 'purchasing'` flag) so a monthly tap does NOT spin the
+  // annual button (the regression: white spinner on the emerald button).
+  const [purchasingPlan, setPurchasingPlan] = useState<PlanKey | null>(null);
 
   const loadOfferings = useCallback(async () => {
     setState('loading');
@@ -90,8 +98,21 @@ export default function PaywallScreen() {
     void loadOfferings();
   }, [loadOfferings]);
 
-  const handlePurchase = async (identifier: string) => {
+  const handlePurchase = async (plan: PlanKey) => {
     if (state === 'purchasing') return;
+    // Resolve the SDK identifier from the loaded offerings; the buttons
+    // only render when the offering exists, so this is the same
+    // non-null contract as the old `offerings.monthly!.identifier`.
+    const identifier =
+      plan === 'monthly'
+        ? offerings?.monthly?.identifier
+        : offerings?.annual?.identifier;
+    if (!identifier) {
+      setErrorMessage(t('errorGeneric'));
+      setState('error');
+      return;
+    }
+    setPurchasingPlan(plan);
     setState('purchasing');
     setErrorMessage(null);
     const result = await purchasePackage(identifier);
@@ -184,8 +205,8 @@ export default function PaywallScreen() {
               <PlanButton
                 label={t('planMonthly')}
                 introPhase={offerings.monthly.introPhase}
-                onPress={() => handlePurchase(offerings.monthly!.identifier)}
-                busy={state === 'purchasing'}
+                onPress={() => handlePurchase('monthly')}
+                busy={isPlanBusy('monthly', purchasingPlan, state)}
               />
             ) : null}
             {offerings.annual ? (
@@ -193,8 +214,8 @@ export default function PaywallScreen() {
                 label={t('planAnnual')}
                 emphasis
                 introPhase={offerings.annual.introPhase}
-                onPress={() => handlePurchase(offerings.annual!.identifier)}
-                busy={state === 'purchasing'}
+                onPress={() => handlePurchase('annual')}
+                busy={isPlanBusy('annual', purchasingPlan, state)}
               />
             ) : null}
             {!offerings.monthly && !offerings.annual ? (
@@ -319,7 +340,18 @@ function PlanButton({
           {/* Intro caption renders ABOVE the price — the visual hierarchy
               matches the consumer's intent: "free first, then $X.XX". */}
           {caption !== null ? (
-            <Text style={styles.planButtonCaption}>{caption}</Text>
+            <Text
+              style={[
+                styles.planButtonCaption,
+                // Per-emphasis caption color (same single-source contract
+                // as the Spinner above): the emphasis (emerald) button
+                // reads its caption in `onPrimary` (white); the plain
+                // button keeps `primary`.
+                { color: planCaptionColor(!!emphasis) },
+              ]}
+            >
+              {caption}
+            </Text>
           ) : null}
           <Text
             style={[
@@ -407,11 +439,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
-  // Caption sits visually above the price line. Smaller font + primary
-  // color so it reads as a hint, not a competing CTA.
+  // Caption sits visually above the price line. Smaller font so it reads
+  // as a hint, not a competing CTA. The COLOR is deliberately NOT set
+  // here — it comes from `planCaptionColor(emphasis)` at the call site
+  // (the pure model owns the per-emphasis contrast: white on the emerald
+  // button, primary on the plain one).
   planButtonCaption: {
     ...typography.labelSm,
-    color: colors.primary,
     fontWeight: '600',
   },
   planButtonText: {
