@@ -205,10 +205,15 @@ export default function RootLayout() {
                 (legal-content REQ-1): pre-auth sign-up links, the consent
                 gate, and profile rows all open them without a session and
                 while gated. Registered explicitly so the guard boundary stays
-                documented — they must never move inside Stack.Protected. */}
+                documented — they must never move inside Stack.Protected.
+                (auth) comes FIRST: with no root index and (tabs) protected,
+                expo-router picks the first available screen as the initial
+                route when signed out — if the legal screens were declared
+                first, a fresh launch landed on /legal/privacy instead of
+                sign-in (dead-end with no history). */}
+            <Stack.Screen name="(auth)" />
             <Stack.Screen name="legal/privacy" />
             <Stack.Screen name="legal/terms" />
-            <Stack.Screen name="(auth)" />
           </Stack>
         </I18nProvider>
         {/* Mounted at the root so it survives route navigation: a
