@@ -3,7 +3,7 @@
  * subscription-trial — DB subscription state).
  *
  * Mounted inside `QueryClientProvider` in `_layout.tsx`; renders `null` so
- * it never affects the visual tree. Two effects, two concerns:
+ * it never affects the visual tree. Four effects, four concerns:
  *
  *   1. ONE-TIME SDK setup (guarded by the module-level `bootstrapped`
  *      flag): `configure` runs at most once per process — REQ-PRO-1.
@@ -16,6 +16,16 @@
  *      DB-first resolution into `useProStore`. This is the webhook
  *      identity bridge — without it every purchase lands on
  *      `$RCAnonymousID` and the server-side tier sync never runs.
+ *   3. FOREGROUND entitlement refresh (keyed on `[userId]`, added by the
+ *      pro-subscription lifecycle fix): the Play Billing Client does not
+ *      reliably push an expired entitlement to `customerInfoUpdate` while
+ *      the app is open, so on every transition to AppState `'active'` the
+ *      entitlement is re-read (`getCustomerInfo`, bounded) and the store
+ *      re-resolved — an expiry mid-session now drops the Pro UI without a
+ *      sign-out → sign-in cycle.
+ *   4. Tier-transition sync (REQ-PRO-UX): optimistically flips the cached
+ *      profile `tier` when the store's `isPro` changes and reconciles the
+ *      DB at +5s (the RevenueCat webhook is async).
  *
  * Safe-by-default (REQ-GATE-5):
  *
@@ -44,6 +54,7 @@
  *   is gone (RPC dropped by 0039 §5).
  */
 import { useEffect, useRef } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 
 import { useSessionUser } from '@/features/auth';
 import {
@@ -64,7 +75,7 @@ import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
 import type { User } from '@/types';
 
-import { isProOverrideEnabled } from './gate';
+import { isProExpiredOverrideEnabled, isProOverrideEnabled } from './gate';
 
 const REVENUECAT_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? '';
 
@@ -129,6 +140,21 @@ async function resolveProSession(
   isCurrent: () => boolean,
   identityBridged: { current: boolean },
 ): Promise<void> {
+  // DEV-ONLY (downgrade QA): simulate an EXPIRED entitlement — `gate.ts` →
+  // `isProExpiredOverrideEnabled`. Lock the store and skip ALL RevenueCat
+  // reads; the downgrade UI must be observable without touching the SDK.
+  // `isCurrent()` is checked even though nothing awaited yet, matching the
+  // file's per-user race-guard style. Mutual exclusivity: when BOTH
+  // overrides are set, the EXPIRED one wins (it is the conservative/locked
+  // default — the true-override branch in the per-user effect returns
+  // first, so this path is only reached with the true override off; the
+  // check stays explicit so the contract holds if that ordering changes).
+  if (isProExpiredOverrideEnabled()) {
+    useProStore.setState({ isPro: false, isLoading: false });
+    if (!isCurrent()) return;
+    return;
+  }
+
   // Bridge identity FIRST so the CustomerInfo snapshot below is scoped to
   // this Supabase user. A failed bridge must NOT block Pro gating — warn,
   // then resolve DB-first (the RC snapshot is not trustworthy for this
@@ -247,9 +273,33 @@ export function ProBootstrap(): null {
     // callbacks compare against the latest identity.
     activeUserIdRef.current = userId;
 
+    if (isProExpiredOverrideEnabled()) {
+      // DEV-ONLY (downgrade QA): mirror the `isProOverrideEnabled` branch
+      // but force the EXPIRED state — the store resolves locked so the
+      // downgrade UI is observable without touching RevenueCat. The ref is
+      // cleared so the SDK's customerInfoUpdate listener and the foreground
+      // refresh effect (both keyed on the bridged-identity ref) never
+      // re-write a live entitlement on top of the simulated expiry. When
+      // BOTH overrides are set, the EXPIRED override wins — it is the
+      // conservative/locked default.
+      identityBridgedRef.current = false;
+      if (userId) {
+        useProStore.setState({ isPro: false, isLoading: false });
+        // Still sync subscription state from DB for frozen-state resolution
+        // (mirror of the true-override branch below).
+        void syncSubscriptionFromDB(
+          userId,
+          () => activeUserIdRef.current === userId,
+        );
+      }
+      return;
+    }
+
     if (isProOverrideEnabled()) {
       // DEV-ONLY: see the safety note in `gate.ts`. Flips the store to Pro
-      // BEFORE any RevenueCat work so the gate opens without the SDK.
+      // BEFORE any RevenueCat work so the gate opens without the SDK. When
+      // `EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE` is ALSO set, the expired branch
+      // above wins — the two overrides are mutually exclusive by contract.
       if (userId) {
         useProStore.setState({ isPro: true, isLoading: false });
         // Still sync subscription state from DB for frozen-state resolution.
@@ -289,6 +339,80 @@ export function ProBootstrap(): null {
       identityBridgedRef,
     );
   }, [userId]);
+
+  // Effect 3 — FOREGROUND entitlement refresh (play-billing dead-air fix).
+  //
+  // The Play Billing Client does NOT reliably push an entitlement change to
+  // the SDK's `customerInfoUpdate` listener while the app sits in the
+  // foreground — it usually syncs on resume/reconnect. A subscription that
+  // EXPIRES while the app is open would therefore leave the store
+  // `isPro=true` (profile + Pro gates still paid) until the user signs out
+  // and back in. This effect re-runs the entitlement read whenever the app
+  // transitions to `'active'`, with the same bounded pattern as
+  // `resolveProSession`.
+  //
+  // Guards (all must pass before the SDK read):
+  //   - `activeUserIdRef.current !== null` — a signed-out app never resolves
+  //   - `identityBridgedRef.current === true` — only a bridged user's
+  //     snapshot is trustworthy; this ALSO implies the SDK is available AND
+  //     configured (the bridge only succeeds after `logInRevenueCat`, which
+  //     requires the native module + API key + `configure` — revenuecat.ts)
+  //   - `!isProOverrideEnabled()` — never touch the store under the dev
+  //     override (same rule as the listener)
+  //   - `!isProExpiredOverrideEnabled()` — a real re-read would fight the
+  //     simulated downgrade (fix 2), so the expired override also blocks it
+  //
+  // After the await the per-user race guard re-checks `userId`, so an
+  // in-flight foreground refresh for user A can never write B's store state
+  // (same pattern as `resolveProSession`). The store write goes through the
+  // slice-C `setProEntitlement` setter — `isPro` + `trialEndsAt` land in one
+  // atomic `set`, keeping the gate + the profile trial pill consistent.
+  useEffect(() => {
+    if (!userId) return; // signed out: no subscription (and `userId` narrows to string below)
+
+    const subscription = AppState.addEventListener(
+      'change',
+      (status: AppStateStatus) => {
+        if (status !== 'active') return;
+        if (
+          activeUserIdRef.current === null ||
+          !identityBridgedRef.current ||
+          isProOverrideEnabled() ||
+          isProExpiredOverrideEnabled()
+        ) {
+          return;
+        }
+
+        void (async () => {
+          const info = await withTimeout(
+            getCustomerInfo(),
+            REVENUECAT_CALL_TIMEOUT_MS,
+            null,
+          );
+          if (activeUserIdRef.current !== userId) return; // user flipped mid-flight
+          if (isProOverrideEnabled()) return; // never touch the store under the dev override
+
+          setProEntitlement({
+            isPro: info?.isPro ?? false,
+            trialEndsAt: info?.trialEndsAt ?? null,
+          });
+          useProStore.setState({ isLoading: false });
+
+          // The tier-transition effect below flips the cached `tier`
+          // optimistically when `isPro` changes and reconciles at +5s (the
+          // RevenueCat webhook is async). Invalidating the profile query now
+          // re-reads the webhook-painted DB row so the header settles on the
+          // new tier immediately.
+          if (activeUserIdRef.current === userId) {
+            void queryClient.invalidateQueries({
+              queryKey: queryKeys.profile(userId),
+            });
+          }
+        })();
+      },
+    );
+    return () => subscription.remove();
+  }, [userId, setProEntitlement]);
 
   // Tier-transition sync (REQ-PRO-UX): when the store reports a tier
   // flip (typically from the customerInfoUpdate listener after a

@@ -87,9 +87,8 @@ async function run() {
   await compile();
   console.log('[tests] loading compiled module…');
   installRequireHook();
-  const { resolveGateState, isProOverrideEnabled } = await import(
-    pathToFileURL(join(outDir, 'src/features/pro/gate.js')).href
-  );
+  const { resolveGateState, isProOverrideEnabled, isProExpiredOverrideEnabled } =
+    await import(pathToFileURL(join(outDir, 'src/features/pro/gate.js')).href);
 
   console.log('\n[tests] EXPO_PUBLIC_PRO_OVERRIDE override\n');
 
@@ -141,6 +140,79 @@ async function run() {
     const b = isProOverrideEnabled();
     assert.equal(a, b, 'divergent result for the same env value');
     setOverride(originalOverride);
+  });
+
+  console.log('\n[tests] EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE override (downgrade QA)\n');
+
+  // `isProExpiredOverrideEnabled` reads `process.env` at call time — same
+  // capture/restore pattern as the true-override section above. The harness
+  // sets the env BEFORE the assertions, never at import time (the compiled
+  // module is ENV-AGNOSTIC: `EXPO_PUBLIC_*` is inlined by Metro at bundle
+  // time, so the runtime value here only matters for these unit reads).
+  const originalExpired = process.env.EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE;
+  function setExpired(value) {
+    if (value === undefined) {
+      delete process.env.EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE;
+    } else {
+      process.env.EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE = value;
+    }
+  }
+
+  await test('unset → false (safe default for production builds)', () => {
+    setExpired(undefined);
+    assert.equal(isProExpiredOverrideEnabled(), false);
+  });
+
+  await test('"true" → true (developer simulates an expired entitlement for downgrade QA)', () => {
+    setExpired('true');
+    assert.equal(isProExpiredOverrideEnabled(), true);
+  });
+
+  await test('"false" → false (explicit off, e.g. after a test that toggled it on)', () => {
+    setExpired('false');
+    assert.equal(isProExpiredOverrideEnabled(), false);
+  });
+
+  await test('any non-"true" string → false (defensive: "TRUE" / "1" / "yes" do not flip the override)', () => {
+    // Same strict-literal contract as `isProOverrideEnabled` — only the
+    // literal string "true" turns the override on.
+    for (const value of ['TRUE', 'True', '1', 'yes', 'on', ' true', 'true ']) {
+      setExpired(value);
+      assert.equal(
+        isProExpiredOverrideEnabled(),
+        false,
+        `value=${JSON.stringify(value)} must NOT enable the expired override`,
+      );
+    }
+    setExpired(originalExpired);
+  });
+
+  await test('independent env reads: the two overrides never cross-talk', () => {
+    // The escape hatches read DIFFERENT env vars; flipping one must never
+    // implicitly flip the other. The contradiction when BOTH are on is
+    // resolved at the WIRING level (the EXPIRED override wins — the
+    // conservative/locked default), pinned by test-pro-bootstrap.mjs.
+    setOverride('true');
+    setExpired('true');
+    assert.equal(isProOverrideEnabled(), true);
+    assert.equal(isProExpiredOverrideEnabled(), true);
+    setExpired('false');
+    assert.equal(
+      isProOverrideEnabled(),
+      true,
+      'the true override stays on when the expired one is toggled off',
+    );
+    assert.equal(isProExpiredOverrideEnabled(), false);
+    setOverride(originalOverride);
+    setExpired(originalExpired);
+  });
+
+  await test('downgrade contract: the expired-override store inputs (isPro=false, isLoading=false) resolve to locked', () => {
+    // Fix 2: when the expired override is ON, the bootstrap forces the
+    // store to { isPro: false, isLoading: false }. That EXACT combination
+    // must keep the gate locked so the downgrade UI is observable without
+    // touching RevenueCat.
+    assert.equal(resolveGateState(false, false), 'locked');
   });
 
   console.log('\n[tests] REQ-GATE-5 binary truth table (post-cutover 0039)\n');

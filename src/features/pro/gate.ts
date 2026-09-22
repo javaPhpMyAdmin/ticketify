@@ -58,3 +58,24 @@ export function resolveGateState(
 export function isProOverrideEnabled(): boolean {
   return process.env.EXPO_PUBLIC_PRO_OVERRIDE === 'true';
 }
+
+/**
+ * DEV-ONLY ESCAPE HATCH (downgrade QA) — DO NOT ENABLE IN PRODUCTION.
+ *
+ * `EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE=true` simulates an EXPIRED pro
+ * entitlement: the bootstrap resolves the store to `isPro=false`,
+ * `isLoading=false` and skips ALL RevenueCat reads, so the gate locks and
+ * the downgrade UI (profile tier, locked analytics) is observable WITHOUT
+ * touching RevenueCat — the QA counterpart of `isProOverrideEnabled`, which
+ * forces `isPro=true`. The two overrides are MUTUALLY EXCLUSIVE: enabling
+ * both is contradictory, and when both are set the EXPIRED override wins
+ * (it is the conservative/locked default).
+ *
+ * Same production-safety contract as `isProOverrideEnabled`: the env var
+ * carries the `EXPO_PUBLIC_` prefix so Expo inlines it into the bundle at
+ * build time — there is no runtime configuration attack surface. Leave it
+ * unset (or `false`) in every production release.
+ */
+export function isProExpiredOverrideEnabled(): boolean {
+  return process.env.EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE === 'true';
+}
