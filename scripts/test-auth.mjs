@@ -90,6 +90,14 @@ function installRequireHook() {
       // cache clear) touches AppState/Platform; the real package cannot load
       // in plain node.
       request = join(outDir, 'scripts', 'test-stubs', 'react-native.js');
+    } else if (request === 'expo-router') {
+      // The session store's signOut() dynamically imports expo-router to
+      // navigate to /sign-in after a successful sign-out (session-nav
+      // slice). The real package needs the native navigation container and
+      // cannot load in plain node — remap to the shared router double so
+      // the sign-out tests exercise the navigation call, not a node crash
+      // on JSX.
+      request = join(outDir, 'scripts', 'test-stubs', 'expo-router.js');
     } else if (request.startsWith('@/')) {
       request = join(outDir, 'src', request.slice(2));
     }
