@@ -70,6 +70,48 @@ const ADDED_PRO_KEYS = [
   'benefitAdvancedStats',
   'benefitExportTickets',
   'benefitPriceAlerts',
+  // Slice E — kinetic-finance paywall rewrite. New i18n keys for the
+  // hero block, the 5th benefit, plan-card chip/caption strings, the
+  // dynamic CTA, the trust strip, and the legal footer a11y labels.
+  // The legacy titles above stay — the description siblings are new.
+  'paywallProTitle',
+  'closePaywallA11y',
+  'accountA11y',
+  'heroEyebrow',
+  'heroHeadline',
+  'heroSubtitle',
+  'heroMockAiSync',
+  'heroMockTotalLabel',
+  'heroMockTotalValue',
+  'heroMockUnlimited',
+  'heroMockSavingLabel',
+  'heroMockSavingValue',
+  'benefitHousehold5',
+  'benefitUnlimitedScansDescription',
+  'benefitAdvancedStatsDescription',
+  'benefitExportTicketsDescription',
+  'benefitPriceAlertsDescription',
+  'benefitHousehold5Description',
+  'planBadgeSavings',
+  'planAnnualTrialChip',
+  'planAnnualBillCaption',
+  'planAnnualEquivalentMonthly',
+  'planMonthlyTrialChip',
+  'planMonthlyTrialCaption',
+  'planMonthlyCancellationNote',
+  'ctaStartTrialWithDays',
+  'ctaContinuePro',
+  'cancelOrFreeTier',
+  'trustSecurePayment',
+  'trustCancelAnytime',
+  'trustSupport247',
+  'planSelectedA11y',
+  // Slice E follow-up: the legal footer interpolates {{period}} into
+  // autoRenewalNotice — the period word is locale-dependent
+  // (año / year / ano) so it gets its own keys rather than being
+  // hardcoded inside the renewal template.
+  'autoRenewalPeriodAnnual',
+  'autoRenewalPeriodMonthly',
 ];
 
 const REMOVED_SETTINGS_KEYS = [

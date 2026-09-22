@@ -47,3 +47,49 @@ export function isPlanBusy(
 export function planCaptionColor(emphasis: boolean): string {
   return emphasis ? colors.onPrimary : colors.primary;
 }
+
+/**
+ * Discriminated union returned by `getCtaCopy`. The two shapes map 1:1
+ * to the two CTA keys the screen renders:
+ *
+ *   - `ctaStartTrialWithDays` — the trial CTA, rendered with the
+ *     interpolated `trialDays` token (e.g. "Comenzar 14 días gratis").
+ *   - `ctaContinuePro` — the no-trial CTA (e.g. "Continuar con PRO"),
+ *     no interpolation values.
+ *
+ * The screen renders the copy with `t(cta.key, cta.values)` so i18next
+ * substitutes the `{{trialDays}}` token for the trial branch and
+ * returns the no-args string verbatim for the continue branch.
+ */
+export type CtaCopy =
+  | { key: 'ctaStartTrialWithDays'; values: { trialDays: number } }
+  | { key: 'ctaContinuePro'; values?: undefined };
+
+/**
+ * Resolve the primary CTA copy from the currently-selected plan.
+ *
+ *   - `annual` plan + a positive `trialDays` → trial CTA, interpolating
+ *     `trialDays` so the screen shows "Comenzar N días gratis" (or its
+ *     en / pt-BR equivalent). `trialDays` comes from the RevenueCat
+ *     offering's `introPhase.trialDays`.
+ *   - `annual` plan + `null` / 0 `trialDays` → no intro offer
+ *     configured; fall back to the no-trial CTA. Defensive: a 0 value
+ *     is treated as "no trial" because the source-of-truth precondition
+ *     is `introPhase.trialDays > 0`.
+ *   - `monthly` plan → ALWAYS the no-trial CTA. The trial CTA is
+ *     reserved for the annual plan; monthly never offers a free trial
+ *     copy regardless of any provided `trialDays`.
+ *
+ * Pure function — same inputs return the same `CtaCopy`. The node
+ * harness (`scripts/test-paywall-model.mjs`) pins both branches plus
+ * the fallback contracts.
+ */
+export function getCtaCopy(
+  plan: PlanKey,
+  trialDays: number | null,
+): CtaCopy {
+  if (plan === 'annual' && trialDays != null && trialDays > 0) {
+    return { key: 'ctaStartTrialWithDays', values: { trialDays } };
+  }
+  return { key: 'ctaContinuePro' };
+}

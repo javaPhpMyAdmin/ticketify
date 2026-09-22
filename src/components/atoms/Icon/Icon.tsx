@@ -25,6 +25,7 @@ export type IconName =
   | 'bolt.fill'
   | 'magnifyingglass'
   | 'arrow.left'
+  | 'arrow.right'
   | 'gearshape'
   | 'square.and.arrow.up'
   | 'creditcard'
@@ -54,11 +55,27 @@ export type IconName =
   | 'lock.fill'
   | 'chart.pie.fill'
   | 'pencil'
-  | 'trash'
   | 'doc.on.doc'
   | 'person.badge.plus'
   | 'rectangle.portrait.and.arrow.right'
-  | 'globe';
+  | 'globe'
+  // ── Paywall (Kinetic Finance rewrite) ──────────────────────────
+  // SF Symbol names mapped to MaterialIcons glyphs for the visual
+  // elements unique to the pro paywall screen. Adding new names here
+  // is the supported extension point — both the SF Symbol on iOS
+  // and the MaterialIcons glyph on Android are wired through the
+  // `materialMap` table below.
+  | 'star.fill'
+  | 'receipt'
+  | 'checkmark.seal.fill'
+  | 'chart.line.uptrend.xyaxis'
+  | 'doc.viewfinder'
+  | 'chart.bar.xaxis'
+  | 'arrow.down.circle'
+  | 'bell.badge.fill'
+  | 'person.3.fill'
+  | 'flame.fill'
+  | 'calendar.badge.checkmark';
 
 /**
  * Material icon names are a strict union from the MaterialIcons glyph map.
@@ -80,6 +97,7 @@ const materialMap: Record<IconName, string> = {
   'bolt.fill': 'bolt',
   magnifyingglass: 'search',
   'arrow.left': 'arrow-back',
+  'arrow.right': 'arrow-forward',
   gearshape: 'settings',
   'square.and.arrow.up': 'share',
   creditcard: 'credit-card',
@@ -113,6 +131,18 @@ const materialMap: Record<IconName, string> = {
   'person.badge.plus': 'person-add',
   'rectangle.portrait.and.arrow.right': 'logout',
   globe: 'public',
+  // Paywall (Kinetic Finance rewrite) — see IconName for rationale.
+  'star.fill': 'star',
+  receipt: 'receipt-long',
+  'checkmark.seal.fill': 'verified',
+  'chart.line.uptrend.xyaxis': 'trending-up',
+  'doc.viewfinder': 'document-scanner',
+  'chart.bar.xaxis': 'insights',
+  'arrow.down.circle': 'cloud-download',
+  'bell.badge.fill': 'notification-important',
+  'person.3.fill': 'family-restroom',
+  'flame.fill': 'local-fire-department',
+  'calendar.badge.checkmark': 'event-available',
 };
 
 export interface IconProps {
