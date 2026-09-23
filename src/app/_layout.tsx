@@ -86,17 +86,27 @@ export default function RootLayout() {
   // pattern the rest of the persistence layer uses (a read failure
   // collapses to `false` — see `getOnboardingCompleted`).
   //
+  // DEV-ONLY escape hatch — MUST be left unset in production builds.
+  // EXPO_PUBLIC_* vars are inlined at build time: a production EAS build
+  // with this set routes EVERY user into the wizard on every launch
+  // (session and completed flag are both bypassed).
+  //
   // The pathname allowlist protects against races with the session
   // gate (signed-out users already on `(auth)` aren't bounced into
   // onboarding; legal screens reachable pre-auth stay reachable) and
   // against races with the consent gate (post-auth consent screen).
   // Both gates can fire on the same render — the allowlist keeps them
   // orthogonal.
+  // Dev-only preview (EXPO_PUBLIC_ONBOARDING_PREVIEW=true): always route
+  // to the wizard on boot regardless of session or the completed flag, so
+  // design iteration doesn't require signing out or clearing storage.
+  const onboardingPreview = process.env.EXPO_PUBLIC_ONBOARDING_PREVIEW === 'true';
+
   const onboardingChecked = useRef(false);
   useEffect(() => {
     if (onboardingChecked.current) return;
     if (isBootstrapping) return;
-    if (session != null) {
+    if (session != null && !onboardingPreview) {
       // Signed-in: the onboarding flow is irrelevant. Don't bounce.
       onboardingChecked.current = true;
       return;
@@ -106,7 +116,7 @@ export default function RootLayout() {
       const completed = await getOnboardingCompleted();
       if (cancelled) return;
       onboardingChecked.current = true;
-      if (completed) return;
+      if (completed && !onboardingPreview) return;
       const inOnboarding = pathname.startsWith('/onboarding');
       const allowlisted =
         pathname === '/' ||
@@ -115,9 +125,9 @@ export default function RootLayout() {
         pathname === '/forgot-password' ||
         pathname === '/reset-password' ||
         pathname.startsWith('/legal/') ||
-        pathname === '/oauth' ||
-        inOnboarding;
-      if (allowlisted) return;
+        pathname === '/oauth';
+      if (inOnboarding) return; // ← keep this FIRST, unconditional
+      if (allowlisted && !onboardingPreview) return; // ← allowlist bypassed in preview
       router.replace(
         '/onboarding/step-1' as Parameters<typeof router.replace>[0],
       );
@@ -125,7 +135,7 @@ export default function RootLayout() {
     return () => {
       cancelled = true;
     };
-  }, [isBootstrapping, session, pathname]);
+  }, [isBootstrapping, session, pathname, onboardingPreview]);
 
   const [booted, setBooted] = useState(false);
 

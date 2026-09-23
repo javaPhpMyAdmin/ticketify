@@ -515,6 +515,105 @@ test('OnboardingShell renders the setup pill (onboardingSetupBadge key)', () => 
   );
 });
 
+// ─────────────────────────────────────────────────────────────────────
+// Root layout gate (source-pin) — onboarding preview override
+// ─────────────────────────────────────────────────────────────────────
+
+console.log('\n[tests] root layout gate (onboarding preview override)\n');
+
+const layout = readComponent('src/app/_layout.tsx');
+
+test('root layout reads EXPO_PUBLIC_ONBOARDING_PREVIEW env', () => {
+  assert.ok(
+    /process\.env\.EXPO_PUBLIC_ONBOARDING_PREVIEW\s*===\s*['"]true['"]/.test(layout),
+    'root layout must derive onboardingPreview from process.env.EXPO_PUBLIC_ONBOARDING_PREVIEW === "true"',
+  );
+});
+
+test('signed-in early return is conditioned on !onboardingPreview', () => {
+  assert.ok(
+    /session\s+!=\s*null\s+&&\s*!onboardingPreview/.test(layout),
+    'signed-in early return must be `if (session != null && !onboardingPreview)`',
+  );
+});
+
+test('completed early return is conditioned on !onboardingPreview', () => {
+  assert.ok(
+    /completed\s+&&\s*!onboardingPreview/.test(layout),
+    'completed-flag early return must be `if (completed && !onboardingPreview)`',
+  );
+});
+
+test('inOnboarding is unconditional early return before allowlist', () => {
+  // Ensure the shape: `if (inOnboarding) return;` appears before the
+  // allowlist check (the spec keeps inOnboarding FIRST and unconditional,
+  // ahead of `if (allowlisted && !onboardingPreview) return;`).
+  const idxInOnboardingReturn = layout.indexOf('if (inOnboarding) return;');
+  const idxAllowlistCheck = layout.indexOf(
+    'if (allowlisted && !onboardingPreview) return;',
+  );
+  assert.ok(
+    idxInOnboardingReturn > -1,
+    'root layout must have `if (inOnboarding) return;` as an unconditional early return',
+  );
+  assert.ok(
+    idxAllowlistCheck > -1,
+    'root layout must keep `if (allowlisted && !onboardingPreview) return;`',
+  );
+  assert.ok(
+    idxInOnboardingReturn < idxAllowlistCheck,
+    '`if (inOnboarding) return;` must appear BEFORE the allowlist check',
+  );
+});
+
+test('allowlist guard is bypassed under preview', () => {
+  assert.ok(
+    /allowlisted\s+&&\s*!onboardingPreview/.test(layout),
+    'allowlist bypass must be conditioned with `!onboardingPreview`',
+  );
+});
+
+test('root layout redirects to the wizard via router.replace("/onboarding/step-1")', () => {
+  // The pins above cover env read, conditions and ordering but NOT the
+  // redirect itself: deleting this router.replace call leaves every other
+  // gate test green. Pin the literal so a removed or mis-targeted redirect
+  // (e.g. `/onboarding/step-2`) fails loudly.
+  assert.ok(
+    /router\.replace\(\s*['"]\/onboarding\/step-1['"]/.test(layout),
+    'the onboarding gate must router.replace("/onboarding/step-1") — deleting the redirect keeps every other pin green',
+  );
+  // The literal must live inside the onboarding gate effect (after the
+  // onboardingChecked ref) — not in the session-nav effect above it, which
+  // also calls router.replace (with `decision.target`).
+  const refIdx = layout.indexOf('const onboardingChecked = useRef(false);');
+  const step1Idx = layout.indexOf("'/onboarding/step-1'");
+  assert.ok(
+    refIdx > -1 && step1Idx > refIdx,
+    "the '/onboarding/step-1' literal must appear inside the onboarding gate effect (after the onboardingChecked ref)",
+  );
+});
+
+test('signed-in branch marks the check complete (onboardingChecked.current = true)', () => {
+  // Removing `onboardingChecked.current = true;` from the signed-in guard
+  // body would leave the `session != null && !onboardingPreview` pin green
+  // while re-entering signed-in users into the wizard on preview-OFF. The
+  // async IIFE below re-assigns the same flag, so the pin must prove the
+  // guard-body occurrence exists BEFORE the IIFE.
+  const guardIdx = layout.indexOf(
+    'if (session != null && !onboardingPreview) {',
+  );
+  const iifeIdx = layout.indexOf('(async () => {', guardIdx);
+  const flagIdx = layout.indexOf('onboardingChecked.current = true;', guardIdx);
+  assert.ok(
+    guardIdx > -1,
+    'signed-in guard `if (session != null && !onboardingPreview) {` must exist',
+  );
+  assert.ok(
+    flagIdx > -1 && flagIdx < iifeIdx,
+    'signed-in guard body must set onboardingChecked.current = true BEFORE the async IIFE (the IIFE assignment alone is a false positive)',
+  );
+});
+
 console.log('');
 if (failed > 0) {
   console.error(`[tests] ${failed} failed, ${passed} passed`);
@@ -522,3 +621,4 @@ if (failed > 0) {
 } else {
   console.log(`[tests] all ${passed} tests passed`);
 }
+
