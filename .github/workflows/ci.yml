@@ -52,8 +52,35 @@ jobs:
         # services are excluded: `supabase db query --local` connects
         # directly to Postgres via the wire protocol and never needs
         # studio/kong/gotrue/etc.
+        #
+        # GHCR rate-limits shared runner egress IPs under load
+        # ("toomanyrequests: allowed: 44000/minute" pulling
+        # ghcr.io/supabase/postgres). Retry with backoff: the pull is
+        # resumable via docker layer cache, so a transient limit usually
+        # clears on the next attempt.
         run: |
-          supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          for attempt in 1 2 3 4 5; do
+            out="$(supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor 2>&1)"
+            rc=$?
+            if [ "$rc" -eq 0 ]; then
+              printf '%s\n' "$out"
+              exit 0
+            fi
+            # Fail fast on anything that is NOT a transient registry limit:
+            # an infra/rate-limit flake should retry, a real migration or
+            # config error must surface immediately, not after 5 retries.
+            if ! printf '%s\n' "$out" | grep -q "toomanyrequests"; then
+              printf '%s\n' "$out"
+              echo "::error::supabase start failed without a registry rate limit (rc=$rc)"
+              exit "$rc"
+            fi
+            echo "::warning::supabase start hit a registry rate limit (attempt $attempt/5)"
+            printf '%s\n' "$out"
+            supabase stop --no-backup >/dev/null 2>&1 || true
+            sleep "$((attempt * 20))"
+          done
+          echo "::error::supabase start failed after 5 retries"
+          exit 1
 
       - name: Reset to a deterministic migration baseline
         # Guarantees a clean catalog from scratch regardless of container
