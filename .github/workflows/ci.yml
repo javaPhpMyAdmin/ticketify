@@ -45,6 +45,17 @@ jobs:
           # the local CLI used for development (has db query).
           version: 2.116.0
 
+      - name: Authenticate to GHCR (avoid anonymous pull rate limits)
+        # GHCR rate-limits ANONYMOUS pulls by runner egress IP
+        # ("toomanyrequests: allowed: 44000/minute" on shared runner
+        # IPs). Logging in with the GITHUB_TOKEN moves the pull from
+        # the anonymous IP bucket to the authenticated account bucket,
+        # which is not exhausted by other public repos sharing the IP.
+        # Auth'd pulls of public packages (supabase/postgres) work with
+        # any valid token regardless of image ownership.
+        run: |
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       - name: Start local Supabase (Postgres only)
         # Starts the local stack on a fresh scratch DB and applies every
         # migration in supabase/migrations/, so the catalog reflects the
