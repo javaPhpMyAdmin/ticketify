@@ -9,8 +9,9 @@
  * Layout (top → bottom):
  *
  *   1. Native Stack header — `paywallProTitle` (the localized "PRO
- *      Subscription" label) on the left, an account icon and a close
- *      icon rendered via `headerRight`.
+ *      Subscription" label) on the left, a close icon rendered via
+ *      `headerRight` (the redundant account icon was removed in the
+ *      polish pass — on device both read as "close this screen").
  *   2. Hero block — PRO eyebrow pill + H1 headline + subtitle + a
  *      decorative 3-card mockup illustration (AI SYNC / verified / +28%).
  *   3. Features list — 5 rows, each on a card surface with a rounded
@@ -43,9 +44,14 @@
  * `t(cta.key, cta.values)`. Source-pin test enforces the wiring so a
  * future inline-branch refactor fails loudly.
  *
- * The plan-card caption color (annual's emphasis card) uses
- * `planCaptionColor(true)` — white on emerald — so the "14 DÍAS GRATIS"
- * chip stays legible on the primary background.
+ * The trial chip is unified across BOTH plan cards — the same emerald
+ * emphasis style (solid `colors.primary` background + `onPrimary`
+ * label). The chip label and the day-dependent captions interpolate
+ * `{{trialDays}}` from the RevenueCat introPhase
+ * (`pkg.introPhase.trialDays`) — the Play Console / App Store Connect
+ * offer is the single source of truth; the screen never hardcodes a
+ * day count. When no intro offer is configured (introPhase is null),
+ * the chip and day captions are hidden entirely.
  */
 import { Stack, router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
@@ -63,7 +69,6 @@ import { useProEntitlement } from '@/features/pro';
 import {
   getCtaCopy,
   isPlanBusy,
-  planCaptionColor,
   type PlanKey,
   type PaywallState,
 } from '@/features/pro/paywall-model';
@@ -74,6 +79,7 @@ import {
   isNativeAvailable,
   purchasePackage,
   restorePurchases,
+  toUsdLabel,
   type OfferingsSnapshot,
 } from '@/lib/revenuecat';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -196,12 +202,6 @@ export default function PaywallScreen() {
           headerShown: true,
           headerRight: () => (
             <View style={styles.headerRight}>
-              <IconButton
-                icon="person.fill"
-                onPress={() => router.push('/(tabs)/profile' as never)}
-                accessibilityLabel={t('accountA11y')}
-                iconSize={18}
-              />
               <IconButton
                 icon="xmark"
                 onPress={() => router.back()}
@@ -545,18 +545,30 @@ function PlanCard({
   // come from the rewrite's new keys. Both surfaces are required.
   const planName = isAnnual ? t('planAnnual') : t('planMonthly');
 
-  // For annual: pull the equivalent-monthly subline from the intro
-  // caption's `priceAfterTrial` (the recurring price AFTER the trial).
-  // The hardcoded reference shows "$4.16 / mes" — that's the same
-  // `priceAfterTrial` formatted by the SDK with the i18n template
-  // `planAnnualEquivalentMonthly` ("Equivale a solo $X / mes"). For
-  // monthly: the cancellation note is hardcoded reassurance copy.
+  // The intro offer projection is the single source of truth for the
+  // trial-day copy (chip label + day captions): `introPhase.trialDays`
+  // comes from Play Console / App Store Connect via RevenueCat, and
+  // `introPhase.priceAfterTrial` is the recurring price after the
+  // trial. When it's null (no intro offer configured) the chip and
+  // every day-dependent caption are hidden — the fallbacks below never
+  // invent a day count.
   const introPhase = pkg.introPhase;
+
+  // Annual body line: the day-template caption while the intro offer
+  // exists, the day-less "Facturado anualmente" caption otherwise.
+  const annualBillCaption = introPhase
+    ? t('planAnnualBillCaption', { trialDays: introPhase.trialDays })
+    : t('planAnnualBillCaptionPlain');
+
+  // Annual subline: "Equivale a solo US$4.16 / mes" — the price comes
+  // from `priceAfterTrial` normalized by `toUsdLabel` (the store emits
+  // a bare "$"; the screen shows "US$"). Hidden when there is no intro
+  // offer (nothing to project).
   const equivalentMonthlyLine = introPhase
     ? t('planAnnualEquivalentMonthly', {
-        price: introPhase.priceAfterTrial,
+        price: toUsdLabel(introPhase.priceAfterTrial),
       })
-    : t('planAnnualBillCaption');
+    : null;
 
   return (
     <Pressable
@@ -593,53 +605,55 @@ function PlanCard({
           <View style={styles.planCardLeftText}>
             <View style={styles.planCardTitleRow}>
               <Text style={styles.planCardTitle}>{planName}</Text>
-              <View
-                style={[
-                  styles.planTrialChip,
-                  isAnnual
-                    ? styles.planTrialChipNeutral
-                    : styles.planTrialChipEmphasis,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.planTrialChipText,
-                    // The emphasis (annual) card carries the trial chip
-                    // on a NEUTRAL background — its label needs the
-                    // dark-on-light contrast (`textPrimary`). The
-                    // monthly card uses the emerald emphasis chip —
-                    // the same neutral-on-emerald contract from the
-                    // pre-rewrite `planCaptionColor` model.
-                    { color: planCaptionColor(isAnnual) },
-                  ]}
+              {introPhase ? (
+                <View
+                  style={[styles.planTrialChip, styles.planTrialChipEmphasis]}
                 >
-                  {isAnnual
-                    ? t('planAnnualTrialChip')
-                    : t('planMonthlyTrialChip')}
-                </Text>
-              </View>
+                  <Text style={styles.planTrialChipText}>
+                    {t('planTrialChipDays', {
+                      trialDays: introPhase.trialDays,
+                    })}
+                  </Text>
+                </View>
+              ) : null}
             </View>
             <Text style={styles.planCardBody}>
               {isAnnual
-                ? t('planAnnualBillCaption')
-                : t('planMonthlyTrialCaption', {
-                    price: pkg.priceString,
-                  })}
+                ? annualBillCaption
+                : introPhase
+                  ? t('planMonthlyTrialCaption', {
+                      trialDays: introPhase.trialDays,
+                      price: toUsdLabel(pkg.priceString),
+                    })
+                  : t('planMonthlyTrialCaptionPlain', {
+                      price: toUsdLabel(pkg.priceString),
+                    })}
             </Text>
-            <Text
-              style={[
-                styles.planCardSubline,
-                isAnnual
-                  ? styles.planCardSublineEmphasis
-                  : styles.planCardSublineNeutral,
-              ]}
-            >
-              {isAnnual ? equivalentMonthlyLine : t('planMonthlyCancellationNote')}
-            </Text>
+            {isAnnual ? (
+              equivalentMonthlyLine ? (
+                <Text
+                  style={[
+                    styles.planCardSubline,
+                    styles.planCardSublineEmphasis,
+                  ]}
+                >
+                  {equivalentMonthlyLine}
+                </Text>
+              ) : null
+            ) : (
+              <Text
+                style={[
+                  styles.planCardSubline,
+                  styles.planCardSublineNeutral,
+                ]}
+              >
+                {t('planMonthlyCancellationNote')}
+              </Text>
+            )}
           </View>
         </View>
         <View style={styles.planCardRight}>
-          <Text style={styles.planCardPrice}>{pkg.priceString}</Text>
+          <Text style={styles.planCardPrice}>{toUsdLabel(pkg.priceString)}</Text>
           <Text style={styles.planCardPriceUnit}>
             {isAnnual ? t('planPerYear') : t('planPerMonth')}
           </Text>
@@ -1161,15 +1175,17 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: radii.sm,
   },
-  planTrialChipNeutral: {
-    backgroundColor: colors.chipBg,
-  },
+  // Unified emphasis chip (paywall polish): BOTH plan cards render the
+  // trial chip with this style — solid emerald background + onPrimary
+  // label. The old annual-vs-monthly branch (neutral gray chip for the
+  // annual card) is gone.
   planTrialChipEmphasis: {
-    backgroundColor: 'rgba(16, 185, 129, 0.10)',
+    backgroundColor: colors.primary,
   },
   planTrialChipText: {
     ...typography.labelCaps,
     fontSize: 10,
+    color: colors.onPrimary,
   },
   planCardBody: {
     ...typography.bodyMd,

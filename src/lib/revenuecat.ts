@@ -440,6 +440,25 @@ export interface OfferingsSnapshot {
 }
 
 /**
+ * Normalize a store-formatted price string for display. The Play/App
+ * Store formats the USD dollar sign as a bare "$"; the paywall shows
+ * it as "US$" so the currency is unambiguous on device.
+ *
+ * Pure string transform — NO parsing, NO number formatting:
+ *
+ *   - "$49.99"    -> "US$49.99" (bare US dollar prefix)
+ *   - "US$49.99"  -> "US$49.99" (already prefixed — untouched)
+ *   - "ARS 1.499,00", "€49,99", "49.99", "" -> untouched (never mangle
+ *     non-USD or symbol-less strings)
+ *
+ * Apply at EVERY pricing-string consumer on the paywall (`priceString`
+ * and `introPhase.priceAfterTrial`).
+ */
+export function toUsdLabel(price: string): string {
+  return price.startsWith('$') ? `US${price}` : price;
+}
+
+/**
  * Reads the current offering and projects its `monthly` / `annual`
  * packages to `{ identifier, priceString, introPhase }`. The paywall uses
  * the identifier to call `purchasePackage()`, the priceString to render

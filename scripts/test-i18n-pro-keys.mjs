@@ -76,7 +76,6 @@ const ADDED_PRO_KEYS = [
   // The legacy titles above stay — the description siblings are new.
   'paywallProTitle',
   'closePaywallA11y',
-  'accountA11y',
   'heroEyebrow',
   'heroHeadline',
   'heroSubtitle',
@@ -93,11 +92,16 @@ const ADDED_PRO_KEYS = [
   'benefitPriceAlertsDescription',
   'benefitHousehold5Description',
   'planBadgeSavings',
-  'planAnnualTrialChip',
+  // Paywall polish (CHANGE 4): the per-plan trial-chip keys were
+  // collapsed into ONE unified day template — the screen interpolates
+  // {{trialDays}} from the RevenueCat introPhase so the Play Console /
+  // App Store Connect offer is the single day-count source.
+  'planTrialChipDays',
   'planAnnualBillCaption',
+  'planAnnualBillCaptionPlain',
   'planAnnualEquivalentMonthly',
-  'planMonthlyTrialChip',
   'planMonthlyTrialCaption',
+  'planMonthlyTrialCaptionPlain',
   'planMonthlyCancellationNote',
   'ctaStartTrialWithDays',
   'ctaContinuePro',
@@ -141,6 +145,13 @@ const REMOVED_PRO_KEYS = [
   'errorTrialStartFailed',
   'trialActiveDays_one',
   'trialActiveDays_other',
+  // Paywall polish: the per-plan chip keys are gone (replaced by the
+  // unified planTrialChipDays day template) and the header's account
+  // a11y label is gone (the redundant person.fill icon was removed —
+  // only the close button remains).
+  'planAnnualTrialChip',
+  'planMonthlyTrialChip',
+  'accountA11y',
 ];
 
 console.log('\n[tests] section 1 — pro.json catalog parity (REQ-1)\n');
@@ -204,6 +215,96 @@ test('trialPill contains the {{date}} interpolation token (all locales)', () => 
     assert.ok(
       pill.includes('{{date}}'),
       `${locale}/pro.json:trialPill must include {{date}} token`,
+    );
+  }
+});
+
+console.log('\n[tests] section 2b — paywall-polish templates (CHANGE 4 day counts + US$ convention)\n');
+
+test('planTrialChipDays is a day template: "{{trialDays}} DÍAS GRATIS" shape in all locales', () => {
+  const expected = {
+    'es-AR': '{{trialDays}} DÍAS GRATIS',
+    en: '{{trialDays}} DAYS FREE',
+    'pt-BR': '{{trialDays}} DIAS GRÁTIS',
+  };
+  for (const locale of LOCALES) {
+    const catalog = readCatalog(locale, 'pro');
+    assert.equal(
+      catalog.planTrialChipDays,
+      expected[locale],
+      `${locale}/pro.json:planTrialChipDays must be the day template "${expected[locale]}"`,
+    );
+  }
+});
+
+test('planAnnualBillCaption is a {{trialDays}} template (no hardcoded 14-day count) in all locales', () => {
+  for (const locale of LOCALES) {
+    const catalog = readCatalog(locale, 'pro');
+    const caption = catalog.planAnnualBillCaption;
+    assert.ok(
+      caption.includes('{{trialDays}}'),
+      `${locale}/pro.json:planAnnualBillCaption must include {{trialDays}} token`,
+    );
+    assert.ok(
+      !/\b14\b/.test(caption),
+      `${locale}/pro.json:planAnnualBillCaption must NOT hardcode "14" — the day count comes from introPhase`,
+    );
+  }
+});
+
+test('planMonthlyTrialCaption is a {{trialDays}} + {{price}} template (no hardcoded 7-day count) in all locales', () => {
+  for (const locale of LOCALES) {
+    const catalog = readCatalog(locale, 'pro');
+    const caption = catalog.planMonthlyTrialCaption;
+    assert.ok(
+      caption.includes('{{trialDays}}'),
+      `${locale}/pro.json:planMonthlyTrialCaption must include {{trialDays}} token`,
+    );
+    assert.ok(
+      caption.includes('{{price}}'),
+      `${locale}/pro.json:planMonthlyTrialCaption must include {{price}} token`,
+    );
+    assert.ok(
+      !/\b7\b/.test(caption),
+      `${locale}/pro.json:planMonthlyTrialCaption must NOT hardcode "7" — the day count comes from introPhase`,
+    );
+  }
+});
+
+test('planAnnualEquivalentMonthly interpolates {{price}} (US$ arrives via toUsdLabel) in all locales', () => {
+  for (const locale of LOCALES) {
+    const catalog = readCatalog(locale, 'pro');
+    assert.ok(
+      catalog.planAnnualEquivalentMonthly.includes('{{price}}'),
+      `${locale}/pro.json:planAnnualEquivalentMonthly must include {{price}} token (toUsdLabel supplies the "US$" prefix)`,
+    );
+  }
+});
+
+test('planAnnualBillCaptionPlain is day-less (no {{trialDays}} token) in all locales', () => {
+  for (const locale of LOCALES) {
+    const catalog = readCatalog(locale, 'pro');
+    assert.ok(
+      catalog.planAnnualBillCaptionPlain.length > 0,
+      `${locale}/pro.json:planAnnualBillCaptionPlain must be non-empty`,
+    );
+    assert.ok(
+      !catalog.planAnnualBillCaptionPlain.includes('{{trialDays}}'),
+      `${locale}/pro.json:planAnnualBillCaptionPlain must NOT include {{trialDays}} — the introPhase-null fallback never invents a day count`,
+    );
+  }
+});
+
+test('planMonthlyTrialCaptionPlain interpolates {{price}} only (day-less) in all locales', () => {
+  for (const locale of LOCALES) {
+    const catalog = readCatalog(locale, 'pro');
+    assert.ok(
+      catalog.planMonthlyTrialCaptionPlain.includes('{{price}}'),
+      `${locale}/pro.json:planMonthlyTrialCaptionPlain must include {{price}} token`,
+    );
+    assert.ok(
+      !catalog.planMonthlyTrialCaptionPlain.includes('{{trialDays}}'),
+      `${locale}/pro.json:planMonthlyTrialCaptionPlain must NOT include {{trialDays}} — the monthly fallback never invents a day count`,
     );
   }
 });

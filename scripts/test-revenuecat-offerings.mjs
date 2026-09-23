@@ -169,6 +169,7 @@ async function run() {
     getTrialPillState,
     deriveCustomerInfoSnapshot,
     getOfferings,
+    toUsdLabel,
   } = revenuecatModule;
   // The mock module is also loaded via `liveRequire` so the integration
   // tests can mutate the mutable fixtures. (The revenuecat module reads
@@ -696,6 +697,38 @@ async function run() {
       deriveCustomerInfoSnapshot({}),
       { isPro: false, trialEndsAt: null },
     );
+  });
+
+  console.log('\n[tests] toUsdLabel — bare "$" display prefix (paywall polish)\n');
+
+  await test('bare "$49.99" → "US$49.99" (USD dollar prefix added)', () => {
+    assert.equal(toUsdLabel('$49.99'), 'US$49.99');
+  });
+
+  await test('already prefixed "US$49.99" → untouched (idempotent)', () => {
+    assert.equal(toUsdLabel('US$49.99'), 'US$49.99');
+  });
+
+  await test('non-USD localized price "ARS 1.499,00" → untouched', () => {
+    assert.equal(toUsdLabel('ARS 1.499,00'), 'ARS 1.499,00');
+  });
+
+  await test('euro price "\u20ac49,99" → untouched (never mangle non-USD)', () => {
+    assert.equal(toUsdLabel('\u20ac49,99'), '\u20ac49,99');
+  });
+
+  await test('symbol-less price "49.99" → untouched', () => {
+    assert.equal(toUsdLabel('49.99'), '49.99');
+  });
+
+  await test('empty string → untouched (empty stays empty)', () => {
+    assert.equal(toUsdLabel(''), '');
+  });
+
+  await test('triangulation: USD and non-USD inputs diverge (no hardcoded constant)', () => {
+    // Fake-It guard: the function must branch on the input, not return
+    // a constant string.
+    assert.notEqual(toUsdLabel('$49.99'), toUsdLabel('\u20ac49,99'));
   });
 
   console.log('\n[tests] getOfferings() integration (REQ-PRO-INTRO-CAPTION — paywall caption consumer)\n');

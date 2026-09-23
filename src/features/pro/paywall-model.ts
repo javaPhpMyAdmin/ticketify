@@ -1,17 +1,21 @@
 /**
  * Pure model for the paywall screen (`src/app/pro/index.tsx`).
  *
- * Zero react-native deps (only `@/theme/colors`, which is pure TS) so the
- * node harness `scripts/test-paywall-model.mjs` can compile it in
- * isolation — the same pattern as `gate.ts` for the Pro gate truth table.
+ * Zero react-native deps (pure TS) so the node harness
+ * `scripts/test-paywall-model.mjs` can compile it in isolation — the
+ * same pattern as `gate.ts` for the Pro gate truth table.
  *
  * Busy-regression fix: the PlanButtons previously shared ONE
  * `state === 'purchasing'` flag, so a monthly tap spun BOTH buttons — the
  * annual (emphasis) button showed a white Spinner on the emerald
  * background (read as a "white rectangle"). The per-plan busy contract:
  * exactly the plan being purchased shows busy, nothing else.
+ *
+ * The former caption-color helper was removed with the trial-chip
+ * polish: BOTH plan cards now render the trial chip with the same
+ * emphasis style (solid emerald + onPrimary text), so the
+ * annual-vs-monthly caption-color branch it served is gone.
  */
-import { colors } from '@/theme/colors';
 
 /** The two purchasable plan keys, matching the `OfferingsSnapshot` shape. */
 export type PlanKey = 'monthly' | 'annual';
@@ -33,19 +37,6 @@ export function isPlanBusy(
   state: PaywallState,
 ): boolean {
   return purchasingPlan === plan && state === 'purchasing';
-}
-
-/**
- * Caption color for the intro caption ("{{trialDays}} días gratis…").
- *
- * The non-emphasis button renders the caption on the light `surface`,
- * so it uses `colors.primary` (emerald). The emphasis button has an
- * emerald (`colors.primary`) background, so its caption MUST use
- * `colors.onPrimary` (white) — the regression hardcoded `colors.primary`
- * for both, making the emphasis caption invisible (emerald-on-emerald).
- */
-export function planCaptionColor(emphasis: boolean): string {
-  return emphasis ? colors.onPrimary : colors.primary;
 }
 
 /**

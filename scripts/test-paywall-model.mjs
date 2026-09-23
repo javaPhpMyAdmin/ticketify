@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Node harness for the paywall per-button busy model
- * (`src/features/pro/paywall-model.ts` → `isPlanBusy`, `planCaptionColor`).
+ * Node harness for the paywall pure model
+ * (`src/features/pro/paywall-model.ts` → `isPlanBusy`, `getCtaCopy`).
  *
  * Compiles the module with an isolated tsconfig (the ONLY imports are
- * `@/theme/colors`, which is pure TS — no react-native) and asserts two
+ * `@/theme/colors`, which is pure TS — no react-native) and asserts the
  * contracts from the paywall busy-regression fix:
  *
  *   `isPlanBusy(plan, purchasingPlan, state)` — per-plan busy spinner:
@@ -18,13 +18,15 @@
  *       means neither button is busy, even if `purchasingPlan` was set
  *       earlier (stale after the purchase resolved).
  *
- *   `planCaptionColor(emphasis)` — emphasis caption contrast:
- *     - The intro caption ("X días gratis…") originally used
- *       `styles.planButtonCaption` with `color: colors.primary` for BOTH
- *       buttons. On the emphasis (emerald) button that is emerald-on-
- *       emerald — invisible. The fixed contract: the emphasis caption
- *       uses `colors.onPrimary` (white), the non-emphasis caption keeps
- *       `colors.primary`.
+ * Plus source-pin contracts against the real screen file
+ * (`src/app/pro/index.tsx`) and the model file itself:
+ *
+ *   - The kinetic-finance rewrite wiring (hero / features / plans / CTA /
+ *     trust / legal i18n keys, `t(cta.key, cta.values)`).
+ *   - The paywall-polish contracts: unified emphasis trial chip (the
+ *     annual gray chip + its `planCaptionColor` model helper are gone),
+ *     Play-sourced trial-day copy (no hardcoded day counts), exactly one
+ *     close button in the header (no account icon).
  *
  * Usage: pnpm test:paywall-model
  */
@@ -92,7 +94,7 @@ async function run() {
   await compile();
   console.log('[tests] loading compiled module…');
   installRequireHook();
-  const { isPlanBusy, planCaptionColor, getCtaCopy } = await import(
+  const { isPlanBusy, getCtaCopy } = await import(
     pathToFileURL(join(outDir, 'src/features/pro/paywall-model.js')).href
   );
 
@@ -219,76 +221,178 @@ async function run() {
     assert.equal(thirty.values?.trialDays, 30);
   });
 
-  console.log('\n[tests] planCaptionColor — emphasis caption contrast\n');
+  console.log('\n[tests] trial chip — unified emphasis style (paywall polish)\n');
 
-  await test('non-emphasis caption → colors.primary (emerald, readable on light surface)', () => {
-    assert.equal(planCaptionColor(false), '#10B981');
-  });
-
-  await test('emphasis caption → colors.onPrimary (white, readable on emerald)', () => {
-    // The regression: the emphasis (emerald) button rendered the caption
-    // in colors.primary — emerald-on-emerald, invisible. The fix must
-    // flip the emphasis caption to white.
-    assert.equal(planCaptionColor(true), '#FFFFFF');
-  });
-
-  await test('emphasis and non-emphasis captions DIFFER (contrast preserved)', () => {
-    assert.notEqual(
-      planCaptionColor(true),
-      planCaptionColor(false),
-      'emphasis caption must not collapse back to colors.primary',
-    );
-  });
-
-  await test('re-call with the same argument returns the same result (pure projection)', () => {
-    assert.equal(planCaptionColor(true), planCaptionColor(true));
-    assert.equal(planCaptionColor(false), planCaptionColor(false));
-  });
-
-  console.log('\n[tests] paywall caption wiring — PlanButton applies planCaptionColor\n');
-
-  // Slice-C wiring contract: the pure model decides the caption color
-  // (emphasis → colors.onPrimary white, non-emphasis → colors.primary).
-  // The SCREEN must apply it per-button, and the stylesheet must NOT
-  // hardcode a caption color that overrides the model — the regression
-  // was a fixed `colors.primary` caption that made the emphasis
-  // (emerald) caption invisible (emerald-on-emerald). Source-level pins,
-  // the same convention test-legal-content.mjs uses for its F4 routing
-  // contracts (assert against the real file so a future gating change
-  // fails the harness loudly).
+  // Paywall-polish contract: BOTH plan cards render the trial chip with
+  // the SAME emphasis style (solid emerald background + onPrimary text).
+  // The annual card used to branch to a neutral gray chip
+  // (`planTrialChipNeutral`); that branching is gone. The
+  // `planCaptionColor` model helper existed solely for that branch and
+  // is REMOVED with it. Source-level pins, the same convention the
+  // rewrite-wiring tests below use (assert against the real files so a
+  // future refactor that reintroduces the branch fails loudly).
   const proScreen = readFileSync(
     join(root, 'src', 'app', 'pro', 'index.tsx'),
     'utf8',
   );
+  const modelFile = readFileSync(
+    join(root, 'src', 'features', 'pro', 'paywall-model.ts'),
+    'utf8',
+  );
 
-  await test('planCaptionColor is wired into the plan-card trial chip (per-card contrast)', () => {
-    // The post-rewrite PlanCard reuses the same per-card caption-color
-    // contract from the pre-rewrite `planCaptionColor` model — the
-    // annual (emphasis) chip renders in `colors.onPrimary` (white), the
-    // monthly (non-emphasis) chip renders in `colors.primary` (emerald).
-    // The argument is the boolean that distinguishes annual vs monthly;
-    // the exact variable name (`emphasis`, `isAnnual`, `isEmphasis`) is
-    // an implementation detail, so the pin matches any non-empty arg.
+  await test('paywall-model.ts no longer exports planCaptionColor (dead constant removed)', () => {
     assert.ok(
-      /planCaptionColor\s*\(\s*\w+\s*\)/.test(proScreen),
-      'pro screen must call planCaptionColor(...) with a boolean arg in the plan-card trial chip render',
+      !/\bplanCaptionColor\b/.test(modelFile),
+      'planCaptionColor must be gone from paywall-model.ts (it only served the removed chip branch)',
     );
   });
 
-  await test('plan-card trial chip color comes from the model, not hardcoded in the stylesheet', () => {
-    // The trial-chip Text element applies the per-card caption color
-    // dynamically via planCaptionColor(...) — the stylesheet entry for
-    // the chip label carries NO `color`, so the model is the single
-    // source of truth.
-    const chipTextStyle =
-      proScreen.match(/planTrialChipText: \{[\s\S]*?\},/)?.[0] ?? '';
+  await test('pro/index.tsx does not reference planTrialChipNeutral (no annual gray chip)', () => {
     assert.ok(
-      chipTextStyle.length > 0,
-      'sanity: styles.planTrialChipText must still exist',
+      !/planTrialChipNeutral/.test(proScreen),
+      'pro screen must not reference planTrialChipNeutral — both chips use the emphasis style',
+    );
+  });
+
+  await test('trial chip applies the emphasis style unconditionally (no isAnnual style branch)', () => {
+    assert.ok(
+      /styles\.planTrialChipEmphasis/.test(proScreen),
+      'pro screen must reference styles.planTrialChipEmphasis for the trial chip',
     );
     assert.ok(
-      !/color:/.test(chipTextStyle),
-      'styles.planTrialChipText must not hardcode a color (single source of truth: planCaptionColor)',
+      !/planTrialChip[^;\n]*\?\s*styles\./.test(proScreen),
+      'the trial chip must not branch its styles on the plan kind',
+    );
+  });
+
+  await test('trial chip label keeps the emphasis text style', () => {
+    assert.ok(
+      /styles\.planTrialChipText/.test(proScreen),
+      'pro screen must apply styles.planTrialChipText to the trial chip label',
+    );
+  });
+
+  console.log('\n[tests] US$ price labels — toUsdLabel at every pricing consumer (paywall polish)\n');
+
+  // Paywall-polish contract (CHANGE 1): every pricing string rendered on
+  // the paywall goes through the pure `toUsdLabel` helper in
+  // `src/lib/revenuecat.ts` so a bare "$49.99" from the store formats
+  // as "US$49.99" on device. Three consumers: the plan-card price
+  // display, the monthly trial caption's {{price}} value, and the
+  // equivalent-monthly subline's {{price}} value (from
+  // `introPhase.priceAfterTrial`). Source-level pins, the same
+  // convention as the other wiring tests below.
+
+  await test('plan card price display passes pkg.priceString through toUsdLabel', () => {
+    assert.ok(
+      /toUsdLabel\(\s*pkg\.priceString\s*\)/.test(proScreen),
+      'the plan card price must render toUsdLabel(pkg.priceString) — bare "$" becomes "US$"',
+    );
+  });
+
+  await test('monthly trial caption price passes pkg.priceString through toUsdLabel', () => {
+    assert.ok(
+      /price:\s*toUsdLabel\(\s*pkg\.priceString\s*\)/.test(proScreen),
+      'planMonthlyTrialCaption must receive price: toUsdLabel(pkg.priceString)',
+    );
+  });
+
+  await test('equivalent-monthly subline price passes priceAfterTrial through toUsdLabel', () => {
+    assert.ok(
+      /price:\s*toUsdLabel\(\s*introPhase\.priceAfterTrial\s*\)/.test(proScreen),
+      'planAnnualEquivalentMonthly must receive price: toUsdLabel(introPhase.priceAfterTrial)',
+    );
+  });
+
+  await test('toUsdLabel is imported from the revenuecat wrapper', () => {
+    const importBlock =
+      proScreen.match(/import \{[\s\S]*?\} from ['"]@\/lib\/revenuecat['"];/)?.[0] ??
+      '';
+    assert.ok(
+      importBlock.length > 0,
+      'sanity: the revenuecat import block must exist',
+    );
+    assert.ok(
+      /\btoUsdLabel\b/.test(importBlock),
+      'pro screen must import toUsdLabel from @/lib/revenuecat',
+    );
+  });
+
+  console.log('\n[tests] trial-day copy — Play-sourced day counts (paywall polish)\n');
+
+  // Paywall-polish contract (CHANGE 4): ALL day-count copy on the plan
+  // cards comes from the RevenueCat introPhase (`pkg.introPhase.trialDays`),
+  // NOT from hardcoded i18n strings. The old planAnnualTrialChip /
+  // planMonthlyTrialChip keys ("14 DÍAS GRATIS" / "7 DÍAS GRATIS") and
+  // the hardcoded day counts inside planAnnualBillCaption /
+  // planMonthlyTrialCaption are gone — the templates interpolate
+  // {{trialDays}} now. The chip hides entirely when introPhase is null
+  // (no invented day counts) and the day-less fallback captions take
+  // the annual body / monthly caption slots.
+
+  await test('trial chip renders the unified planTrialChipDays key with the introPhase trialDays', () => {
+    assert.ok(
+      /\bt\(\s*['"]planTrialChipDays['"]\s*,\s*\{\s*trialDays:\s*introPhase\.trialDays,?\s*\}/.test(
+        proScreen,
+      ),
+      'pro screen must render the trial chip via t(\'planTrialChipDays\', { trialDays: introPhase.trialDays })',
+    );
+  });
+
+  await test('planAnnualTrialChip / planMonthlyTrialChip are gone from the screen (single day-count source)', () => {
+    assert.ok(
+      !/planAnnualTrialChip/.test(proScreen),
+      'pro screen must NOT reference planAnnualTrialChip — the day count comes from introPhase now',
+    );
+    assert.ok(
+      !/planMonthlyTrialChip/.test(proScreen),
+      'pro screen must NOT reference planMonthlyTrialChip — the day count comes from introPhase now',
+    );
+  });
+
+  await test('chip is guarded on introPhase (null → hidden, no numeric fallback)', () => {
+    const chipBlock =
+      proScreen.match(/\{introPhase \?[\s\S]*?:\s*null\s*\}/)?.[0] ?? '';
+    assert.ok(
+      chipBlock.includes('planTrialChipDays'),
+      'the planTrialChipDays render must live inside the introPhase ? … : null branch (chip hidden when no intro offer)',
+    );
+  });
+
+  await test('planAnnualBillCaption interpolates {{trialDays}} from introPhase', () => {
+    assert.ok(
+      /\bt\(\s*['"]planAnnualBillCaption['"]\s*,\s*\{\s*trialDays:\s*introPhase\.trialDays\s*\}/.test(
+        proScreen,
+      ),
+      'planAnnualBillCaption must receive { trialDays: introPhase.trialDays }',
+    );
+  });
+
+  await test('planMonthlyTrialCaption interpolates {{trialDays}} + {{price}} from introPhase', () => {
+    assert.ok(
+      /trialDays:\s*introPhase\.trialDays[\s\S]{0,160}price:\s*toUsdLabel\(\s*pkg\.priceString\s*\)/.test(
+        proScreen,
+      ),
+      'planMonthlyTrialCaption must receive { trialDays: introPhase.trialDays, price: toUsdLabel(pkg.priceString) }',
+    );
+  });
+
+  await test('day-less fallback captions are referenced (introPhase-null path)', () => {
+    for (const key of [
+      'planAnnualBillCaptionPlain',
+      'planMonthlyTrialCaptionPlain',
+    ]) {
+      assert.ok(
+        new RegExp(`\\bt\\(\\s*['"]${key}['"]`).test(proScreen),
+        `pro screen must reference ${key} (day-less caption when introPhase is null)`,
+      );
+    }
+  });
+
+  await test('no hardcoded trial-day literals in the screen (14/7 días/days/gratis/free must come from the template)', () => {
+    assert.ok(
+      !/\b(14|7)\s+(d[ií]as|days|dias|gratis|free|grátis)\b/i.test(proScreen),
+      'pro screen must not hardcode trial-day counts — they come from t(\'planTrialChipDays\', { trialDays })',
     );
   });
 
@@ -364,13 +468,18 @@ async function run() {
     );
   });
 
-  await test('annual plan card references the trial chip + billing caption + equivalent monthly', () => {
-    // The annual card body line ("Facturado anualmente…") + the green
-    // subline ("Equivale a solo $4.16 / mes") both come from the i18n
-    // catalog, NOT hardcoded English/Spanish strings.
+  await test('annual plan card references the unified trial chip + day-template billing caption + equivalent monthly', () => {
+    // The annual card body line ("Facturado anualmente (N días de
+    // prueba gratis)…") + the green subline ("Equivale a solo
+    // US$4.16 / mes") both come from the i18n catalog, NOT hardcoded
+    // English/Spanish strings. The chip key is the unified
+    // planTrialChipDays template (day count from introPhase) and the
+    // day-less fallback planAnnualBillCaptionPlain covers the
+    // introPhase-null path.
     for (const key of [
-      'planAnnualTrialChip',
+      'planTrialChipDays',
       'planAnnualBillCaption',
+      'planAnnualBillCaptionPlain',
       'planAnnualEquivalentMonthly',
       'planBadgeSavings',
     ]) {
@@ -381,10 +490,11 @@ async function run() {
     }
   });
 
-  await test('monthly plan card references the trial chip + caption + cancellation note', () => {
+  await test('monthly plan card references the unified trial chip + caption + cancellation note', () => {
     for (const key of [
-      'planMonthlyTrialChip',
+      'planTrialChipDays',
       'planMonthlyTrialCaption',
+      'planMonthlyTrialCaptionPlain',
       'planMonthlyCancellationNote',
     ]) {
       assert.ok(
@@ -490,13 +600,44 @@ async function run() {
     );
   });
 
-  await test('pro screen exposes accessibility labels for the header close + account icons', () => {
-    for (const key of ['closePaywallA11y', 'accountA11y']) {
-      assert.ok(
-        new RegExp(`\\bt\\(\\s*['"]${key}['"]`).test(proScreen),
-        `pro screen must reference ${key} (a11y label for header icon button)`,
-      );
-    }
+  await test('header a11y: only the close button label is referenced (account icon removed)', () => {
+    assert.ok(
+      /\bt\(\s*['"]closePaywallA11y['"]/.test(proScreen),
+      'pro screen must reference closePaywallA11y (a11y label for the header close button)',
+    );
+    assert.ok(
+      !/\bt\(\s*['"]accountA11y['"]/.test(proScreen),
+      'pro screen must NOT reference accountA11y — the header account icon is removed',
+    );
+  });
+
+  await test('headerRight renders exactly ONE IconButton (the xmark close button only)', () => {
+    // Paywall polish: the header used to render two IconButtons
+    // (person.fill → profile, xmark → back). On device both read as
+    // "close this screen", so the account icon is gone. The header
+    // right side must contain exactly one IconButton using xmark and
+    // no person.fill anywhere in the headerRight block.
+    const headerRightBlock =
+      proScreen.match(/headerRight: \(\) => \([\s\S]*?\),\s*\n\s*\}/)?.[0] ??
+      '';
+    assert.ok(
+      headerRightBlock.length > 0,
+      'sanity: headerRight render-block must exist',
+    );
+    const iconButtons = headerRightBlock.match(/<IconButton/g) ?? [];
+    assert.equal(
+      iconButtons.length,
+      1,
+      'headerRight must render exactly one IconButton',
+    );
+    assert.ok(
+      /icon="xmark"/.test(headerRightBlock),
+      'the single headerRight IconButton must be the xmark close button',
+    );
+    assert.ok(
+      !/person\.fill/.test(headerRightBlock),
+      'headerRight must not reference the person.fill account icon',
+    );
   });
 
   await test('pro screen references the cancelOrFreeTier secondary action', () => {
