@@ -44,6 +44,7 @@ import type enCurrency from './locales/en/currency.json';
 import type enDate from './locales/en/date.json';
 import type enPro from './locales/en/pro.json';
 import type enLegal from './locales/en/legal.json';
+import type enOnboarding from './locales/en/onboarding.json';
 import type esARCommon from './locales/es-AR/common.json';
 import type esARTabs from './locales/es-AR/tabs.json';
 import type esARSettingsLanguage from './locales/es-AR/settingsLanguage.json';
@@ -59,6 +60,7 @@ import type esARCurrency from './locales/es-AR/currency.json';
 import type esARDate from './locales/es-AR/date.json';
 import type esARPro from './locales/es-AR/pro.json';
 import type esARLegal from './locales/es-AR/legal.json';
+import type esAROnboarding from './locales/es-AR/onboarding.json';
 
 declare module 'i18next' {
   interface ResourceNamespaceMap {
@@ -110,6 +112,18 @@ declare module 'i18next' {
      * test:legal-content parity harness.
      */
     legal: typeof esARLegal & Partial<typeof enLegal>;
+    /**
+     * Onboarding flow (`src/app/onboarding/`): the 3-step welcome wizard
+     * surfaced only on the first app launch and persisted via
+     * `onboarding-storage.ts`. Mirrors the `pro` namespace pattern —
+     * es-AR is the source of truth, en / pt-BR are best-effort
+     * translations whose KEY SETS are pinned identical by the
+     * test-i18n-onboarding-keys harness. Per-step copy lives under
+     * `step1` / `step2` / `step3` keys so the screens can pull
+     * `t('step1.headline')` without flat-key collisions across
+     * the three flows.
+     */
+    onboarding: typeof esAROnboarding & Partial<typeof enOnboarding>;
   }
 
   interface CustomTypeOptions {

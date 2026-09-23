@@ -40,6 +40,7 @@ import enCurrency from './locales/en/currency.json';
 import enDate from './locales/en/date.json';
 import enPro from './locales/en/pro.json';
 import enLegal from './locales/en/legal.json';
+import enOnboarding from './locales/en/onboarding.json';
 import esARCommon from './locales/es-AR/common.json';
 import esARTabs from './locales/es-AR/tabs.json';
 import esARSettingsLanguage from './locales/es-AR/settingsLanguage.json';
@@ -55,6 +56,7 @@ import esARCurrency from './locales/es-AR/currency.json';
 import esARDate from './locales/es-AR/date.json';
 import esARPro from './locales/es-AR/pro.json';
 import esARLegal from './locales/es-AR/legal.json';
+import esAROnboarding from './locales/es-AR/onboarding.json';
 import ptBRCommon from './locales/pt-BR/common.json';
 import ptBRTabs from './locales/pt-BR/tabs.json';
 import ptBRSettingsLanguage from './locales/pt-BR/settingsLanguage.json';
@@ -70,6 +72,7 @@ import ptBRCurrency from './locales/pt-BR/currency.json';
 import ptBRDate from './locales/pt-BR/date.json';
 import ptBRPro from './locales/pt-BR/pro.json';
 import ptBRLegal from './locales/pt-BR/legal.json';
+import ptBROnboarding from './locales/pt-BR/onboarding.json';
 import { useLocaleStore } from './stores/useLocaleStore';
 
 /** Every locale the catalog ships, in `lng` form (matches JSON folder names). */
@@ -109,6 +112,7 @@ export const NAMESPACES = [
   'date',
   'pro',
   'legal',
+  'onboarding',
 ] as const;
 export type Namespace = (typeof NAMESPACES)[number];
 
@@ -130,6 +134,7 @@ export const RESOURCES = {
     date: enDate,
     pro: enPro,
     legal: enLegal,
+    onboarding: enOnboarding,
   },
   'es-AR': {
     common: esARCommon,
@@ -147,6 +152,7 @@ export const RESOURCES = {
     date: esARDate,
     pro: esARPro,
     legal: esARLegal,
+    onboarding: esAROnboarding,
   },
   'pt-BR': {
     common: ptBRCommon,
@@ -164,6 +170,7 @@ export const RESOURCES = {
     date: ptBRDate,
     pro: ptBRPro,
     legal: ptBRLegal,
+    onboarding: ptBROnboarding,
   },
 } as const;
 

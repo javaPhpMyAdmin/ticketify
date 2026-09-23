@@ -241,6 +241,53 @@ async function run() {
     },
   );
 
+  console.log('\n[tests] onboarding namespace loads for every locale\n');
+
+  // Re-initialize with the FULL bundled resources — earlier tests
+  // (init integrity, store hydrate) temporarily override the resources
+  // object with empty data to exercise the fallback path, leaving
+  // i18next in a state where `onboarding.*` keys resolve to raw keys.
+  // The harness restores the production catalog here so the namespace
+  // assertions below run against the same resources the app ships.
+  await initMod.initI18n();
+
+  await test('onboarding:onboarding.skip resolves to the expected i18n string per locale', async () => {
+    // The onboarding namespace is added by the first-launch wizard
+    // feature. Each locale ships its own copy under
+    // `src/i18n/locales/<lng>/onboarding.json`, asserted by
+    // `test-i18n-onboarding-keys.mjs`. Here we assert the runtime
+    // catalog (the bundled RESOURCES in config.ts) actually loads the
+    // files: a missing namespace import in config.ts or a malformed
+    // JSON would silently render the raw key on device.
+    const samples = {
+      en: 'Skip',
+      'es-AR': 'Saltar',
+      'pt-BR': 'Pular',
+    };
+    for (const [locale, expected] of Object.entries(samples)) {
+      await i18next.changeLanguage(locale);
+      assert.equal(
+        i18next.t('onboarding:skip'),
+        expected,
+        `onboarding:skip for locale "${locale}" must resolve to "${expected}"`,
+      );
+    }
+  });
+
+  await test('onboarding:step1.headline + step3.dayLabels.0 resolve correctly for es-AR', async () => {
+    // A nested-key + array-shaped key — catches namespaces that
+    // accidentally lose their nested structure during JSON bundling.
+    // i18next resolves array indices via dot notation in v26
+    // (`step3.dayLabels.0`), the bracket form is left untouched.
+    await i18next.changeLanguage('es-AR');
+    assert.equal(
+      i18next.t('onboarding:step1.headline'),
+      'Digitalizá tus gastos al instante',
+    );
+    assert.equal(i18next.t('onboarding:step3.dayLabels.0'), 'L');
+    assert.equal(i18next.t('onboarding:step3.dayLabels.5'), 'S');
+  });
+
   console.log('\n[tests] store hydrate survives secure-store error\n');
 
   await test(

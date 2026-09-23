@@ -25,12 +25,15 @@
     "../src/i18n/locales/en/common.json",
     "../src/i18n/locales/en/tabs.json",
     "../src/i18n/locales/en/settingsLanguage.json",
+    "../src/i18n/locales/en/onboarding.json",
     "../src/i18n/locales/es-AR/common.json",
     "../src/i18n/locales/es-AR/tabs.json",
     "../src/i18n/locales/es-AR/settingsLanguage.json",
+    "../src/i18n/locales/es-AR/onboarding.json",
     "../src/i18n/locales/pt-BR/common.json",
     "../src/i18n/locales/pt-BR/tabs.json",
     "../src/i18n/locales/pt-BR/settingsLanguage.json",
+    "../src/i18n/locales/pt-BR/onboarding.json",
     "../scripts/test-stubs/expo-secure-store.ts",
     "../scripts/test-stubs/expo-localization.ts"
   ]

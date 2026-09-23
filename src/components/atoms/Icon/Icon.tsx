@@ -75,7 +75,26 @@ export type IconName =
   | 'bell.badge.fill'
   | 'person.3.fill'
   | 'flame.fill'
-  | 'calendar.badge.checkmark';
+  | 'calendar.badge.checkmark'
+  // ── Onboarding (first-launch wizard) ─────────────────────────────────
+  // SF Symbol names mapped to MaterialIcons glyphs for the kinetic-
+  // finance 3-step welcome flow. Following the paywall-polish commit
+  // convention (icon names added to IconName + the Material map below;
+  // existing names left unchanged).
+  | 'receipt_long'
+  | 'arrow_back'
+  | 'arrow_forward'
+  | 'person'
+  | 'auto_awesome'
+  | 'shopping_cart'
+  | 'verified'
+  | 'check_circle'
+  | 'magic_button'
+  | 'query_stats'
+  | 'trending_down'
+  | 'trending_up'
+  | 'celebration'
+  | 'bolt';
 
 /**
  * Material icon names are a strict union from the MaterialIcons glyph map.
@@ -143,6 +162,23 @@ const materialMap: Record<IconName, string> = {
   'person.3.fill': 'family-restroom',
   'flame.fill': 'local-fire-department',
   'calendar.badge.checkmark': 'event-available',
+  // Onboarding (first-launch wizard) — see IconName for the rationale
+  // and the commit convention. Names map to the SF Symbol-style name
+  // on iOS via SymbolView and to the MaterialIcons glyph on Android.
+  receipt_long: 'receipt-long',
+  arrow_back: 'arrow-back',
+  arrow_forward: 'arrow-forward',
+  person: 'person',
+  auto_awesome: 'auto-awesome',
+  shopping_cart: 'shopping-cart',
+  verified: 'verified',
+  check_circle: 'check-circle',
+  magic_button: 'auto-fix-high',
+  query_stats: 'query-stats',
+  trending_down: 'trending-down',
+  trending_up: 'trending-up',
+  celebration: 'celebration',
+  bolt: 'bolt',
 };
 
 export interface IconProps {

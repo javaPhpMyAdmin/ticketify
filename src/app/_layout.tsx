@@ -11,6 +11,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { DialogHost, ToastHost } from '@/components';
 import { BootSplash } from '@/components/molecules/BootSplash';
 import { useSessionStore } from '@/features/auth';
+import { getOnboardingCompleted } from '@/features/onboarding/onboarding-storage';
 import { ConsentGate } from '@/features/legal/components/ConsentGate';
 import { ProBootstrap } from '@/features/pro';
 import { I18nProvider } from '@/i18n/components/I18nProvider';
@@ -75,6 +76,56 @@ export default function RootLayout() {
     }
     prevSession.current = session;
   }, [session, pathname]);
+
+  // ── Onboarding gate (first-launch wizard) ──────────────────────────
+  // The 3-step welcome flow lives at `/onboarding/step-{1,2,3}` and is
+  // surfaced ONLY on the user's first session (pre-auth, pre-sign-in).
+  // Once any CTA on the flow completes the flag (via
+  // `markOnboardingCompleted`), this gate stops redirecting. The flag
+  // hydrates from AsyncStorage on app start with the same try/catch
+  // pattern the rest of the persistence layer uses (a read failure
+  // collapses to `false` — see `getOnboardingCompleted`).
+  //
+  // The pathname allowlist protects against races with the session
+  // gate (signed-out users already on `(auth)` aren't bounced into
+  // onboarding; legal screens reachable pre-auth stay reachable) and
+  // against races with the consent gate (post-auth consent screen).
+  // Both gates can fire on the same render — the allowlist keeps them
+  // orthogonal.
+  const onboardingChecked = useRef(false);
+  useEffect(() => {
+    if (onboardingChecked.current) return;
+    if (isBootstrapping) return;
+    if (session != null) {
+      // Signed-in: the onboarding flow is irrelevant. Don't bounce.
+      onboardingChecked.current = true;
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const completed = await getOnboardingCompleted();
+      if (cancelled) return;
+      onboardingChecked.current = true;
+      if (completed) return;
+      const inOnboarding = pathname.startsWith('/onboarding');
+      const allowlisted =
+        pathname === '/' ||
+        pathname === '/sign-in' ||
+        pathname === '/sign-up' ||
+        pathname === '/forgot-password' ||
+        pathname === '/reset-password' ||
+        pathname.startsWith('/legal/') ||
+        pathname === '/oauth' ||
+        inOnboarding;
+      if (allowlisted) return;
+      router.replace(
+        '/onboarding/step-1' as Parameters<typeof router.replace>[0],
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isBootstrapping, session, pathname]);
 
   const [booted, setBooted] = useState(false);
 
@@ -217,6 +268,10 @@ export default function RootLayout() {
                 first, a fresh launch landed on /legal/privacy instead of
                 sign-in (dead-end with no history). */}
             <Stack.Screen name="(auth)" />
+            <Stack.Screen name="onboarding/index" />
+            <Stack.Screen name="onboarding/step-1" />
+            <Stack.Screen name="onboarding/step-2" />
+            <Stack.Screen name="onboarding/step-3" />
             <Stack.Screen name="legal/privacy" />
             <Stack.Screen name="legal/terms" />
           </Stack>
