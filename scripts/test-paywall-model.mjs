@@ -318,81 +318,86 @@ async function run() {
     );
   });
 
-  console.log('\n[tests] trial-day copy — Play-sourced day counts (paywall polish)\n');
+  console.log('\n[tests] trial-day copy — hardcoded Play-config day counts (paywall polish v2)\n');
 
-  // Paywall-polish contract (CHANGE 4): ALL day-count copy on the plan
-  // cards comes from the RevenueCat introPhase (`pkg.introPhase.trialDays`),
-  // NOT from hardcoded i18n strings. The old planAnnualTrialChip /
-  // planMonthlyTrialChip keys ("14 DÍAS GRATIS" / "7 DÍAS GRATIS") and
-  // the hardcoded day counts inside planAnnualBillCaption /
-  // planMonthlyTrialCaption are gone — the templates interpolate
-  // {{trialDays}} now. The chip hides entirely when introPhase is null
-  // (no invented day counts) and the day-less fallback captions take
-  // the annual body / monthly caption slots.
+  // Paywall-polish v2 contract: on device the RevenueCat
+  // `pkg.introPhase` is null (the Play FREE_TRIAL phase isn't surfacing
+  // through RC yet), so the conditional branches were hiding the chip
+  // AND downgrading the annual caption to the day-less fallback. The
+  // user wants the reference look back. Day counts are hardcoded
+  // (annual 14 / monthly 7) to match the Play config; the CTA stays
+  // dynamic so it follows the real RC intro offer when it surfaces.
 
-  await test('trial chip renders the unified planTrialChipDays key with the introPhase trialDays', () => {
+  await test('trial chip renders the hardcoded planAnnualTrialChip / planMonthlyTrialChip keys (no day interpolation)', () => {
+    // The chip is back to the two per-plan keys; neither interpolates
+    // {{trialDays}}. The reference look shows "14 DÍAS GRATIS" / "7
+    // DÍAS GRATIS" verbatim from the i18n catalog.
     assert.ok(
-      /\bt\(\s*['"]planTrialChipDays['"]\s*,\s*\{\s*trialDays:\s*introPhase\.trialDays,?\s*\}/.test(
+      /\bt\(\s*['"]planAnnualTrialChip['"]\s*\)/.test(proScreen),
+      'pro screen must render the annual trial chip via t(\'planAnnualTrialChip\') (no interpolation)',
+    );
+    assert.ok(
+      /\bt\(\s*['"]planMonthlyTrialChip['"]\s*\)/.test(proScreen),
+      'pro screen must render the monthly trial chip via t(\'planMonthlyTrialChip\') (no interpolation)',
+    );
+    // The day-template key is gone from the screen render.
+    assert.ok(
+      !/\bt\(\s*['"]planTrialChipDays['"]/.test(proScreen),
+      'pro screen must NOT call t(\'planTrialChipDays\') — the unified day template is replaced by per-plan hardcoded chips',
+    );
+  });
+
+  await test('trial chip ALWAYS renders (no introPhase guard hiding the chip)', () => {
+    // The chip is unconditional: the screen must not wrap the chip in
+    // an `introPhase ? <chip> : null` branch. The whole chip-render
+    // block lives outside any such conditional.
+    assert.ok(
+      !/introPhase\s*\?\s*\([\s\S]*?plan(?:Annual|Monthly)TrialChip[\s\S]*?\)\s*:\s*null/.test(
         proScreen,
       ),
-      'pro screen must render the trial chip via t(\'planTrialChipDays\', { trialDays: introPhase.trialDays })',
+      'the trial chip must render unconditionally — no introPhase guard hiding it',
     );
   });
 
-  await test('planAnnualTrialChip / planMonthlyTrialChip are gone from the screen (single day-count source)', () => {
+  await test('planAnnualBillCaption is rendered as a literal (no {{trialDays}} interpolation, no ternary)', () => {
+    // The annual body caption ALWAYS renders the literal i18n value —
+    // no `t('planAnnualBillCaption', { trialDays: ... })`, no
+    // `introPhase ? … : planAnnualBillCaptionPlain` fallback branch.
     assert.ok(
-      !/planAnnualTrialChip/.test(proScreen),
-      'pro screen must NOT reference planAnnualTrialChip — the day count comes from introPhase now',
+      /\bt\(\s*['"]planAnnualBillCaption['"]\s*\)/.test(proScreen),
+      'planAnnualBillCaption must be rendered as t(\'planAnnualBillCaption\') (no values object)',
     );
     assert.ok(
-      !/planMonthlyTrialChip/.test(proScreen),
-      'pro screen must NOT reference planMonthlyTrialChip — the day count comes from introPhase now',
+      !/\bt\(\s*['"]planAnnualBillCaption['"]\s*,/.test(proScreen),
+      'planAnnualBillCaption must NOT be called with interpolation values — the day count is hardcoded in the template',
     );
-  });
-
-  await test('chip is guarded on introPhase (null → hidden, no numeric fallback)', () => {
-    const chipBlock =
-      proScreen.match(/\{introPhase \?[\s\S]*?:\s*null\s*\}/)?.[0] ?? '';
     assert.ok(
-      chipBlock.includes('planTrialChipDays'),
-      'the planTrialChipDays render must live inside the introPhase ? … : null branch (chip hidden when no intro offer)',
+      !/planAnnualBillCaptionPlain/.test(proScreen),
+      'pro screen must NOT reference planAnnualBillCaptionPlain — the day-less fallback is gone (chip + caption are unconditional)',
     );
   });
 
-  await test('planAnnualBillCaption interpolates {{trialDays}} from introPhase', () => {
+  await test('planMonthlyTrialCaption interpolates only {{price}} (no {{trialDays}}, no fallback branch)', () => {
+    // The monthly body caption always renders the literal day count
+    // from the i18n catalog; only `{{price}}` is interpolated, from
+    // pkg.priceString through toUsdLabel. No ternary on introPhase,
+    // no planMonthlyTrialCaptionPlain fallback.
     assert.ok(
-      /\bt\(\s*['"]planAnnualBillCaption['"]\s*,\s*\{\s*trialDays:\s*introPhase\.trialDays\s*\}/.test(
+      /\bt\(\s*['"]planMonthlyTrialCaption['"]\s*,\s*\{\s*price:\s*toUsdLabel\(\s*pkg\.priceString\s*\)\s*,?\s*\}\s*\)/.test(
         proScreen,
       ),
-      'planAnnualBillCaption must receive { trialDays: introPhase.trialDays }',
+      'planMonthlyTrialCaption must receive { price: toUsdLabel(pkg.priceString) } only — no trialDays interpolation',
     );
-  });
-
-  await test('planMonthlyTrialCaption interpolates {{trialDays}} + {{price}} from introPhase', () => {
     assert.ok(
-      /trialDays:\s*introPhase\.trialDays[\s\S]{0,160}price:\s*toUsdLabel\(\s*pkg\.priceString\s*\)/.test(
+      !/planMonthlyTrialCaptionPlain/.test(proScreen),
+      'pro screen must NOT reference planMonthlyTrialCaptionPlain — the day-less fallback is gone',
+    );
+    // And the monthly caption call site does NOT pass trialDays.
+    assert.ok(
+      !/\bt\(\s*['"]planMonthlyTrialCaption['"]\s*,[\s\S]*?trialDays:/.test(
         proScreen,
       ),
-      'planMonthlyTrialCaption must receive { trialDays: introPhase.trialDays, price: toUsdLabel(pkg.priceString) }',
-    );
-  });
-
-  await test('day-less fallback captions are referenced (introPhase-null path)', () => {
-    for (const key of [
-      'planAnnualBillCaptionPlain',
-      'planMonthlyTrialCaptionPlain',
-    ]) {
-      assert.ok(
-        new RegExp(`\\bt\\(\\s*['"]${key}['"]`).test(proScreen),
-        `pro screen must reference ${key} (day-less caption when introPhase is null)`,
-      );
-    }
-  });
-
-  await test('no hardcoded trial-day literals in the screen (14/7 días/days/gratis/free must come from the template)', () => {
-    assert.ok(
-      !/\b(14|7)\s+(d[ií]as|days|dias|gratis|free|grátis)\b/i.test(proScreen),
-      'pro screen must not hardcode trial-day counts — they come from t(\'planTrialChipDays\', { trialDays })',
+      'planMonthlyTrialCaption must NOT receive a trialDays value — the day count is hardcoded',
     );
   });
 
@@ -468,18 +473,16 @@ async function run() {
     );
   });
 
-  await test('annual plan card references the unified trial chip + day-template billing caption + equivalent monthly', () => {
-    // The annual card body line ("Facturado anualmente (N días de
-    // prueba gratis)…") + the green subline ("Equivale a solo
-    // US$4.16 / mes") both come from the i18n catalog, NOT hardcoded
-    // English/Spanish strings. The chip key is the unified
-    // planTrialChipDays template (day count from introPhase) and the
-    // day-less fallback planAnnualBillCaptionPlain covers the
-    // introPhase-null path.
+  await test('annual plan card references the hardcoded chip + literal billing caption + equivalent monthly', () => {
+    // The annual card body line ("Facturado anualmente (14 días de
+    // prueba gratis)") + the green subline ("Equivale a solo US$ 4.16 /
+    // mes") both come from the i18n catalog. The chip is the
+    // hardcoded planAnnualTrialChip ("14 DÍAS GRATIS" — no day
+    // interpolation), the body caption is the literal planAnnualBillCaption
+    // (no {{trialDays}}, no introPhase ternary, no day-less fallback).
     for (const key of [
-      'planTrialChipDays',
+      'planAnnualTrialChip',
       'planAnnualBillCaption',
-      'planAnnualBillCaptionPlain',
       'planAnnualEquivalentMonthly',
       'planBadgeSavings',
     ]) {
@@ -488,13 +491,24 @@ async function run() {
         `pro screen must reference ${key} (annual plan card copy)`,
       );
     }
+    // The day-template and day-less-fallback keys are gone.
+    assert.ok(
+      !/\bplanTrialChipDays\b/.test(proScreen),
+      'pro screen must NOT reference planTrialChipDays — the per-plan hardcoded chip is the only chip render',
+    );
+    assert.ok(
+      !/\bplanAnnualBillCaptionPlain\b/.test(proScreen),
+      'pro screen must NOT reference planAnnualBillCaptionPlain — the literal caption always renders',
+    );
   });
 
-  await test('monthly plan card references the unified trial chip + caption + cancellation note', () => {
+  await test('monthly plan card references the hardcoded chip + price-interpolated caption + cancellation note', () => {
+    // Monthly card chip = planMonthlyTrialChip ("7 DÍAS GRATIS" —
+    // literal). Caption = planMonthlyTrialCaption with ONLY price
+    // interpolation (literal "7 días" baked into the template).
     for (const key of [
-      'planTrialChipDays',
+      'planMonthlyTrialChip',
       'planMonthlyTrialCaption',
-      'planMonthlyTrialCaptionPlain',
       'planMonthlyCancellationNote',
     ]) {
       assert.ok(
@@ -502,6 +516,10 @@ async function run() {
         `pro screen must reference ${key} (monthly plan card copy)`,
       );
     }
+    assert.ok(
+      !/\bplanMonthlyTrialCaptionPlain\b/.test(proScreen),
+      'pro screen must NOT reference planMonthlyTrialCaptionPlain — the literal caption always renders',
+    );
   });
 
   await test('CTA interpolates trialDays via the ctaStartTrialWithDays key (annual)', () => {

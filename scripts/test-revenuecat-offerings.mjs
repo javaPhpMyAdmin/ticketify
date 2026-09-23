@@ -107,21 +107,38 @@ writeFileSync(
   mockPath,
   [
     '// Mutable fixtures for the integration tests. Tests rewrite',
-    '// `offeringsFixture` / `customerInfoFixture` between calls.',
+    '// `offeringsFixture` / `isAnonymousFixture` between calls.',
+    '// The logOutSpyFixture counts real logOut() calls so the',
+    '// skip-anonymous path is observable from the harness.',
+    '// `isAnonymousImpl` is the function the mock\'s isAnonymous()',
+    '// calls — tests that want to simulate a thrown call override it',
+    '// via __setIsAnonymousImpl and MUST reset with __resetIsAnonymousImpl',
+    '// before subsequent tests so the default fixture reader takes over.',
     'let offeringsFixture = null;',
+    'let isAnonymousFixture = false;',
+    'let logOutSpyFixture = 0;',
+    'let isAnonymousImpl = () => isAnonymousFixture;',
+    'let logOutImpl = () => { logOutSpyFixture += 1; };',
     'class MockPurchases {',
     '  static configure() { return true; }',
     '  static async getCustomerInfo() { return null; }',
     '  static async getOfferings() { return offeringsFixture; }',
     '  static async logIn() { return { created: false }; }',
-    '  static async logOut() {}',
+    '  static async logOut() { return logOutImpl(); }',
+    '  static async isAnonymous() { return isAnonymousImpl(); }',
     '  static async purchasePackage() { return { customerInfo: { entitlements: { all: { pro: { isActive: true } } } } }; }',
     '  static async restorePurchases() { return { entitlements: { all: { pro: { isActive: true } } } }; }',
     '  static async showManageSubscriptions() {}',
     '  static addCustomerInfoUpdateListener() { return { unsubscribe() {} }; }',
     '}',
     'MockPurchases.__setOfferings = (fixture) => { offeringsFixture = fixture; };',
-    'MockPurchases.__reset = () => { offeringsFixture = null; };',
+    'MockPurchases.__setIsAnonymous = (value) => { isAnonymousFixture = value; };',
+    'MockPurchases.__setIsAnonymousImpl = (fn) => { isAnonymousImpl = fn; };',
+    'MockPurchases.__resetIsAnonymousImpl = () => { isAnonymousImpl = () => isAnonymousFixture; };',
+    'MockPurchases.__setLogOutImpl = (fn) => { logOutImpl = fn; };',
+    'MockPurchases.__getLogOutCallCount = () => logOutSpyFixture;',
+    'MockPurchases.__resetLogOutSpy = () => { logOutSpyFixture = 0; };',
+    'MockPurchases.__reset = () => { offeringsFixture = null; isAnonymousFixture = false; logOutSpyFixture = 0; isAnonymousImpl = () => isAnonymousFixture; logOutImpl = () => { logOutSpyFixture += 1; }; };',
     'module.exports = MockPurchases;',
     'module.exports.default = MockPurchases;',
     '',
@@ -170,6 +187,9 @@ async function run() {
     deriveCustomerInfoSnapshot,
     getOfferings,
     toUsdLabel,
+    isAnonymousRevenueCat,
+    logOutRevenueCat,
+    configure,
   } = revenuecatModule;
   // The mock module is also loaded via `liveRequire` so the integration
   // tests can mutate the mutable fixtures. (The revenuecat module reads
@@ -699,14 +719,27 @@ async function run() {
     );
   });
 
-  console.log('\n[tests] toUsdLabel — bare "$" display prefix (paywall polish)\n');
+  console.log('\n[tests] toUsdLabel — bare "$" display prefix + USD spacing (paywall polish)\n');
 
-  await test('bare "$49.99" → "US$49.99" (USD dollar prefix added)', () => {
-    assert.equal(toUsdLabel('$49.99'), 'US$49.99');
+  await test('bare "$49.99" → "US$ 49.99" (USD prefix + space inserted)', () => {
+    // Visual legibility: a single space separates the currency symbol
+    // from the amount so "$5.99" / "US$ 5.99" reads unambiguously.
+    assert.equal(toUsdLabel('$49.99'), 'US$ 49.99');
   });
 
-  await test('already prefixed "US$49.99" → untouched (idempotent)', () => {
-    assert.equal(toUsdLabel('US$49.99'), 'US$49.99');
+  await test('bare single-digit "$5.99" → "US$ 5.99" (smallest USD amount)', () => {
+    assert.equal(toUsdLabel('$5.99'), 'US$ 5.99');
+  });
+
+  await test('already spaced "US$ 49.99" → untouched (idempotent)', () => {
+    assert.equal(toUsdLabel('US$ 49.99'), 'US$ 49.99');
+  });
+
+  await test('legacy "US$49.99" (no space) → normalized to "US$ 49.99"', () => {
+    // Idempotent normalization: an already-prefixed but un-spaced label
+    // gets the space inserted so both shapes collapse to one canonical
+    // form on screen.
+    assert.equal(toUsdLabel('US$49.99'), 'US$ 49.99');
   });
 
   await test('non-USD localized price "ARS 1.499,00" → untouched', () => {
@@ -717,7 +750,7 @@ async function run() {
     assert.equal(toUsdLabel('\u20ac49,99'), '\u20ac49,99');
   });
 
-  await test('symbol-less price "49.99" → untouched', () => {
+  await test('symbol-less price "49.99" → untouched (no currency symbol, no prefix added)', () => {
     assert.equal(toUsdLabel('49.99'), '49.99');
   });
 
@@ -729,6 +762,122 @@ async function run() {
     // Fake-It guard: the function must branch on the input, not return
     // a constant string.
     assert.notEqual(toUsdLabel('$49.99'), toUsdLabel('\u20ac49,99'));
+  });
+
+  await test('triangulation: "$X" and "US$X" both produce the same spaced output (canonical form)', () => {
+    // Both prefixed and unprefixed USD inputs collapse to the SAME
+    // canonical "US$ X" form — proves the space insertion works on
+    // both branches.
+    assert.equal(toUsdLabel('$49.99'), toUsdLabel('US$49.99'));
+  });
+
+  console.log('\n[tests] isAnonymousRevenueCat — skip logOut for anonymous users (paywall polish)\n');
+
+  // The SDK emits a noisy native warning when Purchases.logOut() is
+  // called on an anonymous user. The wrapper short-circuits BEFORE the
+  // call when isAnonymous() returns true so the warning never fires.
+  // The default (when isAnonymous() itself is unavailable or fails) is
+  // conservative: treat as anonymous → skip logOut safely.
+
+  // Make sure the wrapper's `configured` flag is set so the isAnonymous
+  // branch is reachable. The default MockPurchases.configure returns
+  // true; configure() is idempotent so subsequent calls are no-ops.
+  configure('test-key');
+
+  await test('isAnonymousRevenueCat exists and is callable', () => {
+    assert.equal(
+      typeof isAnonymousRevenueCat,
+      'function',
+      'isAnonymousRevenueCat must be exported from revenuecat wrapper',
+    );
+  });
+
+  await test('Purchases.isAnonymous returns true → wrapper returns true (skip logOut path)', async () => {
+    MockPurchases.__resetIsAnonymousImpl();
+    MockPurchases.__setIsAnonymous(true);
+    assert.equal(await isAnonymousRevenueCat(), true);
+    MockPurchases.__setIsAnonymous(false);
+  });
+
+  await test('Purchases.isAnonymous returns false → wrapper returns false (real logOut path)', async () => {
+    MockPurchases.__resetIsAnonymousImpl();
+    MockPurchases.__setIsAnonymous(false);
+    assert.equal(await isAnonymousRevenueCat(), false);
+    MockPurchases.__setIsAnonymous(false);
+  });
+
+  await test('Purchases.isAnonymous THROWS → wrapper returns true (conservative: treat as anonymous)', async () => {
+    // If the SDK call itself errors, we cannot prove the user is
+    // logged in — safer to skip the logOut than to fire the SDK
+    // warning on an unverified identity.
+    MockPurchases.__setIsAnonymousImpl(() => {
+      throw new Error('sdk boom');
+    });
+    assert.equal(await isAnonymousRevenueCat(), true);
+    // Restore default impl so subsequent tests see the fixture reader.
+    MockPurchases.__resetIsAnonymousImpl();
+  });
+
+  await test('Purchases.isAnonymous is NOT a function → wrapper returns true (older SDK, safe skip)', async () => {
+    // The SDK did not always expose isAnonymous(); older versions
+    // expose neither the static method nor a workaround. The wrapper
+    // must treat "method missing" as "skip the logOut" so a downgrade
+    // or mismatched version never fires the SDK warning.
+    const original = MockPurchases.isAnonymous;
+    // @ts-expect-error — intentionally removing the method to simulate
+    // a version that does not expose it.
+    MockPurchases.isAnonymous = undefined;
+    try {
+      assert.equal(await isAnonymousRevenueCat(), true);
+    } finally {
+      MockPurchases.isAnonymous = original;
+    }
+  });
+
+  console.log('\n[tests] logOutRevenueCat — skip the call when anonymous (no SDK warning)\n');
+
+  await test('isAnonymous=true → logOut is NOT called, ok=true (skip path, no SDK warning)', async () => {
+    MockPurchases.__resetIsAnonymousImpl();
+    MockPurchases.__setIsAnonymous(true);
+    MockPurchases.__resetLogOutSpy();
+    const result = await logOutRevenueCat();
+    assert.equal(result.ok, true);
+    assert.equal(
+      MockPurchases.__getLogOutCallCount(),
+      0,
+      'Purchases.logOut() must NOT be invoked when the user is anonymous',
+    );
+    MockPurchases.__setIsAnonymous(false);
+  });
+
+  await test('isAnonymous=false → logOut IS called, ok=true (the regular path)', async () => {
+    MockPurchases.__resetIsAnonymousImpl();
+    MockPurchases.__setIsAnonymous(false);
+    MockPurchases.__resetLogOutSpy();
+    const result = await logOutRevenueCat();
+    assert.equal(result.ok, true);
+    assert.equal(
+      MockPurchases.__getLogOutCallCount(),
+      1,
+      'Purchases.logOut() MUST be invoked when the user is identified',
+    );
+    MockPurchases.__setIsAnonymous(false);
+  });
+
+  await test('isAnonymous check fails (throws) → logOut is NOT called (conservative skip)', async () => {
+    MockPurchases.__setIsAnonymousImpl(() => {
+      throw new Error('sdk boom');
+    });
+    MockPurchases.__resetLogOutSpy();
+    const result = await logOutRevenueCat();
+    assert.equal(result.ok, true);
+    assert.equal(
+      MockPurchases.__getLogOutCallCount(),
+      0,
+      'a failed isAnonymous check must not trigger the native logOut warning',
+    );
+    // Restore for cleanup so subsequent tests see the default fixture reader.
+    MockPurchases.__resetIsAnonymousImpl();
   });
 
   console.log('\n[tests] getOfferings() integration (REQ-PRO-INTRO-CAPTION — paywall caption consumer)\n');

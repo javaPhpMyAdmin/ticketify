@@ -212,11 +212,48 @@ export async function logInRevenueCat(
 }
 
 /**
+ * Whether the current RevenueCat user is anonymous (no Supabase UUID
+ * bridged in via `logIn`). Calls `Purchases.isAnonymous()` when the SDK
+ * exposes it.
+ *
+ * The conservative default is `true` (skip logOut safely) when:
+ *
+ *   - The native module is unavailable (`Purchases === null`).
+ *   - The SDK version in use does not expose `isAnonymous` as a
+ *     function (older SDKs).
+ *   - The native call itself throws or rejects (treat as unverified
+ *     identity — skipping is safer than firing the SDK warning).
+ *
+ * Returns `false` only when the SDK is available, configured, the
+ * `isAnonymous` method exists, AND it resolves to `false`. The
+ * `logOutRevenueCat` wrapper uses this helper to short-circuit before
+ * `Purchases.logOut()` and avoid the SDK's "Called logOut but the
+ * current user is anonymous" native warning on every sign-out of an
+ * anonymous session.
+ */
+export async function isAnonymousRevenueCat(): Promise<boolean> {
+  if (!Purchases) return true;
+  if (typeof Purchases.isAnonymous !== 'function') return true;
+  try {
+    const result = await Purchases.isAnonymous();
+    return result === true;
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Clears the RevenueCat app-user mapping. Idempotent and safe: a no-op
  * when the SDK is unavailable or not configured; never throws to callers.
  * Called on sign-out so the next user never inherits the previous user's
  * RevenueCat identity. Bounded so a hung native call cannot block the
  * sign-out itself.
+ *
+ * Short-circuits to `ok: true` when `isAnonymousRevenueCat()` is true:
+ * calling `Purchases.logOut()` on an anonymous user emits a noisy
+ * native warning ("😿‼️ Called logOut but the current user is
+ * anonymous") that the user sees in the dev console. The skip is
+ * intentional — there is nothing to clear.
  */
 export async function logOutRevenueCat(): Promise<RevenueCatIdentityResult> {
   if (!Purchases) {
@@ -224,6 +261,12 @@ export async function logOutRevenueCat(): Promise<RevenueCatIdentityResult> {
   }
   if (!configured) {
     return { ok: false, message: 'RevenueCat no está configurado.' };
+  }
+  if (await isAnonymousRevenueCat()) {
+    // Nothing to clear — the RC SDK is already on an anonymous user.
+    // Skipping avoids the SDK's native "Called logOut but the current
+    // user is anonymous" warning that fires on every anonymous sign-out.
+    return { ok: true };
   }
   try {
     const result = await withTimeout(
@@ -442,12 +485,14 @@ export interface OfferingsSnapshot {
 /**
  * Normalize a store-formatted price string for display. The Play/App
  * Store formats the USD dollar sign as a bare "$"; the paywall shows
- * it as "US$" so the currency is unambiguous on device.
+ * it as "US$ " (with a space) so the currency is unambiguous and
+ * legible on device.
  *
  * Pure string transform — NO parsing, NO number formatting:
  *
- *   - "$49.99"    -> "US$49.99" (bare US dollar prefix)
- *   - "US$49.99"  -> "US$49.99" (already prefixed — untouched)
+ *   - "$49.99"    -> "US$ 49.99" (bare US dollar — add prefix + space)
+ *   - "US$49.99"  -> "US$ 49.99" (legacy un-spaced form — insert space)
+ *   - "US$ 49.99" -> "US$ 49.99" (already canonical — untouched)
  *   - "ARS 1.499,00", "€49,99", "49.99", "" -> untouched (never mangle
  *     non-USD or symbol-less strings)
  *
@@ -455,7 +500,15 @@ export interface OfferingsSnapshot {
  * and `introPhase.priceAfterTrial`).
  */
 export function toUsdLabel(price: string): string {
-  return price.startsWith('$') ? `US${price}` : price;
+  // Two passes so the bare "$" branch can prepend "US" while the
+  // already-prefixed "US$" branch only needs to insert a space.
+  // The (?=\d) look-ahead ensures we only touch shapes that look like
+  // a USD amount (symbol immediately followed by a digit), so the
+  // already-spaced "US$ 49.99" / non-USD "ARS 1.499,00" / symbol-less
+  // "49.99" forms pass through untouched.
+  return price
+    .replace(/^US\$(?=\d)/, 'US$ ')
+    .replace(/^\$(?=\d)/, 'US$ ');
 }
 
 /**

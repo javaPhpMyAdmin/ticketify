@@ -11,10 +11,12 @@
  * background (read as a "white rectangle"). The per-plan busy contract:
  * exactly the plan being purchased shows busy, nothing else.
  *
- * The former caption-color helper was removed with the trial-chip
- * polish: BOTH plan cards now render the trial chip with the same
- * emphasis style (solid emerald + onPrimary text), so the
- * annual-vs-monthly caption-color branch it served is gone.
+ * CTA copy: the primary CTA is dynamic — it follows the annual
+ * `introPhase.trialDays` (the conversion-focused "Comenzar N días
+ * gratis" copy interpolates the real RC intro offer when it surfaces).
+ * The trial chip + body caption day counts are HARD-CODED via the i18n
+ * catalog (annual 14 / monthly 7 — matching the Play config) so the
+ * reference look renders on device even when introPhase is null.
  */
 
 /** The two purchasable plan keys, matching the `OfferingsSnapshot` shape. */

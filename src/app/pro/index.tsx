@@ -46,12 +46,15 @@
  *
  * The trial chip is unified across BOTH plan cards — the same emerald
  * emphasis style (solid `colors.primary` background + `onPrimary`
- * label). The chip label and the day-dependent captions interpolate
- * `{{trialDays}}` from the RevenueCat introPhase
- * (`pkg.introPhase.trialDays`) — the Play Console / App Store Connect
- * offer is the single source of truth; the screen never hardcodes a
- * day count. When no intro offer is configured (introPhase is null),
- * the chip and day captions are hidden entirely.
+ * label). The chip label and the billing-caption day counts are
+ * HARDCODED via the i18n catalog (annual 14 days, monthly 7 days —
+ * matching the Play config) so the reference look renders on device
+ * even when `pkg.introPhase` is null (the Play FREE_TRIAL phase isn't
+ * surfacing through RC yet). The primary CTA stays dynamic
+ * (`ctaStartTrialWithDays` interpolates `{{trialDays}}` from the
+ * annual introPhase) so it follows the real RC intro offer when it
+ * surfaces. The equivalent-monthly subline is also dynamic (hidden on
+ * introPhase=null) — it's a price projection, not a day count.
  */
 import { Stack, router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
@@ -545,25 +548,27 @@ function PlanCard({
   // come from the rewrite's new keys. Both surfaces are required.
   const planName = isAnnual ? t('planAnnual') : t('planMonthly');
 
-  // The intro offer projection is the single source of truth for the
-  // trial-day copy (chip label + day captions): `introPhase.trialDays`
-  // comes from Play Console / App Store Connect via RevenueCat, and
-  // `introPhase.priceAfterTrial` is the recurring price after the
-  // trial. When it's null (no intro offer configured) the chip and
-  // every day-dependent caption are hidden — the fallbacks below never
-  // invent a day count.
+  // The intro offer projection drives the dynamic parts only:
+  // `introPhase.trialDays` flows into the primary CTA copy (the
+  // conversion-focused "Comenzar N días gratis" copy follows the real
+  // RC intro offer), and `introPhase.priceAfterTrial` powers the
+  // equivalent-monthly subline (a price projection, not a day count).
+  // The chip + the body caption day counts are HARDCODED in the i18n
+  // catalog (annual 14 / monthly 7 — matching the Play config) so the
+  // reference look renders on device even when introPhase is null (the
+  // Play FREE_TRIAL phase isn't surfacing through RC yet). When
+  // introPhase is null, the equivalent-monthly subline hides — nothing
+  // to project — but the chip + caption stay.
   const introPhase = pkg.introPhase;
 
-  // Annual body line: the day-template caption while the intro offer
-  // exists, the day-less "Facturado anualmente" caption otherwise.
-  const annualBillCaption = introPhase
-    ? t('planAnnualBillCaption', { trialDays: introPhase.trialDays })
-    : t('planAnnualBillCaptionPlain');
+  // Annual body caption: literal day count baked into the i18n string,
+  // rendered verbatim — no interpolation, no fallback branch.
+  const annualBillCaption = t('planAnnualBillCaption');
 
-  // Annual subline: "Equivale a solo US$4.16 / mes" — the price comes
+  // Annual subline: "Equivale a solo US$ 4.16 / mes" — the price comes
   // from `priceAfterTrial` normalized by `toUsdLabel` (the store emits
-  // a bare "$"; the screen shows "US$"). Hidden when there is no intro
-  // offer (nothing to project).
+  // a bare "$"; the screen shows "US$ "). Hidden when there is no
+  // intro offer (nothing to project).
   const equivalentMonthlyLine = introPhase
     ? t('planAnnualEquivalentMonthly', {
         price: toUsdLabel(introPhase.priceAfterTrial),
@@ -605,29 +610,22 @@ function PlanCard({
           <View style={styles.planCardLeftText}>
             <View style={styles.planCardTitleRow}>
               <Text style={styles.planCardTitle}>{planName}</Text>
-              {introPhase ? (
-                <View
-                  style={[styles.planTrialChip, styles.planTrialChipEmphasis]}
-                >
-                  <Text style={styles.planTrialChipText}>
-                    {t('planTrialChipDays', {
-                      trialDays: introPhase.trialDays,
-                    })}
-                  </Text>
-                </View>
-              ) : null}
+              <View
+                style={[styles.planTrialChip, styles.planTrialChipEmphasis]}
+              >
+                <Text style={styles.planTrialChipText}>
+                  {isAnnual
+                    ? t('planAnnualTrialChip')
+                    : t('planMonthlyTrialChip')}
+                </Text>
+              </View>
             </View>
             <Text style={styles.planCardBody}>
               {isAnnual
                 ? annualBillCaption
-                : introPhase
-                  ? t('planMonthlyTrialCaption', {
-                      trialDays: introPhase.trialDays,
-                      price: toUsdLabel(pkg.priceString),
-                    })
-                  : t('planMonthlyTrialCaptionPlain', {
-                      price: toUsdLabel(pkg.priceString),
-                    })}
+                : t('planMonthlyTrialCaption', {
+                    price: toUsdLabel(pkg.priceString),
+                  })}
             </Text>
             {isAnnual ? (
               equivalentMonthlyLine ? (
