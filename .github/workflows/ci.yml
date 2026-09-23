@@ -64,11 +64,21 @@ jobs:
         # directly to Postgres via the wire protocol and never needs
         # studio/kong/gotrue/etc.
         #
-        # GHCR rate-limits shared runner egress IPs under load
-        # ("toomanyrequests: allowed: 44000/minute" pulling
-        # ghcr.io/supabase/postgres). Retry with backoff: the pull is
-        # resumable via docker layer cache, so a transient limit usually
-        # clears on the next attempt.
+        # Registry: the supabase CLI defaults to ghcr.io, which
+        # rate-limits ANONYMOUS pulls by runner egress IP
+        # ("toomanyrequests: allowed: 44000/minute" on shared runner
+        # IPs — the retry loop below documents the fight). Docker Hub
+        # pulls from GitHub-hosted runners are unlimited (GitHub + Docker
+        # partnership: no anonymous pull rate limits apply to GH Actions
+        # egress), so override the internal registry to docker.io. The
+        # tag resolves there too (supabase/postgres:17.6.1.165, amd64 +
+        # arm64). Retry with backoff stays as belt-and-suspenders for
+        # transient pull flakes.
+        env:
+          # The supabase CLI reads this env var to pick its image
+          # registry. Default is ghcr.io; we force docker.io (see the
+          # comment above about GitHub Actions unlimited Docker Hub pulls).
+          SUPABASE_INTERNAL_IMAGE_REGISTRY: docker.io
         run: |
           for attempt in 1 2 3 4 5; do
             # `if out="$(...)"` (no `!`) keeps `set -e` from killing the
