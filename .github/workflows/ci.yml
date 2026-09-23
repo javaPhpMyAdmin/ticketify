@@ -60,12 +60,16 @@ jobs:
         # clears on the next attempt.
         run: |
           for attempt in 1 2 3 4 5; do
-            out="$(supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor 2>&1)"
+          # `if out="$(...)"` (no `!`) keeps `set -e` from killing the
+          # shell on the first failure, and `rc=$?` inside the ELSE
+          # branch preserves the real exit code — a bare `!` negation
+          # or a post-`fi` `$?` both reset to 0 and mask a real failure
+          # as success (false green).
+          if out="$(supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor 2>&1)"; then
+            printf '%s\n' "$out"
+            exit 0
+          else
             rc=$?
-            if [ "$rc" -eq 0 ]; then
-              printf '%s\n' "$out"
-              exit 0
-            fi
             # Fail fast on anything that is NOT a transient registry limit:
             # an infra/rate-limit flake should retry, a real migration or
             # config error must surface immediately, not after 5 retries.
@@ -78,9 +82,10 @@ jobs:
             printf '%s\n' "$out"
             supabase stop --no-backup >/dev/null 2>&1 || true
             sleep "$((attempt * 20))"
-          done
-          echo "::error::supabase start failed after 5 retries"
-          exit 1
+          fi
+        done
+        echo "::error::supabase start failed after 5 retries"
+        exit 1
 
       - name: Reset to a deterministic migration baseline
         # Guarantees a clean catalog from scratch regardless of container
