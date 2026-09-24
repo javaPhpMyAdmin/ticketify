@@ -16,6 +16,12 @@ import {
   LATEST_LEGAL_VERSIONS,
   pendingAcceptanceStore,
 } from '@/features/legal';
+import {
+  validateEmail,
+  validateSignUpPassword,
+  type EmailErrorKey,
+  type PasswordErrorKey,
+} from '@/lib/auth/validation';
 import { openLegalDocument } from '@/lib/legal-navigation';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -30,11 +36,14 @@ import { colors, radii, spacing, typography } from '@/theme';
  * Legal-consent (legal-compliance U5, AD-9/AD-10): the form requires
  * explicit acceptance of the privacy policy + terms (checkbox gates
  * submit; the `signUpConsentRequired` message appears on an unchecked
- * submit attempt). Before the network sign-up call, the pending flag is
- * stored with the typed email so the acceptances can be replayed once a
- * session exists (queue-then-flush; flushPendingAcceptance on SIGNED_IN
- * in the session store). The footer opens the documents IN-APP so they
- * stay readable pre-auth and without an external browser.
+ * submit attempt). The consent sentence appears EXACTLY ONCE — in the
+ * checkbox row, whose two document names are real inline links that
+ * open the documents IN-APP (openLegalDocument → /legal/{document});
+ * the footer below repeats only the bare document names as chips.
+ * Before the network sign-up call, the pending flag is stored with the
+ * typed email so the acceptances can be replayed once a session exists
+ * (queue-then-flush; flushPendingAcceptance on SIGNED_IN in the session
+ * store).
  */
 export default function SignUpScreen() {
   const { t } = useTranslation(['auth', 'settings', 'legal']);
@@ -42,17 +51,18 @@ export default function SignUpScreen() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [emailFieldError, setEmailFieldError] = useState<EmailErrorKey | null>(
+    null,
+  );
+  const [passwordFieldError, setPasswordFieldError] =
+    useState<PasswordErrorKey | null>(null);
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmationSent, setConfirmationSent] = useState(false);
 
-  const canSubmit =
-    email.trim().length > 0 &&
-    password.length >= 8 &&
-    consentAccepted &&
-    !pending;
+  const canSubmit = !pending;
 
   const handleConsentToggle = () => {
     setConsentAccepted((accepted) => {
@@ -63,7 +73,12 @@ export default function SignUpScreen() {
   };
 
   const handleSignUp = async () => {
-    if (email.trim().length === 0 || password.length < 8 || pending) return;
+    const emailErr = validateEmail(email);
+    const passwordErr = validateSignUpPassword(password);
+    setEmailFieldError(emailErr);
+    setPasswordFieldError(passwordErr);
+    if (emailErr || passwordErr) return;
+    if (pending) return;
     if (!consentAccepted) {
       setConsentError(t('legal:signUpConsentRequired'));
       return;
@@ -86,7 +101,7 @@ export default function SignUpScreen() {
         // eslint-disable-next-line no-console -- queue failure is non-fatal
         console.warn('[sign-up] could not queue legal acceptance', storageErr);
       }
-      const result = await signUpWithEmail(email, password);
+      const result = await signUpWithEmail(email.trim(), password);
       if (result.error) {
         setError(result.error);
         return;
@@ -141,10 +156,18 @@ export default function SignUpScreen() {
           </View>
 
           <View style={styles.form}>
-            <FieldGroup label={t('auth:email')}>
+            <FieldGroup
+              label={t('auth:email')}
+              error={
+                emailFieldError ? t(`auth:${emailFieldError}`) : undefined
+              }
+            >
               <TextInput
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(value) => {
+                  setEmail(value);
+                  setEmailFieldError(null);
+                }}
                 style={styles.input}
                 placeholder={t('auth:emailPlaceholder')}
                 placeholderTextColor={colors.textSecondary}
@@ -160,10 +183,16 @@ export default function SignUpScreen() {
             <FieldGroup
               label={t('auth:password')}
               helper={t('auth:newPasswordHelper')}
+              error={
+                passwordFieldError ? t(`auth:${passwordFieldError}`) : undefined
+              }
             >
               <TextInput
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(value) => {
+                  setPassword(value);
+                  setPasswordFieldError(null);
+                }}
                 style={styles.input}
                 placeholder={t('auth:passwordChoosePlaceholder')}
                 placeholderTextColor={colors.textSecondary}
@@ -179,36 +208,58 @@ export default function SignUpScreen() {
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
-            {/* Explicit legal consent (U5, AD-10): the checkbox itself is a
-                single toggle Pressable; the document names in the label are
-                the SAME strings the footer links below (which open in-app),
-                so there is no dead-end from this row. The composed label
-                reads "Al continuar aceptás la Política de privacidad y los
-                Términos y Condiciones" — prefix + settings labels. */}
+            {/* Explicit legal consent (U5, AD-10): the whole row is the
+                toggle (regression: before the dedup split the row WAS the
+                Pressable); the checkbox box keeps its own toggle + the
+                checkbox role so it stays the visible, accessible control —
+                the row Pressable is touch-only (accessible={false}, the
+                nested nodes stay reachable). The TWO document names inside
+                the label are real inline links (openLegalDocument → in-app
+                /legal/{document}) so there is no dead-end from this row and
+                link taps do not toggle the box. The composed label reads
+                "Al continuar aceptás la Política de privacidad y los Términos
+                y Condiciones" — prefix + settings labels; the checkbox's
+                accessibility label reuses the same composition. The sentence
+                renders exactly ONCE on this screen (the footer below only
+                repeats the bare document names as chips). */}
             <Pressable
               style={styles.consentRow}
               onPress={handleConsentToggle}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: consentAccepted }}
-              accessibilityLabel={t('legal:signUpConsentRequired')}
+              accessible={false}
             >
-              <View
+              <Pressable
                 style={[
                   styles.checkbox,
-                  consentAccepted ? styles.checkboxChecked : styles.checkboxUnchecked,
+                  consentAccepted
+                    ? styles.checkboxChecked
+                    : styles.checkboxUnchecked,
                 ]}
+                onPress={handleConsentToggle}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: consentAccepted }}
+                accessibilityLabel={`${t('auth:signUpLegalPrefix')}${t('settings:privacyPolicy')}${t('auth:signUpLegalAnd')}${t('settings:termsConditions')}`}
               >
                 {consentAccepted ? (
                   <Text style={styles.checkboxMark}>{'\u2713'}</Text>
                 ) : null}
-              </View>
+              </Pressable>
               <Text style={styles.consentText}>
                 {t('auth:signUpLegalPrefix')}{' '}
-                <Text style={styles.consentLinkText}>
+                <Text
+                  onPress={() => openLegalDocument('privacy')}
+                  accessibilityRole="link"
+                  accessibilityLabel={t('settings:privacyPolicy')}
+                  style={styles.consentLinkText}
+                >
                   {t('settings:privacyPolicy')}
                 </Text>{' '}
                 {t('auth:signUpLegalAnd')}{' '}
-                <Text style={styles.consentLinkText}>
+                <Text
+                  onPress={() => openLegalDocument('terms')}
+                  accessibilityRole="link"
+                  accessibilityLabel={t('settings:termsConditions')}
+                  style={styles.consentLinkText}
+                >
                   {t('settings:termsConditions')}
                 </Text>
               </Text>
@@ -243,9 +294,10 @@ export default function SignUpScreen() {
 
           {/* Legal links below the footer pairing (REQ-4): usable pre-auth and
               opened IN-APP (AD-8) — the navigator import carries no session
-              or auth modules, and the routes live outside Stack.Protected. */}
+              or auth modules, and the routes live outside Stack.Protected.
+              Only the bare document names render here; the consent sentence
+              itself lives EXACTLY ONCE, in the checkbox row above. */}
           <View style={styles.legalFooter}>
-            <Text style={styles.legalText}>{t('auth:signUpLegalPrefix')}</Text>
             <Pressable
               accessibilityRole="link"
               accessibilityLabel={t('settings:privacyPolicy')}
@@ -253,7 +305,7 @@ export default function SignUpScreen() {
             >
               <Text style={styles.legalLink}>{t('settings:privacyPolicy')}</Text>
             </Pressable>
-            <Text style={styles.legalText}>{t('auth:signUpLegalAnd')}</Text>
+            <Text style={styles.legalText}>{'·'}</Text>
             <Pressable
               accessibilityRole="link"
               accessibilityLabel={t('settings:termsConditions')}

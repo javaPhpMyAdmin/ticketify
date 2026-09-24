@@ -14,6 +14,12 @@ import Svg, { Path } from 'react-native-svg';
 import { FieldGroup, Pressable, Spinner, Text, View } from '@/components';
 import { useSessionStore } from '@/features/auth';
 import { signInWithProvider, type OAuthProvider } from '@/lib/auth/oauth';
+import {
+  validateEmail,
+  validateSignInPassword,
+  type EmailErrorKey,
+  type PasswordErrorKey,
+} from '@/lib/auth/validation';
 import { colors, radii, spacing, typography } from '@/theme';
 
 /**
@@ -34,6 +40,11 @@ export default function SignInScreen() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [emailFieldError, setEmailFieldError] = useState<EmailErrorKey | null>(
+    null,
+  );
+  const [passwordFieldError, setPasswordFieldError] =
+    useState<PasswordErrorKey | null>(null);
   const [pending, setPending] = useState(false);
   const [providerPending, setProviderPending] = useState<OAuthProvider | null>(
     null,
@@ -49,14 +60,21 @@ export default function SignInScreen() {
     if (message) setError(message);
   }, [params.error]);
 
-  const canSubmit = email.trim().length > 0 && password.length > 0 && !pending;
+  const providerBusy = providerPending != null;
+
+  const canSubmit = !pending && !providerBusy;
 
   const handleSignIn = async () => {
-    if (!canSubmit) return;
+    const emailErr = validateEmail(email);
+    const passwordErr = validateSignInPassword(password);
+    setEmailFieldError(emailErr);
+    setPasswordFieldError(passwordErr);
+    if (emailErr || passwordErr) return;
+    if (pending || providerBusy) return;
     setPending(true);
     setError(null);
     try {
-      const message = await signInWithEmail(email, password);
+      const message = await signInWithEmail(email.trim(), password);
       if (message) {
         setError(message);
         return;
@@ -93,8 +111,6 @@ export default function SignInScreen() {
     }
   };
 
-  const providerBusy = providerPending != null;
-
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
@@ -112,10 +128,18 @@ export default function SignInScreen() {
           </View>
 
           <View style={styles.form}>
-            <FieldGroup label={t('auth:email')}>
+            <FieldGroup
+              label={t('auth:email')}
+              error={
+                emailFieldError ? t(`auth:${emailFieldError}`) : undefined
+              }
+            >
               <TextInput
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(value) => {
+                  setEmail(value);
+                  setEmailFieldError(null);
+                }}
                 style={styles.input}
                 placeholder={t('auth:emailPlaceholder')}
                 placeholderTextColor={colors.textSecondary}
@@ -128,10 +152,18 @@ export default function SignInScreen() {
               />
             </FieldGroup>
 
-            <FieldGroup label={t('auth:password')}>
+            <FieldGroup
+              label={t('auth:password')}
+              error={
+                passwordFieldError ? t(`auth:${passwordFieldError}`) : undefined
+              }
+            >
               <TextInput
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(value) => {
+                  setPassword(value);
+                  setPasswordFieldError(null);
+                }}
                 style={styles.input}
                 placeholder={t('auth:passwordPlaceholder')}
                 placeholderTextColor={colors.textSecondary}
@@ -150,7 +182,7 @@ export default function SignInScreen() {
             <Pressable
               style={styles.primaryButton}
               onPress={handleSignIn}
-              disabled={!canSubmit || providerBusy}
+              disabled={!canSubmit}
               accessibilityRole="button"
               accessibilityLabel={t('auth:signIn')}
             >
