@@ -30,6 +30,13 @@
  *      catalogs with non-empty values, passwordMinLength stays aligned
  *      with the existing newPasswordHelper copy, and the auth key sets
  *      remain identical across es-AR / en / pt-BR.
+ *   E. Single-provider contract: the Apple UI entry point is gone —
+ *      sign-in has exactly ONE provider button (Google), references
+ *      neither handleProvider('apple') nor t('auth:continueWithApple'),
+ *      and auth.json drops the continueWithApple key in all three
+ *      locales while keeping continueWithGoogle. The oauth.ts module
+ *      capability ('apple' in OAuthProvider) stays untouched — it is
+ *      pinned by scripts/test-auth.mjs.
  *
  * Usage: pnpm test:auth-screens
  */
@@ -428,6 +435,74 @@ test('auth.json key sets stay identical across the three locales', () => {
   const ptBr = readAuth('pt-BR');
   assert.equal(keySet(en), keySet(esAr), 'auth parity: en vs es-AR');
   assert.equal(keySet(ptBr), keySet(esAr), 'auth parity: pt-BR vs es-AR');
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// E. Single-provider contract — the Apple UI entry point is removed,
+// Google stays as the only provider button, and the i18n key follows.
+// The oauth.ts capability MUST survive (test-auth.mjs pins
+// signInWithProvider('apple')) — only the UI/screen and catalogs change.
+// ─────────────────────────────────────────────────────────────────────
+
+console.log('\n[tests] sign-in single-provider contract (Apple UI entry removed)\n');
+
+const APPLE_LABEL_KEY = 'continueWithApple';
+
+test('sign-in drops the Apple provider button (no handleProvider(\'apple\'), no providerPending === \'apple\')', () => {
+  assert.ok(
+    !/handleProvider\(\s*['"]apple['"]\s*\)/.test(signIn),
+    'sign-in must no longer call handleProvider(\'apple\') — the Apple UI entry point is removed',
+  );
+  assert.ok(
+    !signIn.includes("providerPending === 'apple'"),
+    'sign-in must no longer branch on providerPending === \'apple\'',
+  );
+});
+
+test('sign-in no longer renders the continueWithApple label (no t(\'auth:continueWithApple\'))', () => {
+  assert.ok(
+    !signIn.includes(`t('auth:${APPLE_LABEL_KEY}')`),
+    'sign-in must not render the Apple label — t(\'auth:continueWithApple\') must be gone from the screen',
+  );
+});
+
+test('sign-in keeps the Google button as the single provider (exactly one handleProvider call)', () => {
+  assert.ok(
+    /handleProvider\(\s*['"]google['"]\s*\)/.test(signIn),
+    'sign-in must keep the Google provider button (handleProvider(\'google\'))',
+  );
+  assert.ok(
+    signIn.includes("t('auth:continueWithGoogle')"),
+    'sign-in must keep the Google label t(\'auth:continueWithGoogle\')',
+  );
+  const providerCalls = (
+    signIn.match(/handleProvider\(\s*['"][^'"]+['"]\s*\)/g) ?? []
+  ).length;
+  assert.equal(
+    providerCalls,
+    1,
+    'sign-in must have exactly ONE provider handler call — Google is the only provider button',
+  );
+});
+
+test('auth.json drops continueWithApple in all three locales but keeps continueWithGoogle (non-empty)', () => {
+  for (const locale of LOCALE_TAGS) {
+    const auth = readAuth(locale);
+    const where = `${locale}/auth.json`;
+    assert.ok(
+      !(APPLE_LABEL_KEY in auth),
+      `${where} must no longer contain the ${APPLE_LABEL_KEY} key`,
+    );
+    assert.equal(
+      typeof auth.continueWithGoogle,
+      'string',
+      `${where}:continueWithGoogle must still exist as a string`,
+    );
+    assert.ok(
+      auth.continueWithGoogle.length > 0,
+      `${where}:continueWithGoogle must be non-empty`,
+    );
+  }
 });
 
 console.log('');

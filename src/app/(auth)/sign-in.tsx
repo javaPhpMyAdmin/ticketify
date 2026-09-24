@@ -228,21 +228,6 @@ export default function SignInScreen() {
                 </>
               )}
             </Pressable>
-            <Pressable
-              style={styles.secondaryButton}
-              onPress={() => handleProvider('apple')}
-              disabled={pending || providerBusy}
-              accessibilityRole="button"
-              accessibilityLabel={t('auth:continueWithApple')}
-            >
-              {providerPending === 'apple' ? (
-                <Spinner size="sm" />
-              ) : (
-                <Text style={styles.secondaryButtonText}>
-                  {t('auth:continueWithApple')}
-                </Text>
-              )}
-            </Pressable>
           </View>
 
           <View style={styles.footer}>
