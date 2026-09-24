@@ -1,0 +1,255 @@
+<!DOCTYPE html><html class="h-full" lang="en"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"><meta content="mobile_stack" name="shell-type"><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "outline-variant": "#bbcabf", "on-primary-fixed": "#002113", "outline": "#6c7a71", "surface": "#f8f9fa", "on-error-container": "#93000a", "on-background": "#191c1d", "secondary": "#575e70", "surface-bright": "#f8f9fa", "on-tertiary-container": "#79000e", "on-tertiary-fixed-variant": "#930013", "on-primary-fixed-variant": "#005236", "surface-container-lowest": "#ffffff", "on-secondary": "#ffffff", "primary-fixed-dim": "#4edea3", "on-secondary-container": "#5c6274", "error-container": "#ffdad6", "secondary-fixed": "#dce2f7", "tertiary-container": "#ff7a73", "primary-fixed": "#6ffbbe", "tertiary-fixed": "#ffdad7", "surface-container": "#edeeef", "secondary-fixed-dim": "#c0c6db", "surface-dim": "#d9dadb", "on-surface": "#191c1d", "primary": "#006c49", "on-secondary-fixed": "#141b2b", "error": "#ba1a1a", "on-secondary-fixed-variant": "#404758", "tertiary-fixed-dim": "#ffb3ad", "tertiary": "#b91a24", "inverse-surface": "#2e3132", "background": "#f8f9fa", "surface-variant": "#e1e3e4", "on-surface-variant": "#3c4a42", "on-tertiary-fixed": "#410004", "secondary-container": "#d9dff5", "inverse-on-surface": "#f0f1f2", "primary-container": "#10b981", "on-tertiary": "#ffffff", "inverse-primary": "#4edea3", "on-primary-container": "#00422b", "surface-container-high": "#e7e8e9", "surface-tint": "#006c49", "on-primary": "#ffffff", "surface-container-highest": "#e1e3e4", "on-error": "#ffffff", "surface-container-low": "#f3f4f5" }, borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, spacing: { "safe-area-bottom": "34px", "stack-md": "16px", "gutter": "12px", "container-margin": "20px", "stack-lg": "24px", "stack-sm": "8px" }, fontFamily: { "display-currency": ["Inter"], "label-caps": ["Inter"], "body-lg": ["Inter"], "label-sm": ["Inter"], "body-md": ["Inter"], "headline-md": ["Inter"], "headline-lg-mobile": ["Inter"], "headline-lg": ["Inter"] }, fontSize: { "display-currency": ["40px", { lineHeight: "48px", letterSpacing: "-0.02em", fontWeight: "700" }], "label-caps": ["12px", { lineHeight: "16px", letterSpacing: "0.05em", fontWeight: "700" }], "body-lg": ["17px", { lineHeight: "24px", fontWeight: "400" }], "label-sm": ["13px", { lineHeight: "18px", fontWeight: "500" }], "body-md": ["15px", { lineHeight: "22px", fontWeight: "400" }], "headline-md": ["20px", { lineHeight: "26px", fontWeight: "600" }], "headline-lg-mobile": ["24px", { lineHeight: "30px", fontWeight: "700" }], "headline-lg": ["28px", { lineHeight: "34px", letterSpacing: "-0.01em", fontWeight: "700" }] } } } };</script><style>@layer base{html,body{width:100%;margin:0;padding:0;background-color:#ffffff;}body{overscroll-behavior-y:none;-webkit-tap-highlight-color:transparent;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style></head><body class="bg-surface-container-lowest text-on-surface font-body-md text-body-md antialiased min-h-screen flex flex-col"><header class="fixed top-0 w-full z-50 pt-safe bg-surface-container-lowest/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-14 px-container-margin flex items-center justify-between"><div class="flex items-center gap-gutter"><span class="font-headline-md text-headline-md text-on-surface">Suscripción PRO</span></div><div class="flex items-center gap-stack-sm"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div><button aria-label="Dismiss" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-on-surface active:scale-95 transition-transform" onclick="window.history.back()"><span class="material-symbols-outlined text-[24px]">close</span></button></div></div></header><main class="flex-1 flex flex-col relative w-full pt-14 pb-safe bg-surface-container-lowest"><div class="flex flex-col w-full pb-8">
+<!-- Subtle ambient glow background decoration -->
+<div class="relative w-full px-container-margin pt-4 pb-2">
+<div class="absolute -top-10 left-1/2 -translate-x-1/2 w-64 h-64 bg-primary-fixed opacity-30 rounded-full blur-3xl pointer-events-none"></div>
+<!-- PRO Pill Badge -->
+<div class="flex justify-center items-center mb-3">
+<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">hotel_class</span>
+<span class="font-label-caps text-label-caps tracking-wider font-bold">TICKETIFY PRO</span>
+</div>
+</div>
+<!-- Main Value Headline -->
+<div class="text-center mb-5">
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface tracking-tight mb-2">
+        Desbloquea todo el potencial de tus finanzas
+      </h1>
+<p class="font-body-md text-body-md text-secondary max-w-xs mx-auto">
+        Toma el control absoluto de tus gastos, tickets y ahorros sin límites.
+      </p>
+</div>
+<!-- Visual 3D Pro Composition Hero Element -->
+<div class="relative w-full max-w-xs mx-auto mb-6 flex items-center justify-center">
+<div class="relative w-full h-28 bg-surface-container-low rounded-2xl flex items-center justify-between px-4 overflow-hidden shadow-sm">
+<div class="absolute -right-4 -bottom-6 w-20 h-20 bg-primary-fixed-dim/20 rounded-full blur-xl"></div>
+<div class="absolute left-6 -top-6 w-16 h-16 bg-secondary-container/40 rounded-full blur-lg"></div>
+<div class="relative z-10 flex flex-col gap-1 bg-surface-container-lowest p-2 rounded-xl shadow-md w-28 -rotate-3 transition-transform hover:rotate-0 duration-300">
+<div class="flex items-center justify-between">
+<span class="material-symbols-outlined text-primary text-[15px]">receipt_long</span>
+<span class="font-label-caps text-[10px] text-primary font-bold">AI SYNC</span>
+</div>
+<div class="h-1 w-14 bg-surface-container-highest rounded-full"></div>
+<div class="h-1 w-11 bg-surface-container-high rounded-full"></div>
+<div class="flex justify-between items-center pt-0.5 mt-0.5">
+<span class="font-label-sm text-[11px] text-secondary font-medium">Total</span>
+<span class="font-label-sm text-[11px] text-on-surface font-bold">$128.40</span>
+</div>
+</div>
+<div class="relative z-20 flex flex-col items-center justify-center -ml-2">
+<div class="w-11 h-11 rounded-xl bg-primary text-on-primary flex items-center justify-center shadow-md shadow-primary/20 rotate-6 transition-transform hover:rotate-12 duration-300">
+<span class="material-symbols-outlined text-[24px]" style="font-variation-settings: 'FILL' 1;">verified</span>
+</div>
+<div class="flex items-center gap-1 mt-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+<span class="font-label-caps text-[10px] text-primary uppercase font-bold">Ilimitado</span>
+</div>
+</div>
+<div class="relative z-10 flex flex-col items-end gap-0.5 bg-surface-container-lowest p-2 rounded-xl shadow-md rotate-3 transition-transform hover:rotate-0 duration-300">
+<div class="flex items-center gap-1 text-primary">
+<span class="material-symbols-outlined text-[15px]">trending_up</span>
+<span class="font-label-caps text-[11px] font-bold">+28%</span>
+</div>
+<span class="font-label-caps text-[10px] text-secondary text-right">Ahorro</span>
+<svg class="w-12 h-3 text-primary" fill="none" viewBox="0 0 64 16" xmlns="http://www.w3.org/2000/svg">
+<path d="M1 14L15 9L29 11L43 4L63 2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</div>
+</div>
+</div>
+<!-- PRO Benefits List -->
+<div class="space-y-2 mb-5">
+<div class="flex items-center gap-2.5 bg-surface-container-lowest px-3 py-2 rounded-xl shadow-sm">
+<div class="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">document_scanner</span>
+</div>
+<div class="min-w-0 flex-1">
+<h2 class="font-headline-md text-on-surface leading-tight text-[13px] font-semibold">Escaneos ilimitados</h2>
+<p class="font-body-md text-secondary text-[11px] leading-tight">Digitaliza todos tus recibos con detección por IA instantánea.</p>
+</div>
+</div>
+<div class="flex items-center gap-2.5 bg-surface-container-lowest px-3 py-2 rounded-xl shadow-sm">
+<div class="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">insights</span>
+</div>
+<div class="min-w-0 flex-1">
+<h2 class="font-headline-md text-on-surface leading-tight text-[13px] font-semibold">Estadísticas avanzadas</h2>
+<p class="font-body-md text-secondary text-[11px] leading-tight">Gráficos interactivos, comparativas mensuales y proyecciones.</p>
+</div>
+</div>
+<div class="flex items-center gap-2.5 bg-surface-container-lowest px-3 py-2 rounded-xl shadow-sm">
+<div class="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">cloud_download</span>
+</div>
+<div class="min-w-0 flex-1">
+<h2 class="font-headline-md text-on-surface leading-tight text-[13px] font-semibold">Exportar tickets</h2>
+<p class="font-body-md text-secondary text-[11px] leading-tight">Descarga en PDF, Excel o CSV con un solo toque.</p>
+</div>
+</div>
+<div class="flex items-center gap-2.5 bg-surface-container-lowest px-3 py-2 rounded-xl shadow-sm">
+<div class="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">notification_important</span>
+</div>
+<div class="min-w-0 flex-1">
+<h2 class="font-headline-md text-on-surface leading-tight text-[13px] font-semibold">Alertas de precio</h2>
+<p class="font-body-md text-secondary text-[11px] leading-tight">Avisos automáticos cuando tus gastos superen los topes fijados.</p>
+</div>
+</div>
+<div class="flex items-center gap-2.5 bg-surface-container-lowest px-3 py-2 rounded-xl shadow-sm">
+<div class="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">family_restroom</span>
+</div>
+<div class="min-w-0 flex-1">
+<h2 class="font-headline-md text-on-surface leading-tight text-[13px] font-semibold">Hogar de hasta 5 miembros</h2>
+<p class="font-body-md text-secondary text-[11px] leading-tight">Comparte y sincroniza gastos familiares en tiempo real.</p>
+</div>
+</div>
+</div>
+<!-- Subscription Plans Selector -->
+<div class="space-y-3 mb-6" id="plan-selector">
+<!-- Card Plan Anual (Selected by default) -->
+<div class="relative w-full p-4 rounded-2xl bg-surface-container-lowest cursor-pointer transition-all duration-200 shadow-md" id="card-annual" onclick="selectPlan('annual')">
+<!-- Best Value Badge -->
+<div class="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded-full bg-primary text-on-primary font-label-caps text-[11px] font-bold tracking-wide shadow-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">local_fire_department</span>
+          AHORRA 17%
+        </div>
+<div class="flex items-start justify-between">
+<div class="flex items-start gap-3">
+<!-- Custom Radio Box -->
+<div class="w-5 h-5 rounded-full mt-0.5 flex items-center justify-center bg-primary text-on-primary" id="radio-annual">
+<div class="w-2 h-2 rounded-full bg-on-primary"></div>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md text-on-surface">Plan Anual</span>
+<span class="px-1.5 py-0.5 bg-surface-container text-on-surface-variant font-label-caps text-[10px] rounded">14 DÍAS GRATIS</span>
+</div>
+<p class="font-body-md text-body-md text-secondary text-[13px] mt-0.5">Facturado anualmente (14 días de prueba gratis)</p>
+<div class="inline-block mt-1 font-label-sm text-label-sm text-primary font-semibold">
+                Equivale a solo $4.16 / mes
+              </div>
+</div>
+</div>
+<div class="text-right shrink-0">
+<span class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface">$49.99</span>
+<span class="block font-label-sm text-label-sm text-secondary">/ año</span>
+</div>
+</div>
+</div>
+<!-- Card Plan Mensual -->
+<div class="relative w-full p-4 rounded-2xl bg-surface-container-lowest cursor-pointer transition-all duration-200 shadow-sm opacity-90" id="card-monthly" onclick="selectPlan('monthly')">
+<div class="flex items-start justify-between">
+<div class="flex items-start gap-3">
+<div class="w-5 h-5 rounded-full mt-0.5 flex items-center justify-center bg-surface-container text-transparent" id="radio-monthly">
+<div class="w-2 h-2 rounded-full bg-transparent"></div>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md text-on-surface">Plan Mensual</span>
+<span class="px-1.5 py-0.5 bg-primary/10 text-primary font-label-caps text-[10px] rounded font-bold">7 DÍAS GRATIS</span>
+</div>
+<p class="font-body-md text-body-md text-secondary text-[13px] mt-0.5">Prueba gratis de 7 días, luego $4.99/mes</p>
+<div class="inline-block mt-1 font-label-sm text-label-sm text-secondary">
+Cancela en cualquier momento sin compromiso
+</div>
+</div>
+</div>
+<div class="text-right shrink-0">
+<span class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface">$4.99</span>
+<span class="block font-label-sm text-label-sm text-secondary">/ mes</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="flex flex-col gap-3 items-center">
+<!-- Main CTA with Haptic Press Feel -->
+<button class="w-full py-4 px-6 rounded-2xl bg-primary text-on-primary font-headline-md text-headline-md flex items-center justify-center gap-2 shadow-lg shadow-primary/25 active:scale-[0.98] transition-transform duration-150" id="cta-button" onclick="confirmSubscription()">
+<span id="cta-text" class="">Comenzar prueba gratis</span>
+<span class="material-symbols-outlined text-[20px]">arrow_forward</span>
+</button>
+<!-- Secondary dismiss / free tier fallback -->
+<button class="py-2.5 px-4 font-label-sm text-label-sm text-secondary hover:text-on-surface active:scale-95 transition-all text-center" onclick="window.history.back()">
+        Cancelar o continuar con la versión gratuita
+      </button>
+</div>
+<!-- Trust & Security Micro-bar -->
+<div class="flex items-center justify-center gap-4 mt-4 py-2 text-secondary">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px] text-primary">lock</span>
+<span class="font-label-caps text-[11px]">Pago seguro</span>
+</div>
+<div class="w-1 h-1 rounded-full bg-surface-container-highest"></div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px] text-primary">event_available</span>
+<span class="font-label-caps text-[11px]">Cancela cuando quieras</span>
+</div>
+<div class="w-1 h-1 rounded-full bg-surface-container-highest"></div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px] text-primary">stars</span>
+<span class="font-label-caps text-[11px]">Soporte 24/7</span>
+</div>
+</div>
+<!-- Legal Terms Note -->
+<div class="mt-4 px-2 text-center">
+<p class="font-label-sm text-[11px] leading-relaxed text-secondary/80">
+        Renovación automática. Puedes cancelar tu suscripción en cualquier momento desde los ajustes de tu cuenta o App Store. Al continuar, aceptas nuestros 
+        <a class="underline hover:text-on-surface" href="#terminos">Términos</a> y 
+        <a class="underline hover:text-on-surface" href="#privacidad">Política de Privacidad</a>.
+      </p>
+</div>
+</div>
+</div>
+<script>
+  let selectedPlanType = 'annual';
+
+  function selectPlan(plan) {
+    selectedPlanType = plan;
+    const cardAnnual = document.getElementById('card-annual');
+    const cardMonthly = document.getElementById('card-monthly');
+    const radioAnnual = document.getElementById('radio-annual');
+    const radioMonthly = document.getElementById('radio-monthly');
+    const ctaText = document.getElementById('cta-text');
+
+    if (plan === 'annual') {
+      // Annual visual update
+      cardAnnual.classList.add('shadow-md');
+      cardAnnual.classList.remove('opacity-90', 'shadow-sm');
+      cardMonthly.classList.add('opacity-90', 'shadow-sm');
+      cardMonthly.classList.remove('shadow-md');
+
+      radioAnnual.className = "w-5 h-5 rounded-full mt-0.5 flex items-center justify-center bg-primary text-on-primary";
+      radioAnnual.firstElementChild.className = "w-2 h-2 rounded-full bg-on-primary";
+
+      radioMonthly.className = "w-5 h-5 rounded-full mt-0.5 flex items-center justify-center bg-surface-container text-transparent";
+      radioMonthly.firstElementChild.className = "w-2 h-2 rounded-full bg-transparent";
+
+      ctaText.innerText = "Comenzar 14 días gratis";
+    } else {
+      // Monthly visual update
+      cardMonthly.classList.add('shadow-md');
+      cardMonthly.classList.remove('opacity-90', 'shadow-sm');
+      cardAnnual.classList.add('opacity-90', 'shadow-sm');
+      cardAnnual.classList.remove('shadow-md');
+
+      radioMonthly.className = "w-5 h-5 rounded-full mt-0.5 flex items-center justify-center bg-primary text-on-primary";
+      radioMonthly.firstElementChild.className = "w-2 h-2 rounded-full bg-on-primary";
+
+      radioAnnual.className = "w-5 h-5 rounded-full mt-0.5 flex items-center justify-center bg-surface-container text-transparent";
+      radioAnnual.firstElementChild.className = "w-2 h-2 rounded-full bg-transparent";
+
+      ctaText.innerText = "Continuar con PRO";
+    }
+  }
+
+  function confirmSubscription() {
+    const btn = document.getElementById('cta-button');
+    btn.style.transform = 'scale(0.96)';
+    setTimeout(() => {
+      btn.style.transform = 'scale(1)';
+    }, 120);
+  }
+</script></main>
+
+</body></html>
