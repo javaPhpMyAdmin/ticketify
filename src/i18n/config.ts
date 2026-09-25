@@ -41,6 +41,7 @@ import enDate from './locales/en/date.json';
 import enPro from './locales/en/pro.json';
 import enLegal from './locales/en/legal.json';
 import enOnboarding from './locales/en/onboarding.json';
+import enBootSplash from './locales/en/bootSplash.json';
 import esARCommon from './locales/es-AR/common.json';
 import esARTabs from './locales/es-AR/tabs.json';
 import esARSettingsLanguage from './locales/es-AR/settingsLanguage.json';
@@ -57,6 +58,7 @@ import esARDate from './locales/es-AR/date.json';
 import esARPro from './locales/es-AR/pro.json';
 import esARLegal from './locales/es-AR/legal.json';
 import esAROnboarding from './locales/es-AR/onboarding.json';
+import esARBootSplash from './locales/es-AR/bootSplash.json';
 import ptBRCommon from './locales/pt-BR/common.json';
 import ptBRTabs from './locales/pt-BR/tabs.json';
 import ptBRSettingsLanguage from './locales/pt-BR/settingsLanguage.json';
@@ -73,6 +75,7 @@ import ptBRDate from './locales/pt-BR/date.json';
 import ptBRPro from './locales/pt-BR/pro.json';
 import ptBRLegal from './locales/pt-BR/legal.json';
 import ptBROnboarding from './locales/pt-BR/onboarding.json';
+import ptBRBootSplash from './locales/pt-BR/bootSplash.json';
 import { useLocaleStore } from './stores/useLocaleStore';
 
 /** Every locale the catalog ships, in `lng` form (matches JSON folder names). */
@@ -113,6 +116,7 @@ export const NAMESPACES = [
   'pro',
   'legal',
   'onboarding',
+  'bootSplash',
 ] as const;
 export type Namespace = (typeof NAMESPACES)[number];
 
@@ -135,6 +139,7 @@ export const RESOURCES = {
     pro: enPro,
     legal: enLegal,
     onboarding: enOnboarding,
+    bootSplash: enBootSplash,
   },
   'es-AR': {
     common: esARCommon,
@@ -153,6 +158,7 @@ export const RESOURCES = {
     pro: esARPro,
     legal: esARLegal,
     onboarding: esAROnboarding,
+    bootSplash: esARBootSplash,
   },
   'pt-BR': {
     common: ptBRCommon,
@@ -171,6 +177,7 @@ export const RESOURCES = {
     pro: ptBRPro,
     legal: ptBRLegal,
     onboarding: ptBROnboarding,
+    bootSplash: ptBRBootSplash,
   },
 } as const;
 

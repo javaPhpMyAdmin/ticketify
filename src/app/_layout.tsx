@@ -9,7 +9,7 @@ import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { DialogHost, ToastHost } from '@/components';
-import { BootSplash } from '@/components/molecules/BootSplash';
+import { BootSplash, BootSplashErrorBoundary } from '@/components/molecules/BootSplash';
 import { useSessionStore } from '@/features/auth';
 import { getOnboardingCompleted } from '@/features/onboarding/onboarding-storage';
 import { ConsentGate } from '@/features/legal/components/ConsentGate';
@@ -311,12 +311,18 @@ export default function RootLayout() {
           }}
         />
         {/* Branded splash overlay: hides the native splash on its first
-            frame and fades out once the session reconciled (`booted`). */}
+            frame and fades out once the session reconciled (`booted`).
+            Wrapped in `BootSplashErrorBoundary` so a render-time crash
+            in the SVG / Animated layer can't leave the user on the
+            native splash indefinitely — the boundary falls back to a
+            bare `<Text>` and calls `onFinish` to unmount the overlay. */}
         {bootSplashVisible ? (
-          <BootSplash
-            booted={booted}
-            onFinish={() => setBootSplashVisible(false)}
-          />
+          <BootSplashErrorBoundary onFinish={() => setBootSplashVisible(false)}>
+            <BootSplash
+              booted={booted}
+              onFinish={() => setBootSplashVisible(false)}
+            />
+          </BootSplashErrorBoundary>
         ) : null}
       </QueryClientProvider>
     </GestureHandlerRootView>

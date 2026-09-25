@@ -15,8 +15,7 @@
     "rootDir": ".."
   },
   "include": [
-    "../src/components/molecules/BootSplash/boot-splash-state.ts",
-    "../src/components/molecules/BootSplash/status-cycle.ts",
+    "../src/lib/auth/validation.ts",
     "../scripts/test-stubs/globals.d.ts"
   ]
 }

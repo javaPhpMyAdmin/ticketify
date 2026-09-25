@@ -45,6 +45,7 @@ import type enDate from './locales/en/date.json';
 import type enPro from './locales/en/pro.json';
 import type enLegal from './locales/en/legal.json';
 import type enOnboarding from './locales/en/onboarding.json';
+import type enBootSplash from './locales/en/bootSplash.json';
 import type esARCommon from './locales/es-AR/common.json';
 import type esARTabs from './locales/es-AR/tabs.json';
 import type esARSettingsLanguage from './locales/es-AR/settingsLanguage.json';
@@ -61,6 +62,7 @@ import type esARDate from './locales/es-AR/date.json';
 import type esARPro from './locales/es-AR/pro.json';
 import type esARLegal from './locales/es-AR/legal.json';
 import type esAROnboarding from './locales/es-AR/onboarding.json';
+import type esARBootSplash from './locales/es-AR/bootSplash.json';
 
 declare module 'i18next' {
   interface ResourceNamespaceMap {
@@ -124,6 +126,15 @@ declare module 'i18next' {
      * the three flows.
      */
     onboarding: typeof esAROnboarding & Partial<typeof enOnboarding>;
+    /**
+     * Boot splash redesign (splash-screen-example reference, kinetic
+     * finance capture): splash column copy + status cycle labels.
+     * Mirrors the `pro` / `onboarding` namespace pattern — es-AR is
+     * the source of truth, en / pt-BR are best-effort translations
+     * whose KEY SETS stay identical via the
+     * test:i18n-boot-splash-keys harness.
+     */
+    bootSplash: typeof esARBootSplash & Partial<typeof enBootSplash>;
   }
 
   interface CustomTypeOptions {

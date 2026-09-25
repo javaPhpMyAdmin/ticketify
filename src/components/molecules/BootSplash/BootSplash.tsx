@@ -1,33 +1,61 @@
+import Constants from 'expo-constants';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useMemo, useReducer, useRef } from 'react';
-import { Animated, Image, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 
-import { colors } from '@/theme';
+import { SplashBrandMark } from '@/components/atoms/SplashBrandMark';
+import { colors, radii, spacing, typography } from '@/theme';
 
 import { bootSplashState, type BootSplashState } from './boot-splash-state';
+import { pickStatusIndex } from './status-cycle';
+import { useBootAnimations } from './useBootAnimations';
 
-// Minimum display time BEFORE the booted state is honored: long enough for
-// the branded animation to be appreciated (>2s on top of a fast restore).
-// The fade-out then runs on top (FADE_OUT_MS).
-const MIN_DISPLAY_MS = 2900;
+// Minimum display time BEFORE the booted state is honored: ~7 s so the
+// branded animation reads ("the user wants ~7 s"). The fade-out then
+// runs on top (FADE_OUT_MS). Per-tick visual refresh (status cycle,
+// scan beam, bob, sweep) lives on independent Animated loops so the
+// timing budget never starves the native driver.
+const MIN_DISPLAY_MS = 7000;
 const FADE_OUT_MS = 250;
 
+// Status message cycle slot length — INDEPENDENT from the min-display
+// timer. The cycle keeps ticking even after `booted` fires; it just
+// stops being visible once the overlay fades.
+const STATUS_SLOT_MS = 2400;
+
+// App version surfaced in the top-right pill. `nativeAppVersion` works
+// in both dev (binary version) and prod (EAS-built) because it reads
+// the bundled native metadata rather than `app.json`, which is unset
+// in dev. Fall back to `expoConfig.version` when the native value is
+// missing (Expo Go or bare RN w/ `expo` not installed).
+const APP_VERSION =
+  Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? '';
+
 /**
- * Branded animated overlay shown at cold start above the app so there is no
- * blank flash between the native splash and the first painted screen.
+ * Branded animated overlay shown at cold start above the app so there
+ * is no blank flash between the native splash and the first painted
+ * screen.
  *
- * It intentionally owns NOTHING about the session: `_layout` still calls
- * `SplashScreen.preventAutoHideAsync()` and reconciles its own `booted`
- * state. This component only:
+ * Animation contract (verified by `scripts/test-boot-splash.mjs`):
  *
- * 1. Hides the NATIVE splash once its own first frame is on screen
- *    (`SplashScreen.hideAsync` on mount) — closing the native/JS gap.
- * 2. Stays visible for a minimum display time so the branding reads.
- * 3. Fades itself out via `onFinish` once `booted` flips true, and the
- *    parent then unmounts it.
+ *   - Pure RN core `Animated` only — no `reanimated` worklet
+ *     runtime, no Lottie. The brand mark is a static `<SplashBrandMark>`
+ *     SVG (also free of worklet hooks) so the very first JS frame
+ *     carries zero JSI runtime setup cost.
+ *   - Every loop on the native driver (`useNativeDriver: true`),
+ *     `isInteraction: false`.
+ *   - Every loop early-returns when the reducer reaches `done`,
+ *     so a missing `onFinish` can never leave native-driver loops
+ *     alive forever (A5).
+ *   - Status cycle reads the current index through a ref to dodge
+ *     a stale-closure / dep-bug class that pinned `statusIndex` in
+ *     the cycle effect's deps array — once caught, twice not.
  *
- * Animation is RN core `Animated` only (no reanimated, no Lottie on the
- * boot path to keep native launch light).
+ * Session ownership: NONE. `_layout` still calls
+ * `SplashScreen.preventAutoHideAsync()` and reconciles its own
+ * `booted` state. This component only hides the native splash,
+ * honors the min-display time, and fades itself out.
  */
 export function BootSplash({
   booted,
@@ -36,41 +64,91 @@ export function BootSplash({
   booted: boolean;
   onFinish?: () => void;
 }) {
-  const [state, dispatch] = useReducer(bootSplashState, 'visible' satisfies BootSplashState);
-
-  const logoOpacity = useRef(new Animated.Value(0)).current;
-  const logoScale = useRef(new Animated.Value(1)).current;
-  const logoY = useRef(new Animated.Value(0)).current;
-  const fade = useRef(new Animated.Value(1)).current;
-  const barX = useRef(new Animated.Value(-80)).current;
-
-  // Marching dots, same pattern as the review screen labels: the dots are
-  // separate native text siblings so opacity animates on the native driver
-  // (nested <Text> would flatten into a single node and not animate).
-  const dotOpacity = useMemo(
-    () => [
-      new Animated.Value(0),
-      new Animated.Value(0),
-      new Animated.Value(0),
-    ],
-    [],
+  const { t } = useTranslation('bootSplash');
+  const [state, dispatch] = useReducer(
+    bootSplashState,
+    'visible' satisfies BootSplashState,
   );
 
-  // ── onFinish ref ────────────────────────────────────────────────────
-  // Read through a ref so the effect fires ONCE when `booted` flips:
-  // an inline parent callback would otherwise reset the min-display
-  // timer on every parent re-render.
+  // ── Fade-out Animated.Value (stays at the component level because
+  // it pairs with the reducer's `fading` state). ────────────────────
+  const fade = useRef(new Animated.Value(1)).current;
+
+  // ── 5 decorative loops encapsulated by the hook. ──────────────────
+  const anim = useBootAnimations(state);
+
+  // ── Status cycle state ────────────────────────────────────────────
+  const statusFade = useRef(new Animated.Value(1)).current;
+  const [statusIndex, setStatusIndex] = useState(0);
+  // Cycle start captured at mount + on locale flip. The interval
+  // callback reads the current index via a ref (`statusIndexRef`)
+  // so its closure doesn't capture a stale value.
+  const statusCycleStartRef = useRef<number>(0);
+  const statusIndexRef = useRef(0);
+  // Mirror `statusIndex` into the ref via a tiny useEffect so the
+  // interval callback below reads the latest committed value without
+  // re-creating the interval (see dep-bug regression in
+  // scripts/test-boot-splash.mjs).
+  useEffect(() => {
+    statusIndexRef.current = statusIndex;
+  }, [statusIndex]);
+
+  const statusMessages = useMemo(
+    () => [t('statusLoadingFinancial'), t('statusSyncingTickets'), t('statusReadyToScan')],
+    [t],
+  );
+
+  // ── onFinish ref (parent callback stability) ──────────────────────
   const onFinishRef = useRef(onFinish);
   useEffect(() => {
     onFinishRef.current = onFinish;
   }, [onFinish]);
 
-  // ── Hide the native splash ──────────────────────────────────────────
+  // ── Hide the native splash once the first frame is on screen ─────
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {
       // safe to ignore — already hidden or interrupted by another call
     });
   }, []);
+
+  // ── Status cycle timer (independent from the boot gate timer) ─────
+  // Critical: `statusIndex` is NOT a dep — the interval reads the
+  // current index via `statusIndexRef.current`, so re-renders driven
+  // by `setStatusIndex` never re-create the interval (and never
+  // reset `statusCycleStartRef.current`).
+  useEffect(() => {
+    if (state === 'done') return;
+    statusCycleStartRef.current = Date.now();
+    statusIndexRef.current = 0;
+    setStatusIndex(0);
+    const interval = setInterval(() => {
+      const next = pickStatusIndex(
+        statusCycleStartRef.current,
+        Date.now(),
+        STATUS_SLOT_MS,
+        statusMessages.length,
+      );
+      if (next === statusIndexRef.current) return;
+      // 250ms fade-out → swap → 250ms fade-in (single Animated.value).
+      Animated.timing(statusFade, {
+        toValue: 0,
+        duration: FADE_OUT_MS,
+        useNativeDriver: true,
+        isInteraction: false,
+      }).start(({ finished }) => {
+        if (!finished) return;
+        statusIndexRef.current = next;
+        setStatusIndex(next);
+        Animated.timing(statusFade, {
+          toValue: 1,
+          duration: FADE_OUT_MS,
+          useNativeDriver: true,
+          isInteraction: false,
+        }).start();
+      });
+    }, STATUS_SLOT_MS);
+    return () => clearInterval(interval);
+  }, [statusMessages, statusFade, state]); // statusIndex intentionally OMITTED (see comment + regression pin)
 
   // ── Minimum-display timer → dispatches `booted` with elapsed flag ──
   useEffect(() => {
@@ -82,15 +160,19 @@ export function BootSplash({
   }, [booted]);
 
   // ── Fade-out when state transitions to fading ───────────────────────
+  // Defensive cleanup: if the component unmounts mid-fade, stop the
+  // Animated.Value so we don't leak a finished-then-unmounted timing.
   useEffect(() => {
     if (state !== 'fading') return;
-    Animated.timing(fade, {
+    const timing = Animated.timing(fade, {
       toValue: 0,
       duration: FADE_OUT_MS,
       useNativeDriver: true,
-    }).start(({ finished: fin }) => {
+    });
+    timing.start(({ finished: fin }) => {
       dispatch({ type: 'fadeCompleted', finished: fin });
     });
+    return () => timing.stop();
   }, [state, fade]);
 
   // ── Call onFinish when we reach done (exactly once by construction) ─
@@ -98,137 +180,7 @@ export function BootSplash({
     if (state === 'done') onFinishRef.current?.();
   }, [state]);
 
-  // ── Decorative animation loops ──────────────────────────────────────
-  // Early-return when `done` so a missing onFinish can't leave
-  // native-driver loops alive forever (A5).
-
-  // Gentle scale pulse on the logo.
-  useEffect(() => {
-    if (state === 'done') return;
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(logoScale, {
-          toValue: 1.03,
-          duration: 600,
-          useNativeDriver: true,
-          isInteraction: false,
-        }),
-        Animated.timing(logoScale, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-          isInteraction: false,
-        }),
-      ]),
-    );
-    pulse.start();
-    return () => pulse.stop();
-  }, [logoScale, state]);
-
-  // Softly fade the logo in.
-  useEffect(() => {
-    if (state === 'done') return;
-    Animated.timing(logoOpacity, {
-      toValue: 1,
-      duration: 400,
-      useNativeDriver: true,
-      isInteraction: false,
-    }).start();
-  }, [logoOpacity, state]);
-
-  // Gentle vertical float on the logo (translateY bob, no layout props).
-  useEffect(() => {
-    if (state === 'done') return;
-    const bob = Animated.loop(
-      Animated.sequence([
-        Animated.timing(logoY, {
-          toValue: -12,
-          duration: 700,
-          useNativeDriver: true,
-          isInteraction: false,
-        }),
-        Animated.timing(logoY, {
-          toValue: 0,
-          duration: 700,
-          useNativeDriver: true,
-          isInteraction: false,
-        }),
-      ]),
-    );
-    bob.start();
-    return () => bob.stop();
-  }, [logoY, state]);
-
-  // Marching dots loop.
-  useEffect(() => {
-    if (state === 'done') return;
-    const loop = Animated.loop(
-      Animated.stagger(220, [
-        Animated.timing(dotOpacity[0], {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-          isInteraction: false,
-        }),
-        Animated.timing(dotOpacity[1], {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-          isInteraction: false,
-        }),
-        Animated.timing(dotOpacity[2], {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-          isInteraction: false,
-        }),
-        Animated.timing(dotOpacity[0], {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-          isInteraction: false,
-        }),
-        Animated.timing(dotOpacity[1], {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-          isInteraction: false,
-        }),
-        Animated.timing(dotOpacity[2], {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-          isInteraction: false,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [dotOpacity, state]);
-
-  // Indeterminate loading bar: sweep forward; resetBeforeIteration rewinds
-  // to the initial value (-80) automatically — no duration:0 snap-back
-  // needed (A1).
-  useEffect(() => {
-    if (state === 'done') return;
-    const sweep = Animated.loop(
-      Animated.timing(barX, {
-        toValue: 160,
-        duration: 900,
-        useNativeDriver: true,
-        isInteraction: false,
-      }),
-      { resetBeforeIteration: true },
-    );
-    sweep.start();
-    return () => sweep.stop();
-  }, [barX, state]);
-
   // ── Render ──────────────────────────────────────────────────────────
-  // After the fade completes, render nothing but keep the component
-  // mounted until the parent unmounts it (the parent reads
-  // `bootSplashVisible`). Once `done` the reducer is terminal — no
-  // further state changes are possible.
   if (state === 'done') return null;
 
   // Allow touches beneath the overlay during the fade-out so the app
@@ -239,59 +191,94 @@ export function BootSplash({
     <Animated.View
       style={[styles.overlay, { opacity: fade }]}
       accessibilityRole="progressbar"
-      accessibilityLabel="Cargando"
+      accessibilityLabel={t('loadingA11y')}
       pointerEvents={isFading ? 'none' : 'auto'}
     >
-      <Animated.View
-        style={[
-          styles.logoWrap,
-          { opacity: logoOpacity, transform: [{ translateY: logoY }, { scale: logoScale }] },
-        ]}
-      >
-        <Image
-          source={require('@/../assets/images/splash-icon.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-      </Animated.View>
-      <View
-        style={styles.captionRow}
-        accessible
-        accessibilityLabel="Cargando"
-      >
-        <Text style={styles.caption}>Cargando</Text>
-        {/* Decorative dots: hidden from AT on both platforms. The caption
-            row above announces "Cargando" as a single grouped element. */}
-        <Animated.Text
-          style={[styles.dot, { opacity: dotOpacity[0] }]}
-          importantForAccessibility="no-hide-descendants"
-          accessibilityElementsHidden
-        >
-          .
-        </Animated.Text>
-        <Animated.Text
-          style={[styles.dot, { opacity: dotOpacity[1] }]}
-          importantForAccessibility="no-hide-descendants"
-          accessibilityElementsHidden
-        >
-          .
-        </Animated.Text>
-        <Animated.Text
-          style={[styles.dot, { opacity: dotOpacity[2] }]}
-          importantForAccessibility="no-hide-descendants"
-          accessibilityElementsHidden
-        >
-          .
-        </Animated.Text>
+      {/* Version badge — top-right, label-caps tiny, 60% opacity. */}
+      <View style={styles.versionBadge}>
+        <Text style={styles.versionBadgeText}>
+          {t('versionBadge')}
+          {APP_VERSION}
+        </Text>
       </View>
-      <View style={styles.track}>
+
+      <View style={styles.brandColumn}>
         <Animated.View
-          style={[styles.fill, { transform: [{ translateX: barX }] }]}
-        />
+          style={[
+            styles.brandCard,
+            {
+              opacity: anim.logoOpacity,
+              transform: [
+                { translateY: anim.bobTranslateY },
+                { scale: anim.bobScale },
+              ],
+            },
+          ]}
+        >
+          <View style={styles.brandCardInner}>
+            {/* Translucent white shimmer that sweeps over the emerald
+                ticket (matches the reference HTML's
+                `via-white/45` gradient strip on the dark surface). */}
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.scanBeam,
+                {
+                  transform: [{ translateY: anim.scanTranslateY }],
+                  opacity: anim.scanOpacity,
+                },
+              ]}
+            />
+            <SplashBrandMark size={104} />
+          </View>
+        </Animated.View>
+
+        <View style={styles.headlineRow}>
+          <Text style={styles.headline}>Ticketify</Text>
+          <Animated.View
+            style={[styles.pulseDot, { opacity: anim.pulseDot }]}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          />
+        </View>
+        <Text style={styles.tagline}>{t('tagline')}</Text>
+      </View>
+
+      <View style={styles.statusBlock}>
+        <View style={styles.track}>
+          <Animated.View
+            style={[
+              styles.fill,
+              {
+                transform: [{ translateX: anim.sweepTranslateX }],
+                opacity: anim.sweepLeadingFade,
+              },
+            ]}
+          />
+        </View>
+        <Animated.Text
+          style={[styles.statusText, { opacity: statusFade }]}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          {statusMessages[statusIndex]}
+        </Animated.Text>
       </View>
     </Animated.View>
   );
 }
+
+// Shimmer highlight for the scan-beam (translucent white over the
+// emerald ticket body). Single-use token — defined here, not promoted
+// to `colors.ts`, because no other component animates this exact
+// surface. Mirrors the reference HTML's `via-white/45` gradient.
+const SCAN_BEAM_TINT = 'rgba(255, 255, 255, 0.45)';
+// Lighter emerald edges sandwiching the brand gradient fill — fakes
+// the multi-stop `from-primary via-lighter to-primary` sweep from
+// the reference. RN core doesn't interpolate CSS
+// `linear-gradient(...)` backgrounds on the native driver, so we
+// emulate with two soft side-borders.
+const GRADIENT_LIGHT = 'rgba(110, 255, 190, 0.55)';
 
 const styles = StyleSheet.create({
   overlay: {
@@ -303,47 +290,101 @@ const styles = StyleSheet.create({
     // zIndex 1002: above ToastHost (1000) AND DialogHost (1001) so
     // nothing paints above the boot overlay (A6).
     zIndex: 1002,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: spacing.xxl,
+    paddingBottom: spacing.xxl,
+    paddingHorizontal: spacing.xl,
+  },
+  versionBadge: {
+    alignSelf: 'flex-end',
+    opacity: 0.6,
+  },
+  versionBadgeText: {
+    ...typography.labelCaps,
+    color: colors.textSecondary,
+    fontSize: 11,
+  },
+  brandColumn: {
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  brandCard: {
+    width: 128,
+    height: 128,
+    borderRadius: 28,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
+    shadowColor: colors.textPrimary,
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  brandCardInner: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 24,
+    position: 'relative',
   },
-  logoWrap: {
-    width: 120,
-    height: 120,
-    alignItems: 'center',
-    justifyContent: 'center',
+  scanBeam: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    height: '50%',
+    backgroundColor: SCAN_BEAM_TINT,
   },
-  logo: {
-    width: 120,
-    height: 120,
-  },
-  captionRow: {
+  headlineRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.xs,
   },
-  caption: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textSecondary,
+  headline: {
+    ...typography.headlineLgMobile,
+    color: colors.textPrimary,
+    fontWeight: '700',
+    letterSpacing: -0.01,
   },
-  dot: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginLeft: 1,
-  },
-  track: {
-    width: 160,
+  pulseDot: {
+    width: 6,
     height: 6,
     borderRadius: 3,
+    backgroundColor: colors.primary,
+  },
+  tagline: {
+    ...typography.labelSm,
+    color: colors.textSecondary,
+  },
+  statusBlock: {
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'stretch',
+    gap: spacing.sm,
+  },
+  track: {
+    width: '100%',
+    height: 8,
+    borderRadius: radii.full,
     backgroundColor: colors.divider,
     overflow: 'hidden',
   },
   fill: {
-    width: 80,
-    height: 6,
-    borderRadius: 3,
+    width: '40%',
+    height: 8,
+    borderRadius: radii.full,
     backgroundColor: colors.primary,
+    borderColor: GRADIENT_LIGHT,
+    borderLeftWidth: 2,
+    borderRightWidth: 2,
+    borderTopWidth: 0,
+    borderBottomWidth: 0,
+  },
+  statusText: {
+    ...typography.labelSm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    fontSize: 12,
   },
 });
