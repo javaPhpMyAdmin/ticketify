@@ -13,6 +13,9 @@ export type { ListItemProps } from './ListItem';
 export { FieldGroup } from './FieldGroup';
 export type { FieldGroupProps } from './FieldGroup';
 
+export { PasswordField } from './PasswordField';
+export type { PasswordFieldProps } from './PasswordField';
+
 export { Fab } from './Fab';
 export type { FabProps } from './Fab';
 

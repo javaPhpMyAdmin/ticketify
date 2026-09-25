@@ -94,7 +94,12 @@ export type IconName =
   | 'trending_down'
   | 'trending_up'
   | 'celebration'
-  | 'bolt';
+  | 'bolt'
+  // ── Auth (form UX) ─────────────────────────────────────────────────
+  // Password visibility toggle on the sign-in/sign-up forms: SF Symbol
+  // names mapped to MaterialIcons glyphs (see materialMap below).
+  | 'eye'
+  | 'eye.slash';
 
 /**
  * Material icon names are a strict union from the MaterialIcons glyph map.
@@ -179,6 +184,9 @@ const materialMap: Record<IconName, string> = {
   trending_up: 'trending-up',
   celebration: 'celebration',
   bolt: 'bolt',
+  // Auth (form UX) — see IconName for the rationale.
+  eye: 'visibility',
+  'eye.slash': 'visibility-off',
 };
 
 export interface IconProps {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -10,13 +10,15 @@ import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { FieldGroup, Pressable, Spinner, Text, View } from '@/components';
+import { FieldGroup, GoogleG, Logo, PasswordField, Pressable, Spinner, Text, View } from '@/components';
 import { useSessionStore } from '@/features/auth';
 import {
   LATEST_LEGAL_VERSIONS,
   pendingAcceptanceStore,
 } from '@/features/legal';
+import { signInWithProvider, type OAuthProvider } from '@/lib/auth/oauth';
 import {
+  validateConfirmPassword,
   validateEmail,
   validateSignUpPassword,
   type EmailErrorKey,
@@ -51,18 +53,40 @@ export default function SignUpScreen() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [emailFieldError, setEmailFieldError] = useState<EmailErrorKey | null>(
     null,
   );
   const [passwordFieldError, setPasswordFieldError] =
     useState<PasswordErrorKey | null>(null);
+  const [confirmPasswordFieldError, setConfirmPasswordFieldError] =
+    useState<PasswordErrorKey | null>(null);
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [providerPending, setProviderPending] = useState<OAuthProvider | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
+  // Synchronous re-entrancy gates. The visual `pending` /
+  // `providerPending` state below drives the Pressable's `disabled`
+  // wiring; `inFlightSignUpRef` and `inFlightProviderRef` are the
+  // synchronous gates that actually prevent two parallel
+  // `signUpWithEmail` (or two parallel OAuth intents) when a user
+  // double-taps the same button in the same JS tick — React state
+  // reads from a stale closure until the next render, but a ref
+  // read is synchronous. We use BOTH together: the ref blocks the
+  // second tap before render; the state flows to the disabled prop
+  // on the next paint. Separate refs so email-password and OAuth
+  // can each be in-flight at once (independent network calls).
+  const inFlightSignUpRef = useRef(false);
+  const inFlightProviderRef = useRef(false);
+
   const [confirmationSent, setConfirmationSent] = useState(false);
 
-  const canSubmit = !pending;
+  const providerBusy = providerPending != null;
+
+  const canSubmit = !pending && !providerBusy;
 
   const handleConsentToggle = () => {
     setConsentAccepted((accepted) => {
@@ -72,48 +96,108 @@ export default function SignUpScreen() {
     });
   };
 
-  const handleSignUp = async () => {
-    const emailErr = validateEmail(email);
-    const passwordErr = validateSignUpPassword(password);
-    setEmailFieldError(emailErr);
-    setPasswordFieldError(passwordErr);
-    if (emailErr || passwordErr) return;
-    if (pending) return;
-    if (!consentAccepted) {
-      setConsentError(t('legal:signUpConsentRequired'));
-      return;
+  // Blur validation: surface each field's error when the user LEAVES it
+  // with content (never on a never-touched, empty field). Typing clears
+  // the error and submit re-runs the validators as the fallback.
+  const handleEmailBlur = () => {
+    if (email.trim().length > 0) setEmailFieldError(validateEmail(email));
+  };
+  const handlePasswordBlur = () => {
+    if (password.length > 0) {
+      setPasswordFieldError(validateSignUpPassword(password));
     }
-    setPending(true);
-    setError(null);
-    setConsentError(null);
+  };
+  const handleConfirmBlur = () => {
+    if (confirmPassword.length > 0) {
+      setConfirmPasswordFieldError(
+        validateConfirmPassword(confirmPassword, password),
+      );
+    }
+  };
+
+  const handleSignUp = async () => {
+    // Synchronous `inFlightRef` gate (TOCTOU-resistant) — visual
+    // `pending` state drives the disabled prop; this ref blocks
+    // the second tap before that re-render lands.
+    if (inFlightSignUpRef.current) return;
+    inFlightSignUpRef.current = true;
     try {
-      // Queue-then-flush: write the pending flag BEFORE the network call so
-      // a session starting concurrently (or one that already exists) can
-      // replay these acceptances. Failures here must NOT block sign-up —
-      // the flag is best-effort (SecureStore write; warned, not thrown).
+      const emailErr = validateEmail(email);
+      const passwordErr = validateSignUpPassword(password);
+      const confirmErr = validateConfirmPassword(confirmPassword, password);
+      setEmailFieldError(emailErr);
+      setPasswordFieldError(passwordErr);
+      setConfirmPasswordFieldError(confirmErr);
+      if (emailErr || passwordErr || confirmErr) return;
+      if (!consentAccepted) {
+        setConsentError(t('legal:signUpConsentRequired'));
+        return;
+      }
+      setPending(true);
+      setError(null);
+      setConsentError(null);
       try {
-        await pendingAcceptanceStore.write({
-          email: email.trim().toLowerCase(),
-          version: LATEST_LEGAL_VERSIONS.privacy,
-          acceptedAt: new Date().toISOString(),
-        });
-      } catch (storageErr) {
-        // eslint-disable-next-line no-console -- queue failure is non-fatal
-        console.warn('[sign-up] could not queue legal acceptance', storageErr);
+        // Queue-then-flush: write the pending flag BEFORE the network call so
+        // a session starting concurrently (or one that already exists) can
+        // replay these acceptances. Failures here must NOT block sign-up —
+        // the flag is best-effort (SecureStore write; warned, not thrown).
+        try {
+          await pendingAcceptanceStore.write({
+            email: email.trim().toLowerCase(),
+            version: LATEST_LEGAL_VERSIONS.privacy,
+            acceptedAt: new Date().toISOString(),
+          });
+        } catch (storageErr) {
+          // eslint-disable-next-line no-console -- queue failure is non-fatal
+          console.warn('[sign-up] could not queue legal acceptance', storageErr);
+        }
+        const result = await signUpWithEmail(email.trim(), password);
+        if (result.error) {
+          setError(result.error);
+          return;
+        }
+        if (result.needsEmailConfirmation) {
+          setConfirmationSent(true);
+          return;
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : t('auth:couldNotCreateAccount'));
+      } finally {
+        setPending(false);
       }
-      const result = await signUpWithEmail(email.trim(), password);
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-      if (result.needsEmailConfirmation) {
-        setConfirmationSent(true);
-        return;
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('auth:couldNotCreateAccount'));
     } finally {
-      setPending(false);
+      // Release the gate for every exit path (validation refusal,
+      // consent gate refusal, network failure, success).
+      inFlightSignUpRef.current = false;
+    }
+  };
+
+  const handleProvider = async (provider: OAuthProvider) => {
+    // Synchronous `inFlightRef` gate (TOCTOU-resistant) — visual
+    // `providerPending` state drives the disabled prop; this ref
+    // blocks the second tap before that re-render lands.
+    if (inFlightProviderRef.current) return;
+    inFlightProviderRef.current = true;
+    try {
+      setProviderPending(provider);
+      setError(null);
+      try {
+        const result = await signInWithProvider(provider);
+        if (result.error) {
+          setError(result.error);
+          return;
+        }
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : t('auth:couldNotStartSession'),
+        );
+      } finally {
+        setProviderPending(null);
+      }
+    } finally {
+      inFlightProviderRef.current = false;
     }
   };
 
@@ -121,7 +205,6 @@ export default function SignUpScreen() {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <View style={styles.confirmation}>
-          <Text style={styles.kicker}>{t('auth:kicker')}</Text>
           <Text style={styles.title}>{t('auth:checkInboxTitle')}</Text>
           <Text style={styles.subtitle}>
             {t('auth:checkInboxSignUp')}
@@ -150,7 +233,9 @@ export default function SignUpScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.heading}>
-            <Text style={styles.kicker}>{t('auth:kicker')}</Text>
+            <View style={styles.logoWrap}>
+              <Logo />
+            </View>
             <Text style={styles.title}>{t('auth:signUp')}</Text>
             <Text style={styles.subtitle}>{t('auth:signUpTagline')}</Text>
           </View>
@@ -176,7 +261,8 @@ export default function SignUpScreen() {
                 autoCorrect={false}
                 autoComplete="email"
                 textContentType="emailAddress"
-                editable={!pending}
+                editable={!pending && !providerBusy}
+                onBlur={handleEmailBlur}
               />
             </FieldGroup>
 
@@ -187,20 +273,48 @@ export default function SignUpScreen() {
                 passwordFieldError ? t(`auth:${passwordFieldError}`) : undefined
               }
             >
-              <TextInput
+              <PasswordField
                 value={password}
                 onChangeText={(value) => {
                   setPassword(value);
                   setPasswordFieldError(null);
                 }}
-                style={styles.input}
                 placeholder={t('auth:passwordChoosePlaceholder')}
-                placeholderTextColor={colors.textSecondary}
-                secureTextEntry
-                autoCapitalize="none"
+                error={
+                  passwordFieldError ? t(`auth:${passwordFieldError}`) : undefined
+                }
                 autoComplete="new-password"
                 textContentType="newPassword"
-                editable={!pending}
+                editable={!pending && !providerBusy}
+                onBlur={handlePasswordBlur}
+                returnKeyType="next"
+              />
+            </FieldGroup>
+
+            <FieldGroup
+              label={t('auth:confirmPassword')}
+              error={
+                confirmPasswordFieldError
+                  ? t(`auth:${confirmPasswordFieldError}`)
+                  : undefined
+              }
+            >
+              <PasswordField
+                value={confirmPassword}
+                onChangeText={(value) => {
+                  setConfirmPassword(value);
+                  setConfirmPasswordFieldError(null);
+                }}
+                placeholder={t('auth:confirmPassword')}
+                error={
+                  confirmPasswordFieldError
+                    ? t(`auth:${confirmPasswordFieldError}`)
+                    : undefined
+                }
+                autoComplete="new-password"
+                textContentType="newPassword"
+                editable={!pending && !providerBusy}
+                onBlur={handleConfirmBlur}
                 onSubmitEditing={handleSignUp}
                 returnKeyType="go"
               />
@@ -281,11 +395,38 @@ export default function SignUpScreen() {
             </Pressable>
           </View>
 
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerLabel}>{t('auth:or')}</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <View style={styles.providers}>
+            <Pressable
+              style={styles.secondaryButton}
+              onPress={() => handleProvider('google')}
+              disabled={pending || providerBusy}
+              accessibilityRole="button"
+              accessibilityLabel={t('auth:continueWithGoogle')}
+            >
+              {providerPending === 'google' ? (
+                <Spinner size="sm" />
+              ) : (
+                <>
+                  <GoogleG />
+                  <Text style={styles.secondaryButtonText}>
+                    {t('auth:continueWithGoogle')}
+                  </Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+
           <View style={styles.footer}>
             <Text style={styles.footerText}>{t('auth:alreadyHaveAccount')}</Text>
             <Pressable
               onPress={() => router.replace('/sign-in')}
-              disabled={pending}
+              disabled={pending || providerBusy}
               accessibilityRole="link"
             >
               <Text style={styles.footerLink}>{t('auth:signIn')}</Text>
@@ -337,18 +478,21 @@ const styles = StyleSheet.create({
   heading: {
     gap: spacing.xs,
     marginBottom: spacing.xxl,
+    alignItems: 'center',
   },
-  kicker: {
-    ...typography.labelCaps,
-    color: colors.primary,
+  logoWrap: {
+    alignItems: 'center',
+    marginBottom: spacing.lg,
   },
   title: {
     ...typography.headlineLgMobile,
     color: colors.textPrimary,
+    textAlign: 'center',
   },
   subtitle: {
     ...typography.bodyMd,
     color: colors.textSecondary,
+    textAlign: 'center',
   },
   form: {
     gap: spacing.md,
@@ -430,6 +574,41 @@ const styles = StyleSheet.create({
   footerLink: {
     ...typography.bodyMd,
     color: colors.primary,
+    fontWeight: '600',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginVertical: spacing.xl,
+  },
+  dividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+  },
+  dividerLabel: {
+    ...typography.labelCaps,
+    color: colors.textSecondary,
+  },
+  providers: {
+    gap: spacing.md,
+  },
+  secondaryButton: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    boxShadow: '1px 2px 6px rgba(0, 0, 0, 0.3)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  secondaryButtonText: {
+    ...typography.labelSm,
+    color: colors.textPrimary,
     fontWeight: '600',
   },
   legalFooter: {

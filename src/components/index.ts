@@ -10,12 +10,15 @@
  */
 
 // Atoms
-export { Text, View, Icon, Pressable, Spinner, Skeleton, Divider, Badge, IconButton, ToastHost, DialogHost } from './atoms';
+export { Text, View, Icon, Logo, SplashBrandMark, GoogleG, Pressable, Spinner, Skeleton, Divider, Badge, IconButton, ToastHost, DialogHost } from './atoms';
 export type {
   TextProps,
   ViewProps,
   IconProps,
   IconName,
+  LogoProps,
+  SplashBrandMarkProps,
+  GoogleGProps,
   PressableProps,
   SpinnerProps,
   SkeletonProps,
@@ -31,6 +34,7 @@ export {
   ProgressBar,
   ListItem,
   FieldGroup,
+  PasswordField,
   Fab,
   AmountDisplay,
   EmptyState,
@@ -48,6 +52,7 @@ export type {
   ProgressBarProps,
   ListItemProps,
   FieldGroupProps,
+  PasswordFieldProps,
   FabProps,
   AmountDisplayProps,
   EmptyStateProps,

@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   KeyboardAvoidingView,
@@ -9,9 +9,8 @@ import {
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
 
-import { FieldGroup, Pressable, Spinner, Text, View } from '@/components';
+import { FieldGroup, GoogleG, Logo, PasswordField, Pressable, Spinner, Text, View } from '@/components';
 import { useSessionStore } from '@/features/auth';
 import { signInWithProvider, type OAuthProvider } from '@/lib/auth/oauth';
 import {
@@ -49,6 +48,21 @@ export default function SignInScreen() {
   const [providerPending, setProviderPending] = useState<OAuthProvider | null>(
     null,
   );
+  // Synchronous re-entrancy gate. The visual `pending` /
+  // `providerPending` state below drives the Pressable's `disabled`
+  // wiring; `inFlightRef` is the gate that actually prevents two
+  // parallel `signInWithEmail` (or two parallel OAuth intents) when
+  // a user double-taps the same button in the same JS tick — React
+  // state reads from a stale closure until the next render, but a
+  // ref read is synchronous. We use BOTH together: the ref blocks
+  // the second tap before render; the state flows to the disabled
+  // prop on the next paint. `inFlightSignInRef` and
+  // `inFlightProviderRef` are kept separate so email-password and
+  // OAuth can each be in-flight at once (those are independent
+  // network calls).
+  const inFlightSignInRef = useRef(false);
+  const inFlightProviderRef = useRef(false);
+
   const [error, setError] = useState<string | null>(null);
 
   // A failed cold-start OAuth exchange routes here with a user-readable
@@ -64,50 +78,85 @@ export default function SignInScreen() {
 
   const canSubmit = !pending && !providerBusy;
 
+  // Blur validation: surface each field's error when the user LEAVES it
+  // with content (never on a never-touched, empty field — that would
+  // pre-mark the form before first interaction). Typing clears the error
+  // (onChangeText below) and submit re-runs the validators as the
+  // fallback, so the two paths agree.
+  const handleEmailBlur = () => {
+    if (email.trim().length > 0) setEmailFieldError(validateEmail(email));
+  };
+  const handlePasswordBlur = () => {
+    if (password.length > 0) {
+      setPasswordFieldError(validateSignInPassword(password));
+    }
+  };
+
   const handleSignIn = async () => {
-    const emailErr = validateEmail(email);
-    const passwordErr = validateSignInPassword(password);
-    setEmailFieldError(emailErr);
-    setPasswordFieldError(passwordErr);
-    if (emailErr || passwordErr) return;
-    if (pending || providerBusy) return;
-    setPending(true);
-    setError(null);
+    // Synchronous `inFlightRef` gate — see the block comment above
+    // on the `inFlightSignInRef` declaration. The visual `pending`
+    // state drives the Pressable's `disabled` prop on the next
+    // paint; this ref blocks the second tap before that re-render.
+    if (inFlightSignInRef.current) return;
+    inFlightSignInRef.current = true;
     try {
-      const message = await signInWithEmail(email.trim(), password);
-      if (message) {
-        setError(message);
-        return;
+      const emailErr = validateEmail(email);
+      const passwordErr = validateSignInPassword(password);
+      setEmailFieldError(emailErr);
+      setPasswordFieldError(passwordErr);
+      if (emailErr || passwordErr) return;
+      setPending(true);
+      setError(null);
+      try {
+        const message = await signInWithEmail(email.trim(), password);
+        if (message) {
+          setError(message);
+          return;
+        }
+        // The SIGNED_IN event set the session; the root layout's
+        // session-transition effect owns navigation into the app.
+      } catch {
+        // signInWithEmail never rejects (every failure is mapped to the generic
+        // message in the store); this is a defensive fallback with the same
+        // anti-enumeration copy.
+        setError(t('auth:invalidCredentials'));
+      } finally {
+        setPending(false);
       }
-      // The SIGNED_IN event set the session; the root layout's
-      // session-transition effect owns navigation into the app.
-    } catch {
-      // signInWithEmail never rejects (every failure is mapped to the generic
-      // message in the store); this is a defensive fallback with the same
-      // anti-enumeration copy.
-      setError(t('auth:invalidCredentials'));
     } finally {
-      setPending(false);
+      // Always release the gate, including the throw-paths above
+      // (`return;` mid-body still falls through here because the
+      // `try` covers it).
+      inFlightSignInRef.current = false;
     }
   };
 
   const handleProvider = async (provider: OAuthProvider) => {
-    setProviderPending(provider);
-    setError(null);
+    // Synchronous `inFlightRef` gate (TOCTOU-resistant) — visual
+    // `providerPending` state drives the disabled prop; this ref
+    // blocks the second tap before that re-render lands.
+    if (inFlightProviderRef.current) return;
+    inFlightProviderRef.current = true;
     try {
-      const result = await signInWithProvider(provider);
-      if (result.error) {
-        setError(result.error);
-        return;
+      setProviderPending(provider);
+      setError(null);
+      try {
+        const result = await signInWithProvider(provider);
+        if (result.error) {
+          setError(result.error);
+          return;
+        }
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : t('auth:couldNotStartSession'),
+        );
+      } finally {
+        setProviderPending(null);
       }
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : t('auth:couldNotStartSession'),
-      );
     } finally {
-      setProviderPending(null);
+      inFlightProviderRef.current = false;
     }
   };
 
@@ -122,7 +171,9 @@ export default function SignInScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.heading}>
-            <Text style={styles.kicker}>{t('auth:kicker')}</Text>
+            <View style={styles.logoWrap}>
+              <Logo />
+            </View>
             <Text style={styles.title}>{t('auth:signIn')}</Text>
             <Text style={styles.subtitle}>{t('auth:tagline')}</Text>
           </View>
@@ -149,6 +200,7 @@ export default function SignInScreen() {
                 autoComplete="email"
                 textContentType="emailAddress"
                 editable={!pending && !providerBusy}
+                onBlur={handleEmailBlur}
               />
             </FieldGroup>
 
@@ -158,20 +210,20 @@ export default function SignInScreen() {
                 passwordFieldError ? t(`auth:${passwordFieldError}`) : undefined
               }
             >
-              <TextInput
+              <PasswordField
                 value={password}
                 onChangeText={(value) => {
                   setPassword(value);
                   setPasswordFieldError(null);
                 }}
-                style={styles.input}
                 placeholder={t('auth:passwordPlaceholder')}
-                placeholderTextColor={colors.textSecondary}
-                secureTextEntry
-                autoCapitalize="none"
+                error={
+                  passwordFieldError ? t(`auth:${passwordFieldError}`) : undefined
+                }
                 autoComplete="current-password"
                 textContentType="password"
                 editable={!pending && !providerBusy}
+                onBlur={handlePasswordBlur}
                 onSubmitEditing={handleSignIn}
                 returnKeyType="go"
               />
@@ -246,42 +298,6 @@ export default function SignInScreen() {
   );
 }
 
-/**
- * Official multi-color Google "G" glyph (canonical 48x48 path data).
- * Decorative inside the "Continue with Google" button: the Pressable
- * already carries the accessible label, so the glyph is hidden from
- * screen readers on both platforms.
- */
-function GoogleG() {
-  return (
-    <Svg
-      width={20}
-      height={20}
-      viewBox="0 0 48 48"
-      accessible={false}
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-    >
-      <Path
-        fill="#EA4335"
-        d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
-      />
-      <Path
-        fill="#4285F4"
-        d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
-      />
-      <Path
-        fill="#FBBC05"
-        d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
-      />
-      <Path
-        fill="#34A853"
-        d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
-      />
-    </Svg>
-  );
-}
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -299,18 +315,21 @@ const styles = StyleSheet.create({
   heading: {
     gap: spacing.xs,
     marginBottom: spacing.xxl,
+    alignItems: 'center',
   },
-  kicker: {
-    ...typography.labelCaps,
-    color: colors.primary,
+  logoWrap: {
+    alignItems: 'center',
+    marginBottom: spacing.lg,
   },
   title: {
     ...typography.headlineLgMobile,
     color: colors.textPrimary,
+    textAlign: 'center',
   },
   subtitle: {
     ...typography.bodyMd,
     color: colors.textSecondary,
+    textAlign: 'center',
   },
   form: {
     gap: spacing.md,

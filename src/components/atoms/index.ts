@@ -25,6 +25,15 @@ export type { BadgeProps } from './Badge';
 export { IconButton } from './IconButton';
 export type { IconButtonProps } from './IconButton';
 
+export { Logo } from './Logo';
+export type { LogoProps } from './Logo';
+
+export { SplashBrandMark } from './SplashBrandMark';
+export type { SplashBrandMarkProps } from './SplashBrandMark';
+
+export { GoogleG } from './GoogleG';
+export type { GoogleGProps } from './GoogleG';
+
 export { ToastHost } from './Toast';
 
 export { DialogHost } from './Dialog';
