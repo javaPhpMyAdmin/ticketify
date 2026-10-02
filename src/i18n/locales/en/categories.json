@@ -1,0 +1,15 @@
+{
+  "bebidas": "Drinks",
+  "refrescos": "Soft drinks",
+  "lacteos": "Dairy",
+  "panaderia": "Bakery",
+  "snacks": "Snacks",
+  "alimentos": "Groceries",
+  "higiene": "Personal care",
+  "limpieza": "Cleaning",
+  "carnes": "Butcher",
+  "frutas-verduras": "Fruit & vegetables",
+  "farmacia": "Pharmacy",
+  "servicios": "Services",
+  "otros": "Other"
+}

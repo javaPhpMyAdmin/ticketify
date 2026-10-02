@@ -1,5 +1,7 @@
 export { useProfile } from './hooks/useProfile';
 export type { UseProfileResult } from './hooks/useProfile';
+export { useCurrencyHydrated } from './hooks/useCurrencyHydrated';
+export { ProfileHydration } from './components/ProfileHydration';
 export { UsageLimitsCard } from './components/UsageLimitsCard';
 export type { UsageLimitsCardProps } from './components/UsageLimitsCard';
 export { AccountSettingsList } from './components/AccountSettingsList';
