@@ -4,8 +4,9 @@
  * supabase/tests/recalculate-on-purchase-items-update.sql,
  * supabase/tests/household-gate-tier.sql,
  * supabase/tests/trial-cutover.sql,
- * supabase/tests/delete-account.sql and
- * supabase/tests/legal-acceptances.sql).
+ * supabase/tests/delete-account.sql,
+ * supabase/tests/legal-acceptances.sql and
+ * supabase/tests/currency-default.sql).
  *
  * This is intentionally NOT part of the `pnpm test` chain. The Node test suite
  * (test:*) is 100% dependency-free of Docker and runs anywhere. This script
@@ -161,5 +162,8 @@ run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'delete-accou
 
 console.log('\n== Running legal-acceptances SQL smoke test ==\n');
 run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'legal-acceptances.sql')]);
+
+console.log('\n== Running currency-default SQL smoke test ==\n');
+run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'currency-default.sql')]);
 
 console.log('\n[ticketify test:sql] SQL smoke tests passed.\n');

@@ -171,3 +171,15 @@ jobs:
         # writes, the document CHECK ('privacy'|'terms'), the auth.users
         # ON DELETE CASCADE, and anon denial.
         run: supabase db query --local --file supabase/tests/legal-acceptances.sql
+
+      - name: Run currency-default SQL smoke test
+        # Pins the 0040 contract (app-i18n G5): public.profiles.currency
+        # declares the canonical LOWERCASE 'usd' default (asserted on the
+        # value inside pg_get_expr, so `'usd'::text` passes and `'USD'`
+        # does not); the default actually fires on a row that omits the
+        # column; an explicitly-supplied 'UYU' is stored verbatim, so no
+        # CHECK/trigger coerces a real user choice; the column is still
+        # text NOT NULL. Seeds and deletes its own fixtures.
+        # Note: 0040 declares a default only — it deliberately does NOT
+        # repeat 0007's backfill, so existing 'UYU' rows are untouched.
+        run: supabase db query --local --file supabase/tests/currency-default.sql

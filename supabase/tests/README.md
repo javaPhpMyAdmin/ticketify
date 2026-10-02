@@ -123,6 +123,54 @@ It ends with a `raise notice` on success. Like the others it is a single
 `DO`/`assert` block, idempotent, and runs via `pnpm test:sql` (its step is
 registered in `scripts/test-db-smoke.mjs`) and via the CI `db-smoke` job.
 
+## `currency-default.sql`
+
+A fail-closed smoke test for the i18n workstream's currency-default alignment
+(migration 0040). Covers:
+
+1. **The column default**: `public.profiles.currency` declares `'usd'` — the
+   canonical **lowercase** ISO 4217 form. Asserted against the value inside the
+   rendered `pg_get_expr` output (a real catalog shows `'usd'::text`), so a
+   correct schema is not rejected over formatting. Case is load-bearing, not
+   cosmetic: the settings screen submits lowercase, and only `CURRENCY_SYMBOL`
+   in `src/lib/format.ts` upper-cases at format time.
+2. **The default actually fires**: a profile inserted without a currency is
+   born `'usd'`, while a profile inserted WITH `'UYU'` keeps `'UYU'`. That
+   second half is what proves no CHECK, normalizing rule, or trigger is
+   overriding a real user choice — confirmed by mutation (a `before insert or
+   update` trigger forcing `new.currency = 'usd'` fails this file).
+3. **Nothing else moved**: the column is still `text NOT NULL`.
+
+It seeds two fixed-UUID fixtures (`cd000000-…-c5d1/c5d2`, disjoint from every
+other smoke test's range), asserts, and deletes them inside the same `DO` block,
+so it is idempotent and leaves the scratch DB untouched — verified over three
+consecutive runs with zero residue.
+
+> **Known limitation, stated rather than papered over.** A post-migration smoke
+> test structurally cannot detect a one-time `update … set currency` backfill:
+> by the time it runs, the backfill has finished and no surviving row reveals
+> it. 0040's "declares a default, rewrites no rows" property is therefore
+> pinned by its migration header and review, **not** by this file. 0007 is the
+> migration that backfilled, and its `update` clause is right there in the
+> chain for a reviewer to see.
+
+Like the others it ends with a `raise notice` on success, is a single
+`DO`/`assert` block, and runs via `pnpm test:sql` (its step is registered in
+`scripts/test-db-smoke.mjs`) and via the CI `db-smoke` job.
+
+> **Runner drift (known, pre-existing).** This directory holds **9** `.sql`
+> files, but the two runners do not cover the same 8:
+>
+> | runner | files | not run |
+> | --- | --- | --- |
+> | `pnpm test:sql` (`scripts/test-db-smoke.mjs`) | 8 | `recalculate-on-purchase-items-update.sql` |
+> | CI `db-smoke` (`.github/workflows/ci.yml`) | 8 | `delete-account.sql` |
+>
+> Each runner therefore misses one file the other covers. Neither gap is
+> caused by `currency-default.sql`, which is wired into both. Left as-is here
+> rather than silently fixed: adding a test to a runner changes what CI
+> enforces, and that belongs in its own reviewed change.
+
 ## Running it locally
 
 Requires **Docker** (daemon running) and the **Supabase CLI** on `PATH`.
@@ -138,10 +186,9 @@ This runs `scripts/test-db-smoke.mjs`, which:
    `supabase/migrations/` to a scratch DB.
 3. `supabase db reset --local` — deterministically rebuilds the catalog from
    scratch so the smoke test sees exactly what the migrations declare.
-4. `supabase db query --local --file <file>` — runs each smoke test
-   (`supabase/tests/pro-subscription.sql`, `household-totals.sql`,
-   `user-categories.sql` — see `scripts/test-db-smoke.mjs` for the exact
-   step list). Any raised assertion fails the query and the script exits
+4. `supabase db query --local --file <file>` — runs each smoke test,
+   `currency-default.sql` last. See `scripts/test-db-smoke.mjs` for the exact
+   step list. Any raised assertion fails the query and the script exits
    non-zero.
 
 > This script is deliberately **not** wired into `pnpm test`. The Node suite is
@@ -155,6 +202,5 @@ This runs `scripts/test-db-smoke.mjs`, which:
 GitHub Actions runs the same steps in a dedicated `db-smoke` job
 (`.github/workflows/ci.yml`): `supabase/setup-cli@v1` installs the CLI, then
 `supabase start` (Postgres only) + `supabase db reset --local` build the
-catalog, then one `supabase db query --local -f <file>` step PER smoke test
-(`pro-subscription.sql`, `household-totals.sql`, `user-categories.sql`)
-executes them and fails the build on any assertion failure.
+catalog, then one `supabase db query --local -f <file>` step PER smoke test executes
+them and fails the build on any assertion failure.

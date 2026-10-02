@@ -1,0 +1,51 @@
+-- ============================================================================
+-- Ticketify — 0040_currency_usd_default.sql
+--
+-- Change: app-i18n (reconstruction gap G5)
+-- Phase:  currency-default alignment
+-- Cross-refs:
+--   - The i18n workstream requires the stored currency to be an ISO 4217 CODE
+--     in a single canonical case, because `CURRENCY_SYMBOL` in
+--     `src/lib/format.ts` is keyed by `currencyCode.toUpperCase()` and the
+--     app's own writes go through `setProfileCurrency(userId, currency)`
+--     with whatever case the settings screen submits.
+--   - `src/app/settings/currency.tsx` persists the selection the user makes,
+--     so a row can legitimately hold `usd`, `USD` or `Usd`. The COLUMN
+--     DEFAULT is what every profile row is born with, and it is the one
+--     value the app never chose.
+--
+-- Why lowercase 'usd'
+-- -----------------
+-- This aligns the column default with the canonical lowercase ISO 4217 form
+-- the app submits, and it REVERTS the product decision recorded in
+-- `0007_currency_uyu.sql` (which set the default to 'UYU' and backfilled
+-- every 'USD' row to 'UYU'). That reversal is deliberate and is called out
+-- here because it is the kind of thing that looks like a regression when
+-- someone reads the migration history in isolation:
+--
+--   - 0007 hardcoded the product to Uruguay and BACKFILLED existing rows to
+--     'UYU'. A currency the user never picked is not recoverable by reading
+--     the row, so 0007's backfill destroyed real information — a user who had
+--     genuinely chosen USD had no way to tell their row from a seeded one.
+--   - The i18n workstream made currency a per-user, per-locale SETTING
+--     (`settings:currency` screen, five locales). A fixed Uruguay default
+     -- cannot serve that: it is wrong for every user outside Uruguay and
+--     wrong-looking for everyone else.
+--
+-- SCOPE — this migration changes the COLUMN DEFAULT ONLY:
+--   1. `public.profiles.currency` default 'UYU' → 'usd'.
+--   2. NO `update` of existing rows. Unlike 0007, nothing already written is
+--      rewritten: a stored 'UYU' is a value the user (or 0007) actually
+--      chose, and this migration has no basis for overriding it. Rows that
+--      want the new default are new profiles.
+--
+-- This is intentional asymmetry with 0007 and it is the whole point: 0007
+-- conflated "the default" with "what every row should contain" and paid for
+-- it in lost information. A default migration must stay a default migration.
+--
+-- Reversal: `alter table public.profiles alter column currency set default
+-- 'UYU';` restores the prior declaration and touches no data.
+-- ============================================================================
+
+alter table public.profiles
+  alter column currency set default 'usd';

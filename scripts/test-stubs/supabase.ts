@@ -206,6 +206,32 @@ export type SupabaseBehavior = {
 /** Per-table read results (harness seam, see `__setTableRead`). */
 const tableReads = new Map<string, TableReadState>();
 
+/**
+ * Per-table read HOLDS. A held read parks its resolution until `release()` is
+ * called, which gives a harness a DETERMINISTIC in-flight window instead of
+ * the microtask race you get from asserting straight after mount — the
+ * difference between "the query has not resolved yet" and "the event loop
+ * happened to be slow". Needed by anything that pins a PENDING state (the
+ * currency-hydration gate fails closed exactly there, and a racy pin on it is
+ * a pin that reports whatever the machine felt like that run).
+ */
+interface ReadHold {
+  promise: Promise<void>;
+  release: () => void;
+}
+
+const tableReadHolds = new Map<string, ReadHold>();
+
+/**
+ * Awaits the table's hold, if any. Applied on EVERY terminal path —
+ * `then`, `single()` and `maybeSingle()` — because the profile read resolves
+ * through `.single()`, and a hold that only gated `then` would silently not
+ * apply to the read it was written for.
+ */
+async function awaitTableReadHold(table: string): Promise<void> {
+  await tableReadHolds.get(table)?.promise;
+}
+
 /** Per-table HEAD `count=exact` results (harness seam, see `__setTableCount`). */
 const tableCounts = new Map<string, number>();
 
@@ -367,6 +393,7 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
       return builder;
     },
     async maybeSingle() {
+      if (source.kind === 'read') await awaitTableReadHold(table);
       if (
         source.kind === 'insert-failure' ||
         source.kind === 'update-failure' ||
@@ -383,6 +410,7 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
       return { data: rows.length > 0 ? rows[0] : null, error: null };
     },
     async single() {
+      if (source.kind === 'read') await awaitTableReadHold(table);
       if (
         source.kind === 'insert-failure' ||
         source.kind === 'update-failure' ||
@@ -439,7 +467,15 @@ function makeQueryBuilder(table: string, source: BuilderSource = { kind: 'read' 
         result.data = null;
         result.count = tableCounts.get(table) ?? null;
       }
-      return Promise.resolve(result).then(onfulfilled, onrejected);
+      const settled = Promise.resolve(result);
+      const hold = tableReadHolds.get(table);
+      const gated = hold
+        ? settled.then(async (value) => {
+            await hold.promise;
+            return value;
+          })
+        : settled;
+      return gated.then(onfulfilled, onrejected);
     },
   };
   return builder as QueryBuilder;
@@ -702,6 +738,33 @@ export function __resetSupabaseBehavior(): void {
   deleteReads.clear();
   insertCounter = 0;
   storageBehaviors.clear();
+  // Release before clearing: a harness that leaves a hold armed would park
+  // every later read on a promise nobody will ever settle, and the next test
+  // would hang instead of failing.
+  for (const hold of tableReadHolds.values()) hold.release();
+  tableReadHolds.clear();
+}
+
+/** Parks every subsequent `from(table).select()` resolution until released. */
+export function __holdTableRead(table: string): void {
+  __releaseTableRead(table);
+  let release: () => void = () => {};
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  tableReadHolds.set(table, { promise, release });
+}
+
+/** True while `table`'s reads are parked — the harness asserts on this to
+ *  prove the pending window it is testing is real. */
+export function __isTableReadHeld(table: string): boolean {
+  return tableReadHolds.has(table);
+}
+
+/** Releases a hold; safe to call for a table that was never held. */
+export function __releaseTableRead(table: string): void {
+  tableReadHolds.get(table)?.release();
+  tableReadHolds.delete(table);
 }
 
 /** Arms per-bucket storage behavior for the `receipts` bucket (upload /

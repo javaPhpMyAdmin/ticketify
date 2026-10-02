@@ -44,7 +44,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -119,6 +119,7 @@ let profileApiMod;
 let profileHookMod;
 let sessionStoreMod;
 let settingsStoreMod;
+let formatMod;
 let queryClientMod;
 let useProfile;
 
@@ -216,7 +217,9 @@ function resetAll() {
     monthly_budget: 1200,
     currency: 'UYU',
     household_sharing: false,
+    currencyHydrated: false,
   });
+  formatMod.setCurrencySymbolGate(true);
   sessionStoreMod.useSessionStore.setState({ session: null });
 }
 
@@ -238,6 +241,7 @@ async function run() {
   profileHookMod = await load('src/features/profile/hooks/useProfile.js');
   sessionStoreMod = await load('src/features/auth/use-session-store.js');
   settingsStoreMod = await load('src/stores/use-settings-store.js');
+  formatMod = await load('src/lib/format.js');
   queryClientMod = await load('src/lib/query-client.js');
   useProfile = profileHookMod.useProfile;
 
@@ -275,15 +279,20 @@ async function run() {
     // counter stays at 0.
     settingsStoreMod.useSettingsStore.setState({ currency: 'EUR' });
 
-    let notifications = 0;
-    const unsubscribe = settingsStoreMod.useSettingsStore.subscribe(() => {
-      notifications += 1;
+    // The invariant is scoped to the CURRENCY VALUE, not to "zero store
+    // writes". The same effect also flips the hydration gate, which is a
+    // legitimate one-time write; what must never happen is a write carrying a
+    // currency that already matched. Recording the value on every
+    // notification keeps the original pin honest instead of counting writes.
+    const currencyWrites = [];
+    const unsubscribe = settingsStoreMod.useSettingsStore.subscribe((s) => {
+      currencyWrites.push(s.currency);
     });
     try {
       // Settle on the COMPONENT having re-rendered with the row data (not on
       // the store, which is pre-seeded and would settle immediately): the
       // hydrate effect runs on that re-render, hits the skip-equal guard,
-      // and must notify no subscribers.
+      // and must not write the currency.
       const renderer = await mountProbe(() => captured?.user?.currency === 'EUR');
       try {
         assert.equal(
@@ -291,7 +300,12 @@ async function run() {
           'EUR',
           'store keeps the pre-seeded currency',
         );
-        assert.equal(notifications, 0, 'equal-currency hydrate notified no subscribers');
+        assert.deepEqual(
+          currencyWrites.filter((c) => c !== 'EUR'),
+          [],
+          'equal-currency hydrate never wrote a differing currency',
+        );
+        const writesAfterFirstLoad = currencyWrites.length;
 
         // Re-render with the same data: the effect key (the currency VALUE,
         // not the data object) is unchanged, so the effect neither re-runs
@@ -300,12 +314,429 @@ async function run() {
           renderer.update(probeElement());
           await tick();
         });
-        assert.equal(notifications, 0, 'unchanged re-render notified no subscribers');
+        assert.equal(
+          currencyWrites.length,
+          writesAfterFirstLoad,
+          'unchanged re-render notified no subscribers',
+        );
+        assert.equal(
+          settingsStoreMod.useSettingsStore.getState().currencyHydrated,
+          true,
+          'the gate did open on the good row',
+        );
       } finally {
         await unmountProbe(renderer);
       }
     } finally {
       unsubscribe();
+    }
+  });
+
+  console.log('\n[tests] currency hydration gate (fail-closed)\n');
+
+  await test('a good profile load flips currencyHydrated to true', async () => {
+    resetAll();
+    signIn();
+    stubMod.__setTableRead('profiles', { rows: [PROFILE_EUR] });
+    stubMod.__setTableRead('scan_usage', { rows: [SCAN_USAGE_ROW] });
+
+    assert.equal(
+      settingsStoreMod.useSettingsStore.getState().currencyHydrated,
+      false,
+      'the gate starts shut — the seed currency is not a known-truth value',
+    );
+
+    const renderer = await mountProbe(() => settingsStoreMod.useSettingsStore.getState().currencyHydrated);
+    try {
+      assert.equal(
+        settingsStoreMod.useSettingsStore.getState().currencyHydrated,
+        true,
+        'good profile data opened the gate',
+      );
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
+  await test('the gate stays SHUT while the profile read is in flight', async () => {
+    resetAll();
+    signIn();
+    stubMod.__setTableRead('profiles', { rows: [PROFILE_EUR] });
+    stubMod.__setTableRead('scan_usage', { rows: [SCAN_USAGE_ROW] });
+    // Park the profile read so the pending window is deterministic. Without
+    // the hold this test is a microtask race — it passes only when the event
+    // loop happens not to resolve the stub chain inside `act`, and reports a
+    // spurious failure when it does. `__isTableReadHeld` is asserted so the
+    // test cannot silently degrade into that race.
+    stubMod.__holdTableRead('profiles');
+
+    let renderer;
+    await act(async () => {
+      renderer = TestRenderer.create(probeElement());
+    });
+    try {
+      assert.ok(stubMod.__isTableReadHeld('profiles'), 'the profile read is parked');
+      assert.equal(captured?.user, null, 'no profile data has landed yet');
+      assert.equal(
+        settingsStoreMod.useSettingsStore.getState().currencyHydrated,
+        false,
+        'pending is not "hydrated" — the answer is not known yet',
+      );
+
+      // Still shut after the microtask drain that `act` performs: an async
+      // query function must not be able to open the gate by resolving early.
+      for (let i = 0; i < 3; i += 1) {
+        await act(async () => {
+          await tick();
+        });
+      }
+      assert.equal(captured?.user, null, 'still no data while the read is parked');
+      assert.equal(
+        settingsStoreMod.useSettingsStore.getState().currencyHydrated,
+        false,
+        'the gate stayed shut for the whole pending window',
+      );
+
+      // Release: the row lands and the gate opens.
+      stubMod.__releaseTableRead('profiles');
+      await settleUntil(
+        () => settingsStoreMod.useSettingsStore.getState().currencyHydrated,
+        'the released read opened the gate',
+      );
+      assert.equal(
+        settingsStoreMod.useSettingsStore.getState().currency,
+        'EUR',
+        'the released row hydrated the currency too',
+      );
+    } finally {
+      stubMod.__releaseTableRead('profiles');
+      await unmountProbe(renderer);
+    }
+  });
+
+  await test('a FAILED profile read leaves the gate shut (fails closed, never open on error)', async () => {
+    resetAll();
+    signIn();
+    // `rows: []` is the definitive `missing-profile` read: `shouldRetry`
+    // returns false for it, so the error surfaces on the first attempt
+    // instead of after two exponential-backoff retries. A RETRYING read is
+    // pinned separately below.
+    stubMod.__setTableRead('profiles', { rows: [] });
+    stubMod.__setTableRead('scan_usage', { rows: [SCAN_USAGE_ROW] });
+
+    const renderer = await mountProbe(() => captured?.error != null);
+    try {
+      assert.ok(captured.error, 'the read surfaced an error to the hook');
+      assert.equal(captured.user, null, 'no profile data');
+      assert.equal(
+        settingsStoreMod.useSettingsStore.getState().currencyHydrated,
+        false,
+        'an error must never open the symbol gate — the user would see the SEED currency symbol',
+      );
+      assert.equal(
+        settingsStoreMod.useSettingsStore.getState().currency,
+        'UYU',
+        'the seed currency is left untouched for the UI to handle',
+      );
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
+  await test('a RETRYING transient read keeps the gate shut across its attempts', async () => {
+    resetAll();
+    signIn();
+    // A raw transport error is NOT a FeatureQueryError, so `shouldRetry`
+    // falls through to `failureCount < 2`: the query stays in flight through
+    // two exponential-backoff retries. That whole window is real user time
+    // with money on screen, so the gate must be shut for all of it — which
+    // is exactly why this test settles nothing and only ticks.
+    stubMod.__setTableRead('profiles', {
+      error: { message: 'network request failed' },
+    });
+    stubMod.__setTableRead('scan_usage', { rows: [SCAN_USAGE_ROW] });
+
+    let renderer;
+    await act(async () => {
+      renderer = TestRenderer.create(probeElement());
+    });
+    try {
+      for (let i = 0; i < 5; i += 1) {
+        await act(async () => {
+          await tick();
+        });
+        assert.equal(
+          settingsStoreMod.useSettingsStore.getState().currencyHydrated,
+          false,
+          `gate opened during a retrying read (attempt ${i + 1})`,
+        );
+      }
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
+  await test('a retry after a failed read opens the gate once the row lands', async () => {
+    resetAll();
+    signIn();
+    stubMod.__setTableRead('profiles', { rows: [] });
+    stubMod.__setTableRead('scan_usage', { rows: [SCAN_USAGE_ROW] });
+
+    const renderer = await mountProbe(() => captured?.error != null);
+    try {
+      assert.equal(settingsStoreMod.useSettingsStore.getState().currencyHydrated, false);
+
+      // Recovery: invalidate the failed query so it refetches. The gate must
+      // open — a fail-closed gate that never reopens would strip every
+      // currency symbol from the app for the rest of the session.
+      stubMod.__setTableRead('profiles', { rows: [PROFILE_EUR] });
+      await act(async () => {
+        await queryClientMod.queryClient.invalidateQueries({
+          queryKey: ['profile', 'u1'],
+        });
+      });
+      await settleUntil(
+        () => settingsStoreMod.useSettingsStore.getState().currencyHydrated,
+        'the recovered read opened the gate',
+      );
+      assert.equal(
+        settingsStoreMod.useSettingsStore.getState().currency,
+        'EUR',
+        'the recovered row hydrated the currency',
+      );
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
+  await test('no session: the gate never opens and no profile query runs', async () => {
+    resetAll();
+    stubMod.__setTableRead('profiles', { rows: [PROFILE_EUR] });
+    stubMod.__setTableRead('scan_usage', { rows: [SCAN_USAGE_ROW] });
+
+    const renderer = await mountProbe(() => captured?.user === null);
+    try {
+      for (let i = 0; i < 3; i += 1) {
+        await act(async () => {
+          await tick();
+        });
+      }
+      assert.equal(
+        settingsStoreMod.useSettingsStore.getState().currencyHydrated,
+        false,
+        'a disabled query is never "good data"',
+      );
+      assert.equal(
+        stubMod.__getCallLog().filter((c) => c.table === 'profiles').length,
+        0,
+        'the profile table was never queried',
+      );
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
+  await test('the store DECLARES the gate shut (fail-closed at boot)', () => {
+    // Behavioral tests cannot catch this one: every test calls resetAll(),
+    // which overwrites the initial value, so flipping the literal in the store
+    // to `true` changes nothing they observe — and that is exactly the
+    // regression, because it makes every real cold start fail OPEN before a
+    // single component mounts. The declared initializer is the contract.
+    const src = readFileSync(
+      join(root, 'src/stores/use-settings-store.ts'),
+      'utf8',
+    );
+    assert.match(
+      src,
+      /currencyHydrated:\s*false,/,
+      'useSettingsStore must declare currencyHydrated: false — a true literal fails open on every cold start',
+    );
+    // The seed currency and the gate must not drift apart in the other
+    // direction either: a store that shipped `currencyHydrated: false` with a
+    // gate-less formatter is the other half of the same bug.
+    assert.match(formatMod.isCurrencySymbolGateOpen.toString(), /currencySymbolGateOpen/);
+  });
+
+  await test('markCurrencyHydrated is idempotent — a repeat call notifies nobody', async () => {
+    resetAll();
+    const store = settingsStoreMod.useSettingsStore;
+    assert.equal(store.getState().currencyHydrated, false);
+
+    let notifications = 0;
+    const unsubscribe = store.subscribe(() => {
+      notifications += 1;
+    });
+    try {
+      await act(async () => {
+        store.getState().markCurrencyHydrated();
+      });
+      assert.equal(notifications, 1, 'the first mark notified once');
+      assert.equal(store.getState().currencyHydrated, true);
+
+      await act(async () => {
+        store.getState().markCurrencyHydrated();
+        store.getState().markCurrencyHydrated();
+      });
+      assert.equal(
+        notifications,
+        1,
+        're-marking an already-open gate is a no-op — every money screen re-renders for nothing',
+      );
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  await test('resetHydration re-closes the gate (session teardown path)', async () => {
+    resetAll();
+    const store = settingsStoreMod.useSettingsStore;
+    await act(async () => {
+      store.getState().markCurrencyHydrated();
+    });
+    assert.equal(store.getState().currencyHydrated, true);
+
+    let notifications = 0;
+    const unsubscribe = store.subscribe(() => {
+      notifications += 1;
+    });
+    try {
+      await act(async () => {
+        store.getState().resetHydration();
+      });
+      assert.equal(store.getState().currencyHydrated, false, 'the gate is shut again');
+      assert.equal(notifications, 1, 'the close notified subscribers once');
+
+      await act(async () => {
+        store.getState().resetHydration();
+      });
+      assert.equal(notifications, 1, 'resetting an already-shut gate is a no-op');
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  await test('the SIGNED_OUT listener re-closes the gate (no leak into the next user)', async () => {
+    resetAll();
+    signIn();
+    stubMod.__setTableRead('profiles', { rows: [PROFILE_EUR] });
+    stubMod.__setTableRead('scan_usage', { rows: [SCAN_USAGE_ROW] });
+
+    const renderer = await mountProbe(() => settingsStoreMod.useSettingsStore.getState().currencyHydrated);
+    try {
+      assert.equal(settingsStoreMod.useSettingsStore.getState().currencyHydrated, true);
+
+      // Fire the real auth listener rather than the store action: the
+      // sign-out PATH that matters for a token expiry / bootstrap discard is
+      // the listener, and it runs when no screen is mounted to tear anything
+      // down.
+      await act(async () => {
+        await sessionStoreMod.useSessionStore.getState().restore().catch(() => {});
+      });
+      const listener = stubMod.__getLastAuthStateListener();
+      await act(async () => {
+        listener('SIGNED_OUT', null);
+      });
+
+      assert.equal(
+        settingsStoreMod.useSettingsStore.getState().currencyHydrated,
+        false,
+        'the next session must not inherit this user\'s confirmed currency',
+      );
+      assert.equal(sessionStoreMod.useSessionStore.getState().session, null);
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
+  console.log('\n[tests] currency symbol gate (lib/format)\n');
+
+  await test('the formatter gate withholds only the symbol, never the amount', async () => {
+    formatMod.setCurrencySymbolGate(true);
+    assert.equal(formatMod.formatCurrency(1234.5, 'USD'), 'US$ 1,234.50');
+    assert.equal(formatMod.formatCurrency(1234.5, 'UYU'), '$U 1.234,50');
+
+    formatMod.setCurrencySymbolGate(false);
+    assert.equal(
+      formatMod.formatCurrency(1234.5, 'USD'),
+      '1,234.50',
+      'the bare INTL-grouped amount, no unit',
+    );
+    assert.equal(
+      formatMod.formatCurrency(1234.5, 'UYU'),
+      '1.234,50',
+      'the bare LATAM-grouped amount — grouping still follows the currency code',
+    );
+  });
+
+  await test('a shut gate on a negative value leaves no dangling separator', async () => {
+    formatMod.setCurrencySymbolGate(true);
+    assert.equal(formatMod.formatCurrency(-1234.56, 'USD'), '-US$ 1,234.56');
+
+    formatMod.setCurrencySymbolGate(false);
+    assert.equal(
+      formatMod.formatCurrency(-1234.56, 'USD'),
+      '-1,234.56',
+      'the sign must sit against the number, not against a missing symbol',
+    );
+    assert.doesNotMatch(
+      formatMod.formatCurrency(-1234.56, 'USD'),
+      /^\-\s|-\s+$/,
+      'no space where the symbol used to be',
+    );
+  });
+
+  await test('a shut gate withholds the unknown-code fallback too', async () => {
+    formatMod.setCurrencySymbolGate(true);
+    assert.equal(
+      formatMod.formatCurrency(1234.56, 'XYZ'),
+      'XYZ 1,234.56',
+      'an unknown code renders as itself while open',
+    );
+
+    formatMod.setCurrencySymbolGate(false);
+    assert.equal(
+      formatMod.formatCurrency(1234.56, 'XYZ'),
+      '1,234.56',
+      'the code is not a currency either — withholding it is the whole point',
+    );
+  });
+
+  await test('formatCurrencyWhole honors the gate as well', async () => {
+    formatMod.setCurrencySymbolGate(true);
+    assert.equal(formatMod.formatCurrencyWhole(812.24, 'UYU'), '$U 812');
+
+    formatMod.setCurrencySymbolGate(false);
+    assert.equal(
+      formatMod.formatCurrencyWhole(812.24, 'UYU'),
+      '812',
+      'the whole-number form withholds the symbol as well',
+    );
+  });
+
+  await test('a post-write refetch keeps the gate OPEN (hydrate-and-converge regression)', async () => {
+    resetAll();
+    signIn();
+    stubMod.__setTableRead('profiles', { rows: [PROFILE_EUR] });
+    stubMod.__setTableRead('scan_usage', { rows: [SCAN_USAGE_ROW] });
+    stubMod.__setDeleteRead('profiles', [{ id: 'u1' }]);
+
+    const renderer = await mountProbe(() => settingsStoreMod.useSettingsStore.getState().currencyHydrated);
+    try {
+      stubMod.__setTableRead('profiles', {
+        rows: [{ ...PROFILE_EUR, currency: 'USD' }],
+      });
+      await act(async () => {
+        assert.equal((await captured.setCurrency('USD')).status, 'ok');
+      });
+      await settleUntil(storeHydratedTo('USD'), 'store converged on USD');
+
+      assert.equal(
+        settingsStoreMod.useSettingsStore.getState().currencyHydrated,
+        true,
+        'the currency VALUE flipping must not be mistaken for a re-hydration that re-closes the gate',
+      );
+    } finally {
+      await unmountProbe(renderer);
     }
   });
 
@@ -466,7 +897,7 @@ async function run() {
     }
   });
 
-  console.log('');
+  console.log(`\n[tests] registered ${passed + failed} pins`);
   if (failed > 0) {
     console.error(`[tests] ${failed} failed, ${passed} passed`);
     process.exitCode = 1;

@@ -91,14 +91,28 @@ export function useProfile(): UseProfileResult {
   // persisted, so the hydrate and the selector converge instead of fighting.
   // Skipping equal values also keeps a same-currency refetch from notifying
   // store subscribers.
+  //
+  // The SAME effect opens the currency-symbol gate, and only on a settled,
+  // successful read. The structural guard is the `!profileCurrency` return
+  // above — a query that is pending or has errored has no currency, so there
+  // is nothing to open the gate with. `isError` is kept as the EXPLICIT
+  // assertion of that rule because react-query retains the last successful
+  // `data` when a background refetch fails: the guard above would then see a
+  // perfectly good currency from an earlier read while the query is in an
+  // error state, and only `isError` distinguishes "stale but confirmed" from
+  // "just failed". `isPending` is deliberately NOT checked — it can only be
+  // true when `data` is undefined, which the guard above already covers, so
+  // listing it would read as load-bearing while adding nothing.
   useEffect(() => {
     const profileCurrency = profileQuery.data?.currency;
     if (!profileCurrency) return;
-    const stored = useSettingsStore.getState().currency;
-    if (stored !== profileCurrency) {
-      useSettingsStore.getState().setCurrency(profileCurrency);
+    const settings = useSettingsStore.getState();
+    if (settings.currency !== profileCurrency) {
+      settings.setCurrency(profileCurrency);
     }
-  }, [profileQuery.data?.currency]);
+    if (profileQuery.isError) return;
+    settings.markCurrencyHydrated();
+  }, [profileQuery.data?.currency, profileQuery.isError]);
 
   // Hydrate household_sharing toggle from profile: when the profile loads
   // and the user has a household_id, enable sharing. This keeps the toggle

@@ -31,6 +31,7 @@ import {
 import { isSecureStoreAvailable } from '@/lib/supabase/storage-adapter';
 import { withTimeout } from '@/lib/with-timeout';
 import { useHouseholdStore } from '@/stores/use-household-store';
+import { useSettingsStore } from '@/stores/use-settings-store';
 import { useProStore } from '@/stores/use-pro-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 
@@ -320,6 +321,9 @@ export const useSessionStore = create<SessionState>((set) => ({
     useReceiptsStore.getState().resetAll();
     useProStore.getState().reset();
     useHouseholdStore.getState().reset();
+    // Same reasoning as the SIGNED_OUT listener above: the deleted account's
+    // confirmed currency must not survive as the next user's default.
+    useSettingsStore.getState().resetHydration();
     useSessionStore.setState({ session: null });
 
     // Drop the typed-confirmation draft — the next user on this device
@@ -375,6 +379,12 @@ function initAuthStateListener(): void {
         // the locked defaults (`isLoading: true`), so the gate cannot open
         // until the next user's session resolves.
         useProStore.getState().reset();
+        // Re-close the currency-symbol gate too: it is derived from the
+        // previous user's profile row, and the SIGNED_OUT window outlives this
+        // component's unmount, so anything the next session renders before its
+        // own profile lands must fail closed rather than inherit the last
+        // user's unit.
+        useSettingsStore.getState().resetHydration();
         useSessionStore.setState({ session: null });
         return;
       }
