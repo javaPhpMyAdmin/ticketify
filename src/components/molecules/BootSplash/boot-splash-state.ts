@@ -3,7 +3,7 @@
  *
  * States:  visible  →  fading  →  done (terminal)
  *
- * The minimum-display timer (currently `MIN_DISPLAY_MS = 7000` in
+ * The minimum-display timer (currently `BOOT_DEADLINE_MS = 4000` in
  * `BootSplash.tsx`) lives OUTSIDE this reducer — the caller keeps the
  * timer running and dispatches `booted` with `minDisplayElapsed: true`
  * only once the timer expires. The reducer itself never models time.
@@ -23,8 +23,8 @@ export type BootSplashEvent =
  * Contracts:
  * - `done` is terminal: all subsequent events are ignored.
 *   - `visible` → `fading` only via `booted` with `minDisplayElapsed: true`.
- *     The pending min-display timer is the caller's responsibility
- *     (see `MIN_DISPLAY_MS` in `BootSplash.tsx`).
+ *     The deadline timer is the caller's responsibility
+ *     (see `BOOT_DEADLINE_MS` in `BootSplash.tsx`).
  * - `fading` → `done` only via `fadeCompleted` with `finished: true`.
  * - `fadeCompleted` with `finished: false` does nothing (fade is still
  *   in progress or the animation was interrupted).

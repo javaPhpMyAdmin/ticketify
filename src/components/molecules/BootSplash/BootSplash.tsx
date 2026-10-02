@@ -11,12 +11,34 @@ import { bootSplashState, type BootSplashState } from './boot-splash-state';
 import { pickStatusIndex } from './status-cycle';
 import { useBootAnimations } from './useBootAnimations';
 
-// Minimum display time BEFORE the booted state is honored: ~7 s so the
-// branded animation reads ("the user wants ~7 s"). The fade-out then
-// runs on top (FADE_OUT_MS). Per-tick visual refresh (status cycle,
-// scan beam, bob, sweep) lives on independent Animated loops so the
-// timing budget never starves the native driver.
-const MIN_DISPLAY_MS = 7000;
+/**
+ * HARD DEADLINE for the boot gate, measured from mount.
+ *
+ * This is a CEILING, not a target. Whatever else happens — the session
+ * reconciles, i18next initializes, secure-store answers — the overlay is
+ * gone within this window.
+ *
+ * The previous timer was `MIN_DISPLAY_MS`, and it started only when the
+ * `booted` PROP arrived:
+ *
+ *     if (!booted) return;                 // ← timer never starts
+ *     setTimeout(..., MIN_DISPLAY_MS);
+ *
+ * That ordering made the gate fail OPEN: a hung native bridge, a rejected
+ * `hydrate()`, a thrown `initI18n()` that escaped the provider's catch — any
+ * of them left `booted` false forever, the timer never armed, and the user
+ * was pinned on a splash screen with no app and no error. The gate existed
+ * to hide the blank flash, and instead it could become the blank screen.
+ *
+ * A boot gate that can hang is not a gate. The timer now starts on MOUNT
+ * and dispatches unconditionally, so `visible → fading` is guaranteed.
+ * The normal path is unchanged in spirit: the splash still holds for its
+ * full window so the branded animation reads, and the fade-out (FADE_OUT_MS)
+ * runs on top. Per-tick visual refresh (status cycle, scan beam, bob,
+ * sweep) lives on independent Animated loops, so the deadline is never
+ * starved by the animation budget.
+ */
+const BOOT_DEADLINE_MS = 4000;
 const FADE_OUT_MS = 250;
 
 // Status message cycle slot length — INDEPENDENT from the min-display
@@ -150,14 +172,19 @@ export function BootSplash({
     return () => clearInterval(interval);
   }, [statusMessages, statusFade, state]); // statusIndex intentionally OMITTED (see comment + regression pin)
 
-  // ── Minimum-display timer → dispatches `booted` with elapsed flag ──
+  // ── Hard deadline → dispatches `booted` with elapsed flag ──────────
+  // Starts on MOUNT and fires UNCONDITIONALLY. `booted` is deliberately not
+  // a dependency and not a guard: it reports whether the app is ready, the
+  // deadline reports whether the user is still staring at a splash. Those
+  // are different questions and only the second one may be answered by a
+  // timer. Dispatching twice is harmless — `done` is terminal and the
+  // reducer ignores every event after it.
   useEffect(() => {
-    if (!booted) return;
     const timer = setTimeout(() => {
       dispatch({ type: 'booted', minDisplayElapsed: true });
-    }, MIN_DISPLAY_MS);
+    }, BOOT_DEADLINE_MS);
     return () => clearTimeout(timer);
-  }, [booted]);
+  }, []);
 
   // ── Fade-out when state transitions to fading ───────────────────────
   // Defensive cleanup: if the component unmounts mid-fade, stop the

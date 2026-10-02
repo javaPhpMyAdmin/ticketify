@@ -14,6 +14,7 @@ import { useSessionStore } from '@/features/auth';
 import { getOnboardingCompleted } from '@/features/onboarding/onboarding-storage';
 import { ConsentGate } from '@/features/legal/components/ConsentGate';
 import { ProBootstrap } from '@/features/pro';
+import { ProfileHydration } from '@/features/profile';
 import { I18nProvider } from '@/i18n/components/I18nProvider';
 import { decideSessionNavigation } from '@/lib/auth/session-nav';
 import { queryClient } from '@/lib/query-client';
@@ -208,6 +209,16 @@ export default function RootLayout() {
           }}
         >
           <ProBootstrap />
+          {/* Currency-hydration gate (fail-closed): mounts ABOVE the Stack so
+              every money screen is covered, not just the ones behind the
+              profile tab — `Stack.Protected` only renders its declared
+              `Stack.Screen` children, and a sibling dropped inside it is never
+              mounted at all. Session-gated so no profile query runs while
+              signed out. Until the profile row lands, `formatCurrency`
+              withholds the symbol (the currency CODE is only a seed until
+              then, and the wrong symbol is a wrong balance, not a missing
+              label). Renders nothing. */}
+          {session != null ? <ProfileHydration /> : null}
           <Stack
             screenOptions={{
               headerShown: false,
