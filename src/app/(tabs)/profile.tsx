@@ -225,14 +225,9 @@ export default function ProfileScreen() {
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         {user ? (
           <ProfileHeader
-            name={user.full_name ?? 'Tú'}
+            name={user.full_name ?? t('settings:defaultDisplayName')}
             avatarUrl={user.avatar_url}
             tier={user.tier}
-            // Post-cutover (0039): no `'frozen'` state — the gate is binary
-            // (`locked | unlocked`), so the header shows only the access-tier
-            // chip. Slice C adds the trial pill (REQ-PRO-TRIAL-PILL) sourced
-            // from `CustomerInfo` as a sibling of the chip.
-            tierLabel={undefined}
           />
         ) : null}
 

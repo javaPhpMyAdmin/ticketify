@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native';
 
 import { Text, View } from '@/components/atoms';
@@ -15,15 +16,8 @@ export interface ProfileHeaderProps {
   avatarUrl?: string | null;
   /** Optional line under the name, e.g. the auth email address. */
   subtitle?: string;
-  /** Tier label. 'free' -> "Free Tier", 'pro' -> "Pro Tier". */
+  /** Access tier. Drives the localized chip label. */
   tier: 'free' | 'pro';
-  /**
-   * Optional override for the tier chip label. When provided (e.g. a
-   * "Prueba expirada" state for a frozen trial), it replaces the automatic
-   * "Plan Gratuito / Plan Pro" label so the header reflects the real
-   * subscription lifecycle rather than the access tier alone.
-   */
-  tierLabel?: string;
 }
 
 /**
@@ -31,6 +25,13 @@ export interface ProfileHeaderProps {
  * `avatarUrl` is present, otherwise the initial), display name, optional
  * subtitle, and the tier chip. If the remote image fails to load, it falls
  * back to the initial-letter bubble so the avatar is never an empty circle.
+ *
+ * The chip label is resolved HERE, from the `settings` catalog, rather than
+ * accepted as a `tierLabel` prop. A label prop is a localization hole: the
+ * profile screen passed `undefined` and this component filled the gap with a
+ * hardcoded `"Plan Gratuito"`, so an English user saw Spanish on the one card
+ * that states what they are paying for. Deriving it from the catalog means
+ * there is no value a caller can supply that skips translation.
  */
 export function ProfileHeader({
   name,
@@ -38,8 +39,11 @@ export function ProfileHeader({
   avatarUrl,
   subtitle,
   tier,
-  tierLabel,
 }: ProfileHeaderProps) {
+  // The namespace must be an ARRAY. `useTranslation('settings')` with a single
+  // string puts `settings` in the default namespace, which would make the
+  // namespace-prefixed keys below fail to resolve against the typed resources.
+  const { t } = useTranslation(['settings']);
   const avatarText = (initial ?? name?.[0] ?? '?').toUpperCase();
   const [avatarFailed, setAvatarFailed] = useState(false);
   // A new avatar URL means a fresh load: reset the failure flag so the image
@@ -64,10 +68,10 @@ export function ProfileHeader({
         <View style={styles.info}>
           <Text style={styles.name}>{name}</Text>
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+          {/* Post-cutover (0039) there is no `frozen` state — the gate is
+              binary, so the two keys below are the whole chip vocabulary. */}
           <Chip
-            label={
-              tierLabel ?? (tier === 'free' ? 'Plan Gratuito' : 'Plan Pro')
-            }
+            label={t(tier === 'free' ? 'settings:proPlan' : 'settings:proActive')}
           />
         </View>
       </View>

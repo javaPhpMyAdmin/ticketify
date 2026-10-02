@@ -103,5 +103,7 @@
   "deleteAccountErrorRetry": "Retry",
   "legalSectionTitle": "LEGAL",
   "privacyPolicy": "Privacy Policy",
-  "termsConditions": "Terms & Conditions"
+  "termsConditions": "Terms & Conditions",
+  "proPlan": "Free plan",
+  "defaultDisplayName": "You"
 }
