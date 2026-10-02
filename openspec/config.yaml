@@ -1,7 +1,15 @@
 schema: spec-driven
 
+# Artifact store: hybrid. Durable SDD artifacts live BOTH in this OpenSpec
+# tree (canonical specs + archived changes) and in Engram (phase topics under
+# `sdd/{change}/...`). A phase may read/write either; when both exist the
+# OpenSpec file is canonical and Engram carries the working record. This key
+# was absent until 2026-10-01, and the file itself did not parse as YAML from
+# 2026-08-04 because `rules.apply` mixed a sequence item with mapping keys.
+persistence: hybrid
+
 context: |
-  Tech stack: Expo SDK 54 (RN 0.81, React 19, newArch), expo-router 6 (typed routes), Zustand 5, TanStack Query 5, Supabase (JS 2.x client + CLI), i18next 26 (es-AR source of truth; pt-BR/en), expo-dev-client, TypeScript ~5.9 strict
+  Tech stack: Expo SDK 54 (RN 0.81, React 19, newArch), expo-router 6 (typed routes), Zustand 5, TanStack Query 5, Supabase (JS 2.x client + CLI), i18next 26 (five locales: en, es-419 base, es-AR, es-ES, pt-BR), expo-dev-client, TypeScript ~5.9 strict
   Architecture: Feature-first under src/ (expo-router routes, atomic components, feature modules with hooks/api, Zustand stores, theme tokens); EXPENSE_CATEGORIES taxonomy in src/features/home/categories.ts
   Testing: Custom Node ESM harnesses (scripts/test-*.mjs, tsc-compiled, node:assert/strict) chained via `pnpm test`; SQL smoke tests in supabase/tests/*.sql (CI db-smoke job); strict_tdd enabled
   Style: pnpm, ESLint 9 flat (eslint-config-expo), tsc --noEmit, @/* -> src/* path alias, component barrel index files, conventional commits
@@ -19,7 +27,8 @@ rules:
     - Group by phase, use hierarchical numbering
     - Keep tasks completable in one session
   apply:
-    - Follow existing code patterns (atomic components, feature hooks, barrel files, @/ alias)
+    guidance:
+      - Follow existing code patterns (atomic components, feature hooks, barrel files, @/ alias)
     tdd: true
     test_command: "pnpm test"
   verify:
