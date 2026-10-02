@@ -25,6 +25,10 @@ export interface FabProps {
  * The press handler intentionally does NOT animate scale here — the
  * "Active States" section of DESIGN.md says cards scale to 98% on press,
  * but FABs use a tonal color shift to stay readable on camera viewports.
+ * The themed `Pressable` scales BY DEFAULT, so the opt-out is explicit:
+ * `pressScale={false}` below. Scaling a FAB also shrinks its `boxShadow`
+ * with the pill, which Android renders as a clipped shadow edge — the
+ * control visibly detaches from the surface instead of pressing into it.
  */
 export function Fab({
   onPress,
@@ -41,6 +45,7 @@ export function Fab({
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      pressScale={false}
       style={({ pressed }) => [
         styles.base,
         { backgroundColor: pressed ? colors.primaryDark : bg, opacity: disabled ? 0.5 : 1 },

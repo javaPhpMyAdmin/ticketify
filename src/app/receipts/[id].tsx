@@ -630,10 +630,15 @@ export default function ReceiptDetailScreen() {
           {/* Backdrop press: closes the overlay at 1×, resets the zoom when
               the user is already zoomed in (so the close gesture doesn't
               require the user to first reset). gesture-handler consumes
-              double-tap / pinch touches before this fires. */}
+              double-tap / pinch touches before this fires.
+              `pressScale={false}`: this layer is an invisible full-screen
+              hit target, so the atom's default press sink would shrink it
+              and expose a seam of undimmed overlay around the edges for as
+              long as the press is held. */}
           <Pressable
             style={StyleSheet.absoluteFill}
             onPress={handlePhotoBackdropPress}
+            pressScale={false}
             accessibilityRole="button"
             accessibilityLabel={t('receipts:closePhotoA11y')}
           />

@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020", "dom"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "..",
+    "paths": {
+      "react-native": ["./scripts/test-stubs/pressable-rn.ts"],
+      "@/*": ["./src/*"]
+    },
+    "rootDir": ".."
+  },
+  "include": [
+    "../src/components/atoms/Pressable/Pressable.tsx",
+    "../src/theme/index.ts",
+    "../src/theme/colors.ts",
+    "../src/theme/motion.ts",
+    "../src/theme/radii.ts",
+    "../src/theme/spacing.ts",
+    "../src/theme/typography.ts",
+    "../scripts/test-stubs/pressable-rn.ts"
+  ]
+}

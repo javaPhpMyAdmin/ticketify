@@ -14,6 +14,18 @@ export type AppStateStatus =
 /** Loose stand-in for RN's TextStyle (compiled consumers only spread it). */
 export type TextStyle = Record<string, unknown>;
 
+/**
+ * Loose stand-in for RN's ViewStyle, for the same reason as `TextStyle`:
+ * theme token modules (`src/theme/*`) type their fragments as `ViewStyle` and
+ * are compiled by dozens of harnesses through this stub. Kept structurally
+ * loose on purpose — the stubs exist so real app code typechecks, not to
+ * re-check react-native's own surface.
+ */
+export type ViewStyle = Record<string, unknown>;
+
+/** The array-or-single style shape RN accepts. */
+export type StyleProp<T> = T | ReadonlyArray<StyleProp<T>> | null | undefined | false;
+
 export const Platform = {
   OS: 'ios',
   select: <T>(spec: Record<string, T> & { default?: T }): T | undefined =>

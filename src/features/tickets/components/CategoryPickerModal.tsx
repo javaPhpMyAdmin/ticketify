@@ -9,7 +9,7 @@ import {
   countCategoryItems,
   useCategoryCatalog,
 } from '@/features/categories';
-import { colors, radii, spacing, typography } from '@/theme';
+import { colors, motion, radii, spacing, typography } from '@/theme';
 import { truncateCategoryName } from '@/lib/format';
 import type { CategoryKind } from '@/types';
 
@@ -564,9 +564,16 @@ export function CategoryPickerModal({
             >
               <Text style={styles.cancelLabel}>{t('common:cancel')}</Text>
             </Pressable>
+            {/* The confirm treatment: the atom's default sink is too soft for
+                a full-width CTA, so it opts out of the default scale and takes
+                the STRONG scale token instead. The dim still comes from the
+                atom (`motion.pressDim`) — `pressedStyle` only supplies the
+                transform, which is why the two are separate props. */}
             <Pressable
               onPress={handleCreate}
               disabled={!canPressCreate}
+              pressScale={false}
+              pressedStyle={motion.pressScaleStrong}
               style={({ pressed }) => [
                 styles.actionButton,
                 styles.saveButton,
@@ -785,6 +792,8 @@ function BlockedDeleteView({
         <Pressable
           onPress={onConfirm}
           disabled={!canConfirm}
+          pressScale={false}
+          pressedStyle={motion.pressScaleStrong}
           style={({ pressed }) => [
             styles.actionButton,
             styles.saveButton,
@@ -847,6 +856,8 @@ function ConfirmDeleteView({
         <Pressable
           onPress={onConfirm}
           disabled={busy}
+          pressScale={false}
+          pressedStyle={motion.pressScaleStrong}
           style={({ pressed }) => [
             styles.actionButton,
             styles.saveButton,
@@ -884,6 +895,8 @@ function ErrorDeleteView({
       <View style={styles.actions}>
         <Pressable
           onPress={onDone}
+          pressScale={false}
+          pressedStyle={motion.pressScaleStrong}
           style={({ pressed }) => [
             styles.actionButton,
             styles.saveButton,
