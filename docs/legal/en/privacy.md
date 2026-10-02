@@ -1,8 +1,6 @@
 # Privacy — en
 
-> DRAFT — This text is pending legal review.
-
-_ISO version 2026-09-18 · DRAFT status · source: src/i18n/locales/en/legal.json · regenerate: `node scripts/generate-legal-markdown.mjs`_
+_ISO version 2026-09-26 · FINAL status · source: src/i18n/locales/en/legal.json · regenerate: `node scripts/generate-legal-markdown.mjs`_
 
 ## 1. Introduction
 

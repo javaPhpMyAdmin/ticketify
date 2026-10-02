@@ -17,15 +17,18 @@
  * Sections:
  *   1. Opener contract (REQ-1) — resolve → true + exact URL; reject → false,
  *      no exception escapes; default opener uses the stub `openBrowserAsync`.
- *   2. Legal URL map (REQ-2) — exactly two documents × three locales, all
+ *   2. Legal URL map (REQ-2) — exactly two documents × five locales, all
  *      values `https:`; the hosted contract (REQ-7) is pinned to the exact
  *      GitHub Pages URLs — `example.com` anywhere in the map FAILS the suite.
  *   3. Resolver fallback (REQ-2) — known locale wins; unknown/empty locales
  *      AND inherited-prototype keys ('constructor', '__proto__', 'toString')
- *      fall back to es-AR via an own-property guard; an unknown document
- *      falls back to the es-AR privacy URL without throwing.
+ *      fall back to `en` via an own-property guard; an unknown document
+ *      falls back to the `en` privacy URL without throwing. The fallback
+ *      MOVED from `es-AR` to `en` when Spanish regionalized: `es-AR` is now
+ *      a sparse voseo override, so terminating a fallback chain there would
+ *      hand a Brazilian or Japanese reader Argentine copy.
  *   4. Catalog parity (REQ-5) — settings/auth key sets identical across the
- *      three locales; every legal key exists and is a non-empty string.
+ *      five locales; every legal key exists and is a non-empty string.
  *
  * Usage: pnpm test:legal-links  (or: node scripts/test-legal-links.mjs)
  */
@@ -36,6 +39,7 @@ import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { LOCALES, resolveNamespace } from './lib/i18n-chain.mjs';
 
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -208,8 +212,12 @@ async function run() {
     assert.deepEqual(Object.keys(legalMod.LEGAL_URLS).sort(), ['privacy', 'terms']);
   });
 
-  await test('each document maps exactly the three SupportedLocale tags', () => {
-    const expected = ['en', 'es-AR', 'pt-BR'].sort();
+  await test('each document maps exactly the five SupportedLocale tags', () => {
+    // Two documents × five locales = ten URLs. Missing `es-419` or `es-ES`
+    // is a TypeError at the map's type boundary, which is exactly how the
+    // regression surfaced the first time: `Record<SupportedLocale, string>`
+    // stopped being satisfied the moment the regional locales were added.
+    const expected = ['en', 'es-419', 'es-AR', 'es-ES', 'pt-BR'].sort();
     for (const doc of ['privacy', 'terms']) {
       assert.deepEqual(
         Object.keys(legalMod.LEGAL_URLS[doc]).sort(),
@@ -219,9 +227,9 @@ async function run() {
     }
   });
 
-  await test('all six URL values use the https: scheme', () => {
+  await test('all ten URL values use the https: scheme', () => {
     for (const doc of ['privacy', 'terms']) {
-      for (const locale of ['en', 'es-AR', 'pt-BR']) {
+      for (const locale of LOCALES) {
         const url = legalMod.LEGAL_URLS[doc][locale];
         assert.match(url, /^https:\/\//, `${doc}/${locale} must be https`);
       }
@@ -233,14 +241,21 @@ async function run() {
   // not cross-map equality — so a typo shared by every entry still fails.
   // example.com is the pre-U6 placeholder domain; its presence in the map
   // means the swap regressed and MUST fail loudly.
+  // Each regional locale gets its OWN document, not the Argentine one.
+  // Pointing a Mexican reader at the Argentine policy would be a legal
+  // misstatement, so the five are pinned separately rather than derived.
   const GOLDEN_LEGAL_URLS = {
     privacy: {
+      'es-419': 'https://javaPhpMyAdmin.github.io/ticketify/legal/es-419/privacy/',
       'es-AR': 'https://javaPhpMyAdmin.github.io/ticketify/legal/es-AR/privacy/',
+      'es-ES': 'https://javaPhpMyAdmin.github.io/ticketify/legal/es-ES/privacy/',
       en: 'https://javaPhpMyAdmin.github.io/ticketify/legal/en/privacy/',
       'pt-BR': 'https://javaPhpMyAdmin.github.io/ticketify/legal/pt-BR/privacy/',
     },
     terms: {
+      'es-419': 'https://javaPhpMyAdmin.github.io/ticketify/legal/es-419/terms/',
       'es-AR': 'https://javaPhpMyAdmin.github.io/ticketify/legal/es-AR/terms/',
+      'es-ES': 'https://javaPhpMyAdmin.github.io/ticketify/legal/es-ES/terms/',
       en: 'https://javaPhpMyAdmin.github.io/ticketify/legal/en/terms/',
       'pt-BR': 'https://javaPhpMyAdmin.github.io/ticketify/legal/pt-BR/terms/',
     },
@@ -248,7 +263,7 @@ async function run() {
 
   await test('URL values match the GitHub Pages golden table (REQ-7, exact)', () => {
     for (const doc of ['privacy', 'terms']) {
-      for (const locale of ['en', 'es-AR', 'pt-BR']) {
+      for (const locale of LOCALES) {
         assert.equal(
           legalMod.LEGAL_URLS[doc][locale],
           GOLDEN_LEGAL_URLS[doc][locale],
@@ -260,7 +275,7 @@ async function run() {
 
   await test('example.com does not appear anywhere in the URL map (placeholder regression gate)', () => {
     for (const doc of ['privacy', 'terms']) {
-      for (const locale of ['en', 'es-AR', 'pt-BR']) {
+      for (const locale of LOCALES) {
         assert.ok(
           !legalMod.LEGAL_URLS[doc][locale].includes('example.com'),
           `${doc}/${locale} must not contain the placeholder domain`,
@@ -278,66 +293,81 @@ async function run() {
     );
   });
 
-  await test('legalUrlFor("terms","fr-FR") → the es-AR terms URL (unsupported fallback)', () => {
+  await test('legalUrlFor("terms","fr-FR") → the en terms URL (unsupported fallback)', () => {
     assert.equal(
       legalMod.legalUrlFor('terms', 'fr-FR'),
-      legalMod.LEGAL_URLS.terms['es-AR'],
+      legalMod.LEGAL_URLS.terms.en,
     );
   });
 
-  await test('legalUrlFor("privacy","") → the es-AR privacy URL (empty fallback)', () => {
+  await test('legalUrlFor("privacy","") → the en privacy URL (empty fallback)', () => {
     assert.equal(
       legalMod.legalUrlFor('privacy', ''),
-      legalMod.LEGAL_URLS.privacy['es-AR'],
+      legalMod.LEGAL_URLS.privacy.en,
     );
   });
 
   await test('legalUrlFor("terms","es-AR") → the es-AR terms URL', () => {
+    // A SUPPORTED regional locale passes through untouched. Every regional
+    // locale has its own hosted document; only UNSUPPORTED tags fall back.
     assert.equal(
       legalMod.legalUrlFor('terms', 'es-AR'),
       legalMod.LEGAL_URLS.terms['es-AR'],
     );
   });
 
+  await test('legalUrlFor("privacy","es-ES") → the es-ES privacy URL (peninsular has its own document)', () => {
+    assert.equal(
+      legalMod.legalUrlFor('privacy', 'es-ES'),
+      legalMod.LEGAL_URLS.privacy['es-ES'],
+    );
+  });
+
+  await test('legalUrlFor("privacy","es-419") → the es-419 privacy URL (the neutral base has its own document)', () => {
+    assert.equal(
+      legalMod.legalUrlFor('privacy', 'es-419'),
+      legalMod.LEGAL_URLS.privacy['es-419'],
+    );
+  });
+
   // Inherited `Object.prototype` members are non-null, so `??` alone cannot
   // detect them; the resolver MUST use an own-property guard and fall back to
-  // es-AR (REQ-2 "any missing or unsupported locale").
-  await test('legalUrlFor("privacy","constructor") → the es-AR privacy URL (own-property guard)', () => {
+  // `en` (REQ-2 "any missing or unsupported locale").
+  await test('legalUrlFor("privacy","constructor") → the en privacy URL (own-property guard)', () => {
     assert.equal(
       legalMod.legalUrlFor('privacy', 'constructor'),
-      legalMod.LEGAL_URLS.privacy['es-AR'],
+      legalMod.LEGAL_URLS.privacy.en,
     );
   });
 
-  await test('legalUrlFor("terms","__proto__") → the es-AR terms URL (own-property guard)', () => {
+  await test('legalUrlFor("terms","__proto__") → the en terms URL (own-property guard)', () => {
     assert.equal(
       legalMod.legalUrlFor('terms', '__proto__'),
-      legalMod.LEGAL_URLS.terms['es-AR'],
+      legalMod.LEGAL_URLS.terms.en,
     );
   });
 
-  await test('legalUrlFor("privacy","toString") → the es-AR privacy URL (own-property guard)', () => {
+  await test('legalUrlFor("privacy","toString") → the en privacy URL (own-property guard)', () => {
     assert.equal(
       legalMod.legalUrlFor('privacy', 'toString'),
-      legalMod.LEGAL_URLS.privacy['es-AR'],
+      legalMod.LEGAL_URLS.privacy.en,
     );
   });
 
-  // An unknown document must fall back safely (es-AR privacy URL), never
+  // An unknown document must fall back safely (the `en` privacy URL), never
   // throw.
-  await test('legalUrlFor("bogus","en") → the es-AR privacy URL (unknown document, no throw)', () => {
+  await test('legalUrlFor("bogus","en") → the en privacy URL (unknown document, no throw)', () => {
     const result = legalMod.legalUrlFor('bogus', 'en');
-    assert.equal(result, legalMod.LEGAL_URLS.privacy['es-AR']);
+    assert.equal(result, legalMod.LEGAL_URLS.privacy.en);
   });
 
   console.log('\n[tests] section 4 — catalog parity (REQ-5)\n');
 
-  const LOCALES_ROOT = join(root, 'src', 'i18n', 'locales');
-  const LOCALE_TAGS = ['es-AR', 'en', 'pt-BR'];
-  const readCatalog = (locale, namespace) =>
-    JSON.parse(
-      readFileSync(join(LOCALES_ROOT, locale, `${namespace}.json`), 'utf8'),
-    );
+  const LOCALE_TAGS = LOCALES;
+  // RESOLVED, not raw. `es-AR`/`es-ES` are sparse overrides; reading their
+  // files directly reports the legal keys as MISSING when a user plainly
+  // sees them inherited from the `es-419` base.
+  const readCatalog = (locale, namespace) => resolveNamespace(locale, namespace);
   // Same parity primitive as scripts/test-manual-screen.mjs: compare the
   // sorted key set per namespace, not the values.
   const keySet = (namespace) => Object.keys(namespace).sort().join(',');
@@ -346,23 +376,20 @@ async function run() {
     auth: ['signUpLegalPrefix', 'signUpLegalAnd'],
   };
 
-  await test('settings.json key sets are identical across the three locales', () => {
-    const esAr = readCatalog('es-AR', 'settings');
-    const en = readCatalog('en', 'settings');
-    const ptBr = readCatalog('pt-BR', 'settings');
-    assert.equal(keySet(en), keySet(esAr), 'settings parity: en vs es-AR');
-    assert.equal(keySet(ptBr), keySet(esAr), 'settings parity: pt-BR vs es-AR');
-  });
+  for (const namespace of ['settings', 'auth']) {
+    await test(`${namespace}.json key sets are identical across all five locales`, () => {
+      const reference = keySet(readCatalog('en', namespace));
+      for (const locale of LOCALE_TAGS) {
+        assert.equal(
+          keySet(readCatalog(locale, namespace)),
+          reference,
+          `${namespace} parity: en vs ${locale}`,
+        );
+      }
+    });
+  }
 
-  await test('auth.json key sets are identical across the three locales', () => {
-    const esAr = readCatalog('es-AR', 'auth');
-    const en = readCatalog('en', 'auth');
-    const ptBr = readCatalog('pt-BR', 'auth');
-    assert.equal(keySet(en), keySet(esAr), 'auth parity: en vs es-AR');
-    assert.equal(keySet(ptBr), keySet(esAr), 'auth parity: pt-BR vs es-AR');
-  });
-
-  await test('every legal key exists as a non-empty string in all three locales', () => {
+  await test('every legal key exists as a non-empty string in all five locales', () => {
     for (const locale of LOCALE_TAGS) {
       const catalogs = {
         settings: readCatalog(locale, 'settings'),
@@ -387,9 +414,19 @@ async function run() {
   });
 
   // Golden per-locale tables (REQ-5): EXACT values, not cross-catalog
-  // equality — a typo that keeps all three catalogs "in sync" must still
+  // equality — a typo that keeps every catalog "in sync" must still
   // fail. Trailing spaces in the auth connectors are part of the contract.
   const GOLDEN_SETTINGS_LEGAL = {
+    'es-419': {
+      legalSectionTitle: 'LEGAL',
+      privacyPolicy: 'Política de privacidad',
+      termsConditions: 'Términos y condiciones',
+    },
+    'es-ES': {
+      legalSectionTitle: 'LEGAL',
+      privacyPolicy: 'Política de privacidad',
+      termsConditions: 'Términos y condiciones',
+    },
     'es-AR': {
       legalSectionTitle: 'LEGAL',
       privacyPolicy: 'Política de privacidad',
@@ -406,7 +443,19 @@ async function run() {
       termsConditions: 'Termos e condições',
     },
   };
+  // `es-419` is the tú-form BASE. `es-ES` resolves its connectors from that
+  // base (Peninsular Spanish has no voseo, so the tú form is correct there);
+  // `es-AR` overrides them with voseo. Only the region that genuinely differs
+  // carries its own copy.
   const GOLDEN_AUTH_LEGAL = {
+    'es-419': {
+      signUpLegalPrefix: 'Al continuar aceptas la ',
+      signUpLegalAnd: ' y los ',
+    },
+    'es-ES': {
+      signUpLegalPrefix: 'Al continuar aceptas la ',
+      signUpLegalAnd: ' y los ',
+    },
     'es-AR': {
       signUpLegalPrefix: 'Al continuar aceptás la ',
       signUpLegalAnd: ' y los ',
@@ -447,7 +496,7 @@ async function run() {
     }
   });
 
-  await test('signUpLegalPrefix/signUpLegalAnd end with a space in all three locales', () => {
+  await test('signUpLegalPrefix/signUpLegalAnd end with a space in all five locales', () => {
     for (const locale of LOCALE_TAGS) {
       const auth = readCatalog(locale, 'auth');
       for (const key of ['signUpLegalPrefix', 'signUpLegalAnd']) {

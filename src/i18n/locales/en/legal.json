@@ -1,127 +1,125 @@
 {
-  "privacy": {
-    "title": "Privacy Policy",
-    "draftNotice": "DRAFT — This text is pending legal review.",
-    "sections": [
-      {
-        "id": "intro",
-        "title": "1. Introduction",
-        "body": "This Privacy Policy explains what data we collect when you use Ticketify, how we use it, who we share it with, and what rights you have over it. We do not sell your personal data to third parties."
-      },
-      {
-        "id": "dataCollected",
-        "title": "2. Data We Collect",
-        "body": "We collect the data you give us directly: your email address and your name. If you sign in with Google or Apple, we receive your email and account name from that provider. To scan receipts, you capture photos with your device's camera or pick images from your photo library; those photos are stored against your account. You can also enter tickets manually with their amount, store and category. Use of the app generates additional data: custom categories, budgets, shared households and app preferences. If you buy the Pro subscription, the app store confirms the purchase to us."
-      },
-      {
-        "id": "purposes",
-        "title": "3. Purposes of Processing",
-        "body": "We use your data to provide the service: syncing your tickets across devices, computing your budgets and statistics, and managing your account. If you enable biometric authentication, biometric data is processed locally on your device and never leaves it. We also use aggregated and anonymous data to improve the app. Legal document acceptance records are kept to meet our audit obligations."
-      },
-      {
-        "id": "thirdParties",
-        "title": "4. Third Parties",
-        "body": "To operate the service we work with trusted providers: Supabase hosts the database and handles authentication; RevenueCat manages in-app subscriptions; Apple App Store and Google Play process subscription payments; and, when you sign in with an external account, Google or Apple act as identity providers. These providers process your data only to provide their services and under our instructions."
-      },
-      {
-        "id": "retention",
-        "title": "5. Data Retention",
-        "body": "We keep your account data while your account is active and for 30 days after your deletion request, after which it is permanently erased, except where we must keep it by law. Legal document acceptance records are kept immutably for audit purposes, with no retention limit."
-      },
-      {
-        "id": "accountDeletion",
-        "title": "6. Account Deletion",
-        "body": "You can delete your account at any time from Settings in the app. If you created a household, all members are unlinked and the household data is deleted along with your account. If you joined someone else's household, your profile is unlinked but the household remains for its other members. In all cases your tickets, budgets and personal data are deleted. Cancelling your paid subscription is handled separately from the app store."
-      },
-      {
-        "id": "rights",
-        "title": "7. Your Rights",
-        "body": "You have the right to access, correct, export and delete your personal data, and to object to or restrict its processing. You can export your data from the app or contact us through the channel listed below to exercise any of these rights."
-      },
-      {
-        "id": "security",
-        "title": "8. How We Protect Your Data",
-        "body": "Data is encrypted in transit via HTTPS/TLS between your device and our servers. On your device, session tokens and sensitive data are stored encrypted via SecureStore (AES through the Android Keystore and iOS Keychain). On our servers, Supabase manages encryption at rest and strict access policies. We periodically audit our security practices. If you discover a vulnerability, please report it to [security@ticketify.app]."
-      },
-      {
-        "id": "transfers",
-        "title": "9. International Transfers",
-        "body": "Your data may be transferred to and processed on servers outside your country of residence where Supabase or our other providers operate. When we make such transfers we do so under standard contractual clauses or equivalent mechanisms that ensure an adequate level of protection consistent with the GDPR, the LGPD and other applicable regulations."
-      },
-      {
-        "id": "minors",
-        "title": "10. Minors",
-        "body": "Ticketify is not directed at children under 13. We do not knowingly collect personal data from minors. If a parent or guardian discovers that a minor has provided us with data without their consent, they can contact us through the channel listed below to request deletion."
-      },
-      {
-        "id": "policyChanges",
-        "title": "11. Changes to This Policy",
-        "body": "We may update this policy when necessary. When there is a material change, we will notify you in the app and ask you to accept the updated version. If you continue using Ticketify after the notice, you are considered to have accepted the new version."
-      },
-      {
-        "id": "contact",
-        "title": "12. Contact",
-        "body": "If you have questions about this policy or about how we process your data, email us at [contact@ticketify.app]. Please note this is a draft: the final version will be published after legal review."
-      }
-    ]
-  },
-  "terms": {
-    "title": "Terms & Conditions",
-    "draftNotice": "DRAFT — This text is pending legal review.",
-    "sections": [
-      {
-        "id": "acceptance",
-        "title": "1. Acceptance of Terms",
-        "body": "By creating an account or using Ticketify you agree to these Terms & Conditions. If you do not agree, do not use the app."
-      },
-      {
-        "id": "serviceDescription",
-        "title": "2. Service Description",
-        "body": "Ticketify lets you save your purchases by scanning tickets with your camera or uploading them manually, set monthly budgets per category, view statistics about your spending (monthly totals, trends by category and store, daily averages) and export your tickets as a downloadable file. The Pro subscription adds features such as price alerts and advanced statistics. If you create or join a household, your data is shared with the members of that household."
-      },
-      {
-        "id": "account",
-        "title": "3. Your Account",
-        "body": "You are responsible for keeping your account credentials confidential and for the activity that happens on your account. You may not use the app for illegal activities or to upload false information or third-party data without their authorization. You may not reverse engineer, automatically scrape, or resell access to Pro features."
-      },
-      {
-        "id": "subscriptions",
-        "title": "4. Subscriptions and Payments",
-        "body": "The Pro subscription is billed through the app store and renews automatically until you cancel it. The current price and available plans are shown in the subscription screen inside the app. We may offer a free trial period; its length is shown in the subscription screen when you start it, and at the end of the trial, if you have not cancelled, it auto-renews at the price of your chosen plan. You can cancel at any time from the app store (Apple App Store or Google Play, depending on your platform); access to Pro features continues until the end of the paid period. Refund policies are those that apply on each store."
-      },
-      {
-        "id": "license",
-        "title": "5. License to Use",
-        "body": "We grant you a limited, non-exclusive, non-transferable license to use the app in accordance with these terms. You retain all rights to the content you upload (receipt photos, spending data); by uploading it, you grant us a limited license to store and process it for the sole purpose of providing the service to you. You may not copy, modify, distribute or commercially exploit the app or its content."
-      },
-      {
-        "id": "liability",
-        "title": "6. Limitation of Liability",
-        "body": "The app is provided 'as is' and 'as available'. We do not guarantee any specific service level or uptime; we may perform maintenance, updates or experience outages without prior notice. To the maximum extent permitted by law, we are not liable for indirect or consequential damages arising from its use. You enter your own tickets and budgets: verify your data before making decisions based on it."
-      },
-      {
-        "id": "changes",
-        "title": "7. Changes to These Terms",
-        "body": "We may update these terms when necessary. Changes are announced in the app and take effect from the date of the new version. If you keep using the app after a change, you are considered to have accepted the new version."
-      },
-      {
-        "id": "governingLaw",
-        "title": "8. Governing Law",
-        "body": "These terms are governed by the laws of the Argentine Republic. Any dispute arising from their use is submitted to the competent courts of the Autonomous City of Buenos Aires."
-      },
-      {
-        "id": "contact",
-        "title": "9. Contact",
-        "body": "For questions about these terms, email us at [contact@ticketify.app]. This text is a draft pending legal review."
-      }
-    ]
-  },
-  "consentGateTitle": "Accept our legal documents",
-  "consentGateBody": "To continue using Ticketify you need to accept the updated Privacy Policy and Terms & Conditions.",
-  "consentGateAccept": "Accept",
-  "consentGateSignOut": "Sign out",
-  "signUpConsentRequired": "You must accept the Privacy Policy and Terms & Conditions to continue.",
-  "acceptanceErrorMessage": "We couldn't record your acceptance. Please try again.",
-  "legalScreenSignIn": "Sign in",
-  "legalScreenSignInHint": "Go back to sign in or create an account."
+    "privacy": {
+        "title": "Privacy Policy",
+        "sections": [
+            {
+                "id": "intro",
+                "title": "1. Introduction",
+                "body": "This Privacy Policy explains what data we collect when you use Ticketify, how we use it, who we share it with, and what rights you have over it. We do not sell your personal data to third parties."
+            },
+            {
+                "id": "dataCollected",
+                "title": "2. Data We Collect",
+                "body": "We collect the data you give us directly: your email address and your name. If you sign in with Google or Apple, we receive your email and account name from that provider. To scan receipts, you capture photos with your device's camera or pick images from your photo library; those photos are stored against your account. You can also enter tickets manually with their amount, store and category. Use of the app generates additional data: custom categories, budgets, shared households and app preferences. If you buy the Pro subscription, the app store confirms the purchase to us."
+            },
+            {
+                "id": "purposes",
+                "title": "3. Purposes of Processing",
+                "body": "We use your data to provide the service: syncing your tickets across devices, computing your budgets and statistics, and managing your account. If you enable biometric authentication, biometric data is processed locally on your device and never leaves it. We also use aggregated and anonymous data to improve the app. Legal document acceptance records are kept to meet our audit obligations."
+            },
+            {
+                "id": "thirdParties",
+                "title": "4. Third Parties",
+                "body": "To operate the service we work with trusted providers: Supabase hosts the database and handles authentication; RevenueCat manages in-app subscriptions; Apple App Store and Google Play process subscription payments; and, when you sign in with an external account, Google or Apple act as identity providers. These providers process your data only to provide their services and under our instructions."
+            },
+            {
+                "id": "retention",
+                "title": "5. Data Retention",
+                "body": "We keep your account data while your account is active and for 30 days after your deletion request, after which it is permanently erased, except where we must keep it by law. Legal document acceptance records are kept immutably for audit purposes, with no retention limit."
+            },
+            {
+                "id": "accountDeletion",
+                "title": "6. Account Deletion",
+                "body": "You can delete your account at any time from Settings in the app. If you created a household, all members are unlinked and the household data is deleted along with your account. If you joined someone else's household, your profile is unlinked but the household remains for its other members. In all cases your tickets, budgets and personal data are deleted. Cancelling your paid subscription is handled separately from the app store."
+            },
+            {
+                "id": "rights",
+                "title": "7. Your Rights",
+                "body": "You have the right to access, correct, export and delete your personal data, and to object to or restrict its processing. You can export your data from the app or contact us through the channel listed below to exercise any of these rights."
+            },
+            {
+                "id": "security",
+                "title": "8. How We Protect Your Data",
+                "body": "Data is encrypted in transit via HTTPS/TLS between your device and our servers. On your device, session tokens and sensitive data are stored encrypted via SecureStore (AES through the Android Keystore and iOS Keychain). On our servers, Supabase manages encryption at rest and strict access policies. We periodically audit our security practices. If you discover a vulnerability, please report it to [security@ticketify.app]."
+            },
+            {
+                "id": "transfers",
+                "title": "9. International Transfers",
+                "body": "Your data may be transferred to and processed on servers outside your country of residence where Supabase or our other providers operate. When we make such transfers we do so under standard contractual clauses or equivalent mechanisms that ensure an adequate level of protection consistent with the GDPR, the LGPD and other applicable regulations."
+            },
+            {
+                "id": "minors",
+                "title": "10. Minors",
+                "body": "Ticketify is not directed at children under 13. We do not knowingly collect personal data from minors. If a parent or guardian discovers that a minor has provided us with data without their consent, they can contact us through the channel listed below to request deletion."
+            },
+            {
+                "id": "policyChanges",
+                "title": "11. Changes to This Policy",
+                "body": "We may update this policy when necessary. When there is a material change, we will notify you in the app and ask you to accept the updated version. If you continue using Ticketify after the notice, you are considered to have accepted the new version."
+            },
+            {
+                "id": "contact",
+                "title": "12. Contact",
+                "body": "If you have questions about this policy or about how we process your data, email us at [contact@ticketify.app]. Please note this is a draft: the final version will be published after legal review."
+            }
+        ]
+    },
+    "terms": {
+        "title": "Terms & Conditions",
+        "sections": [
+            {
+                "id": "acceptance",
+                "title": "1. Acceptance of Terms",
+                "body": "By creating an account or using Ticketify you agree to these Terms & Conditions. If you do not agree, do not use the app."
+            },
+            {
+                "id": "serviceDescription",
+                "title": "2. Service Description",
+                "body": "Ticketify lets you save your purchases by scanning tickets with your camera or uploading them manually, set monthly budgets per category, view statistics about your spending (monthly totals, trends by category and store, daily averages) and export your tickets as a downloadable file. The Pro subscription adds features such as price alerts and advanced statistics. If you create or join a household, your data is shared with the members of that household."
+            },
+            {
+                "id": "account",
+                "title": "3. Your Account",
+                "body": "You are responsible for keeping your account credentials confidential and for the activity that happens on your account. You may not use the app for illegal activities or to upload false information or third-party data without their authorization. You may not reverse engineer, automatically scrape, or resell access to Pro features."
+            },
+            {
+                "id": "subscriptions",
+                "title": "4. Subscriptions and Payments",
+                "body": "The Pro subscription is billed through the app store and renews automatically until you cancel it. The current price and available plans are shown in the subscription screen inside the app. We may offer a free trial period; its length is shown in the subscription screen when you start it, and at the end of the trial, if you have not cancelled, it auto-renews at the price of your chosen plan. You can cancel at any time from the app store (Apple App Store or Google Play, depending on your platform); access to Pro features continues until the end of the paid period. Refund policies are those that apply on each store."
+            },
+            {
+                "id": "license",
+                "title": "5. License to Use",
+                "body": "We grant you a limited, non-exclusive, non-transferable license to use the app in accordance with these terms. You retain all rights to the content you upload (receipt photos, spending data); by uploading it, you grant us a limited license to store and process it for the sole purpose of providing the service to you. You may not copy, modify, distribute or commercially exploit the app or its content."
+            },
+            {
+                "id": "liability",
+                "title": "6. Limitation of Liability",
+                "body": "The app is provided 'as is' and 'as available'. We do not guarantee any specific service level or uptime; we may perform maintenance, updates or experience outages without prior notice. To the maximum extent permitted by law, we are not liable for indirect or consequential damages arising from its use. You enter your own tickets and budgets: verify your data before making decisions based on it."
+            },
+            {
+                "id": "changes",
+                "title": "7. Changes to These Terms",
+                "body": "We may update these terms when necessary. Changes are announced in the app and take effect from the date of the new version. If you keep using the app after a change, you are considered to have accepted the new version."
+            },
+            {
+                "id": "governingLaw",
+                "title": "8. Governing Law",
+                "body": "These terms are governed by the laws of the Argentine Republic. Any dispute arising from their use is submitted to the competent courts of the Autonomous City of Buenos Aires."
+            },
+            {
+                "id": "contact",
+                "title": "9. Contact",
+                "body": "For questions about these terms, email us at [contact@ticketify.app]. This text is a draft pending legal review."
+            }
+        ]
+    },
+    "consentGateTitle": "Accept our legal documents",
+    "consentGateBody": "To continue using Ticketify you need to accept the updated Privacy Policy and Terms & Conditions.",
+    "consentGateAccept": "Accept",
+    "consentGateSignOut": "Sign out",
+    "signUpConsentRequired": "You must accept the Privacy Policy and Terms & Conditions to continue.",
+    "acceptanceErrorMessage": "We couldn't record your acceptance. Please try again.",
+    "legalScreenSignIn": "Sign in",
+    "legalScreenSignInHint": "Go back to sign in or create an account."
 }

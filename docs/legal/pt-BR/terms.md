@@ -1,8 +1,6 @@
 # Terms — pt-BR
 
-> RASCUNHO — Este texto está pendente de revisão jurídica.
-
-_ISO version 2026-09-18 · DRAFT status · source: src/i18n/locales/pt-BR/legal.json · regenerate: `node scripts/generate-legal-markdown.mjs`_
+_ISO version 2026-09-26 · FINAL status · source: src/i18n/locales/pt-BR/legal.json · regenerate: `node scripts/generate-legal-markdown.mjs`_
 
 ## 1. Aceitação dos termos
 

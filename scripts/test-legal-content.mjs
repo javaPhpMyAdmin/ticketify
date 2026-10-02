@@ -4,7 +4,8 @@
  * (legal-compliance U2, content L2/L3). Pattern: `scripts/test-legal-links.mjs`.
  *
  * The `legal` i18n namespace ships three locale catalogs
- * (`src/i18n/locales/{es-AR,en,pt-BR}/legal.json`, es-AR = source of truth)
+ * (`src/i18n/locales/<locale>/legal.json`, `es-419` = source of truth,
+ * RESOLVED through each locale's fallback chain)
  * that define the Privacy Policy and Terms documents as section arrays.
  * The spec (legal-content REQ-2) requires: identical key sets across the
  * three catalogs and non-empty values everywhere — the parity contract that
@@ -12,7 +13,7 @@
  *
  * Sections:
  *   1. Catalog parity — flattened `legal` ns key sets identical across the
- *      three locales; section-id order identical per document; every leaf
+ *      five locales; section-id order identical per document; every leaf
  *      string non-empty. A divergence must be REPORTED naming locale + key
  *      (REQ-2 "reports a failure naming the locale and key"), which the
  *      self-checks in section 2 prove against fabricated catalogs.
@@ -21,12 +22,12 @@
  *      parties Supabase/RevenueCat, retention, account deletion, rights,
  *      contact; terms: acceptance, service description, subscriptions,
  *      liability, changes, governing law, contact), each with a non-empty
- *      title and body; every document carries a non-empty draft notice
- *      (design R-3: clearly-marked draft copy).
+ *      title and body; and — since the 2026-09-26 bump made the decks
+ *      FINAL — NO catalog still carries a draft notice (R-3 inverted).
  *   3. Screen rendering — the `/legal/{privacy,terms}` routes render the
  *      CURRENT locale's document through `LegalScreen` (AD-1 static RG
- *      Text, no runtime fetch): document title, draft notice, every
- *      section title + body for the active catalog, and a working back
+ *      Text, no runtime fetch): document title, every section title +
+ *      body for the active catalog, and a working back
  *      button whose label comes from the shipped es-AR common.json (F1).
  *      The locale-switch test refreshes the SAME mounted renderer (F2 —
  *      a remount could mask a snapshotting screen); fetch/XHR globals
@@ -56,6 +57,8 @@ import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { LOCALES, resolveNamespace } from './lib/i18n-chain.mjs';
+import { LEGAL_VERSION } from './generate-legal-markdown.mjs';
 
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -68,8 +71,7 @@ mkdirSync(tmpRoot, { recursive: true });
 const workdir = mkdtempSync(join(tmpRoot, 'legal-content-test-'));
 const outDir = join(workdir, 'out');
 
-const LOCALES_ROOT = join(root, 'src', 'i18n', 'locales');
-const LOCALE_TAGS = ['es-AR', 'en', 'pt-BR'];
+const LOCALE_TAGS = LOCALES;
 
 let passed = 0;
 let failed = 0;
@@ -128,8 +130,11 @@ function installRequireHook() {
 }
 
 // ── catalog reading (same parity primitive as test-legal-links.mjs §4) ──
-const readCatalog = (locale) =>
-  JSON.parse(readFileSync(join(LOCALES_ROOT, locale, 'legal.json'), 'utf8'));
+// RESOLVED, not raw. `es-AR/legal.json` is a sparse voseo override that
+// inherits both documents from the `es-419` base; reading it directly would
+// report a document with no sections at all. Every assertion below is about
+// what a reader is shown.
+const readCatalog = (locale) => resolveNamespace(locale, 'legal');
 
 /**
  * Reads the `common` namespace catalog like `readCatalog` — the back-button
@@ -137,8 +142,7 @@ const readCatalog = (locale) =>
  * future edit of common.json's `back` value can never silently drift away
  * from what the render harness asserts.
  */
-const readCommon = (locale) =>
-  JSON.parse(readFileSync(join(LOCALES_ROOT, locale, 'common.json'), 'utf8'));
+const readCommon = (locale) => resolveNamespace(locale, 'common');
 
 /**
  * Every string leaf of a catalog as `{ path, value }` (nested objects
@@ -232,17 +236,19 @@ const REQUIRED_TERMS_SECTIONS = [
 const DOCUMENTS = ['privacy', 'terms'];
 
 /**
- * Keys whose values MUST differ across the three locales (F5). A
- * copy-paste of the es-AR bodies into en/pt-BR with only the draftNotice
- * swapped would still pass every parity/coverage assert — these five
- * consent-gate strings (which U4/U5 render) plus the two draft notices
- * pin that each locale ships genuinely distinct copy. The gate keys ship
- * in U2's catalogs already, so all seven are asserted now; U5 adds the
- * gate UI that consumes them.
+ * Keys whose values MUST differ across all five locales (F5). A copy-paste
+ * of the `es-419` bodies into en/pt-BR would still pass every
+ * parity/coverage assert — these consent-gate strings (which U4/U5 render)
+ * pin that each locale ships genuinely distinct copy.
+ *
+ * The draft notices used to be part of this list. They are gone as of the
+ * 2026-09-26 bump, so the guard now rests entirely on the gate copy — which
+ * is the stronger check anyway, because it is the copy a user actually
+ * reads at the consent gate. All five must differ: the regions are genuine
+ * variants (`es-ES` "Aceptación de documentos legales", `es-AR` "Aceptá
+ * nuestros documentos legales"), not aliases of the base.
  */
 const LOCALE_DISTINCT_KEYS = [
-  'privacy.draftNotice',
-  'terms.draftNotice',
   'consentGateTitle',
   'consentGateBody',
   'consentGateAccept',
@@ -275,7 +281,7 @@ async function run() {
     assert.equal(diff, '', diff || undefined);
   });
 
-  await test('every legal.json leaf value is a non-empty string in all three locales', () => {
+  await test('every legal.json leaf value is a non-empty string in all five locales', () => {
     for (const locale of LOCALE_TAGS) {
       const empties = emptyStringLeaves(catalogs[locale]);
       assert.deepEqual(
@@ -313,7 +319,7 @@ async function run() {
   // F8: a duplicated id would break React keys (LegalScreen renders
   // `sections.map((s) => <View key={s.id} …>)`) and would make U4/U5
   // acceptance records ambiguous — each document must use unique ids.
-  await test('every section id is unique within its document in all three locales (F8)', () => {
+  await test('every section id is unique within its document in all five locales (F8)', () => {
     for (const locale of LOCALE_TAGS) {
       for (const doc of DOCUMENTS) {
         const ids = sectionIds(catalogs[locale], doc);
@@ -329,7 +335,7 @@ async function run() {
 
   console.log('\n[tests] section 2 — required section coverage + draft marker\n');
 
-  await test('privacy covers every required section in all three locales', () => {
+  await test('privacy covers every required section in all five locales', () => {
     for (const locale of LOCALE_TAGS) {
       const ids = sectionIds(catalogs[locale], 'privacy');
       for (const required of REQUIRED_PRIVACY_SECTIONS) {
@@ -341,7 +347,7 @@ async function run() {
     }
   });
 
-  await test('terms covers every required section in all three locales', () => {
+  await test('terms covers every required section in all five locales', () => {
     for (const locale of LOCALE_TAGS) {
       const ids = sectionIds(catalogs[locale], 'terms');
       for (const required of REQUIRED_TERMS_SECTIONS) {
@@ -353,7 +359,7 @@ async function run() {
     }
   });
 
-  await test('every section has a non-empty title AND body in all three locales', () => {
+  await test('every section has a non-empty title AND body in all five locales', () => {
     for (const locale of LOCALE_TAGS) {
       for (const doc of DOCUMENTS) {
         for (const section of catalogs[locale][doc].sections) {
@@ -371,33 +377,80 @@ async function run() {
     }
   });
 
-  await test('every document carries a non-empty draft notice in all three locales (R-3)', () => {
+  // R-3 was "every draft MUST be visibly marked". The 2026-09-26 bump
+  // promoted both decks to FINAL, so the contract INVERTS: a shipped
+  // document may not carry a draft banner. Asserting the banner is present
+  // would pin the app back to draft copy forever; asserting it is ABSENT is
+  // what stops a re-drafted legal text from shipping unmarked.
+  await test('no shipped document carries a draft notice in any of the five locales (R-3 inverted, 2026-09-26 final decks)', () => {
     for (const locale of LOCALE_TAGS) {
       for (const doc of DOCUMENTS) {
         const notice = catalogs[locale][doc].draftNotice;
-        const where = `${locale}/legal.json ${doc}.draftNotice`;
-        assert.ok(
-          typeof notice === 'string' && notice.length > 0,
-          `${where} must be a non-empty string (draft copy must be visibly marked)`,
+        assert.equal(
+          notice,
+          undefined,
+          `${locale}/legal.json ${doc}.draftNotice must be gone — the deck is final`,
         );
       }
     }
   });
 
   // F5: copy-paste guard — values must differ across locales.
-  await test('draft notices and consent-gate copy differ across the three locales (F5)', () => {
+  // "Differ across every locale" is the WRONG contract for a regional
+  // override, and it fails for a reason worth stating: not every string has
+  // a regional form. `consentGateSignOut` is "Salir de la cuenta" in both
+  // `es-419` and `es-AR` because the imperative "salir" is identical in tú
+  // and vos — forcing them apart would mean shipping a fake difference, the
+  // exact sin the catalog thinning avoids by inheriting instead.
+  //
+  // So the guard is stated per relationship instead:
+  //   1. every locale differs from `en`  → no copy-paste of the English;
+  //   2. `es-ES` differs from the base   → Peninsular is a real variant,
+  //                                          not an alias;
+  //   3. `es-AR` differs from the base on the VOSEO-BEARING keys → the
+  //      voseo override is real where it is supposed to be.
+  const VOSEO_KEYS = [
+    'consentGateTitle',
+    'consentGateBody',
+    'consentGateAccept',
+    'signUpConsentRequired',
+  ];
+
+  await test('consent-gate copy: every locale is distinct from `en` (F5)', () => {
     for (const key of LOCALE_DISTINCT_KEYS) {
-      const values = LOCALE_TAGS.map((l) => resolveKey(catalogs[l], key));
-      values.forEach((v, i) => {
+      const english = resolveKey(catalogs.en, key);
+      // `en` IS the English reference, so it is excluded from its own guard.
+      for (const locale of LOCALE_TAGS.filter((l) => l !== 'en')) {
+        const value = resolveKey(catalogs[locale], key);
         assert.ok(
-          typeof v === 'string' && v.length > 0,
-          `${LOCALE_TAGS[i]}/legal.json ${key} must be a non-empty string`,
+          typeof value === 'string' && value.length > 0,
+          `${locale}/legal.json ${key} must be a non-empty string`,
         );
-      });
-      assert.equal(
-        new Set(values).size,
-        values.length,
-        `${key} must differ across locales (got: ${JSON.stringify(values)})`,
+        assert.notEqual(
+          value,
+          english,
+          `${locale}/legal.json ${key} must not be the English copy`,
+        );
+      }
+    }
+  });
+
+  await test('consent-gate copy: es-ES is a real variant, not an alias of the base (F5)', () => {
+    for (const key of LOCALE_DISTINCT_KEYS) {
+      assert.notEqual(
+        resolveKey(catalogs['es-ES'], key),
+        resolveKey(catalogs['es-419'], key),
+        `es-ES/legal.json ${key} must differ from the es-419 base`,
+      );
+    }
+  });
+
+  await test('consent-gate copy: es-AR overrides the base on every voseo-bearing key (F5)', () => {
+    for (const key of VOSEO_KEYS) {
+      assert.notEqual(
+        resolveKey(catalogs['es-AR'], key),
+        resolveKey(catalogs['es-419'], key),
+        `es-AR/legal.json ${key} must use voseo, not the base's tú form`,
       );
     }
   });
@@ -561,13 +614,12 @@ async function run() {
     });
   }
 
-  await test('privacy route renders the es-AR document: title, draft notice, every section', async () => {
+  await test('privacy route renders the es-AR document: title and every section', async () => {
     i18nStub.__setActiveLegalCatalog(catalogs['es-AR'], 'es-AR', esArCommon);
     const renderer = await renderRoute(PrivacyRoute);
     const text = renderText(renderer);
     const doc = catalogs['es-AR'].privacy;
     assert.ok(text.includes(doc.title), 'document title must be rendered');
-    assert.ok(text.includes(doc.draftNotice), 'draft notice must be rendered (R-3)');
     for (const section of doc.sections) {
       assert.ok(
         text.includes(section.title),
@@ -587,7 +639,6 @@ async function run() {
     const text = renderText(renderer);
     const doc = catalogs['es-AR'].terms;
     assert.ok(text.includes(doc.title), 'document title must be rendered');
-    assert.ok(text.includes(doc.draftNotice), 'draft notice must be rendered (R-3)');
     for (const required of REQUIRED_TERMS_SECTIONS) {
       const section = doc.sections.find((s) => s.id === required);
       assert.ok(
@@ -606,9 +657,14 @@ async function run() {
     i18nStub.__setActiveLegalCatalog(catalogs['es-AR'], 'es-AR', esArCommon);
     const renderer = await renderRoute(PrivacyRoute);
     const before = renderText(renderer);
+    // The draft notice used to be the locale discriminator here. It is gone
+    // in the final decks, so the FIRST SECTION BODY carries the check: the
+    // es-AR document inherits the `es-419` Spanish text, which no English or
+    // Portuguese section body can contain.
+    const esArMarker = catalogs['es-AR'].privacy.sections[0].body;
     assert.ok(
-      before.includes(catalogs['es-AR'].privacy.draftNotice),
-      'es-AR draft notice shows while the es-AR catalog is active',
+      before.includes(esArMarker),
+      'es-AR section body shows while the es-AR catalog is active',
     );
     // Swap the catalog under the SAME renderer and refresh it in place.
     i18nStub.__setActiveLegalCatalog(catalogs['pt-BR'], 'pt-BR', esArCommon);
@@ -634,7 +690,7 @@ async function run() {
     // TITLES overlap as substrings ('Política de privacidad' ⊂
     // 'Política de privacidade'), so titles cannot separate the locales.
     assert.ok(
-      !after.includes(catalogs['es-AR'].privacy.draftNotice),
+      !after.includes(esArMarker),
       'es-AR copy must NOT remain after the in-place update',
     );
     await unmountRoute(renderer);
@@ -663,7 +719,7 @@ async function run() {
   // byte-stable with the in-app catalogs": a static generator
   // (scripts/generate-legal-markdown.mjs) reads the SHIPPED legal catalogs
   // from disk and emits six Markdown mirrors under docs/legal/
-  // (docs/legal/{es-AR,en,pt-BR}/{privacy,terms}.md). The mirrors are
+  // (docs/legal/<locale>/{privacy,terms}.md). The mirrors are
   // COMMITTED so GitHub Pages can serve them without a runtime renderer.
   //
   // Three contracts are pinned here:
@@ -684,7 +740,7 @@ async function run() {
   console.log('\n[tests] section 4 — hosted mirrors (U3, REQ-2 byte-stable with in-app)\n');
 
   const DOCS_ROOT = join(root, 'docs', 'legal');
-  const MIRROR_LOCALES = ['es-AR', 'en', 'pt-BR'];
+  const MIRROR_LOCALES = LOCALES;
   const MIRROR_DOCS = ['privacy', 'terms'];
 
   const generateLegalMarkdown = async (outDirOverride) => {
@@ -704,7 +760,7 @@ async function run() {
   const mirrorExists = (locale, doc) =>
     existsSync(mirrorPath(locale, doc));
 
-  await test('six mirrors exist on disk for every (locale × document) and carry type+locale in their title (F6)', () => {
+  await test('ten mirrors exist on disk for every (locale × document) and carry type+locale in their title (F6)', () => {
     for (const locale of MIRROR_LOCALES) {
       for (const doc of MIRROR_DOCS) {
         const file = mirrorPath(locale, doc);
@@ -747,14 +803,26 @@ async function run() {
     }
   });
 
-  await test('every legal section title + body + draft notice from the shipped catalog appear verbatim in its mirror (F9)', () => {
+  await test('every legal section title + body from the shipped catalog appear verbatim in its mirror (F9)', () => {
     for (const locale of MIRROR_LOCALES) {
       for (const doc of MIRROR_DOCS) {
         const mirror = readFileSync(mirrorPath(locale, doc), 'utf8');
         const catalogDoc = catalogs[locale][doc];
+        // The mirror must declare the version and status a hosted consumer
+        // will rely on. FINAL is asserted explicitly: a mirror that silently
+        // reverted to DRAFT status while the catalog says final is the exact
+        // drift this byte-mirror exists to prevent.
         assert.ok(
-          mirror.includes(catalogDoc.draftNotice),
-          `${locale}/${doc}: draft notice must be present in the mirror (R-3)`,
+          mirror.includes(LEGAL_VERSION),
+          `${locale}/${doc}: mirror must declare ISO version ${LEGAL_VERSION}`,
+        );
+        assert.ok(
+          mirror.includes('FINAL status'),
+          `${locale}/${doc}: mirror must declare FINAL status`,
+        );
+        assert.ok(
+          !mirror.includes('DRAFT status'),
+          `${locale}/${doc}: mirror must not claim DRAFT status`,
         );
         for (const section of catalogDoc.sections) {
           assert.ok(

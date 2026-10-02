@@ -9,8 +9,8 @@
  * (migration 0038) stores the exact same string.
  */
 export const LATEST_LEGAL_VERSIONS = {
-  privacy: '2026-09-18',
-  terms: '2026-09-18',
+  privacy: '2026-09-26',
+  terms: '2026-09-26',
 } as const;
 
 /** The shared ISO version string both documents ship under (AD-4). */

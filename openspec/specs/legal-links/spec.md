@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Google Play and App Store Connect require a hosted privacy-policy URL at submission, and both stores expect Terms accessible at account creation. Ticketify currently has zero legal content (no files, screens, i18n keys, or URLs), so this capability makes Privacy Policy and Terms & Conditions reachable from the app: an injectable external-link opener that never throws, a locale-aware legal URL map with es-AR fallback, a Legal group in Settings between the main list and the danger zone, legal links on the sign-up footer usable pre-auth, legal i18n keys across the three catalogs, and a parity + contract test harness wired into `pnpm test`. Legal text and hosting stay user-owned: URLs ship as `example.com` placeholders flagged `TODO(user)` until the user publishes real pages (REQ-7).
+Google Play and App Store Connect require a hosted privacy-policy URL at submission, and both stores expect Terms accessible at account creation. Ticketify currently has zero legal content (no files, screens, i18n keys, or URLs), so this capability makes Privacy Policy and Terms & Conditions reachable from the app: an injectable external-link opener that never throws, a locale-aware legal URL map with es-AR fallback, a Legal group in Settings between the main list and the danger zone, legal links on the sign-up footer usable pre-auth, legal i18n keys across the five catalogs, and a parity + contract test harness wired into `pnpm test`. Legal text and hosting stay user-owned: URLs ship as `example.com` placeholders flagged `TODO(user)` until the user publishes real pages (REQ-7).
 
 ## Requirements
 
@@ -30,7 +30,7 @@ The system SHALL expose an external-link opener `openExternalUrl(url, opener?)` 
 
 ### REQ-2: Locale-aware legal URL map
 
-The system SHALL provide a legal URL map with exactly two documents — `privacy` and `terms` — each mapping the three `AppLocale` values `es-AR`, `en`, and `pt-BR` to one URL. The resolver `legalUrlFor(document, locale)` SHALL return the requested locale's URL and SHALL fall back to the `es-AR` URL for any missing or unsupported locale. Every URL value SHALL use the `https:` scheme.
+The system SHALL provide a legal URL map with exactly two documents — `privacy` and `terms` — each mapping the five `AppLocale` values `en`, `es-419`, `es-AR`, `es-ES`, and `pt-BR` to one URL. The resolver `legalUrlFor(document, locale)` SHALL return the requested locale's URL and SHALL fall back to the `es-419` URL for any missing or unsupported locale. Every URL value SHALL use the `https:` scheme.
 
 #### Scenario: Known locale resolves
 
@@ -38,11 +38,11 @@ The system SHALL provide a legal URL map with exactly two documents — `privacy
 - WHEN `legalUrlFor('privacy', 'pt-BR')` runs
 - THEN it returns the pt-BR privacy policy URL
 
-#### Scenario: Unsupported locale falls back to es-AR
+#### Scenario: Unsupported locale falls back to es-419
 
 - GIVEN a locale outside the supported set (e.g. `fr-FR`) or no locale at all
 - WHEN `legalUrlFor('terms', locale)` runs
-- THEN it returns the es-AR terms URL
+- THEN it returns the es-419 terms URL
 
 ### REQ-3: Settings Legal group
 
@@ -87,13 +87,13 @@ The system SHALL render Privacy Policy and Terms & Conditions links on the sign-
 
 ### REQ-5: i18n catalog parity
 
-The system SHALL add to the `settings` namespace the keys `legalSectionTitle`, `privacyPolicy`, `termsConditions` and to the `auth` namespace the keys `signUpLegalPrefix`, `signUpLegalAnd`, in all three catalogs (`es-AR` source of truth, `en`, `pt-BR`). Every legal key SHALL exist in all three catalogs and SHALL hold a non-empty string value; the legal key sets SHALL NOT diverge across catalogs.
+The system SHALL add to the `settings` namespace the keys `legalSectionTitle`, `privacyPolicy`, `termsConditions` and to the `auth` namespace the keys `signUpLegalPrefix`, `signUpLegalAnd`, in all five catalogs (`es-419` Spanish source of truth; `en` and `pt-BR` full; `es-AR` and `es-ES` sparse regional overrides). Every legal key SHALL exist in all five catalogs (resolving through the `es-419` chain where a region omits it) and SHALL hold a non-empty string value.
 
 #### Scenario: Full parity across catalogs
 
-- GIVEN the three locale catalogs
+- GIVEN the five locale catalogs
 - WHEN the legal key sets are compared
-- THEN the sets are identical across `es-AR`, `en`, and `pt-BR`
+- THEN the sets are identical across `en`, `es-419`, `es-AR`, `es-ES`, and `pt-BR`
 - AND every value is non-empty
 
 #### Scenario: Divergence is detected
@@ -104,7 +104,7 @@ The system SHALL add to the `settings` namespace the keys `legalSectionTitle`, `
 
 ### REQ-6: Test harness
 
-The system SHALL ship `scripts/test-legal-links.mjs` asserting: (a) three-catalog parity and non-empty legal values (REQ-5); (b) `LEGAL_URLS` holds exactly two documents × three locales with every URL `https:` (REQ-2); (c) the opener returns `true` on a resolving stub and `false` on a rejecting stub without throwing (REQ-1). The harness SHALL be wired as `test:legal-links` in the `pnpm test` chain.
+The system SHALL ship `scripts/test-legal-links.mjs` asserting: (a) five-catalog parity and non-empty legal values (REQ-5); (b) `LEGAL_URLS` holds exactly two documents × five locales with every URL `https:` (REQ-2); (c) the opener returns `true` on a resolving stub and `false` on a rejecting stub without throwing (REQ-1). The harness SHALL be wired as `test:legal-links` in the `pnpm test` chain.
 
 #### Scenario: Suite runs green
 
@@ -120,7 +120,7 @@ The system SHALL ship `scripts/test-legal-links.mjs` asserting: (a) three-catalo
 
 ### REQ-7: Real hosted URLs and release gate
 
-The URL map (REQ-2) SHALL contain exactly the hosted Pages URLs `https://javaPhpMyAdmin.github.io/ticketify/legal/{locale}/{doc}/` for both documents in three locales. The automated harness SHALL assert every URL uses that domain and SHALL fail the suite if any non-Pages value remains. Release verification SHALL NOT proceed until the assertion passes; the `TODO(user)` marker lifecycle is retired.
+The URL map (REQ-2) SHALL contain exactly the hosted Pages URLs `https://javaPhpMyAdmin.github.io/ticketify/legal/{locale}/{doc}/` for both documents in five locales. The automated harness SHALL assert every URL uses that domain and SHALL fail the suite if any non-Pages value remains. Release verification SHALL NOT proceed until the assertion passes; the `TODO(user)` marker lifecycle is retired.
 (Previously: URLs shipped as `example.com` placeholders with `TODO(user)` markers, and the harness was required NOT to fail on them.)
 (Renamed from "Placeholder lifecycle and release gate" → "Real hosted URLs and release gate"; reason: the six `example.com` placeholders are replaced by real GitHub Pages URLs; the requirement now enforces the real domain instead of tolerating placeholders. Migration: RENAME applied BEFORE the MODIFIED block above; `scripts/test-legal-links.mjs` goldens updated; `TODO(user)` markers removed.)
 
@@ -130,7 +130,7 @@ The URL map (REQ-2) SHALL contain exactly the hosted Pages URLs `https://javaPhp
 
 - GIVEN the legal-links harness runs
 - WHEN it asserts the URL map (REQ-2)
-- THEN all six values use the Pages domain
+- THEN all ten values use the Pages domain
 - AND no value contains `example.com`
 
 #### Scenario: Release blocks on example.com
@@ -164,5 +164,5 @@ Every legal row and footer link SHALL expose an accessibility label resolved fro
 
 ## Cross-References
 
-- REQ-2's es-AR fallback policy aligns with `app-i18n` REQ-2 (unsupported locales fall back to `es-AR`).
-- REQ-5 extends the catalog structure defined in `app-i18n` REQ-1 (three locales, `es-AR` source of truth, namespace-per-file).
+- REQ-2's es-419 fallback policy aligns with `app-i18n` REQ-2 and `spanish-regional-detection` (unsupported locales fall back, and the Spanish base is `es-419`).
+- REQ-5 extends the catalog structure defined in `app-i18n` REQ-1 and `locale-catalog-hierarchy` (five locales, `es-419` source of truth, namespace-per-file).

@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Bundled in-app Privacy Policy and Terms screens in all three locales (es-AR source of truth, en, pt-BR), rendered as static, scrollable React Native text — no webview, no runtime fetch. The same text is mirrored to GitHub Pages Markdown so the store-required hosted URLs and the in-app document share one source of truth. Text updates ship with app releases.
+Bundled in-app Privacy Policy and Terms screens in all five locales (`es-419` Spanish source of truth; `en` and `pt-BR` full catalogs; `es-AR` and `es-ES` sparse regional overrides resolved through the `es-419` fallback chain), rendered as static, scrollable React Native text — no webview, no runtime fetch. The same text is mirrored to GitHub Pages Markdown so the store-required hosted URLs and the in-app document share one source of truth. Text updates ship with app releases.
 
 ## Requirements
 
@@ -34,13 +34,19 @@ The system MUST provide two in-app routes, `/legal/privacy` and `/legal/terms`, 
 
 ### Requirement: Localized Content Parity
 
-The i18n `legal` namespace MUST define the `privacy` and `terms` documents in all three catalogs (es-AR source of truth, en, pt-BR). The key sets MUST be identical and every value MUST be non-empty across catalogs; screens render `legal.{doc}` for the active locale with the app-i18n es-AR fallback.
+The i18n `legal` namespace MUST define the `privacy` and `terms` documents in all five catalogs (`es-419` source of truth; `en` and `pt-BR` full; `es-AR` and `es-ES` sparse regional overrides whose divergent leaves are present and whose inherited leaves resolve through the `es-419` chain). Screens render `legal.{doc}` for the active locale; the `es-AR` and `es-ES` overrides MUST contain every leaf they diverge on, and MUST NOT introduce a leaf absent from `es-419`.
 
 #### Scenario: Parity holds across catalogs
 
-- GIVEN the three locale catalogs
-- WHEN the parity harness compares the `legal` key sets
-- THEN the sets are identical and every value is non-empty
+- GIVEN the five locale catalogs
+- WHEN the parity harness compares the `legal` key sets against the `es-419` base
+- THEN every regionally-divergent leaf exists in the base and every value is non-empty
+
+#### Scenario: Sparse regional override resolves through the base
+
+- GIVEN `es-AR` carries only its divergent `legal` leaves (e.g. 6)
+- WHEN the in-app screen renders `legal.terms` in `es-AR`
+- THEN the inherited sections resolve from `es-419`, never from `en`
 
 #### Scenario: Divergence is detected
 
@@ -50,14 +56,20 @@ The i18n `legal` namespace MUST define the `privacy` and `terms` documents in al
 
 ### Requirement: Hosted Markdown Mirror
 
-The legal text MUST be published at `https://javaPhpMyAdmin.github.io/ticketify/legal/{locale}/{doc}/` for both documents in all three locales, generated from the same source as the in-app screens. A harness MUST assert that six non-empty mirror files exist under `docs/legal/` for every locale/document pair.
+The legal text MUST be published at `https://javaPhpMyAdmin.github.io/ticketify/legal/{locale}/{doc}/` for both documents in all five locales, generated from the same source as the in-app screens. A harness MUST assert that ten non-empty mirror files exist under `docs/legal/` for every locale/document pair. The generator MUST emit each locale from its RESOLVED catalog (`locale → es-419 → en`) so a sparse regional override produces a complete document rather than an empty one.
 
 #### Scenario: Mirror generation is complete
 
-- GIVEN legal text in all three locales
+- GIVEN legal text in all five locales
 - WHEN the mirror generation runs
-- THEN six `docs/legal/{locale}/{doc}.md` files exist and are non-empty
+- THEN ten `docs/legal/{locale}/{doc}.md` files exist and are non-empty
 - AND their content matches the in-app `legal` namespace text
+
+#### Scenario: Sparse override mirrors are resolved, not raw
+
+- GIVEN `es-AR/legal.json` carries only 6 divergent leaves
+- WHEN its mirror is generated
+- THEN the emitted `docs/legal/es-AR/{privacy,terms}.md` documents are complete, with inherited sections sourced from `es-419`
 
 ### Requirement: No Runtime Fetch
 
@@ -72,5 +84,5 @@ The app MUST bundle legal content and MUST NOT fetch or render legal documents f
 ## Acceptance Gates
 
 1. `/legal/privacy` and `/legal/terms` render scrollable localized content pre-auth and while gated.
-2. `legal` namespace parity passes for all three catalogs.
-3. Six non-empty Markdown mirrors exist and each matches the in-app text.
+2. `legal` namespace parity passes for all five catalogs, with regional overrides subset to `es-419`.
+3. Ten non-empty Markdown mirrors exist and each matches the resolved in-app text.

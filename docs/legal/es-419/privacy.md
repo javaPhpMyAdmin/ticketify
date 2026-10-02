@@ -1,6 +1,6 @@
-# Privacy — es-AR
+# Privacy — es-419
 
-_ISO version 2026-09-26 · FINAL status · source: src/i18n/locales/es-AR/legal.json · regenerate: `node scripts/generate-legal-markdown.mjs`_
+_ISO version 2026-09-26 · FINAL status · source: src/i18n/locales/es-419/legal.json · regenerate: `node scripts/generate-legal-markdown.mjs`_
 
 ## 1. Introducción
 

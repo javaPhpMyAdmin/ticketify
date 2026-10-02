@@ -19,8 +19,8 @@
  *
  * The mirror format carries every contract the harness asserts:
  *   - an H1 declaring document type + locale (F6);
- *   - the catalog leaf's VERBATIM draft notice (F9, R-3);
- *   - a generated header with the ISO version (AD-4, 2026-09-18), DRAFT
+ *   - the catalog leaf's VERBATIM draft notice when one exists (F9);
+ *   - a generated header with the ISO version (AD-4, 2026-09-26), FINAL
  *     status, source path and the regeneration command;
  *   - every section's title AND body verbatim (F9, R-3);
  * so a hosted consumer can assert on the same strings the in-app screen
@@ -32,11 +32,16 @@
  * pages themselves are OUTSIDE this repo (owner-gated enablement, design
  * R-1); this generator only keeps the SOURCE mirrors byte-fresh.
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { resolveNamespace } from './lib/i18n-chain.mjs';
 
-const MIRROR_LOCALES = ['es-AR', 'en', 'pt-BR'];
+// Five locales. `es-AR` and `es-ES` are SPARSE regional overrides, so their
+// mirrors are emitted from the RESOLVED catalog (`locale → chain → en`) —
+// which is what a hosted reader would be shown. Emitting the raw file would
+// produce an empty document for every key the region legitimately inherits.
+const MIRROR_LOCALES = ['en', 'es-419', 'es-AR', 'es-ES', 'pt-BR'];
 const MIRROR_DOCS = ['privacy', 'terms'];
 const DOC_LABELS = { privacy: 'Privacy', terms: 'Terms' };
 
@@ -45,7 +50,7 @@ const DOC_LABELS = { privacy: 'Privacy', terms: 'Terms' };
  * `LATEST_LEGAL_VERSIONS` in `src/features/legal/legal-versions.ts` (U4):
  * a version bump changes BOTH the client gate constant and the mirror header.
  */
-export const LEGAL_VERSION = '2026-09-18';
+export const LEGAL_VERSION = '2026-09-26';
 
 /** Exact mirror emitter. Deterministic by construction (byte-stable F7). */
 export async function __emitLegalMirrors({ root, outRoot }) {
@@ -53,26 +58,24 @@ export async function __emitLegalMirrors({ root, outRoot }) {
   const outDirs = [];
 
   for (const locale of MIRROR_LOCALES) {
-    const catalog = JSON.parse(
-      readFileSync(
-        join(root, 'src', 'i18n', 'locales', locale, 'legal.json'),
-        'utf8',
-      ),
-    );
+    const catalog = resolveNamespace(locale, 'legal');
 
     const outDir = join(targetRoot, locale);
     mkdirSync(outDir, { recursive: true });
 
     for (const doc of MIRROR_DOCS) {
       const leaf = catalog[doc];
-      const lines = [
-        `# ${DOC_LABELS[doc]} — ${locale}`,
+      const lines = [`# ${DOC_LABELS[doc]} — ${locale}`, ''];
+      // The draft banner is CONDITIONAL and currently never emitted: the
+      // 2026-09-26 decks are final. Kept as a branch rather than deleted so
+      // re-drafting a document re-adds its banner automatically instead of
+      // shipping a document that claims to be reviewed while reading like
+      // a proposal.
+      if (leaf.draftNotice) lines.push(`> ${leaf.draftNotice}`, '');
+      lines.push(
+        `_ISO version ${LEGAL_VERSION} · FINAL status · source: src/i18n/locales/${locale}/legal.json · regenerate: \`node scripts/generate-legal-markdown.mjs\`_`,
         '',
-        `> ${leaf.draftNotice}`,
-        '',
-        `_ISO version ${LEGAL_VERSION} · DRAFT status · source: src/i18n/locales/${locale}/legal.json · regenerate: \`node scripts/generate-legal-markdown.mjs\`_`,
-        '',
-      ];
+      );
       for (const section of leaf.sections) {
         lines.push(`## ${section.title}`, '', section.body, '');
       }

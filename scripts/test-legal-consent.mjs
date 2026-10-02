@@ -4,7 +4,7 @@
  *
  * Covers the consent read + accept path end to end without a backend:
  *   Section 1 — version constants: LATEST_LEGAL_VERSIONS ships exactly
- *       { privacy: '2026-09-18', terms: '2026-09-18' } and stays in sync
+ *       { privacy: '2026-09-26', terms: '2026-09-26' } and stays in sync
  *       with the mirror generator's LEGAL_VERSION (AD-4 shared ISO date).
  *   Section 2 — pure consent logic: isConsentComplete (both documents at
  *       the LATEST version), shouldShowConsentGate (gated + non-legal
@@ -43,6 +43,7 @@ import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { resolveNamespace } from './lib/i18n-chain.mjs';
 
 const require_ = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -102,13 +103,13 @@ function load(mod) {
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
-const LATEST = { privacy: '2026-09-18', terms: '2026-09-18' };
+const LATEST = { privacy: '2026-09-26', terms: '2026-09-26' };
 
 function makeFlag(overrides = {}) {
   return {
     email: 'user@example.com',
     version: LATEST.privacy,
-    acceptedAt: '2026-09-18T12:00:00.000Z',
+    acceptedAt: '2026-09-26T12:00:00.000Z',
     ...overrides,
   };
 }
@@ -193,7 +194,7 @@ installRequireHook();
 // ===========================================================================
 console.log('\n[tests] 1 — LATEST_LEGAL_VERSIONS (AD-4 shared ISO date)\n');
 
-await test('LATEST_LEGAL_VERSIONS is exactly { privacy: 2026-09-18, terms: 2026-09-18 }', async () => {
+await test('LATEST_LEGAL_VERSIONS is exactly { privacy: 2026-09-26, terms: 2026-09-26 }', async () => {
   const versions = await load('src/features/legal/legal-versions.js');
   assert.deepEqual(versions.LATEST_LEGAL_VERSIONS, LATEST);
 });
@@ -720,9 +721,12 @@ await test('openLegalDocument routes in-app to /legal/{privacy,terms}', async ()
   // The gate reads the REAL shipped es-AR catalog through the
   // react-i18next test double — the same in-memory bundle the content
   // harness pins (F2), so a rendered assertion can never drift from disk.
-  const esARLegal = JSON.parse(
-    readFileSync(join(root, 'src/i18n/locales/es-AR/legal.json'), 'utf8'),
-  );
+  //
+  // RESOLVED, not raw. `es-AR/legal.json` is a sparse voseo override: it
+  // holds the consent-gate copy and inherits the documents from the
+  // `es-419` base, so a raw read is missing almost everything the gate
+  // renders. Same rule as every other harness — assert what is displayed.
+  const esARLegal = resolveNamespace('es-AR', 'legal');
 
   function makeGateClient() {
     return new QueryClient({
