@@ -50,3 +50,6 @@ supabase/.branches/
 # generated native folders
 /ios
 /android
+
+# generated icon variants (optimizer scratch output)
+icon_*.png
