@@ -1,0 +1,22 @@
+{
+    "featureAccess": {
+        "generic": "No se pudieron cargar los datos. Inténtalo de nuevo.",
+        "createHouseholdFallback": "No se pudo crear el hogar. Revisa tu conexión e inténtalo de nuevo. Si persiste, sal de tu hogar actual y vuelve a intentar.",
+        "createHouseholdProRequired": "Necesitas una suscripción PRO (o una prueba activa) para crear un hogar.",
+        "alreadyInHousehold": "Ya perteneces a un hogar. Sal del hogar actual para poder crear uno nuevo.",
+        "tooManyInviteCodes": "Ya hay 3 códigos activos. Usa el código vigente o espera 24h.",
+        "inviteProRequired": "Necesitas Pro para invitar. Activa Pro desde tu perfil.",
+        "inviteOwnerOnly": "Solo el dueño del hogar puede generar códigos.",
+        "inviteHouseholdFull": "El hogar está completo (máximo 5 miembros).",
+        "joinAlreadyInHousehold": "Ya perteneces a un hogar. Para unirte a otro, primero tienes que salir del actual.",
+        "joinInvalidCode": "El código es inválido o expiró. Pedile un código nuevo a quien creó el hogar."
+    },
+    "manualForm": {
+        "store_required": "Ingresa el nombre de la tienda",
+        "date_required": "Elige una fecha válida",
+        "items_required": "Agrega al menos un artículo",
+        "quantity_invalid": "La cantidad debe ser un número entero mayor a cero",
+        "price_invalid": "El precio unitario no puede ser negativo",
+        "total_invalid": "El total no puede ser negativo"
+    }
+}

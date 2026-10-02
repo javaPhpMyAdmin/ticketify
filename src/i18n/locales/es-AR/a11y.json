@@ -1,14 +1,3 @@
 {
-  "previous": "Anterior",
-  "next": "Siguiente",
-  "close": "Cerrar",
-  "selectDate": "Elegir fecha",
-  "dayPrefix": "Día",
-  "futureBlocked": "No podés elegir una fecha futura",
-  "maxToday": "Máx. hoy",
-  "buyDate": "FECHA DE COMPRA",
-  "categoryOfItem": "Categoría de",
-  "renameItem": "Editar nombre del producto",
-  "renameHint": "Toca para cambiar el nombre",
-  "openAnalytics": "Abrir Analytics"
+  "futureBlocked": "No podés elegir una fecha futura"
 }

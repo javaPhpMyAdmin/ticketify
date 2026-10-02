@@ -1564,22 +1564,32 @@ async function categoryPickerDeleteTests(picker, catalog) {
 // i18n parity (PR 7, slice 3/7 — task 3.3 acceptance)
 // ---------------------------------------------------------------------------
 
-const LOCALES_ROOT = join(__dirname, '..', 'src', 'i18n', 'locales');
+// The `tickets` catalogs are no longer all complete: `es-AR` and `es-ES` are
+// sparse regional overrides that inherit the neutral Spanish base. Resolving
+// through the real chain is what makes "this key is localized" true for a
+// voseo reader — reading the raw file measures the file, not the screen.
+import { LOCALES, resolveNamespace } from './lib/i18n-chain.mjs';
 
 async function i18nParityTests(picker) {
   const { CATEGORY_CREATE_ERROR_KEYS, CATEGORY_DELETE_ERROR_KEYS } = picker;
-  const readTickets = (locale) =>
-    JSON.parse(
-      readFileSync(join(LOCALES_ROOT, locale, 'tickets.json'), 'utf8'),
-    );
-  const esAr = readTickets('es-AR');
-  const en = readTickets('en');
-  const ptBr = readTickets('pt-BR');
+  // RESOLVED namespaces: the requested locale merged under its fallback chain
+  // (`es-AR → es-419 → en`, `es-ES → es-419 → en`), which is the order
+  // i18next applies when a component calls `t('tickets:…')`.
+  const tickets = (locale) => resolveNamespace(locale, 'tickets');
+  const esAr = tickets('es-AR');
+  const en = tickets('en');
+  const ptBr = tickets('pt-BR');
   const keySet = (ns) => Object.keys(ns).sort().join(',');
 
-  await test('i18n: the three tickets namespaces keep identical key sets', () => {
-    assert.equal(keySet(en), keySet(esAr));
-    assert.equal(keySet(ptBr), keySet(esAr));
+  await test('i18n: every tickets namespace keeps an identical key set across all five locales', () => {
+    // The surfaces must match. The FILES need not: `es-AR/tickets.json` is 6
+    // keys and `es-ES/tickets.json` a handful, while both render all 79.
+    // Asserting the raw files are equal would be asserting the sparse
+    // design does not exist.
+    const reference = keySet(en);
+    for (const locale of LOCALES) {
+      assert.equal(keySet(tickets(locale)), reference, `${locale} resolved key set drifted`);
+    }
   });
 
   await test('i18n: every category-create error key resolves in all locales', () => {
@@ -1592,9 +1602,12 @@ async function i18nParityTests(picker) {
     ];
     for (const fullKey of errorKeys) {
       const key = fullKey.replace(/^tickets:/, '');
-      assert.ok(key in esAr, `es-AR missing ${fullKey}`);
-      assert.ok(key in en, `en missing ${fullKey}`);
-      assert.ok(key in ptBr, `pt-BR missing ${fullKey}`);
+      for (const locale of LOCALES) {
+        assert.ok(
+          key in tickets(locale),
+          `${locale} missing ${fullKey} after fallback resolution`,
+        );
+      }
     }
   });
 
@@ -1611,13 +1624,13 @@ async function i18nParityTests(picker) {
       'categoryCreateAction',
     ];
     for (const key of labels) {
-      assert.ok(key in esAr, `es-AR missing ${key}`);
-      assert.ok(key in en, `en missing ${key}`);
-      assert.ok(key in ptBr, `pt-BR missing ${key}`);
+      for (const locale of LOCALES) {
+        assert.ok(key in tickets(locale), `${locale} missing ${key}`);
+      }
     }
   });
 
-  await test('i18n: es-AR collision copy converges with the API seam message', () => {
+  await test('i18n: resolved es-AR collision copy converges with the API seam message', () => {
     // D4: the picker's pre-block and the 23505 backstop share one copy.
     assert.equal(esAr.categoryCreateExists, 'Esa categoría ya existe.');
     assert.equal(
@@ -1627,14 +1640,17 @@ async function i18nParityTests(picker) {
     );
   });
 
-  await test('i18n: generic create-failure key is localized in all three locales', () => {
+  await test('i18n: generic create-failure key is localized in all five locales', () => {
     // Fix 1: the display path looks up tickets:categoryCreateError — the
     // es-AR value mirrors the seam constant byte-for-byte, while en/pt-BR
     // MUST NOT show the es-AR seam copy (that is the gate that failed).
     const GENERIC_LITERAL = 'No se pudo crear la categoría. Inténtalo de nuevo.';
-    assert.ok('categoryCreateError' in esAr, 'es-AR missing categoryCreateError');
-    assert.ok('categoryCreateError' in en, 'en missing categoryCreateError');
-    assert.ok('categoryCreateError' in ptBr, 'pt-BR missing categoryCreateError');
+    for (const locale of LOCALES) {
+      assert.ok('categoryCreateError' in tickets(locale), `${locale} missing categoryCreateError`);
+    }
+    // The es-AR file omits this key on purpose — the sentence has no voseo
+    // form, so it resolves from the `es-419` base. The assertion is about
+    // what an Argentine reader SEES, which is the neutral sentence.
     assert.equal(esAr.categoryCreateError, GENERIC_LITERAL);
     assert.notEqual(en.categoryCreateError, GENERIC_LITERAL);
     assert.notEqual(ptBr.categoryCreateError, GENERIC_LITERAL);
@@ -1719,15 +1735,15 @@ async function i18nParityTests(picker) {
     'categoryReassignError',
   ];
 
-  await test('i18n: every category-delete key exists in all three locales', () => {
+  await test('i18n: every category-delete key exists in all five locales', () => {
     for (const fullKey of [
       ...Object.values(CATEGORY_DELETE_ERROR_KEYS),
       ...deleteKeys.map((k) => `tickets:${k}`),
     ]) {
       const key = fullKey.replace(/^tickets:/, '');
-      assert.ok(key in esAr, `es-AR missing ${fullKey}`);
-      assert.ok(key in en, `en missing ${fullKey}`);
-      assert.ok(key in ptBr, `pt-BR missing ${fullKey}`);
+      for (const locale of LOCALES) {
+        assert.ok(key in tickets(locale), `${locale} missing ${fullKey}`);
+      }
     }
   });
 
@@ -1735,15 +1751,18 @@ async function i18nParityTests(picker) {
     // Same convergence contract as the create path (PR 3): the modal maps
     // the seam's raw es-AR copy onto localized keys (CATEGORY_DELETE_ERROR_KEYS),
     // and the es-AR values mirror the api.ts constants byte-for-byte.
+    // Both strings are register-neutral, so neither is overridden in
+    // `es-AR/tickets.json`; they resolve from the `es-419` base and must
+    // still mirror the `api.ts` seam constants byte for byte.
     assert.equal(
       esAr.categoryDeleteError,
       'No se pudo eliminar la categoría. Inténtalo de nuevo.',
-      'es-AR delete error must mirror DELETE_CATEGORY_ERROR_MESSAGE',
+      'resolved es-AR delete error must mirror DELETE_CATEGORY_ERROR_MESSAGE',
     );
     assert.equal(
       esAr.categoryReassignError,
       'No se pudieron reasignar los gastos. Inténtalo de nuevo.',
-      'es-AR reassign error must mirror REASSIGN_CATEGORY_ERROR_MESSAGE',
+      'resolved es-AR reassign error must mirror REASSIGN_CATEGORY_ERROR_MESSAGE',
     );
     const apiSource = readFileSync(
       join(root, 'src/features/categories/api.ts'),

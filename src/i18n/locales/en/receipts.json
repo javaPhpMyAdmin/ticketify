@@ -43,5 +43,6 @@
   "countScanned_one": "{{count}} scanned receipt",
   "countScanned_other": "{{count}} scanned receipts",
   "countManual_one": "{{count}} manual entry",
-  "countManual_other": "{{count}} manual entries"
+  "countManual_other": "{{count}} manual entries",
+  "itemQuantity": "Qty. {{quantity}}"
 }

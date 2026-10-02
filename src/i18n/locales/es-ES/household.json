@@ -1,0 +1,7 @@
+{
+    "youSuffix": " (vosotros)",
+    "searchAllHidden": "Has ocultado todos los resultados de \"{{query}}\".",
+    "householdJoinedSuccess": "Te has unido al hogar.",
+    "householdJoinFallback": "No se ha podido unir al hogar. Verifica el código.",
+    "inviteGenerateFallback": "No se ha podido generar el código."
+}

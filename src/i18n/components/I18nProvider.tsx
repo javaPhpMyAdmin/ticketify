@@ -8,7 +8,7 @@
  *      and computes `activeLocale`. Secure-store failures collapse to
  *      `'auto'` + device detection (log + continue, never throw).
  *   3. `initI18n()` initializes i18next with the bundled catalogs.
- *      Init failures (corrupt JSON, etc.) collapse to `es-AR` and the
+ *      Init failures (corrupt JSON, etc.) collapse to `en` and the
  *      `initialized` event still fires so the boot gate unblocks.
  *   4. `onInitialized()` fires — the parent layout calls
  *      `setBooted(true)` so the `BootSplash` fades.
@@ -38,7 +38,7 @@ export interface I18nProviderProps {
   children: ReactNode;
   /**
    * Called once after i18next resolves — fires whether init succeeded
-   * OR fell back to es-AR, so the boot gate can advance either way
+   * OR fell back to `en`, so the boot gate can advance either way
    * (REQ-6 scenario 2 + 3: never block the splash on i18n failure).
    */
   onInitialized?: () => void;
@@ -129,15 +129,21 @@ export function I18nProvider({
         fireInitialized();
       } catch (err) {
         // eslint-disable-next-line no-console -- boot-path diagnostic only
-        console.warn('[i18n] init failed, falling back to es-AR', err);
+        console.warn('[i18n] init failed, falling back to en', err);
         onErrorRef.current?.(err);
         // THE HARD-FAILURE FALLBACK: `changeLanguage` alone is a no-op
         // on an un-initialized instance, so the gate would open with no
         // catalogs and re-paint raw keys. Re-run the real init with a
-        // forced `es-AR` so the fallback catalog is actually loaded
-        // before we unblock children (REQ-6 scenario 3).
+        // forced `en` so the fallback catalog is actually loaded before we
+        // unblock children (REQ-6 scenario 3).
+        //
+        // `en`, not `es-AR`: `en` is the terminus of every fallback chain and
+        // the only catalog guaranteed complete. Forcing `es-AR` would load a
+        // SPARSE voseo override, so a hard failure would leave a Portuguese or
+        // Japanese reader on Argentine copy with keys falling through to
+        // whatever the chain happens to reach.
         try {
-          await initI18n('es-AR');
+          await initI18n('en');
         } catch (fallbackErr) {
           // eslint-disable-next-line no-console -- boot-path diagnostic only
           console.error('[i18n] fallback init also failed', fallbackErr);

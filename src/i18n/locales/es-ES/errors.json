@@ -1,0 +1,10 @@
+{
+    "featureAccess": {
+        "generic": "No se han podido cargar los datos. Inténtalo de nuevo.",
+        "createHouseholdFallback": "No se ha podido crear el hogar. Revisa tu conexión e inténtalo de nuevo. Si persiste, sal de tu hogar actual y vuelve a intentar.",
+        "joinInvalidCode": "El código no es válido o ha expirado. Pídele un código nuevo a quien creó el hogar."
+    },
+    "manualForm": {
+        "items_required": "Añade al menos un artículo"
+    }
+}

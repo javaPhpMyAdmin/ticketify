@@ -2,6 +2,8 @@
   "title": "Language",
   "auto": "Auto",
   "en": "English",
+  "es-419": "Spanish (Latin America)",
   "es-AR": "Spanish (Argentina)",
+  "es-ES": "Spanish (Spain)",
   "pt-BR": "Portuguese (Brazil)"
 }

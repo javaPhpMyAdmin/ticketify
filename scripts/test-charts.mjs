@@ -76,6 +76,39 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
+
+/**
+ * Resolve one namespace the way i18next actually resolves it: the requested
+ * locale first, then its per-language fallback chain, then `en`. Mirrors
+ * `FALLBACK_CHAIN` in `src/i18n/detector.ts` — `es-AR` and `es-ES` inherit
+ * the NEUTRAL SPANISH BASE (`es-419`) before English, so a key the region
+ * legitimately omits still reads as neutral Spanish rather than English.
+ *
+ * Later files in the chain win for a given leaf, so the lookup walks the
+ * chain in order and keeps the first locale that actually has the key —
+ * that is the same precedence i18next applies.
+ */
+const ANALYTICS_FALLBACK_CHAIN = {
+  en: ['en'],
+  'es-419': ['en'],
+  'es-AR': ['es-419', 'en'],
+  'es-ES': ['es-419', 'en'],
+  'pt-BR': ['en'],
+};
+
+function resolveAnalyticsThroughChain(locale) {
+  const chain = ANALYTICS_FALLBACK_CHAIN[locale] ?? ['en'];
+  const namespaces = [locale, ...chain];
+  const merged = {};
+  // Walk the chain from the LAST entry backwards so the requested locale's
+  // own leaves overwrite the base's — i.e. assign base first, region last.
+  for (const entry of [...namespaces].reverse()) {
+    const file = join(root, 'src', 'i18n', 'locales', entry, 'analytics.json');
+    Object.assign(merged, JSON.parse(readFileSync(file, 'utf8')));
+  }
+  return merged;
+}
+
 const tscBin = require.resolve('typescript/bin/tsc');
 const harnessConfig = join(__dirname, 'tsconfig.charts-test.json');
 
@@ -1599,12 +1632,16 @@ async function run() {
 
   await test('es-AR template renders the real august insight line', () => {
     const insight = buildDailyInsight(AUGUST_2026, '2026-08', 'es-AR');
-    const catalog = JSON.parse(
-      readFileSync(
-        join(root, 'src', 'i18n', 'locales', 'es-AR', 'analytics.json'),
-        'utf8',
-      ),
-    );
+    // Resolved THROUGH THE CHAIN, not read raw out of `es-AR/analytics.json`.
+    //
+    // `es-AR` is a sparse voseo override; `heroMostExpensiveDay` carries no
+    // regionalism and lives only in the `es-419` base. Reading the raw
+    // regional file is exactly the assumption the catalog hierarchy
+    // forbids — and it failed loudly here the moment the thinning landed
+    // (`catalog.heroMostExpensiveDay` was `undefined`). The exporter
+    // screens resolve through i18next, so the harness must too, or it is
+    // testing a resolution order production does not use.
+    const catalog = resolveAnalyticsThroughChain('es-AR');
     const line = catalog.heroMostExpensiveDay
       .replace(/\{\{weekday\}\}/g, insight.weekday)
       .replace(/\{\{day\}\}/g, String(insight.day))

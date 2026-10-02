@@ -4,8 +4,25 @@
  * PR 1, REQ-2 / NFR-4). The detector is a pure function exported from
  * a module that pulls in ZERO runtime dependencies — only the type
  * `SupportedLocale` from the module's barrel. We compile the file
- * directly with `tsc` and assert the 10 mapping cases from the
- * spec / design.md AD-1.
+ * directly with `tsc` and assert the core-language mapping cases from
+ * the spec / design.md AD-1.
+ *
+ * FIVE locales, not three. This file owns the LANGUAGE half of the
+ * table (`en` / `pt-BR` / bare Spanish and the default); the regional
+ * half — `es-AR`, `es-419`, `es-ES`, the `regionCode` argument and the
+ * viability thresholds — lives in `test-detector-regional.mjs`, which
+ * shares this compile step.
+ *
+ * The three most important expectations changed when the neutral Spanish
+ * base was introduced, and all three were WRONG before:
+ *
+ *   • `es-MX` → `es-419`, not `es-AR`. The old table routed every Latin
+ *     American reader to Argentine voseo because voseo was the only
+ *     Spanish catalog that existed.
+ *   • unknown tags → `en`, not `es-AR`. The default is the locale every
+ *     fallback chain terminates in; a French or Japanese reader must not
+ *     be handed Argentine copy.
+ *   • `DEFAULT_LOCALE` is `en`, mirroring `fallbackLng` in `config.ts`.
  *
  * Determinism: no clock, no `Intl`, no environment — every case is a
  * fixed input → fixed output pair. The module imports the empty
@@ -86,30 +103,30 @@ async function run() {
     assert.equal(mod.detectLocale('es-AR'), 'es-AR');
   });
 
-  await test('es-MX → es-AR (safety fallback — voseo is Argentina-only)', () => {
-    assert.equal(mod.detectLocale('es-MX'), 'es-AR');
+  await test('es-MX → es-419 (Latin America gets the NEUTRAL base, never voseo)', () => {
+    assert.equal(mod.detectLocale('es-MX'), 'es-419');
   });
 
-  await test('fr-FR → es-AR (default fallback for any other tag)', () => {
-    assert.equal(mod.detectLocale('fr-FR'), 'es-AR');
+  await test('fr-FR → en (default fallback for any other tag)', () => {
+    assert.equal(mod.detectLocale('fr-FR'), 'en');
   });
 
-  await test('undefined → es-AR (default — no device locale available)', () => {
-    assert.equal(mod.detectLocale(undefined), 'es-AR');
+  await test('undefined → en (default — no device locale available)', () => {
+    assert.equal(mod.detectLocale(undefined), 'en');
   });
 
-  await test('"" → es-AR (default — empty string)', () => {
-    assert.equal(mod.detectLocale(''), 'es-AR');
+  await test('"" → en (default — empty string)', () => {
+    assert.equal(mod.detectLocale(''), 'en');
   });
 
-  await test('xx-XX → es-AR (unknown tag falls through to default)', () => {
-    assert.equal(mod.detectLocale('xx-XX'), 'es-AR');
+  await test('xx-XX → en (unknown tag falls through to default)', () => {
+    assert.equal(mod.detectLocale('xx-XX'), 'en');
   });
 
   console.log('\n[tests] detector surface\n');
 
-  await test('DEFAULT_LOCALE export is es-AR (mirrors fallbackLng in config.ts)', () => {
-    assert.equal(mod.DEFAULT_LOCALE, 'es-AR');
+  await test('DEFAULT_LOCALE export is en (mirrors fallbackLng in config.ts)', () => {
+    assert.equal(mod.DEFAULT_LOCALE, 'en');
   });
 
   console.log(`\n[tests] ${passed} passed, ${failed} failed`);

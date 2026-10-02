@@ -1,10 +1,12 @@
 /**
  * Persists the locale override (`ticketify.locale.override`) in
- * `expo-secure-store`. The override is a four-value union:
+ * `expo-secure-store`. The override is a six-value union:
  *
  *   - `'auto'`      → defer to the device-locale detector
  *   - `'en'`        → force English
- *   - `'es-AR'`     → force Rioplatense Spanish
+ *   - `'es-419'`    → force neutral Latin-American Spanish (the base)
+ *   - `'es-AR'`     → force Rioplatense Spanish (voseo)
+ *   - `'es-ES'`     → force Peninsular Spanish
  *   - `'pt-BR'`     → force Brazilian Portuguese
  *
  * Anything else stored under the key is treated as missing by the
@@ -26,17 +28,28 @@ import type { LocaleOverride } from '../stores/useLocaleStore';
 /** Storage key for the locale override. Public so tests can assert on it. */
 export const LOCALE_OVERRIDE_KEY = 'ticketify.locale.override';
 
-/** Set of every legal override value; mirrors `LocaleOverride` in the store. */
+/**
+ * Set of every legal override value; mirrors `LocaleOverride` in the store.
+ *
+ * This set is the ONLY thing standing between a tampered or stale
+ * SecureStore value and an un-resolvable locale, so it must stay exactly
+ * in step with the five catalogs `config.ts` bundles. A value outside it
+ * reads back as `null` — "no override" — which makes the device locale
+ * win. That is fail-safe: the reader gets their device language instead
+ * of raw keys.
+ */
 const ALLOWED: ReadonlySet<LocaleOverride> = new Set([
   'auto',
   'en',
+  'es-419',
   'es-AR',
+  'es-ES',
   'pt-BR',
 ]);
 
 /**
  * Read the persisted override, or `null` when no value is stored or the
- * stored value is not one of the legal four. The adapter never throws —
+ * stored value is not one of the legal six. The adapter never throws —
  * callers can rely on `null` meaning "use the detected locale" and treat
  * any thrown error from the native module as a separate failure (logged
  * by `useLocaleStore.hydrate`).

@@ -3,9 +3,9 @@
  * Node harness for the `onboarding` namespace i18n key set.
  *
  * Asserts three contracts on the onboarding catalogs read directly
- * from disk (`src/i18n/locales/{es-AR,en,pt-BR}/onboarding.json`):
+ * from disk (`src/i18n/locales/<locale>/onboarding.json`):
  *
- *   1. PARITY — the three locales have IDENTICAL key sets (REQ-1: locale
+ *   1. PARITY — all five locales have an IDENTICAL key set (REQ-1: locale
  *      parity across the i18n catalogs). The harness walks every leaf
  *      path so nested keys (`step1.headline`, `step3.dayLabels[0]` …)
  *      are counted too — a missing translation in any locale fails the
@@ -24,8 +24,12 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
-const LOCALES_ROOT = join(root, 'src', 'i18n', 'locales');
-const LOCALES = ['es-AR', 'en', 'pt-BR'];
+// Resolution, not the file. `es-AR` and `es-ES` are SPARSE regional overrides
+// over the neutral `es-419` base: a raw read sees only the handful of keys
+// that genuinely diverge, while the app renders the full surface. These
+// assertions are about what a user SEES, so every read resolves
+// `locale → chain → en` exactly like i18next does.
+import { LOCALES, resolveNamespace } from './lib/i18n-chain.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -43,9 +47,7 @@ function test(name, fn) {
 }
 
 function readCatalog(locale, namespace) {
-  return JSON.parse(
-    readFileSync(join(LOCALES_ROOT, locale, `${namespace}.json`), 'utf8'),
-  );
+  return resolveNamespace(locale, namespace);
 }
 
 /**
@@ -151,7 +153,7 @@ const REQUIRED_LEAF_KEYS = [
 
 console.log('\n[tests] section 1 — onboarding.json catalog parity (REQ-1)\n');
 
-test('top-level key sets are identical across the three locales', () => {
+test('top-level key sets are identical across all five locales', () => {
   const catalogs = Object.fromEntries(
     LOCALES.map((l) => [l, readCatalog(l, 'onboarding')]),
   );
@@ -211,7 +213,7 @@ test('step3.dayLabels is a 7-element array in every locale (L/M/X/J/V/S/D shape)
 
 console.log('\n[tests] section 2 — required leaf keys present in all locales\n');
 
-test('every required leaf key exists as a non-empty value in all three locales', () => {
+test('every required leaf key exists as a non-empty value in all five locales', () => {
   for (const locale of LOCALES) {
     const catalog = readCatalog(locale, 'onboarding');
     for (const leaf of REQUIRED_LEAF_KEYS) {

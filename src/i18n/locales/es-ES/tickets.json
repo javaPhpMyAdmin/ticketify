@@ -1,0 +1,9 @@
+{
+    "reviewFailedTitle": "No se ha podido procesar este ticket",
+    "reviewFailedDialogTitle": "No se ha podido procesar el ticket",
+    "reviewCantProcess": "No se ha podido procesar el ticket. Inténtalo de nuevo.",
+    "categoryCreateError": "No se ha podido crear la categoría. Inténtalo de nuevo.",
+    "categoryDeleteError": "No se ha podido eliminar la categoría. Inténtalo de nuevo.",
+    "categoryReassignError": "No se han podido reasignar los gastos. Inténtalo de nuevo.",
+    "manualAddItem": "Añadir artículo"
+}

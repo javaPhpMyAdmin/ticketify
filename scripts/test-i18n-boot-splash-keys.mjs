@@ -27,8 +27,12 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
-const LOCALES_ROOT = join(root, 'src', 'i18n', 'locales');
-const LOCALES = ['es-AR', 'en', 'pt-BR'];
+// Resolution, not the file. `es-AR` and `es-ES` are SPARSE regional overrides
+// over the neutral `es-419` base: a raw read sees only the handful of keys
+// that genuinely diverge, while the app renders the full surface. These
+// assertions are about what a user SEES, so every read resolves
+// `locale → chain → en` exactly like i18next does.
+import { LOCALES, resolveNamespace } from './lib/i18n-chain.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -46,9 +50,7 @@ function test(name, fn) {
 }
 
 function readCatalog(locale, namespace) {
-  return JSON.parse(
-    readFileSync(join(LOCALES_ROOT, locale, `${namespace}.json`), 'utf8'),
-  );
+  return resolveNamespace(locale, namespace);
 }
 
 function keySet(obj) {
@@ -66,7 +68,7 @@ const REQUIRED_KEYS = [
 
 console.log('\n[tests] bootSplash catalog parity\n');
 
-test('top-level key sets are identical across the three locales', () => {
+test('top-level key sets are identical across all five locales', () => {
   const catalogs = Object.fromEntries(
     LOCALES.map((l) => [l, readCatalog(l, 'bootSplash')]),
   );
@@ -82,7 +84,7 @@ test('top-level key sets are identical across the three locales', () => {
   );
 });
 
-test('every required bootSplash key exists as a non-empty string in all three locales', () => {
+test('every required bootSplash key exists as a non-empty string in all five locales', () => {
   for (const locale of LOCALES) {
     const catalog = readCatalog(locale, 'bootSplash');
     for (const key of REQUIRED_KEYS) {

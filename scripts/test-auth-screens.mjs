@@ -98,10 +98,14 @@ function readComponent(filePath) {
   return readFileSync(join(root, filePath), 'utf8');
 }
 
-const LOCALES_ROOT = join(root, 'src', 'i18n', 'locales');
-const LOCALE_TAGS = ['es-AR', 'en', 'pt-BR'];
-const readAuth = (locale) =>
-  JSON.parse(readFileSync(join(LOCALES_ROOT, locale, 'auth.json'), 'utf8'));
+// Resolution, not the file. `es-AR` and `es-ES` are SPARSE regional overrides
+// over the neutral `es-419` base: a raw read sees only the handful of keys
+// that genuinely diverge, while the app renders the full surface. These
+// assertions are about what a user SEES, so every read resolves
+// `locale → chain → en` exactly like i18next does.
+import { LOCALES, resolveNamespace } from './lib/i18n-chain.mjs';
+const LOCALE_TAGS = LOCALES;
+const readAuth = (locale) => resolveNamespace(locale, 'auth');
 const keySet = (catalog) => Object.keys(catalog).sort().join(',');
 
 // ─────────────────────────────────────────────────────────────────────

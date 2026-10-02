@@ -1,0 +1,5 @@
+{
+  "loadFailed": "No se ha podido cargar el ticket",
+  "deleteFailedTitle": "No se ha podido eliminar el ticket",
+  "editFailedTitle": "No se ha podido editar el ticket"
+}

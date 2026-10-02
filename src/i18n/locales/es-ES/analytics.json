@@ -1,0 +1,7 @@
+{
+  "insightMore": "Has gastado un {{pct}}% más que en {{month}}.",
+  "insightLess": "Has gastado un {{pct}}% menos que en {{month}}.",
+  "insightSame": "Has gastado lo mismo que en {{month}}.",
+  "budgetProgressA11y": "Has gastado {{spent}}.",
+  "heroMostExpensiveDay": "Tu día más caro ha sido el {{weekday}} {{day}} ({{amount}} · {{multiple}}x tu promedio)"
+}

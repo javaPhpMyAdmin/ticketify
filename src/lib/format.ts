@@ -16,7 +16,7 @@
  *  `src/i18n/config.ts`. Kept here as a small, dependency-free alias
  *  so the formatters don't have to pull i18next into a module that
  *  otherwise has zero imports. */
-export type FormatDateLocale = 'en' | 'es-AR' | 'pt-BR';
+export type FormatDateLocale = 'en' | 'es-419' | 'es-AR' | 'es-ES' | 'pt-BR';
 
 /** Optional knobs for `formatDate` / `formatRelativeDay`. The
  *  `todayISO` argument is what makes "Hoy" / "Today" / "Hoje" work:
@@ -186,14 +186,18 @@ export const MONTHS_FULL_PT_BR = [
 /** Localized full-month lookup keyed by locale. */
 const MONTHS_FULL_BY_LOCALE: Record<FormatDateLocale, readonly string[]> = {
   en: MONTHS_FULL_EN,
+  'es-419': MONTHS_FULL_ES,
   'es-AR': MONTHS_FULL_ES,
+  'es-ES': MONTHS_FULL_ES,
   'pt-BR': MONTHS_FULL_PT_BR,
 };
 
 /** Localized short-month lookup keyed by locale. */
 const MONTHS_SHORT_BY_LOCALE: Record<FormatDateLocale, readonly string[]> = {
   en: MONTHS_SHORT_EN,
+  'es-419': MONTHS_SHORT_ES,
   'es-AR': MONTHS_SHORT_ES,
+  'es-ES': MONTHS_SHORT_ES,
   'pt-BR': MONTHS_SHORT_PT_BR,
 };
 
@@ -312,7 +316,9 @@ export const WEEKDAYS_SHORT_PT_BR: readonly string[] = [
 /** Localized full-weekday lookup keyed by locale (Sun-first / JS-day order). */
 const WEEKDAYS_FULL_BY_LOCALE: Record<FormatDateLocale, readonly string[]> = {
   en: WEEKDAYS_FULL_EN,
+  'es-419': WEEKDAYS_FULL_ES,
   'es-AR': WEEKDAYS_FULL_ES,
+  'es-ES': WEEKDAYS_FULL_ES,
   'pt-BR': WEEKDAYS_FULL_PT_BR,
 };
 
@@ -320,14 +326,18 @@ const WEEKDAYS_FULL_BY_LOCALE: Record<FormatDateLocale, readonly string[]> = {
 const WEEKDAYS_INITIAL_BY_LOCALE: Record<FormatDateLocale, readonly string[]> =
   {
     en: WEEKDAYS_INITIAL_EN,
+    'es-419': WEEKDAYS_INITIAL_ES,
     'es-AR': WEEKDAYS_INITIAL_ES,
+    'es-ES': WEEKDAYS_INITIAL_ES,
     'pt-BR': WEEKDAYS_INITIAL_PT_BR,
   };
 
 /** Localized short-weekday lookup keyed by locale (Sun-first / JS-day order). */
 const WEEKDAYS_SHORT_BY_LOCALE: Record<FormatDateLocale, readonly string[]> = {
   en: WEEKDAYS_SHORT_EN,
+  'es-419': WEEKDAYS_SHORT_ES,
   'es-AR': WEEKDAYS_SHORT_ES,
+  'es-ES': WEEKDAYS_SHORT_ES,
   'pt-BR': WEEKDAYS_SHORT_PT_BR,
 };
 
@@ -386,7 +396,9 @@ export function formatShortDate(iso: string): string {
  */
 const FULL_MONTH_YEAR_CONNECTOR: Record<FormatDateLocale, string> = {
   en: ' ',
+  'es-419': ' de ',
   'es-AR': ' de ',
+  'es-ES': ' de ',
   'pt-BR': ' de ',
 };
 
@@ -529,14 +541,18 @@ export function formatDate(
 /** Locale-keyed "today" label used by `formatDate` and friends. */
 const RELATIVE_TODAY: Record<FormatDateLocale, string> = {
   en: 'Today',
+  'es-419': 'Hoy',
   'es-AR': 'Hoy',
+  'es-ES': 'Hoy',
   'pt-BR': 'Hoje',
 };
 
 /** Locale-keyed "yesterday" label. */
 const RELATIVE_YESTERDAY: Record<FormatDateLocale, string> = {
   en: 'Yesterday',
+  'es-419': 'Ayer',
   'es-AR': 'Ayer',
+  'es-ES': 'Ayer',
   'pt-BR': 'Ontem',
 };
 
@@ -631,6 +647,58 @@ function pad2(value: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Currency symbol hydration gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the currency SYMBOL may be rendered.
+ *
+ * The stored currency is an ISO 4217 CODE (`USD`, `UYU`, `ARS`), never a
+ * symbol, and the profile row is the authority for which one the user picked
+ * (`profiles.currency`). Until that row has been read there is no way to know
+ * whether the number on screen is pesos, dollars or reais — and rendering the
+ * WRONG symbol is worse than rendering none: `US$ 1,234.56` read by a user
+ * whose currency is UYU is a wrong balance, not a missing label. So the gate
+ * fails closed: while it is shut, both currency formatters emit the grouped
+ * number alone.
+ *
+ * `ProfileHydration` (src/features/profile/components) owns the lifecycle —
+ * it shuts the gate on mount and opens it only once good profile data has
+ * landed. This module deliberately keeps NO dependency on the store or on
+ * React: the formatters are called from ~40 screens plus pure test harnesses,
+ * and importing either would either create an import cycle or force every
+ * caller to mount a provider.
+ *
+ * The default is OPEN, and that is a deliberate, narrow trade-off: a module
+ * that starts shut would render symbol-less numbers in every existing harness
+ * and in every non-React consumer (Expo push handlers, share extensions).
+ * App code never depends on the default — the gate is shut from the very first
+ * mount of the root layout, long before the splash clears — so "fail closed"
+ * holds where it matters and the pure functions stay usable in isolation.
+ */
+let currencySymbolGateOpen = true;
+
+/** Shut (false) or open (true) the currency-symbol gate. */
+export function setCurrencySymbolGate(open: boolean): void {
+  currencySymbolGateOpen = open;
+}
+
+/** Current gate state — read by the hydration component to avoid churn. */
+export function isCurrencySymbolGateOpen(): boolean {
+  return currencySymbolGateOpen;
+}
+
+/**
+ * The symbol prefix for a currency code, or `''` while the gate is shut.
+ * Grouping and decimals are unaffected: only the symbol is withheld.
+ */
+function currencySymbolPrefix(upperCode: string, rawCode: string): string {
+  if (!currencySymbolGateOpen) return '';
+  const symbol = CURRENCY_SYMBOL[upperCode] ?? rawCode;
+  return `${symbol} `;
+}
+
+// ---------------------------------------------------------------------------
 // Currency — PR 2 hybrid policy (AD-6): currency code is the authority of
 // format. The function reads `i18next.language` for label/symbol-form
 // choices only (currently a no-op — the symbol form is keyed by currency
@@ -669,7 +737,7 @@ function pad2(value: number): string {
 export function formatCurrency(value: number, currencyCode: string): string {
   const upperCode = currencyCode.toUpperCase();
   const isLATAM = LATAM_CURRENCIES.has(upperCode);
-  const symbol = CURRENCY_SYMBOL[upperCode] ?? currencyCode;
+  const symbolPrefix = currencySymbolPrefix(upperCode, currencyCode);
   const fixed = Math.abs(value).toFixed(2);
   const [intPart, decPart] = fixed.split('.');
   // Hand-rolled grouping: thousands separator every 3 digits from the
@@ -685,7 +753,7 @@ export function formatCurrency(value: number, currencyCode: string): string {
     ? `${withSeparators}${decSep}${decPart}`
     : withSeparators;
   const sign = value < 0 ? '-' : '';
-  return `${sign}${symbol} ${number}`;
+  return `${sign}${symbolPrefix}${number}`;
 }
 
 /**
@@ -701,12 +769,12 @@ export function formatCurrencyWhole(
 ): string {
   const upperCode = currencyCode.toUpperCase();
   const isLATAM = LATAM_CURRENCIES.has(upperCode);
-  const symbol = CURRENCY_SYMBOL[upperCode] ?? currencyCode;
+  const symbolPrefix = currencySymbolPrefix(upperCode, currencyCode);
   const rounded = Math.abs(value).toFixed(0);
   const groupSep = isLATAM ? '.' : ',';
   const withSeparators = rounded.replace(/\B(?=(\d{3})+(?!\d))/g, groupSep);
   const sign = value < 0 ? '-' : '';
-  return `${sign}${symbol} ${withSeparators}`;
+  return `${sign}${symbolPrefix}${withSeparators}`;
 }
 
 /**

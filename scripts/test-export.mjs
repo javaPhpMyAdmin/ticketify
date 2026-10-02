@@ -126,7 +126,8 @@ function installRequireHook() {
  * with (`normalize.ts` payment labels, `pdf.ts` headers/summary). The
  * builders call `i18next.t()` at build time (they run on user tap), so the
  * instance must be initialized BEFORE the first CSV/HTML assertion with the
- * REAL es-AR catalogs — the very resources production loads, keeping the
+ * REAL es-AR catalogs and the REAL `es-AR → es-419 → en` fallback chain —
+ * the very resources and resolution order production loads, keeping the
  * harness honest about the shipped Spanish copy. `initImmediate: false`
  * makes init synchronous — `t()` is safe immediately after.
  *
@@ -138,17 +139,32 @@ function installRequireHook() {
  */
 function initExportI18n() {
   const i18next = require('i18next');
-  const localeDir = join(__dirname, '..', 'src', 'i18n', 'locales', 'es-AR');
-  const esAR = {};
-  for (const file of readdirSync(localeDir)) {
-    if (!file.endsWith('.json')) continue;
-    esAR[file.slice(0, -5)] = JSON.parse(readFileSync(join(localeDir, file), 'utf8'));
-  }
+  const localesRoot = join(__dirname, '..', 'src', 'i18n', 'locales');
+  const readCatalog = (locale) => {
+    const dir = join(localesRoot, locale);
+    const out = {};
+    for (const file of readdirSync(dir)) {
+      if (!file.endsWith('.json')) continue;
+      out[file.slice(0, -5)] = JSON.parse(readFileSync(join(dir, file), 'utf8'));
+    }
+    return out;
+  };
   i18next.init({
     lng: 'es-AR',
-    fallbackLng: 'es-AR',
+    // The REAL per-language chain, not `fallbackLng: 'es-AR'`.
+    //
+    // `es-AR` is a SPARSE voseo override: it carries only the leaves that
+    // diverge from the base. With `fallbackLng` equal to the requested
+    // locale and only `es-AR` in `resources`, every key the exporter does
+    // NOT override falls through to nothing and renders a raw key. That
+    // made the harness structurally unable to survive the sparse write —
+    // it was a fence around a shape the catalog deliberately does not
+    // have. Loading the base alongside and routing `es-AR → es-419 → en`
+    // is what production actually does, so the harness now exercises the
+    // shipped resolution order instead of a single-locale fiction.
+    fallbackLng: { 'es-AR': ['es-419', 'en'], 'es-419': ['en'] },
     initImmediate: false,
-    resources: { 'es-AR': esAR },
+    resources: { 'es-AR': readCatalog('es-AR'), 'es-419': readCatalog('es-419'), en: readCatalog('en') },
   });
 }
 

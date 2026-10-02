@@ -2,44 +2,49 @@
 
 ## Purpose
 
-Ticketify mobile ships multilingual UI copy and locale-aware formatters across three locales — `en` (generic English), `es-AR` (Rioplatense Spanish, voseo — the default, the source of truth, and the runtime fallback), and `pt-BR` (Brazilian Portuguese). The capability covers device locale detection via `expo-localization`, a manual override persisted in `expo-secure-store` and surfaced through a Settings selector, CLDR `_one` / `_other` plural keys via i18next v26, and locale-aware formatters for dates, months, weekdays, time, percentages, and currency. Currency formatting follows a **hybrid policy**: the **currency code** drives the number grouping, decimals, and symbol (so `ARS`/`UYU` always render with LATAM grouping `.` thousands + `,` decimals, `USD`/`EUR` always render with international grouping `,` thousands + `.` decimals), while the **user's UI locale** drives string-based labels and any auxiliary text — `formatCurrency` is independent of `i18next.language` and takes the currency code as the formatting authority.
+Ticketify mobile ships multilingual UI copy and locale-aware formatters across **five** locales in a base + sparse-override hierarchy: `en` (generic English), `es-419` (neutral Latin-American Spanish — the Spanish **base, source of truth, and runtime default**), `es-AR` (Rioplatense Spanish voseo override), `es-ES` (Peninsular Spanish `vosotros` override), and `pt-BR` (Brazilian Portuguese). `es-AR` and `es-ES` carry only the leaves that genuinely diverge from `es-419`; the catalog shape is specified by `locale-catalog-hierarchy`, and device-tag resolution by `spanish-regional-detection`. The capability covers device locale detection via `expo-localization`, a manual override persisted in `expo-secure-store` and surfaced through a Settings selector, CLDR `_one` / `_other` plural keys via i18next v26, and locale-aware formatters for dates, months, weekdays, time, percentages, and currency. Currency formatting follows a **hybrid policy**: the **currency code** drives the number grouping, decimals, and symbol (so `ARS`/`UYU` always render with LATAM grouping `.` thousands + `,` decimals, `USD`/`EUR` always render with international grouping `,` thousands + `.` decimals), while the **user's UI locale** drives string-based labels and any auxiliary text — `formatCurrency` is independent of `i18next.language` and takes the currency code as the formatting authority.
 
-Out of scope (recap): grammatical-gender selectors; backend strings (none exist); locales beyond en / es-AR / pt-BR; right-to-left languages; `dayjs` / `date-fns` / `Intl` adoption; server-side locale-aware RPCs; a first-run onboarding language picker; a `profiles.locale` column; changing the default currency code (`UYU` stays default regardless of UI language).
+Out of scope (recap): grammatical-gender selectors; backend strings (none exist); locales beyond the five shipped (en / es-419 / es-AR / es-ES / pt-BR); right-to-left languages; `dayjs` / `date-fns` / `Intl` adoption; server-side locale-aware RPCs; a first-run onboarding language picker; a `profiles.locale` column; changing the default currency code (`UYU` stays default regardless of UI language).
 
 ## Requirements
 
 ### REQ-1: Locale catalog and namespace structure
 
-The system SHALL ship three locales — `en`, `es-AR`, `pt-BR` — declared in i18next as `supportedLngs`. `es-AR` SHALL be the active language on first launch AND the `fallbackLng` for any missing key, missing locale file, or unsupported device locale. Locale files SHALL live under `src/i18n/locales/{en,es-AR,pt-BR}/` as nested JSON organized by namespace. At minimum the catalog SHALL include the namespaces `common`, `auth`, `tabs`, `settings`, `tickets`, `receipts`, `household`, `analytics`, `errors`, `a11y`, and `currency`. Key naming SHALL be namespace-scoped and dotted (e.g. `tabs.home`, `errors.network`). Plural keys SHALL follow the i18next CLDR suffix convention (`key_one`, `key_other`); `_zero` SHALL NOT be used.
+The system SHALL ship five locales — `en`, `es-419`, `es-AR`, `es-ES`, `pt-BR` — declared in i18next as `supportedLngs`. `es-419` SHALL be the Spanish base and the runtime default active locale on first launch (with `override: 'auto'`), and the per-language `fallbackLng` map SHALL route `es-AR`/`es-ES` through `es-419` before `en` for any missing key (see `locale-catalog-hierarchy` REQ-3). Locale files SHALL live under `src/i18n/locales/{en,es-419,es-AR,es-ES,pt-BR}/` as nested JSON organized by namespace, **18** namespaces per locale: `common`, `tabs`, `settingsLanguage`, `auth`, `settings`, `tickets`, `receipts`, `household`, `analytics`, `errors`, `a11y`, `currency`, `date`, `pro`, `legal`, `onboarding`, `bootSplash`, and `categories`. Key naming SHALL be namespace-scoped and dotted (e.g. `tabs.home`, `errors.network`). Plural keys SHALL follow the i18next CLDR suffix convention (`key_one`, `key_other`); `_zero` SHALL NOT be used.
 
 **Given/When/Then**:
 
-1. Given a fresh install on a device whose locale is `es-AR`, When the app boots, Then the active language is `es-AR`.
-2. Given `i18n.init()` runs with `fallbackLng: 'es-AR'` and a key is missing in the active locale, When `t(key)` is called, Then i18next returns the `es-AR` translation and does not throw.
+1. Given a fresh install with `override === 'auto'` on a device whose Spanish tag is `es-MX`, When the app boots, Then the active language is `es-419` (the Spanish base and runtime default).
+2. Given `i18n.init()` runs the per-language `fallbackLng` map and a key is missing in `es-ES`, When `t(key)` is called, Then i18next walks `es-419` before `en` and does not throw.
 3. Given a request for `t('tabs.home')`, When the call runs, Then i18next resolves to the value defined under `tabs.home` in the active locale file.
+4. Given the five locale directories `en`, `es-419`, `es-AR`, `es-ES`, `pt-BR`, When each is listed, Then it contains the same 18 namespace files.
 
 ### REQ-2: Device locale detection and fallback mapping
 
-The system SHALL detect the device locale on first launch via `expo-localization.getLocales()[0].languageTag`. The detector MUST map `pt-*` (any Portuguese tag) to `pt-BR`, `en-*` (any English tag) to `en`, and `es-AR` to `es-AR`. Any other language tag — including but not limited to `es-MX`, `es-ES`, `fr-FR`, `de-DE`, `it-IT`, an empty string, or a missing locale array — SHALL fall back to `es-AR`. The detector SHALL be a pure function exported from `src/i18n/detector.ts` and unit-testable independent of React.
+The system SHALL detect the device locale on first launch via `expo-localization.getLocales()[0].languageTag` (and its `regionCode` when present). The detector MUST map `pt-*` (any Portuguese tag) to `pt-BR` and `en-*` (any English tag) to `en`; for `es-*` it SHALL resolve region `AR` to `es-AR`, region `ES` to `es-ES`, and **every other Spanish tag** — `es-419`, any other Latin-American region, a bare `es`, or an unknown region — to the `es-419` base. Any unsupported language tag — including but not limited to `fr-FR`, `de-DE`, `it-IT`, an empty string, or a missing locale array — SHALL fall back to `en`. The full mapping contract lives in `spanish-regional-detection`; the detector SHALL be a pure function exported from `src/i18n/detector.ts` and unit-testable independent of React.
 
 **Given/When/Then**:
 
 1. Given the device language tag is `es-AR`, When `detectLocale()` runs, Then it returns `'es-AR'`.
 2. Given the device language tag is `pt-BR` (or any `pt-*`), When `detectLocale()` runs, Then it returns `'pt-BR'`.
 3. Given the device language tag is `en-US` (or any `en-*`), When `detectLocale()` runs, Then it returns `'en'`.
-4. Given the device language tag is `fr-FR` (or any non-supported tag), When `detectLocale()` runs, Then it returns `'es-AR'` (fallback).
-5. Given `getLocales()` returns an empty array, When `detectLocale()` runs, Then it returns `'es-AR'` (fallback).
+4. Given the device language tag is `es-ES`, When `detectLocale()` runs, Then it returns `'es-ES'`.
+5. Given the device language tag is `es-MX` (or a bare `es`), When `detectLocale()` runs, Then it returns `'es-419'` (the Spanish base).
+6. Given the device language tag is `fr-FR` (or any non-supported tag), When `detectLocale()` runs, Then it returns `'en'` (global fallback).
+7. Given `getLocales()` returns an empty array, When `detectLocale()` runs, Then it returns `'en'` (global fallback).
 
 ### REQ-3: Manual override, persistence, and active language resolution
 
-The system SHALL provide a Settings selector screen (`src/app/settings/language.tsx`, mirroring the shape of `src/app/settings/currency.tsx`) with exactly four options in this fixed order: `Automático (es-AR)`, `English`, `Español (Argentina)`, `Português (Brasil)`. The auto label SHALL be a translation key (`settings.language.autoLabel`) whose value is locale-aware but always includes the literal ` (es-AR)` segment so the user knows the fallback. The selection SHALL persist in `expo-secure-store` under key `ticketify.locale.override` with value `'auto' | 'en' | 'es-AR' | 'pt-BR'`. The active language SHALL resolve as: the override value when it is `'en' | 'es-AR' | 'pt-BR'`; otherwise the detected locale from REQ-2. Selecting a new value SHALL call `i18next.changeLanguage()` synchronously and re-render SHALL propagate through `useTranslation` subscribers without an app restart.
+The system SHALL provide a Settings selector screen (`src/app/settings/language.tsx`, mirroring the shape of `src/app/settings/currency.tsx`) with exactly six options in this fixed order: `Automático`, `English`, `Español (Latinoamérica)`, `Español (Argentina)`, `Español (España)`, `Português (Brasil)`, sourced from `settingsLanguage` keys (`auto`, `en`, `es-419`, `es-AR`, `es-ES`, `pt-BR`). The selection SHALL persist in `expo-secure-store` under key `ticketify.locale.override` with value `'auto' | 'en' | 'es-419' | 'es-AR' | 'es-ES' | 'pt-BR'`. The active language SHALL resolve as: the override value when it is a concrete locale; otherwise the detected locale from REQ-2. A stored value outside that union SHALL read back as "no override" (`null`) so the device locale wins. Selecting a new value SHALL call `i18next.changeLanguage()` synchronously and re-render SHALL propagate through `useTranslation` subscribers without an app restart.
 
 **Given/When/Then**:
 
 1. Given the user has `ticketify.locale.override === 'auto'`, When the active language is resolved, Then it equals the device-locale detection result.
 2. Given the user is in `en` (auto-detected) and picks `Português (Brasil)` in Settings, When selection is committed, Then `ticketify.locale.override === 'pt-BR'` is persisted and the active language becomes `pt-BR` live without app restart.
-3. Given the user has a manual override and now picks `Automático (es-AR)`, When selection is committed, Then `ticketify.locale.override === 'auto'` is persisted and the active language reverts to the device locale.
-4. Given the user has `ticketify.locale.override === 'pt-BR'` and kills the app, When the app cold-starts, Then the active language is `pt-BR` (override persists across restarts).
+3. Given the user picks `Español (España)`, When selection is committed, Then `ticketify.locale.override === 'es-ES'` is persisted and the active language becomes `es-ES` live.
+4. Given the user has a manual override and now picks `Automático`, When selection is committed, Then `ticketify.locale.override === 'auto'` is persisted and the active language reverts to the device locale.
+5. Given the user has `ticketify.locale.override === 'pt-BR'` and kills the app, When the app cold-starts, Then the active language is `pt-BR` (override persists across restarts).
+6. Given the stored override is a tampered value such as `'de-DE'`, When the store hydrates, Then it reads back as no override and the device locale wins (no raw keys).
 
 ### REQ-4: Locale-aware formatters (hybrid policy)
 
@@ -101,15 +106,16 @@ The system SHALL expose currency display names as i18n keys under the `currency.
 2. Given locale is `en`, When the currency selector renders the UYU row, Then the label is `Uruguayan peso`.
 3. Given locale is `pt-BR`, When the currency selector renders the BRL row, Then the label is `Real brasileiro`.
 
-### REQ-9: Voseo handling
+### REQ-9: Regional second-person register (voseo / vosotros / tuteo)
 
-The system SHALL keep es-AR copy as Rioplatense Spanish voseo throughout the catalog. For the household member suffix (today a hardcoded ` (vos)` in `src/app/settings/household.tsx`), the system SHALL expose a translation key `household.youSuffix` whose value is ` (vos)` in es-AR, ` (você)` in pt-BR, and ` (you)` in en. The hardcoded literal ` (vos)` SHALL NOT appear in source code after PR 3.
+The system SHALL keep `es-AR` copy as Rioplatense Spanish voseo and `es-ES` copy as Peninsular Spanish (tuteo + `vosotros`), with `es-419` as neutral Latin-American Spanish. For the household member suffix, the system SHALL expose `PLURAL_SECOND_PERSON` (`src/i18n/detector.ts`) and the translation key `household.youSuffix`: ` (vos)` in `es-AR`, ` (vosotros)` in `es-ES`, ` (você)` in `pt-BR`, and ` (you)` in `en`. The hardcoded literal ` (vos)` SHALL NOT appear in source code.
 
 **Given/When/Then**:
 
 1. Given the household list renders in `es-AR`, When the current-user row renders, Then the label reads `Marcelo (vos)`.
-2. Given the household list renders in `pt-BR`, When the current-user row renders, Then the label reads `Marcelo (você)`.
-3. Given the household list renders in `en`, When the current-user row renders, Then the label reads `Marcelo (you)`.
+2. Given the household list renders in `es-ES`, When the current-user row renders, Then the label reads `Marcelo (vosotros)`, and `PLURAL_SECOND_PERSON['es-ES'] === ' (vosotros)'`.
+3. Given the household list renders in `pt-BR`, When the current-user row renders, Then the label reads `Marcelo (você)`.
+4. Given the household list renders in `en`, When the current-user row renders, Then the label reads `Marcelo (you)`.`
 
 ### REQ-10: Architectural constraints (no Intl / no ICU / no dayjs; non-React helpers)
 
@@ -132,17 +138,17 @@ The system SHALL NOT display a first-run language picker. The first launch SHALL
 
 ### REQ-12: Primary-flow coverage (PR 2)
 
-The system SHALL provide full feature parity across all three locales for the primary user journey: auth screens (`sign-in`, `sign-up`, `forgot-password`, `reset-password`), tabs (`home`, `analytics`, `history`, `profile`), settings screens (`profile-edit`, `budget`, `category-budgets`, `currency`, `household`, `export`), the ticket flow (`manual`, `review`, `camera`), `features/*` hooks, the 6 user-safe error messages in `src/lib/supabase/feature-access.ts`, the 6 `MANUAL_ERROR_MESSAGES` codes in `src/features/tickets/manual-form.ts`, and the `DatePickerField` calendar copy. PR 2 SHALL NOT include `src/app/pro/charts.tsx`, `src/app/receipts/[id].tsx`, drill-downs, or the long-tail feature components — those belong to REQ-13.
+The system SHALL provide full feature parity across all five locales for the primary user journey: auth screens (`sign-in`, `sign-up`, `forgot-password`, `reset-password`), tabs (`home`, `analytics`, `history`, `profile`), settings screens (`profile-edit`, `budget`, `category-budgets`, `currency`, `household`, `export`), the ticket flow (`manual`, `review`, `camera`), `features/*` hooks, the 6 user-safe error messages in `src/lib/supabase/feature-access.ts`, the 6 `MANUAL_ERROR_MESSAGES` codes in `src/features/tickets/manual-form.ts`, and the `DatePickerField` calendar copy. PR 2 SHALL NOT include `src/app/pro/charts.tsx`, `src/app/receipts/[id].tsx`, drill-downs, or the long-tail feature components — those belong to REQ-13.
 
 **Given/When/Then**:
 
-1. Given PR 2 has merged, When the primary flow is walked in each locale (en, es-AR, pt-BR), Then no raw key strings (`home.title`, `auth.signIn`) are visible anywhere on the journey.
+1. Given PR 2 has merged, When the primary flow is walked in each locale (en, es-419, es-AR, es-ES, pt-BR), Then no raw key strings (`home.title`, `auth.signIn`) are visible anywhere on the journey.
 2. Given a Supabase read fails with a user-safe error code, When the user lands on the error toast, Then the message renders in the active locale (`No se pudieron cargar los datos. Inténtalo de nuevo.` in es-AR, etc.).
 3. Given the DatePickerField opens in `pt-BR`, When the calendar renders, Then month names and weekday labels render in Portuguese.
 
 ### REQ-13: Long-tail coverage and consolidations (PR 3)
 
-The system SHALL provide full feature parity across all three locales for `src/app/pro/charts.tsx`, `src/app/receipts/[id].tsx`, drill-downs (`categories/[key]`, `items/[name]`, `stores/[name]`), and the feature components `features/analytics/**`, `features/charts/**`, `features/items/**`, `features/export/**`. PR 3 SHALL consolidate the three duplicated currency-format maps (`src/lib/format.ts:8-16`, `src/features/charts/components/CategoryDonut.tsx:78-86`, `src/features/charts/components/ChartLegend.tsx:63-81`) onto a single locale-aware `formatCurrency` exported from `src/lib/format.ts`. PR 3 SHALL consolidate the two parallel month-name arrays (`MONTHS_SHORT_ES` / `MONTHS_FULL_ES` in `format.ts` AND `MONTHS_ABBR_ES_AR` / `MONTHS_FULL_ES_AR` in `DatePickerField/calendar.ts`) onto a single locale-aware source. PR 3 SHALL rewrite `formatDateES` to clean state (no legacy es-AR-only signatures).
+The system SHALL provide full feature parity across all five locales for `src/app/pro/charts.tsx`, `src/app/receipts/[id].tsx`, drill-downs (`categories/[key]`, `items/[name]`, `stores/[name]`), and the feature components `features/analytics/**`, `features/charts/**`, `features/items/**`, `features/export/**`. PR 3 SHALL consolidate the three duplicated currency-format maps (`src/lib/format.ts:8-16`, `src/features/charts/components/CategoryDonut.tsx:78-86`, `src/features/charts/components/ChartLegend.tsx:63-81`) onto a single locale-aware `formatCurrency` exported from `src/lib/format.ts`. PR 3 SHALL consolidate the two parallel month-name arrays (`MONTHS_SHORT_ES` / `MONTHS_FULL_ES` in `format.ts` AND `MONTHS_ABBR_ES_AR` / `MONTHS_FULL_ES_AR` in `DatePickerField/calendar.ts`) onto a single locale-aware source. PR 3 SHALL rewrite `formatDateES` to clean state (no legacy es-AR-only signatures).
 
 **Given/When/Then**:
 
@@ -154,7 +160,7 @@ The system SHALL provide full feature parity across all three locales for `src/a
 
 ### NFR-1: Bundle size
 
-The full i18n stack SHALL add at most 30 KB gz to the JS bundle (i18next ~10 KB + react-i18next ~3 KB + `expo-localization` footprint + three locale files ≤ 5 KB each).
+The full i18n stack SHALL stay within the bundle budget despite shipping five locales: i18next ~10 KB + react-i18next ~3 KB + `expo-localization` footprint, plus the catalogs. Because `es-AR` and `es-ES` are sparse overrides on the `es-419` base (see `locale-catalog-hierarchy` NFR-1), the two extra Spanish catalogs SHALL add only their divergent leaves — not a second and third full copy.
 
 ### NFR-2: No Intl / no ICU / no dayjs / no date-fns
 
@@ -166,7 +172,7 @@ PR 1 SHALL stay ≤ 400 lines; PR 2 and PR 3 SHALL each stay ≤ 1000 lines (bin
 
 ### NFR-4: Typecheck and harness tests
 
-`pnpm typecheck` MUST pass after every PR. A pure-function unit test (`scripts/test-i18n-detector.mjs`) SHALL cover the detector mapping for at least: `pt-BR` → `pt-BR`, `pt-PT` → `pt-BR`, `en-US` → `en`, `en-GB` → `en`, `es-AR` → `es-AR`, `es-MX` → `es-AR`, `fr-FR` → `es-AR`, empty array → `es-AR`.
+`pnpm typecheck` MUST pass after every PR. A pure-function unit test (`scripts/test-i18n-detector.mjs`) SHALL cover the detector mapping for at least: `pt-BR` → `pt-BR`, `pt-PT` → `pt-BR`, `en-US` → `en`, `en-GB` → `en`, `es-AR` → `es-AR`, `es-ES` → `es-ES`, `es-MX` → `es-419`, `es-US` → `es-419`, bare `es` → `es-419`, `fr-FR` → `en`, empty/undefined → `en`. A catalog-parity harness (`scripts/test-i18n-catalog-parity.mjs`) SHALL pin the five-locale file set, the 18-namespace uniformity, the sparse-override invariants, and the `es-AR`/`es-ES` leaf values.
 
 ### NFR-5: Accessibility (a11y)
 
@@ -180,13 +186,22 @@ Locale JSON files SHALL bundle via Metro. The system SHALL function offline on f
 
 The default currency code (`UYU`) SHALL stay independent of UI language. Changing the active language SHALL NOT change the persisted default currency code, and `formatCurrency` SHALL continue to use the currency code's symbol regardless of which UI locale is active.
 
+### NFR-8: Five-locale catalog integrity
+
+Every locale SHALL ship the same 18 namespaces and the same key set (modulo the sparse-override model), and a parity harness SHALL pin it. No locale SHALL silently resolve a Spanish leaf through English while a base leaf exists.
+
+### NFR-9: Regional register isolation
+
+The Rioplatense register (`vos`, voseo conjugations) SHALL appear only in `es-AR`; the Peninsular register (`vosotros`, present-perfect compounds, Peninsular lexicon) SHALL appear only in `es-ES`; neither SHALL leak into `es-419`, `en`, or `pt-BR`. The parity harness SHALL assert the anti-leak both ways.
+
 ## Acceptance Gates
 
 1. `pnpm typecheck` passes after PR 1, PR 2, and PR 3.
-2. Manual — device matrix (PR 1): app launches in `es-AR` on Spanish (Argentina) simulator, `pt-BR` on Portuguese (Brazil), `en` on English (US), and `es-AR` on French (fallback). The Settings selector updates the UI live without restart. Manual override persists across cold start.
-3. Manual — primary flow (PR 2): the auth + tabs + settings + ticket journey walks clean in all three locales with no raw keys visible; user-safe Supabase errors render in the active locale.
-4. Manual — long tail (PR 3): pro charts + receipts + drill-downs render in all three locales; the duplicated currency maps and month arrays are gone; `formatDateES` is rewritten.
-5. Unit — detector (`scripts/test-i18n-detector.mjs`): all 8 mapping cases pass.
+2. Manual — device matrix (PR 1): app launches in `es-AR` on Spanish (Argentina) simulator, `es-ES` on Spanish (Spain), `es-419` on Spanish (Mexico) and on French (global fallback: `en`), `pt-BR` on Portuguese (Brazil), and `en` on English (US). The Settings selector updates the UI live without restart. Manual override persists across cold start.
+3. Manual — primary flow (PR 2): the auth + tabs + settings + ticket journey walks clean in all five locales with no raw keys visible; user-safe Supabase errors render in the active locale.
+4. Manual — long tail (PR 3): pro charts + receipts + drill-downs render in all five locales; the duplicated currency maps and month arrays are gone; `formatDateES` is rewritten.
+5. Unit — detector (`scripts/test-i18n-detector.mjs`): all mapping cases pass, including `es-ES → es-ES`, `es-MX → es-419`, bare `es → es-419`, and `fr-FR → en`.
+5b. Unit — catalog parity (`scripts/test-i18n-catalog-parity.mjs`): five-locale file set, 18 namespaces each, sparse-override invariants, and the `es-AR`/`es-ES` leaf pins all pass.
 6. a11y: VoiceOver / TalkBack reads localized strings on `ReceiptRow`, `ItemDetail`, and `ChartLegendItem`.
 7. Plurals: `daysRemaining = 1` and `daysRemaining = 5` render correctly per locale (`Queda 1 día` / `1 day left` / `Resta 1 dia` and `Quedan 5 días` / `5 days left` / `Restam 5 dias`); `0` uses `_other`.
 8. Currency format: `formatCurrency(1234.56, 'USD')` = `US$ 1,234.56` regardless of UI locale (USD drives international grouping: `,` thousands + `.` decimals); `formatCurrency(1234.56, 'ARS')` = `ARS 1.234,56` regardless of UI locale (ARS drives LATAM grouping: `.` thousands + `,` decimals); `formatCurrency(1234.56, 'BRL')` = `R$ 1.234,56` regardless of UI locale.

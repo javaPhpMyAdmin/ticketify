@@ -81,5 +81,7 @@
   "heroMostExpensiveDay": "Your most expensive day was {{weekday}} {{day}} ({{amount}} · {{multiple}}x your average)",
   "runRateKicker": "MONTHLY PACE",
   "runRateBadge": "vs {{source}}",
-  "runRateProjection": "At the current pace you'll close the month at ~{{projection}}"
+  "runRateProjection": "At the current pace you'll close the month at ~{{projection}}",
+  "budgetSpentOf": " of ",
+  "budgetProgressA11y": "You spent {{spent}}."
 }

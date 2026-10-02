@@ -1,0 +1,5 @@
+{
+    "errorPurchaseFailed": "No se ha podido completar la compra.",
+    "errorRestoreFailed": "No se ha podido restaurar la compra.",
+    "errorGeneric": "No hemos podido cargar los planes. Reintenta."
+}

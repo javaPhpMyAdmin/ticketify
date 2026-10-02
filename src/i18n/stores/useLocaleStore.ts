@@ -4,16 +4,21 @@
  *
  * Lifecycle:
  *
- *   1. The store starts with `override: 'auto'`, `activeLocale: 'es-AR'`
- *      (the fallback per REQ-1). This is the safe default — every
- *      `useTranslation()` subscriber renders Spanish until the boot
- *      hydration overwrites it with the detected locale.
+ *   1. The store starts with `override: 'auto'`, `activeLocale: 'es-419'`
+ *      — the neutral Spanish BASE, chosen because it is the only Spanish
+ *      locale every other Spanish locale inherits from, so a render that
+ *      happens before hydration reads as correct Spanish rather than as
+ *      a regional variant the reader did not ask for. `en` is the global
+ *      fallback per REQ-1; the two are different jobs and this comment
+ *      used to conflate them.
  *
  *   2. `<I18nProvider>` calls `hydrate()` once on mount. Hydration reads
  *      `expo-secure-store` for the override and, on `'auto'`, derives
  *      `activeLocale` from `expo-localization.getLocales()[0].languageTag`
- *      via `detectLocale()`. A stored override of `'en' | 'es-AR' | 'pt-BR'`
- *      wins outright.
+ *      via `detectLocale()` (which also receives `regionCode`, so a
+ *      Spanish device resolves to `es-AR`, `es-ES` or the `es-419` base).
+ *      A stored override of `'en' | 'es-419' | 'es-AR' | 'es-ES' |
+ *      'pt-BR'` wins outright.
  *
  *   3. The user picks a language in `Settings → Idioma`. `setOverride()`
  *      writes the new value to secure-store, swaps the in-memory
@@ -34,8 +39,22 @@ import { getLocales } from 'expo-localization';
 import { detectLocale, type SupportedLocale } from '../detector';
 import { getStoredOverride, setStoredOverride } from '../storage/localeSecureStore';
 
-/** The four legal override values, matching `LocaleOverride` in this store. */
-export type LocaleOverride = 'auto' | 'en' | 'es-AR' | 'pt-BR';
+/**
+ * The SIX legal override values, matching `LocaleOverride` in this store
+ * and the `ALLOWED` set in `localeSecureStore`.
+ *
+ * `'auto'` is not a locale — it defers to the device. The other five are
+ * exactly the five catalogs `config.ts` bundles; adding a locale to the
+ * catalog REQUIRES adding it here, or a user's pick would be discarded
+ * on the next cold start as an unknown value.
+ */
+export type LocaleOverride =
+  | 'auto'
+  | 'en'
+  | 'es-419'
+  | 'es-AR'
+  | 'es-ES'
+  | 'pt-BR';
 
 interface LocaleState {
   /** User's manual override; `'auto'` defers to the device locale. */
@@ -58,10 +77,19 @@ interface LocaleState {
   hydrate: () => Promise<void>;
 }
 
-/** Initial state — `'auto'` means "follow device locale" before hydrate. */
+/**
+ * Initial state — `'auto'` means "follow device locale" before hydrate.
+ *
+ * `activeLocale` is the Spanish BASE (`es-419`), NOT `es-AR`: the base is
+ * the only Spanish catalog guaranteed to answer every key, so a pre-
+ * hydration render paints complete neutral Spanish. It is also NOT `en`:
+ * `en` is the fallback for an UNCLASSIFIABLE device, while this value is
+ * the placeholder for a device whose locale has not been read yet, and
+ * the product's primary audience is Spanish-speaking.
+ */
 const INITIAL: Pick<LocaleState, 'override' | 'activeLocale'> = {
   override: 'auto',
-  activeLocale: 'es-AR',
+  activeLocale: 'es-419',
 };
 
 /**
@@ -76,8 +104,12 @@ async function resolveActiveLocale(
   if (override === 'auto') {
     try {
       const locales = getLocales();
-      const first = locales[0]?.languageTag;
-      return detectLocale(first);
+      const first = locales[0];
+      // `regionCode` is passed alongside the tag: on iOS the platform's
+      // own region answer is more reliable than parsing the tag, and it
+      // is the only way to tell `es-ES` from `es-419` when the tag is a
+      // bare `es`.
+      return detectLocale(first?.languageTag, first?.regionCode);
     } catch {
       // `getLocales()` can throw on rare simulator configs. Fall through
       // to the hard-coded default rather than leaving the user staring

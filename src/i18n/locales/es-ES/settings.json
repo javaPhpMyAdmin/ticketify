@@ -1,0 +1,8 @@
+{
+  "nameUpdated": "Tu nombre ha sido actualizado.",
+  "exportStaleData": "No se ha podido actualizar. Mostrando datos guardados.",
+  "categoryBudgetSaveError": "No se han podido guardar los presupuestos. Inténtalo de nuevo.",
+  "deleteAccountErrorTitle": "No se ha podido eliminar la cuenta",
+  "deleteAccountErrorRevokeBody": "No hemos podido cancelar tu suscripción. Inténtalo de nuevo en unos minutos.",
+  "deleteAccountErrorInternalBody": "No hemos podido eliminar la cuenta. Inténtalo de nuevo."
+}

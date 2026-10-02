@@ -1,0 +1,22 @@
+{
+    "ok": "Aceptar",
+    "cancel": "Cancelar",
+    "back": "Volver",
+    "save": "Guardar",
+    "saveLoading": "Guardando…",
+    "loading": "Cargando…",
+    "retry": "Reintentar",
+    "subscription": {
+        "daysRemaining_one": "Queda 1 día",
+        "daysRemaining_other": "Quedan {{count}} días"
+    },
+    "userFallback": "Usuario",
+    "yes": "sí",
+    "no": "no",
+    "paymentMethodCash": "Efectivo",
+    "paymentMethodCard": "Tarjeta",
+    "paymentMethodApplePay": "Apple Pay",
+    "paymentMethodGooglePay": "Google Pay",
+    "paymentMethodTransfer": "Transferencia",
+    "paymentMethodOther": "Otro"
+}

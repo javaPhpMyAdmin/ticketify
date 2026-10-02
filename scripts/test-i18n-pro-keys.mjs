@@ -3,10 +3,11 @@
  * Node harness for the `pro` namespace i18n key set
  * (revenuecat-trial-migration slice C).
  *
- * Asserts three contracts on the pro namespace catalogs read directly
- * from disk (`src/i18n/locales/{es-AR,en,pt-BR}/pro.json`):
+ * Asserts three contracts on the pro namespace catalogs read from disk
+ * (`src/i18n/locales/<locale>/pro.json`) and RESOLVED through each
+ * locale's fallback chain:
  *
- *   1. PARITY — the three locales have IDENTICAL key sets (REQ-1: locale
+ *   1. PARITY — all five locales expose an IDENTICAL key set (REQ-1: locale
  *      parity across the i18n catalogs).
  *   2. PRESENCE — the slice C ADDED keys (intro caption, trial pill,
  *      benefit labels) exist in every locale as non-empty strings.
@@ -24,14 +25,17 @@
  * Usage: pnpm test:i18n-pro-keys
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
-const LOCALES_ROOT = join(root, 'src', 'i18n', 'locales');
-const LOCALES = ['es-AR', 'en', 'pt-BR'];
+// Resolution, not the file. `es-AR` and `es-ES` are SPARSE regional
+// overrides over the neutral `es-419` base, so a raw read of
+// `es-AR/pro.json` sees 10 keys where the app renders all 86. Every
+// assertion below is about what a reader SEES, so every read resolves
+// `locale → chain → en` exactly like i18next does.
+import { LOCALES, resolveNamespace } from './lib/i18n-chain.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -48,10 +52,9 @@ function test(name, fn) {
   }
 }
 
+/** RESOLVED namespace — base merged under the locale's own overrides. */
 function readCatalog(locale, namespace) {
-  return JSON.parse(
-    readFileSync(join(LOCALES_ROOT, locale, `${namespace}.json`), 'utf8'),
-  );
+  return resolveNamespace(locale, namespace);
 }
 
 function keySet(obj) {
@@ -176,7 +179,7 @@ test('pro.json key sets are identical across the three locales', () => {
 
 console.log('\n[tests] section 2 — slice-C ADDED pro keys present in all locales\n');
 
-test('every added pro key exists as a non-empty string in all three locales', () => {
+test('every added pro key exists as a non-empty string in all five locales', () => {
   for (const locale of LOCALES) {
     const catalog = readCatalog(locale, 'pro');
     for (const key of ADDED_PRO_KEYS) {
@@ -225,6 +228,8 @@ console.log('\n[tests] section 2b — paywall-polish templates (hardcoded day co
 
 test('planAnnualTrialChip is the literal "14 DÍAS GRATIS" shape per locale (no interpolation)', () => {
   const expected = {
+    'es-419': '14 DÍAS GRATIS',
+    'es-ES': '14 DÍAS GRATIS',
     'es-AR': '14 DÍAS GRATIS',
     en: '14 DAYS FREE',
     'pt-BR': '14 DIAS GRÁTIS',
@@ -245,6 +250,8 @@ test('planAnnualTrialChip is the literal "14 DÍAS GRATIS" shape per locale (no 
 
 test('planMonthlyTrialChip is the literal "7 DÍAS GRATIS" shape per locale (no interpolation)', () => {
   const expected = {
+    'es-419': '7 DÍAS GRATIS',
+    'es-ES': '7 DÍAS GRATIS',
     'es-AR': '7 DÍAS GRATIS',
     en: '7 DAYS FREE',
     'pt-BR': '7 DIAS GRÁTIS',
@@ -265,6 +272,8 @@ test('planMonthlyTrialChip is the literal "7 DÍAS GRATIS" shape per locale (no 
 
 test('planAnnualBillCaption is a literal with the hardcoded 14-day count (NO {{trialDays}}) in all locales', () => {
   const dayMarker = {
+    'es-419': '14 días de prueba gratis',
+    'es-ES': '14 días de prueba gratis',
     'es-AR': '14 días de prueba gratis',
     en: '14-day free trial',
     'pt-BR': '14 dias de teste grátis',
@@ -285,6 +294,8 @@ test('planAnnualBillCaption is a literal with the hardcoded 14-day count (NO {{t
 
 test('planMonthlyTrialCaption keeps {{price}} interpolation, hardcodes "7 días", and drops {{trialDays}} in all locales', () => {
   const dayMarker = {
+    'es-419': '7 días',
+    'es-ES': '7 días',
     'es-AR': '7 días',
     en: '7-day',
     'pt-BR': '7 dias',

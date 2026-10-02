@@ -20,12 +20,13 @@
  *      i18next at runtime, not in the type system — that's fine because
  *      the resource shape is enforced by the `tabs` namespace).
  *
- * The PR 2 catalog types use a type-only mirror of the es-AR shape
- * (source of truth). PR 2 ships the `es-AR` files first; the en / pt-BR
- * catalogs are best-effort translations and use `Partial<...>` so a
- * missing key in those locales falls back to es-AR at runtime instead
- * of failing the typecheck. WU-2.6. The PR 3 `date` namespace follows
- * the same pattern.
+ *  * The SPANISH BASE is `es-419`. Every Spanish namespace type is derived
+ * from `typeof es419<Ns>` — the neutral Latin-American catalog — and
+ * merged with `Partial<typeof en<Ns>>` so a missing translation in en /
+ * pt-BR falls back at runtime instead of failing the typecheck.
+ * `es-AR` and `es-ES` are deliberately NOT in this file: they are SPARSE
+ * overrides, so deriving from either would demand a key set the override
+ * is designed not to carry.
  */
 import 'i18next';
 
@@ -46,23 +47,25 @@ import type enPro from './locales/en/pro.json';
 import type enLegal from './locales/en/legal.json';
 import type enOnboarding from './locales/en/onboarding.json';
 import type enBootSplash from './locales/en/bootSplash.json';
-import type esARCommon from './locales/es-AR/common.json';
-import type esARTabs from './locales/es-AR/tabs.json';
-import type esARSettingsLanguage from './locales/es-AR/settingsLanguage.json';
-import type esARAuth from './locales/es-AR/auth.json';
-import type esARSettings from './locales/es-AR/settings.json';
-import type esARTickets from './locales/es-AR/tickets.json';
-import type esARReceipts from './locales/es-AR/receipts.json';
-import type esARHousehold from './locales/es-AR/household.json';
-import type esARAnalytics from './locales/es-AR/analytics.json';
-import type esARErrors from './locales/es-AR/errors.json';
-import type esARA11y from './locales/es-AR/a11y.json';
-import type esARCurrency from './locales/es-AR/currency.json';
-import type esARDate from './locales/es-AR/date.json';
-import type esARPro from './locales/es-AR/pro.json';
-import type esARLegal from './locales/es-AR/legal.json';
-import type esAROnboarding from './locales/es-AR/onboarding.json';
-import type esARBootSplash from './locales/es-AR/bootSplash.json';
+import type es419Common from './locales/es-419/common.json';
+import type es419Tabs from './locales/es-419/tabs.json';
+import type es419SettingsLanguage from './locales/es-419/settingsLanguage.json';
+import type es419Auth from './locales/es-419/auth.json';
+import type es419Settings from './locales/es-419/settings.json';
+import type es419Tickets from './locales/es-419/tickets.json';
+import type es419Receipts from './locales/es-419/receipts.json';
+import type es419Household from './locales/es-419/household.json';
+import type es419Analytics from './locales/es-419/analytics.json';
+import type es419Errors from './locales/es-419/errors.json';
+import type es419A11y from './locales/es-419/a11y.json';
+import type es419Currency from './locales/es-419/currency.json';
+import type es419Date from './locales/es-419/date.json';
+import type es419Pro from './locales/es-419/pro.json';
+import type es419Legal from './locales/es-419/legal.json';
+import type es419Onboarding from './locales/es-419/onboarding.json';
+import type es419BootSplash from './locales/es-419/bootSplash.json';
+import type es419Categories from './locales/es-419/categories.json';
+import type enCategories from './locales/en/categories.json';
 
 declare module 'i18next' {
   interface ResourceNamespaceMap {
@@ -70,21 +73,21 @@ declare module 'i18next' {
     tabs: typeof enTabs;
     settingsLanguage: typeof enSettingsLanguage;
     /**
-     * PR 2 namespaces. The es-AR catalog is the source of truth; the
+     * PR 2 namespaces. The es-419 catalog is the source of truth; the
      * en catalog is typed as `Partial<...>` of the same shape so a
-     * missing translation key in en fails the typecheck in es-AR
+     * missing translation key in en fails the typecheck against the base
      * (where the source string lives) but not in en / pt-BR (where
      * translations are best-effort per the spec's acceptance gate 3).
      */
-    auth: typeof esARAuth & Partial<typeof enAuth>;
-    settings: typeof esARSettings & Partial<typeof enSettings>;
-    tickets: typeof esARTickets & Partial<typeof enTickets>;
-    receipts: typeof esARReceipts & Partial<typeof enReceipts>;
-    household: typeof esARHousehold & Partial<typeof enHousehold>;
-    analytics: typeof esARAnalytics & Partial<typeof enAnalytics>;
-    errors: typeof esARErrors & Partial<typeof enErrors>;
-    a11y: typeof esARA11y & Partial<typeof enA11y>;
-    currency: typeof esARCurrency & Partial<typeof enCurrency>;
+    auth: typeof es419Auth & Partial<typeof enAuth>;
+    settings: typeof es419Settings & Partial<typeof enSettings>;
+    tickets: typeof es419Tickets & Partial<typeof enTickets>;
+    receipts: typeof es419Receipts & Partial<typeof enReceipts>;
+    household: typeof es419Household & Partial<typeof enHousehold>;
+    analytics: typeof es419Analytics & Partial<typeof enAnalytics>;
+    errors: typeof es419Errors & Partial<typeof enErrors>;
+    a11y: typeof es419A11y & Partial<typeof enA11y>;
+    currency: typeof es419Currency & Partial<typeof enCurrency>;
     /**
      * PR 3 (`app-i18n`): `date` namespace — single locale-aware source for
      * the calendar / weekday / month arrays. Numeric string keys (e.g.
@@ -94,7 +97,7 @@ declare module 'i18next' {
      * out of scope). Weekday headers use the same shape with
      * `weekdayMonFirst` / `weekdaySunFirst`.
      */
-    date: typeof esARDate & Partial<typeof enDate>;
+    date: typeof es419Date & Partial<typeof enDate>;
     /**
      * PR 3 (`app-i18n`): `pro` namespace — Pro subscription + Pro charts
      * screen copy. The charts screen (`src/app/pro/charts.tsx`) is the
@@ -104,37 +107,51 @@ declare module 'i18next' {
      * trend card, view toggle, period selector, summary cards, and a
      * couple of section headings.
      */
-    pro: typeof esARPro & Partial<typeof enPro>;
+    pro: typeof es419Pro & Partial<typeof enPro>;
     /**
      * legal-compliance U2: `legal` namespace — the bundled Privacy Policy
      * and Terms documents (`privacy`/`terms` section arrays, AD-1 static
-     * RN text) plus the consent-gate copy for U4/U5. es-AR is the legal
+     * RN text) plus the consent-gate copy for U4/U5. es-419 is the legal
      * source of truth, typed exactly; en/pt-BR are best-effort parsed
      * translations (Partial) whose KEY SETS are pinned identical by the
      * test:legal-content parity harness.
      */
-    legal: typeof esARLegal & Partial<typeof enLegal>;
+    legal: typeof es419Legal & Partial<typeof enLegal>;
     /**
      * Onboarding flow (`src/app/onboarding/`): the 3-step welcome wizard
      * surfaced only on the first app launch and persisted via
      * `onboarding-storage.ts`. Mirrors the `pro` namespace pattern —
-     * es-AR is the source of truth, en / pt-BR are best-effort
+     * es-419 is the source of truth, en / pt-BR are best-effort
      * translations whose KEY SETS are pinned identical by the
      * test-i18n-onboarding-keys harness. Per-step copy lives under
      * `step1` / `step2` / `step3` keys so the screens can pull
      * `t('step1.headline')` without flat-key collisions across
      * the three flows.
      */
-    onboarding: typeof esAROnboarding & Partial<typeof enOnboarding>;
+    onboarding: typeof es419Onboarding & Partial<typeof enOnboarding>;
     /**
      * Boot splash redesign (splash-screen-example reference, kinetic
      * finance capture): splash column copy + status cycle labels.
-     * Mirrors the `pro` / `onboarding` namespace pattern — es-AR is
+     * Mirrors the `pro` / `onboarding` namespace pattern — es-419 is
      * the source of truth, en / pt-BR are best-effort translations
      * whose KEY SETS stay identical via the
      * test:i18n-boot-splash-keys harness.
      */
-    bootSplash: typeof esARBootSplash & Partial<typeof enBootSplash>;
+    bootSplash: typeof es419BootSplash & Partial<typeof enBootSplash>;
+    /**
+     * `category-display-i18n`: `categories` namespace — the 13 SYSTEM
+     * category labels, keyed by the registry slug. `es-419` is transcribed
+     * 1:1 from the registry and is the source of truth; en / pt-BR carry
+     * the translated labels. `es-AR` and `es-ES` ship `{}` — no
+     * canonical category label diverges between Rioplatense, Peninsular
+     * and neutral Spanish, so carrying a regional copy would be a
+     * duplicated-translation bug, not a localization win.
+     *
+     * This namespace is the EIGHTEENTH. The change documents that
+     * repeatedly said "17 namespaces" were counting before this one
+     * existed; the parity harness pins 18 and the leaf totals.
+     */
+    categories: typeof es419Categories & Partial<typeof enCategories>;
   }
 
   interface CustomTypeOptions {
