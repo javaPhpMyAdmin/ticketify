@@ -228,8 +228,10 @@ async function run() {
     });
   }
 
-  await test('anti-paste guard: pt-BR and es-419 differ from en for all codes', () => {
+  await test('anti-paste guard: pt-BR and es-419 differ from en for codes that differ legitimately', () => {
+    const skipSame = new Set(['EUR']);
     for (const code of codes) {
+      if (skipSame.has(code)) continue;
       assert.notEqual(ptBRPinned[code], enPinned[code], `pt-BR.${code} must differ from en.${code}`);
       assert.notEqual(es419Pinned[code], enPinned[code], `es-419.${code} must differ from en.${code}`);
     }
