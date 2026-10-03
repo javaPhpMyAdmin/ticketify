@@ -92,6 +92,29 @@ export const LATAM_CURRENCIES: ReadonlySet<string> = new Set(
 export const INTL_CURRENCIES: ReadonlySet<string> = new Set(INTL_CURRENCY_CODES);
 
 /**
+ * Currencies with NO minor unit: CLP (peso), JPY (yen), PEN (sol) and PYG
+ * (guaraní). Their smallest circulating unit is the whole one, so
+ * `formatCurrency` rounds to the nearest unit and emits no decimal separator
+ * — printing `¥ 1,234.56` fabricates a cent that does not exist and misstates
+ * the amount.
+ *
+ * The spec names `JPY` and `PYG` (REQ-2 prose) and then pins whole-amount
+ * output for `CLP` and `PEN` in REQ-2.1/2.2 and acceptance gate 2 — all four
+ * are factually zero-decimal, so all four belong here.
+ *
+ * Deliberately NOT included: `COP`, which is factually zero-decimal in
+ * circulation but is excluded by the recorded scope decision (widening the
+ * set changes what every existing COP balance looks like and is a separate
+ * product call, not a catalog cleanup).
+ */
+export const ZERO_DECIMAL_CURRENCIES: ReadonlySet<string> = new Set([
+  'CLP',
+  'JPY',
+  'PEN',
+  'PYG',
+]);
+
+/**
  * Symbol lookup keyed by ISO 4217 code. Typed `Record<SupportedCurrency,
  * string>` so a MISSING SYMBOL IS A `tsc` ERROR rather than a runtime
  * `code-as-symbol` surprise (REQ-1.3). Reads with a code outside the catalog
@@ -778,8 +801,13 @@ export function formatCurrency(value: number, currencyCode: string): string {
   const upperCode = currencyCode.toUpperCase();
   const isLATAM = LATAM_CURRENCIES.has(upperCode);
   const symbolPrefix = currencySymbolPrefix(upperCode, currencyCode);
-  const fixed = Math.abs(value).toFixed(2);
-  const [intPart, decPart] = fixed.split('.');
+  // A zero-decimal code has no fraction to print: round to the whole unit and
+  // leave `decPart` empty, which makes the `hasNonZeroDecimal` guard below
+  // fall through to the grouped integer. Grouping still runs on `intPart`, so
+  // `1234.56` → `1235` → `1.235` and `100.4` → `100`.
+  const isZeroDecimal = ZERO_DECIMAL_CURRENCIES.has(upperCode);
+  const fixed = Math.abs(value).toFixed(isZeroDecimal ? 0 : 2);
+  const [intPart, decPart = ''] = fixed.split('.');
   // Hand-rolled grouping: thousands separator every 3 digits from the
   // right, no leading separator.
   const groupSep = isLATAM ? '.' : ',';
