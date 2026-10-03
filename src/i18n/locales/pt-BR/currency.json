@@ -3,14 +3,14 @@
   "USD": "Dólar americano",
   "ARS": "Peso argentino",
   "BRL": "Real brasileiro",
-  "AUD": "Australian dollar",
-  "CAD": "Canadian dollar",
-  "CLP": "Chilean peso",
-  "COP": "Colombian peso",
+  "AUD": "Dólar australiano",
+  "CAD": "Dólar canadense",
+  "CLP": "Peso chileno",
+  "COP": "Peso colombiano",
   "EUR": "Euro",
-  "GBP": "British pound sterling",
-  "JPY": "Japanese yen",
-  "MXN": "Mexican peso",
-  "PEN": "Peruvian sol",
-  "PYG": "Paraguayan guaraní"
+  "GBP": "Libra esterlina",
+  "JPY": "Iene japonês",
+  "MXN": "Peso mexicano",
+  "PEN": "Sol peruano",
+  "PYG": "Guarani"
 }
