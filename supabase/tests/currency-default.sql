@@ -1,38 +1,38 @@
 -- ============================================================================
--- Ticketify — currency-default SQL smoke test (migration 0040)
+-- Ticketify — currency-default SQL smoke test (migration 0041)
 --
 -- A fail-closed catalog smoke test for the i18n workstream's currency-default
 -- alignment (app-i18n, gap G5). It runs against a SCRATCH database (e.g.
 -- `supabase db reset` output or a CI-local Postgres) — never against
 -- production. Like every other file in supabase/tests/ it is READ-ONLY at the
 -- schema level: it does NOT apply migrations and does NOT rewrite existing
--- rows. It only reads `pg_catalog` and asserts what 0040 declares.
+-- rows. It only reads `pg_catalog` and asserts what 0041 declares.
 --
 -- What it pins
 -- ------------
 -- §1. The column default. `public.profiles.currency` must default to the
---     canonical lowercase `'usd'`. Asserted on the RAW catalog string, so a
---     Postgres that renders the literal as `'usd'::text` (its usual
+--     canonical UPPERCASE `'USD'`. Asserted on the RAW catalog string, so a
+--     Postgres that renders the literal as `'USD'::text` (its usual
 --     `pg_get_expr` rendering) is compared on VALUE, not on formatting — a
---     string compare against `'usd'` alone would fail on a correct catalog.
+--     string compare against `'USD'` alone would fail on a correct catalog.
 -- §2. The default FIRES, and the column stores an explicit value verbatim.
 --     Two properties, both observable from a post-migration smoke test:
---       (a) a profile inserted WITHOUT a currency is born 'usd';
+--       (a) a profile inserted WITHOUT a currency is born 'USD';
 --       (b) a profile inserted WITH 'UYU' keeps 'UYU' — i.e. the default is
 --           not shadowed by a CHECK, a normalizing rule, or a trigger that
---           forces 'usd' over a real user choice. Verified by mutation: a
---           `before insert or update` trigger setting `new.currency='usd'`
+--           forces 'USD' over a real user choice. Verified by mutation: a
+--           `before insert or update` trigger setting `new.currency='USD'`
 --           fails this file.
 --
 --     LIMITATION — read this before trusting §2(b) as a backfill guard. This
 --     class of test runs AFTER the migration chain, so it CANNOT detect a
---     one-time `update ... set currency = 'usd'` backfill: the backfill has
---     already finished by the time the fixtures are inserted, and no
---     surviving row reveals it. 0040's "declares a default, rewrites nothing"
---     property is therefore pinned by its own migration header and by review,
---     NOT by this file. What §2(b) does pin is the durable, always-on
---     enforcement surface (triggers / CHECKs / coercions), which is how the bug
---     actually returns.
+--     one-time lowercase backfill of the kind an EARLIER migration performed
+--     (`update ... set currency = 'usd'`): such a backfill has already finished
+--     by the time the fixtures are inserted, and no surviving row reveals it.
+--     0041's "declares a default, rewrites nothing" property is therefore
+--     pinned by its own migration header and by review, NOT by this file. What
+--     §2(b) does pin is the durable, always-on enforcement surface (triggers /
+--     CHECKs / coercions), which is how the bug actually returns.
 -- §3. The column's nullability and type are unchanged (`text NOT NULL`), so
 --     the migration did not widen or loosen anything on its way through.
 --
@@ -62,7 +62,7 @@ declare
   v_untouched_cur text;
 begin
   ---------------------------------------------------------------------------
-  -- §1. The column default is exactly the canonical lowercase 'usd'
+  -- §1. The column default is exactly the canonical UPPERCASE 'USD'
   ---------------------------------------------------------------------------
   select
     pg_get_expr(d.adbin, d.adrelid),
@@ -83,23 +83,30 @@ begin
     and not a.attisdropped;
 
   assert v_default_expr is not null,
-    'public.profiles.currency has no column default — migration 0040 must declare one';
+    'public.profiles.currency has no column default — migration 0041 must declare one';
 
   -- Compare the VALUE inside the rendered default expression rather than the
-  -- whole string: pg_get_expr returns `'usd'::text` on a standard catalog,
-  -- so a bare equality against `'usd'` would reject a correct schema.
-  assert (v_default_expr ~* '''usd'''::text),
-    format('expected the profiles.currency default to contain ''usd'', got: %s', v_default_expr);
+  -- whole string: pg_get_expr returns `'USD'::text` on a standard catalog, so
+  -- a bare equality against `'USD'` would reject a correct schema.
+  --
+  -- `~` (NOT `~*`) is the load-bearing operator here. The pre-0041 version of this
+  -- file used `~*`, which is case-INSENSITIVE, so it matched `'USD'` just as
+  -- happily as `'usd'` and could not tell the two apart -- the one property
+  -- this migration exists to establish. Its second assertion made the same
+  -- mistake and was a tautology: with both sides case-folded,
+  -- `!~* 'USD' or ~* 'usd'` is true for any expression containing either
+  -- spelling. Both are replaced below by case-sensitive checks.
+  assert (v_default_expr ~ '''USD'''::text),
+    format('expected the profiles.currency default to contain ''USD'' UPPERCASE, got: %s', v_default_expr);
 
-  -- Case is load-bearing for this migration (see its header): the app submits
-  -- the lowercase canonical form, so an 'USD' default is not the same value
+  -- Case-sensitive negative: a lowercase-only literal anywhere in the default
+  -- expression means the canonical-uppercase requirement (NFR-1) is unmet,
   -- even though `toUpperCase()` would make the two format identically.
-  assert (v_default_expr !~* '''USD'''::text)
-      or (v_default_expr ~* '''usd'''::text),
-    format('unexpected default casing: %s', v_default_expr);
+  assert (v_default_expr !~ '''usd'''::text),
+    format('the default must not carry a lowercase ''usd'' literal: %s', v_default_expr);
 
   ---------------------------------------------------------------------------
-  -- §3. Type and nullability untouched by 0040
+  -- §3. Type and nullability untouched by 0041
   ---------------------------------------------------------------------------
   assert v_is_nullable = 'NO',
     format('profiles.currency must stay NOT NULL, got %s', coalesce(v_is_nullable, 'MISSING'));
@@ -126,10 +133,10 @@ begin
   from public.profiles where id = v_user;
 
   assert v_seeded_cur = 'UYU',
-    format('an explicitly-chosen UYU row must survive 0040 untouched, got %s', coalesce(v_seeded_cur, 'NULL'));
+    format('an explicitly-chosen UYU row must survive 0041 untouched, got %s', coalesce(v_seeded_cur, 'NULL'));
 
   -- Now the default itself: a profile inserted WITHOUT a currency must be
-  -- born 'usd'. This is the behavior the migration exists to change, and it
+  -- born 'USD'. This is the behavior the migration exists to change, and it
   -- is only observable through a real insert.
   insert into auth.users (id, email)
   values (v_user_fresh, 'currency-default-fresh@i18n.test.local')
@@ -141,8 +148,8 @@ begin
   select currency into v_fresh_cur
   from public.profiles where id = v_user_fresh;
 
-  assert v_fresh_cur = 'usd',
-    format('a new profile must be born with the ''usd'' default, got %s', coalesce(v_fresh_cur, 'NULL'));
+  assert v_fresh_cur = 'USD',
+    format('a new profile must be born with the ''USD'' default, got %s', coalesce(v_fresh_cur, 'NULL'));
 
   -- And the seeded row is STILL 'UYU' after the no-currency insert above: the
   -- DEFAULT applied to the row that omitted it and left the row that supplied
@@ -151,12 +158,12 @@ begin
   from public.profiles where id = v_user;
 
   assert v_untouched_cur = 'UYU',
-    format('0040 must not override an explicitly-chosen currency, got %s', coalesce(v_untouched_cur, 'NULL'));
+    format('0041 must not override an explicitly-chosen currency, got %s', coalesce(v_untouched_cur, 'NULL'));
 
   -- Cleanup: leave the scratch DB exactly as we found it.
   delete from public.profiles where id in (v_user, v_user_fresh);
   delete from auth.users   where id in (v_user, v_user_fresh);
 
-  raise notice 'currency-default smoke test passed (0040)';
+  raise notice 'currency-default smoke test passed (0041)';
 end
 $$;

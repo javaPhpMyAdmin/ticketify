@@ -143,6 +143,12 @@ function installRequireHook() {
       request = join(outDir, 'scripts', 'test-stubs', 'storage-adapter.js');
     } else if (request === 'expo-file-system') {
       request = join(outDir, 'scripts', 'test-stubs', 'expo-file-system.js');
+    } else if (request === 'expo-localization') {
+      // The sign-in graph reaches the device-currency adapter, the sole
+      // getLocales() reader on the currency path (precedent:
+      // test-i18n-init.mjs). Without this branch node tries to load the
+      // real native module.
+      request = join(outDir, 'scripts', 'test-stubs', 'expo-localization.js');
     } else if (request === 'react-native') {
       // Mirrors the auth harness: the real package cannot load in plain node
       // (flow syntax); `query-client.ts` only touches AppState + Platform.OS.
@@ -336,6 +342,21 @@ async function run() {
     assert.ok(
       stubMod.__getCallLog().some((e) => e.kind === 'update' && e.table === 'profiles'),
       'update call logged on profiles',
+    );
+  });
+
+  await test('setProfileCurrency canonicalizes the code to uppercase at the write boundary', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('profiles', [{ id: 'u1' }]);
+    const result = await profileMod.setProfileCurrency('u1', 'mxn');
+    assert.equal(result.status, 'ok');
+    // NFR-1: every code the app WRITES is uppercase ISO 4217. Case folding
+    // stays display-side in formatCurrency, so canonicalizing here is the
+    // single boundary that makes the invariant true for every future caller.
+    assert.deepEqual(
+      stubMod.__getUpdated('profiles'),
+      { currency: 'MXN' },
+      'a lowercase submitted code must be stored uppercase',
     );
   });
 

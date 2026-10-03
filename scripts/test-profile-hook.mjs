@@ -105,6 +105,11 @@ function installRequireHook() {
       request = join(outDir, 'scripts/test-stubs/storage-adapter.js');
     } else if (request === 'react-native') {
       request = join(outDir, 'scripts/test-stubs/react-native.js');
+    } else if (request === 'expo-localization') {
+      // The device-currency adapter is the sole getLocales() reader in the
+      // sign-in path (precedent: test-i18n-init.mjs). Without this branch the
+      // compiled use-session-store graph tries to load the real native module.
+      request = join(outDir, 'scripts/test-stubs/expo-localization.js');
     } else if (request.startsWith('@/')) {
       request = join(outDir, 'src', request.slice(2));
     }
@@ -115,8 +120,11 @@ function installRequireHook() {
 const load = (rel) => import(pathToFileURL(join(outDir, rel)).href);
 
 let stubMod;
+let deviceCurrencyMod;
+let localizationStubMod;
 let profileApiMod;
 let profileHookMod;
+let profileSyncMod;
 let sessionStoreMod;
 let settingsStoreMod;
 let formatMod;
@@ -221,10 +229,50 @@ function resetAll() {
   });
   formatMod.setCurrencySymbolGate(true);
   sessionStoreMod.useSessionStore.setState({ session: null });
+  localizationStubMod.__setDeviceLocales([
+    { languageTag: 'en-US', languageCode: 'en', regionCode: 'US', currencyCode: 'USD' },
+  ]);
 }
 
 function signIn() {
   sessionStoreMod.useSessionStore.setState({ session: FAKE_SESSION });
+}
+
+/**
+ * Runs `fn` with console.debug / console.warn captured, then restores them.
+ *
+ * The currency-seeding observability contract is a LOG SEVERITY contract:
+ * "which level did this failure report at, and did it name the cause?" There is
+ * no return value and no store state to assert on — the console IS the
+ * externally visible surface, so capturing it is the only way to pin it.
+ *
+ * Capturing rather than stubbing keeps the assertions behavioral: a pin fails
+ * both when a failure is silenced entirely and when it is reported at the
+ * wrong severity, which is exactly the regression being guarded.
+ */
+async function captureLogs(fn) {
+  const captured = { debug: [], warn: [] };
+  const real = { debug: console.debug, warn: console.warn };
+  console.debug = (...args) => captured.debug.push(args.map(String).join(' '));
+  console.warn = (...args) => captured.warn.push(args.map(String).join(' '));
+  try {
+    await fn();
+  } finally {
+    console.debug = real.debug;
+    console.warn = real.warn;
+  }
+  return captured;
+}
+
+/** No log line may carry an account identifier, an email or a uuid. */
+function assertNoUserIdentifiers(lines, where) {
+  for (const line of lines) {
+    assert.doesNotMatch(
+      line,
+      /user@example\.com|\bu1\b|[0-9a-f]{8}-[0-9a-f]{4}-/i,
+      `${where}: a log line must carry no user identifier or PII — got: ${line}`,
+    );
+  }
 }
 
 async function run() {
@@ -237,13 +285,20 @@ async function run() {
   console.log('[tests] loading compiled modules…');
 
   stubMod = await load('scripts/test-stubs/supabase.js');
+  localizationStubMod = await load('scripts/test-stubs/expo-localization.js');
+  deviceCurrencyMod = await load('src/i18n/device-currency.js');
   profileApiMod = await load('src/features/profile/api.js');
   profileHookMod = await load('src/features/profile/hooks/useProfile.js');
+  profileSyncMod = await load('src/lib/auth/profile-sync.js');
   sessionStoreMod = await load('src/features/auth/use-session-store.js');
   settingsStoreMod = await load('src/stores/use-settings-store.js');
   formatMod = await load('src/lib/format.js');
   queryClientMod = await load('src/lib/query-client.js');
   useProfile = profileHookMod.useProfile;
+  // Captured straight off the production store singleton right after import,
+  // BEFORE any reset mutates it: this is the cold-boot seed a money screen
+  // would read while the profile row is still in flight.
+  const storeSeedAtImport = settingsStoreMod.useSettingsStore.getState().currency;
 
   console.log('\n[tests] profile hydrate\n');
 
@@ -650,22 +705,66 @@ async function run() {
 
   console.log('\n[tests] currency symbol gate (lib/format)\n');
 
-  await test('the formatter gate withholds only the symbol, never the amount', async () => {
+  await test('the formatter gate withholds the whole UNIT CONVENTION, not just the symbol', async () => {
     formatMod.setCurrencySymbolGate(true);
     assert.equal(formatMod.formatCurrency(1234.5, 'USD'), 'US$ 1,234.50');
     assert.equal(formatMod.formatCurrency(1234.5, 'UYU'), '$U 1.234,50');
 
     formatMod.setCurrencySymbolGate(false);
+    // Grouping is keyed BY CURRENCY CODE, and until the profile row lands the
+    // code is only the store's seed — so a shut gate that still grouped would
+    // print the seed's conventions over a real balance. `$U`-less but still
+    // `1.234,50` is not a neutral placeholder either: it is an INTL seed
+    // reading at a LATAM user, off by 1000x. Both codes collapse to the same
+    // bare number instead.
     assert.equal(
-      formatMod.formatCurrency(1234.5, 'USD'),
-      '1,234.50',
-      'the bare INTL-grouped amount, no unit',
+      formatMod.formatCurrency(1234567.89, 'USD'),
+      '1234567.89',
+      'the bare INTL-seeded amount: no unit, no thousands separator',
     );
     assert.equal(
-      formatMod.formatCurrency(1234.5, 'UYU'),
-      '1.234,50',
-      'the bare LATAM-grouped amount — grouping still follows the currency code',
+      formatMod.formatCurrency(1234567.89, 'UYU'),
+      '1234567.89',
+      'the bare LATAM-seeded amount: identical, so no convention is claimed',
     );
+  });
+
+  await test('the store flag drives the module gate shut until hydration lands', async () => {
+    // The end-to-end shape of the F1 fix: the flag the screens read and the
+    // module-level gate the formatters read are the same fact, so flipping the
+    // store flag must be enough to change what a money screen renders — with
+    // no separator left over on either side of the transition.
+    resetAll();
+    signIn();
+    stubMod.__setTableRead('profiles', { rows: [PROFILE_EUR] });
+    stubMod.__setTableRead('scan_usage', { rows: [SCAN_USAGE_ROW] });
+
+    const store = settingsStoreMod.useSettingsStore;
+    const renderAsScreensWould = (code) => formatMod.formatCurrency(1234567.89, code);
+
+    assert.equal(store.getState().currencyHydrated, false);
+    assert.equal(store.getState().currency, 'UYU', 'pre-hydration the store still holds the seed');
+    formatMod.setCurrencySymbolGate(false);
+    assert.equal(renderAsScreensWould(store.getState().currency), '1234567.89');
+
+    const renderer = await mountProbe(() => store.getState().currencyHydrated);
+    try {
+      assert.equal(store.getState().currencyHydrated, true, 'the profile row landed');
+      assert.equal(store.getState().currency, 'EUR');
+      formatMod.setCurrencySymbolGate(store.getState().currencyHydrated);
+      assert.equal(
+        renderAsScreensWould(store.getState().currency),
+        '€ 1,234,567.89',
+        'after hydration the real currency renders with BOTH its symbol and its separators',
+      );
+      assert.equal(
+        renderAsScreensWould('UYU'),
+        '$U 1.234.567,89',
+        'the LATAM family gets LATAM separators back, not the seed\'s INTL ones',
+      );
+    } finally {
+      await unmountProbe(renderer);
+    }
   });
 
   await test('a shut gate on a negative value leaves no dangling separator', async () => {
@@ -675,7 +774,7 @@ async function run() {
     formatMod.setCurrencySymbolGate(false);
     assert.equal(
       formatMod.formatCurrency(-1234.56, 'USD'),
-      '-1,234.56',
+      '-1234.56',
       'the sign must sit against the number, not against a missing symbol',
     );
     assert.doesNotMatch(
@@ -688,15 +787,15 @@ async function run() {
   await test('a shut gate withholds the unknown-code fallback too', async () => {
     formatMod.setCurrencySymbolGate(true);
     assert.equal(
-      formatMod.formatCurrency(1234.56, 'XYZ'),
-      'XYZ 1,234.56',
+      formatMod.formatCurrency(1234567.89, 'XYZ'),
+      'XYZ 1,234,567.89',
       'an unknown code renders as itself while open',
     );
 
     formatMod.setCurrencySymbolGate(false);
     assert.equal(
-      formatMod.formatCurrency(1234.56, 'XYZ'),
-      '1,234.56',
+      formatMod.formatCurrency(1234567.89, 'XYZ'),
+      '1234567.89',
       'the code is not a currency either — withholding it is the whole point',
     );
   });
@@ -704,12 +803,18 @@ async function run() {
   await test('formatCurrencyWhole honors the gate as well', async () => {
     formatMod.setCurrencySymbolGate(true);
     assert.equal(formatMod.formatCurrencyWhole(812.24, 'UYU'), '$U 812');
+    assert.equal(formatMod.formatCurrencyWhole(1234567.89, 'UYU'), '$U 1.234.568');
 
     formatMod.setCurrencySymbolGate(false);
     assert.equal(
       formatMod.formatCurrencyWhole(812.24, 'UYU'),
       '812',
       'the whole-number form withholds the symbol as well',
+    );
+    assert.equal(
+      formatMod.formatCurrencyWhole(1234567.89, 'UYU'),
+      '1234568',
+      'and the grouping — 812 has nothing to group and could not catch a revert',
     );
   });
 
@@ -894,6 +999,380 @@ async function run() {
       );
     } finally {
       await unmountProbe(renderer);
+    }
+  });
+
+  console.log('\n[tests] ensureProfileCurrency: create-only region seed\n');
+
+  await test('the settings store seeds USD, not the legacy UYU', () => {
+    assert.equal(
+      storeSeedAtImport,
+      'USD',
+      'REQ-4.1 / NFR-7: USD is the single universal default the store seeds before hydration',
+    );
+  });
+
+  await test('detectDeviceDefaultCurrency derives MXN from an es-MX device', () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocales([
+      { languageTag: 'es-MX', languageCode: 'es', regionCode: 'MX', currencyCode: null },
+    ]);
+    assert.equal(deviceCurrencyMod.detectDeviceDefaultCurrency(), 'MXN');
+  });
+
+  await test('detectDeviceDefaultCurrency derives USD from an en-US device', () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocales([
+      { languageTag: 'en-US', languageCode: 'en', regionCode: 'US', currencyCode: 'USD' },
+    ]);
+    assert.equal(deviceCurrencyMod.detectDeviceDefaultCurrency(), 'USD');
+  });
+
+  await test('detectDeviceDefaultCurrency falls back to USD when the region is unmapped', () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocales([
+      { languageTag: 'sv-SE', languageCode: 'sv', regionCode: 'SE', currencyCode: null },
+    ]);
+    assert.equal(
+      deviceCurrencyMod.detectDeviceDefaultCurrency(),
+      'USD',
+      'REQ-5.3: an unmapped device region seeds the universal default, never null',
+    );
+  });
+
+  await test('detectDeviceDefaultCurrency survives a throwing getLocales()', () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocalesThrow(true);
+    try {
+      assert.equal(
+        deviceCurrencyMod.detectDeviceDefaultCurrency(),
+        'USD',
+        'a native-bridge failure must degrade to the universal default, not crash sign-in',
+      );
+    } finally {
+      localizationStubMod.__setDeviceLocalesThrow(false);
+    }
+  });
+
+  await test('the SIGNED_IN chain seeds BEFORE the identity upsert', async () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocales([
+      { languageTag: 'es-MX', languageCode: 'es', regionCode: 'MX', currencyCode: null },
+    ]);
+    stubMod.__setTableRead('profiles', { rows: [PROFILE_EUR] });
+    stubMod.__setTableRead('scan_usage', { rows: [SCAN_USAGE_ROW] });
+
+    const listener = stubMod.__getLastAuthStateListener();
+    await act(async () => {
+      listener('SIGNED_IN', FAKE_SESSION);
+    });
+
+    const writes = stubMod
+      .__getCallLog()
+      .filter((e) => e.kind === 'insert' || e.kind === 'upsert')
+      .map((e) => e.kind);
+    assert.deepEqual(
+      writes,
+      ['insert', 'upsert'],
+      'the seed must precede the upsert, or the upsert creates the row first and the seed can never fire',
+    );
+    assert.deepEqual(
+      stubMod.__getInserted('profiles'),
+      [{ id: 'u1', currency: 'MXN' }],
+      'REQ-5.2: a first sign-in on an MX device creates the row with MXN',
+    );
+  });
+
+  await test('the restore chain seeds BEFORE the identity upsert', async () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocales([
+      { languageTag: 'es-MX', languageCode: 'es', regionCode: 'MX', currencyCode: null },
+    ]);
+    stubMod.__setSupabaseBehavior({
+      getSession: async () => ({ data: { session: FAKE_SESSION }, error: null }),
+    });
+
+    await act(async () => {
+      await sessionStoreMod.useSessionStore.getState().restore();
+    });
+
+    const writes = stubMod
+      .__getCallLog()
+      .filter((e) => e.kind === 'insert' || e.kind === 'upsert')
+      .map((e) => e.kind);
+    assert.deepEqual(
+      writes,
+      ['insert', 'upsert'],
+      'the bootstrap restore seeds first too — both call sites must carry the seed',
+    );
+    assert.deepEqual(
+      stubMod.__getInserted('profiles'),
+      [{ id: 'u1', currency: 'MXN' }],
+      'the restored session seeds the same region-derived code',
+    );
+  });
+
+  await test('region seed is a plain INSERT of (id, currency) — never an upsert', async () => {
+    resetAll();
+    await profileSyncMod.ensureProfileCurrency('u1', 'MXN');
+
+    const log = stubMod.__getCallLog();
+    assert.deepEqual(
+      log.filter((e) => e.kind === 'upsert'),
+      [],
+      'the seed must NEVER upsert: an upsert would overwrite a chosen currency on every sign-in',
+    );
+    assert.deepEqual(
+      log.filter((e) => e.kind === 'insert' && e.table === 'profiles'),
+      [{ kind: 'insert', table: 'profiles' }],
+      'the seed must be exactly one plain INSERT into profiles',
+    );
+    assert.deepEqual(
+      stubMod.__getInserted('profiles'),
+      [{ id: 'u1', currency: 'MXN' }],
+      'the insert payload carries the profile id and the region-derived code',
+    );
+  });
+
+  await test('an existing row (23505) is swallowed and produces zero further writes', async () => {
+    resetAll();
+    // Postgres rejects the seed INSERT with a unique violation once the row
+    // exists. The call must resolve (never reject) and write nothing.
+    stubMod.__failNextInsert('profiles', {
+      message: 'duplicate key value violates unique constraint "profiles_pkey"',
+      code: '23505',
+    });
+    await profileSyncMod.ensureProfileCurrency('u1', 'UYU');
+
+    const log = stubMod.__getCallLog();
+    assert.deepEqual(
+      log.filter((e) => e.kind === 'insert'),
+      [{ kind: 'insert', table: 'profiles' }],
+      'only the seed insert itself is attempted',
+    );
+    assert.deepEqual(
+      log.filter((e) => e.kind === 'upsert' || e.kind === 'update'),
+      [],
+      'a rejected seed must fall back to no write at all (the existing row survives)',
+    );
+  });
+
+  await test('the seed writes canonical uppercase even from a lowercase code', async () => {
+    resetAll();
+    await profileSyncMod.ensureProfileCurrency('u1', 'mxn');
+    assert.deepEqual(
+      stubMod.__getInserted('profiles'),
+      [{ id: 'u1', currency: 'MXN' }],
+      'NFR-1: every code the app writes is uppercase ISO 4217',
+    );
+  });
+
+  await test('the identity backfill stays a single upsert — no currency insert', async () => {
+    resetAll();
+    await profileSyncMod.ensureProfile(FAKE_SESSION.user);
+    const log = stubMod.__getCallLog();
+    assert.deepEqual(
+      log.filter((e) => e.kind === 'upsert'),
+      [{ kind: 'upsert', table: 'profiles' }],
+      'ensureProfile remains one upsert on profiles',
+    );
+    assert.deepEqual(
+      log.filter((e) => e.kind === 'insert'),
+      [],
+      'ensureProfile must not seed currency — the seed write is structurally separate',
+    );
+  });
+
+  // ==========================================================================
+  // Fallback observability (W1/W2): a seed that silently falls back to USD, or
+  // silently never lands, is invisible exactly where it is most expensive.
+  // The contract is the LOG LEVEL, so that is what these pins assert.
+  // ==========================================================================
+  console.log('\n[tests] fallback observability: no silent USD, no silent skip\n');
+
+  await test('a THROWN getLocales() warns and names the USD fallback', async () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocalesThrow(true);
+    try {
+      const logs = await captureLogs(() => {
+        assert.equal(
+          deviceCurrencyMod.detectDeviceDefaultCurrency(),
+          'USD',
+          'a native-bridge failure still degrades to the universal default, not a throw',
+        );
+      });
+      assert.equal(logs.warn.length, 1, 'a broken native bridge is exactly one warn');
+      assert.match(
+        logs.warn[0],
+        /device region detection failed/i,
+        'the log must name the failure, not just the fallback',
+      );
+      assert.match(logs.warn[0], /USD/, 'the log must name what it fell back to');
+      assert.deepEqual(
+        logs.debug,
+        [],
+        'a thrown error is an outage, not a debug detail',
+      );
+      assertNoUserIdentifiers([...logs.warn, ...logs.debug], 'device-currency warn');
+    } finally {
+      localizationStubMod.__setDeviceLocalesThrow(false);
+    }
+  });
+
+  await test('an EMPTY locale list is debug, and is told apart from a throw', async () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocales([]);
+    const logs = await captureLogs(() => {
+      assert.equal(deviceCurrencyMod.detectDeviceDefaultCurrency(), 'USD');
+    });
+    assert.deepEqual(
+      logs.warn,
+      [],
+      'a device that simply reports no locales is not an outage — warn here would be noise on every such boot',
+    );
+    assert.equal(logs.debug.length, 1, 'but it must not be silent either');
+    assert.match(
+      logs.debug[0],
+      /no locales/i,
+      'the empty array and the thrown error are different failures and read differently',
+    );
+    assert.match(logs.debug[0], /USD/);
+  });
+
+  await test('the expected duplicate seed logs at DEBUG, never warn', async () => {
+    resetAll();
+    // Every sign-in after the first one lands here. Warn on it would be a
+    // warn on every single sign-in forever — noise that teaches the team to
+    // ignore this line, which is how a REAL failure below gets missed.
+    stubMod.__failNextInsert('profiles', {
+      message: 'duplicate key value violates unique constraint "profiles_pkey"',
+      code: '23505',
+    });
+    const logs = await captureLogs(() =>
+      profileSyncMod.ensureProfileCurrency('u1', 'UYU'),
+    );
+    assert.deepEqual(logs.warn, [], 'the desired steady state must not raise a warn');
+    assert.equal(logs.debug.length, 1, 'but it is reported, once');
+    assert.match(logs.debug[0], /already exists/i);
+    assertNoUserIdentifiers([...logs.warn, ...logs.debug], 'duplicate seed log');
+  });
+
+  await test('an RLS denial warns AND carries the error code', async () => {
+    resetAll();
+    // The failure the split exists for: the seed never landed, every profile
+    // row is born USD-regardless, and nothing said so.
+    stubMod.__failNextInsert('profiles', {
+      message: 'new row violates row-level security policy for table "profiles"',
+      code: '42501',
+    });
+    const logs = await captureLogs(() =>
+      profileSyncMod.ensureProfileCurrency('u1', 'MXN'),
+    );
+    assert.deepEqual(logs.debug, [], 'this is not the expected case');
+    assert.equal(logs.warn.length, 1, 'a denied seed must raise exactly one warn');
+    assert.match(logs.warn[0], /42501/, 'the code is what says RLS vs 5xx vs typo');
+    assert.match(logs.warn[0], /row-level security/i, 'and the cause must be readable');
+    assertNoUserIdentifiers([...logs.warn, ...logs.debug], 'RLS warn');
+  });
+
+  await test('a missing table and a 5xx both warn with their own code', async () => {
+    // 42P01 (undefined_table) is the pre-migration case, 500xx the upstream
+    // case. Neither is the expected duplicate, so neither may be demoted.
+    for (const code of ['42P01', '50001']) {
+      resetAll();
+      stubMod.__failNextInsert('profiles', {
+        // Deliberately does NOT mention the code: a pin whose message happens
+        // to contain "42P01" would pass even if the code field were never read.
+        message: 'simulated upstream failure',
+        code,
+      });
+      const logs = await captureLogs(() =>
+        profileSyncMod.ensureProfileCurrency('u1', 'MXN'),
+      );
+      assert.deepEqual(logs.debug, [], `${code} is not the expected duplicate`);
+      assert.equal(logs.warn.length, 1, `${code} must warn exactly once`);
+      assert.match(logs.warn[0], new RegExp(code), `${code} must name itself`);
+      assertNoUserIdentifiers([...logs.warn, ...logs.debug], `${code} warn`);
+    }
+  });
+
+  await test('a THROWN transport error is classified too, and never rethrown', async () => {
+    // supabase-js resolves unique violations into `{ error }`, so the catch is
+    // the transport path — but it must not become a second, louder blind spot
+    // if some client ever throws the duplicate instead of resolving it.
+    resetAll();
+    const realFrom = stubMod.supabase.from;
+    try {
+      stubMod.supabase.from = () => {
+        const err = new Error('duplicate key value violates unique constraint');
+        err.code = '23505';
+        throw err;
+      };
+      const dup = await captureLogs(() =>
+        profileSyncMod.ensureProfileCurrency('u1', 'UYU'),
+      );
+      assert.deepEqual(dup.warn, [], 'a thrown 23505 is still the expected case');
+      assert.equal(dup.debug.length, 1);
+
+      stubMod.supabase.from = () => {
+        const err = new Error('fetch failed');
+        err.code = 'ECONNREFUSED';
+        throw err;
+      };
+      const real = await captureLogs(() =>
+        profileSyncMod.ensureProfileCurrency('u1', 'UYU'),
+      );
+      assert.deepEqual(real.debug, [], 'a network failure is not the expected case');
+      assert.equal(real.warn.length, 1);
+      assert.match(real.warn[0], /ECONNREFUSED/);
+
+      stubMod.supabase.from = () => {
+        throw new Error('opaque transport failure');
+      };
+      const codeless = await captureLogs(() =>
+        profileSyncMod.ensureProfileCurrency('u1', 'UYU'),
+      );
+      assert.equal(
+        codeless.warn.length,
+        1,
+        'a codeless failure still warns — it must not fall back to debug',
+      );
+      assert.match(codeless.warn[0], /NONE/, 'and says so the reader knows why');
+    } finally {
+      stubMod.supabase.from = realFrom;
+    }
+  });
+
+  await test('an unreadable failure shape still warns with a stated reason', async () => {
+    // A throw that carries neither an Error nor a message must not degrade
+    // into silence — and must say that the reason is unknown rather than
+    // inventing one.
+    resetAll();
+    const realFrom = stubMod.supabase.from;
+    try {
+      stubMod.supabase.from = () => {
+        throw 'a bare string';
+      };
+      const logs = await captureLogs(() =>
+        profileSyncMod.ensureProfileCurrency('u1', 'MXN'),
+      );
+      assert.equal(logs.warn.length, 1);
+      assert.match(
+        logs.warn[0],
+        /a bare string/,
+        'a thrown string IS the only diagnostic there is — swallowing it hides the failure',
+      );
+
+      stubMod.supabase.from = () => {
+        throw { nothing: 'useful' };
+      };
+      const opaque = await captureLogs(() =>
+        profileSyncMod.ensureProfileCurrency('u1', 'MXN'),
+      );
+      assert.equal(opaque.warn.length, 1);
+      assert.match(opaque.warn[0], /no readable message/);
+    } finally {
+      stubMod.supabase.from = realFrom;
     }
   });
 

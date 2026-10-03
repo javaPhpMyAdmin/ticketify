@@ -710,16 +710,26 @@ function pad2(value: number): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Whether the currency SYMBOL may be rendered.
+ * Whether the currency UNIT CONVENTION may be rendered.
  *
  * The stored currency is an ISO 4217 CODE (`USD`, `UYU`, `ARS`), never a
  * symbol, and the profile row is the authority for which one the user picked
  * (`profiles.currency`). Until that row has been read there is no way to know
  * whether the number on screen is pesos, dollars or reais — and rendering the
- * WRONG symbol is worse than rendering none: `US$ 1,234.56` read by a user
+ * WRONG convention is worse than rendering none: `US$ 1,234.56` read by a user
  * whose currency is UYU is a wrong balance, not a missing label. So the gate
- * fails closed: while it is shut, both currency formatters emit the grouped
- * number alone.
+ * fails closed: while it is shut, both currency formatters emit the BARE
+ * number alone — no symbol AND no separators.
+ *
+ * Separators are part of the gate, not an oversight, and the reason is a
+ * 1000x misread rather than a cosmetic one. The store seeds a placeholder
+ * code before hydration (`'USD'`, the universal default), and the grouping
+ * rules are keyed BY CODE — so a shut gate that still grouped would print a
+ * LATAM user's balance as `1,234.56` (INTL seed conventions) while the user
+ * reads `,` as the decimal mark and sees `1234` — a balance misstated by
+ * three orders of magnitude, presented with total confidence. Withholding the
+ * grouping too, a pre-hydration amount renders as plain `1234.56`: still
+ * readable, and claiming no unit convention at all.
  *
  * `ProfileHydration` (src/features/profile/components) owns the lifecycle —
  * it shuts the gate on mount and opens it only once good profile data has
@@ -749,7 +759,9 @@ export function isCurrencySymbolGateOpen(): boolean {
 
 /**
  * The symbol prefix for a currency code, or `''` while the gate is shut.
- * Grouping and decimals are unaffected: only the symbol is withheld.
+ *
+ * The gate withholds the UNIT CONVENTION as a whole — symbol AND separators
+ * (see `formatCurrency`); this function is only the symbol half.
  */
 function currencySymbolPrefix(upperCode: string, rawCode: string): string {
   if (!currencySymbolGateOpen) return '';
@@ -791,6 +803,12 @@ function currencySymbolPrefix(upperCode: string, rawCode: string): string {
  *      (`-US$ 1,234.56`) — matches the LATAM / INTL norm. The old
  *      format did the same; this preserves the existing call-site
  *      ergonomics.
+ *   5. While the hydration gate is shut, rules 1-4 are all suspended: the
+ *      code is an unconfirmed placeholder, so the output is the bare
+ *      `1234.56` — no symbol, no thousands separator, no unit convention
+ *      of any kind. Re-opened, the same call returns `US$ 1,234.56`.
+ *      See `currencySymbolGateOpen` for why the separators are part of
+ *      the gate.
  *
  * The function intentionally reads `i18next.language` internally so a
  * future round of work (PR 3) can branch on language for things like a
@@ -799,19 +817,29 @@ function currencySymbolPrefix(upperCode: string, rawCode: string): string {
  */
 export function formatCurrency(value: number, currencyCode: string): string {
   const upperCode = currencyCode.toUpperCase();
+  // While the gate is shut the code is only the store's PLACEHOLDER SEED, so
+  // it is not an input to the format at all: LATAM vs INTL grouping and the
+  // zero-decimal rule both encode a unit the profile row has not confirmed.
+  // The formatters deliberately IGNORE the code and emit a bare number
+  // (`1234.56`) until the gate opens. See the gate doc above for the 1000x
+  // misread this prevents.
+  const gateShut = !currencySymbolGateOpen;
   const isLATAM = LATAM_CURRENCIES.has(upperCode);
   const symbolPrefix = currencySymbolPrefix(upperCode, currencyCode);
   // A zero-decimal code has no fraction to print: round to the whole unit and
   // leave `decPart` empty, which makes the `hasNonZeroDecimal` guard below
   // fall through to the grouped integer. Grouping still runs on `intPart`, so
   // `1234.56` → `1235` → `1.235` and `100.4` → `100`.
-  const isZeroDecimal = ZERO_DECIMAL_CURRENCIES.has(upperCode);
+  const isZeroDecimal = !gateShut && ZERO_DECIMAL_CURRENCIES.has(upperCode);
   const fixed = Math.abs(value).toFixed(isZeroDecimal ? 0 : 2);
   const [intPart, decPart = ''] = fixed.split('.');
   // Hand-rolled grouping: thousands separator every 3 digits from the
-  // right, no leading separator.
-  const groupSep = isLATAM ? '.' : ',';
-  const decSep = isLATAM ? ',' : '.';
+  // right, no leading separator. An empty `groupSep` is the shut gate's bare
+  // form — the lookahead still runs and matches, it just replaces nothing.
+  const groupSep = gateShut ? '' : isLATAM ? '.' : ',';
+  // A shut gate keeps a plain `.` so the two decimals stay readable as a
+  // decimal point rather than collapsing into the integer digits.
+  const decSep = gateShut ? '.' : isLATAM ? ',' : '.';
   const withSeparators = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, groupSep);
   // Drop the decimal segment when it would render all zeros (e.g. `0.00`
   // → `0`) — keeps `formatCurrency(0, 'ARS')` as `'$ 0'` rather than
@@ -828,8 +856,8 @@ export function formatCurrency(value: number, currencyCode: string): string {
  * Currency without the decimal fraction — "US$ 812.24" renders as
  * "US$ 812". Used by the capsule chart amounts and the day-detail
  * total, where the cents add noise to an already long label (UYU has
- * no cents in practice). Mirrors `formatCurrency`'s grouping policy
- * and symbol form.
+ * no cents in practice). Mirrors `formatCurrency`'s grouping policy,
+ * symbol form and fail-closed gate.
  */
 export function formatCurrencyWhole(
   value: number,
@@ -839,7 +867,9 @@ export function formatCurrencyWhole(
   const isLATAM = LATAM_CURRENCIES.has(upperCode);
   const symbolPrefix = currencySymbolPrefix(upperCode, currencyCode);
   const rounded = Math.abs(value).toFixed(0);
-  const groupSep = isLATAM ? '.' : ',';
+  // Same gate rule as `formatCurrency`: a shut gate emits the bare integer,
+  // ungrouped, because the code it would group by is an unconfirmed seed.
+  const groupSep = currencySymbolGateOpen ? (isLATAM ? '.' : ',') : '';
   const withSeparators = rounded.replace(/\B(?=(\d{3})+(?!\d))/g, groupSep);
   const sign = value < 0 ? '-' : '';
   return `${sign}${symbolPrefix}${withSeparators}`;

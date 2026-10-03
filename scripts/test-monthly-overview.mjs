@@ -63,6 +63,12 @@ function installRequireHook() {
       request = join(outDir, 'scripts', 'test-stubs', 'supabase.js');
     } else if (request === '@/lib/supabase/storage-adapter') {
       request = join(outDir, 'scripts', 'test-stubs', 'storage-adapter.js');
+    } else if (request === 'expo-localization') {
+      // The sign-in graph reaches the device-currency adapter, the sole
+      // getLocales() reader on the currency path (precedent:
+      // test-i18n-init.mjs). Without this branch node tries to load the
+      // real native module.
+      request = join(outDir, 'scripts', 'test-stubs', 'expo-localization.js');
     } else if (request === 'react-native') {
       request = join(outDir, 'scripts', 'test-stubs', 'react-native.js');
     } else if (request.startsWith('@/')) {

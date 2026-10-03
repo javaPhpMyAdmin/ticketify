@@ -13,6 +13,7 @@
       "@/lib/supabase": ["./scripts/test-stubs/supabase.ts"],
       "@/lib/supabase/storage-adapter": ["./scripts/test-stubs/storage-adapter.ts"],
       "@/lib/revenuecat": ["./scripts/test-stubs/revenuecat.ts"],
+      "expo-localization": ["./scripts/test-stubs/expo-localization.ts"],
       "react-native": ["./scripts/test-stubs/react-native.ts"],
       "@/*": ["./src/*"]
     },

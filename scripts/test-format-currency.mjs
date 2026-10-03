@@ -276,6 +276,127 @@ async function run() {
     assert.equal(fmt.CURRENCY_SYMBOL.COP, '$');
   });
 
+  // ==========================================================================
+  // Fail-closed hydration gate (F1 of the currency-universality review)
+  //
+  // The store seeds a PLACEHOLDER code before `profiles.currency` has been
+  // read, and grouping is keyed BY CODE. So a gate that withheld only the
+  // symbol would still print the seed's separators — an unconfirmed unit
+  // convention on a real balance. These pins are the executable form of the
+  // gate's contract: BARE while shut, fully formatted once open.
+  //
+  // The large-number cases are load-bearing. `1234.56` has nothing to group,
+  // so it renders identically under both behaviors and cannot catch a revert;
+  // `1234567.89` is what actually proves the separators are suppressed.
+  // ==========================================================================
+  console.log('\n[tests] fail-closed hydration gate (symbol AND separators)\n');
+
+  /** Runs `fn` with the gate shut, then restores it OPEN for every later pin. */
+  const withGateShut = async (fn) => {
+    fmt.setCurrencySymbolGate(false);
+    try {
+      await fn();
+    } finally {
+      fmt.setCurrencySymbolGate(true);
+    }
+  };
+
+  await test('a shut gate emits the SAME bare number for a LATAM and an INTL amount', async () => {
+    await withGateShut(async () => {
+      // The regression this pins: the store seeds `USD`, so a symbol-only gate
+      // printed the INTL grouping `1,234.56` at a user whose currency is UYU —
+      // who reads that as 1234,56 pesos' worth, off by 1000x, confidently.
+      assert.equal(
+        fmt.formatCurrency(1234.56, 'UYU'),
+        '1234.56',
+        'a LATAM amount must not borrow the INTL seed separators',
+      );
+      assert.equal(
+        fmt.formatCurrency(1234.56, 'USD'),
+        '1234.56',
+        'and the same bare form for the seed itself — no convention claimed',
+      );
+    });
+  });
+
+  await test('a shut gate withholds the THOUSANDS separator (the 7-digit proof)', async () => {
+    await withGateShut(async () => {
+      // Every one of these asserts the absence of a separator that the
+      // code-driven grouping would otherwise inject. Reverting the
+      // separator suppression turns each into a loud failure.
+      assert.equal(fmt.formatCurrency(1234567.89, 'USD'), '1234567.89');
+      assert.equal(fmt.formatCurrency(1234567.89, 'UYU'), '1234567.89');
+      assert.equal(fmt.formatCurrency(1234567.89, 'XYZ'), '1234567.89');
+      // Shape-based catch-all: a separator followed by exactly three digits and
+      // then a non-digit is a thousands separator (`.234.567,89` /
+      // `1,234,567.89` both match). The bare form's plain `.` before two
+      // decimals never matches, so this cannot fire on `1234567.89`.
+      for (const code of ['USD', 'UYU', 'XYZ', 'JPY']) {
+        assert.doesNotMatch(
+          fmt.formatCurrency(1234567.89, code),
+          /[.,]\d{3}(?!\d)/,
+          `${code}: a shut gate must inject no thousands separator`,
+        );
+      }
+    });
+  });
+
+  await test('a shut gate ignores the ZERO-DECIMAL rule too (it is a unit assumption)', async () => {
+    await withGateShut(async () => {
+      // JPY/CLP/PEN/PYG round to whole units when hydrated. Rounding while
+      // shut would bake in a minor-unit claim the profile row has not made,
+      // and would change the number the user is looking at mid-hydration.
+      assert.equal(fmt.formatCurrency(1234.56, 'JPY'), '1234.56');
+      assert.equal(fmt.formatCurrency(1234.56, 'CLP'), '1234.56');
+      assert.equal(
+        fmt.formatCurrency(1234.56, 'UYU'),
+        '1234.56',
+        'a minor-unit code renders the same bare value — the gate does not branch on it',
+      );
+    });
+  });
+
+  await test('a shut gate keeps the sign, the decimal point and the zero edge', async () => {
+    await withGateShut(async () => {
+      assert.equal(fmt.formatCurrency(-1234.56, 'UYU'), '-1234.56');
+      assert.equal(fmt.formatCurrency(0, 'UYU'), '0', 'an all-zero fraction drops away');
+      assert.equal(fmt.formatCurrency(-1234567.89, 'USD'), '-1234567.89');
+      assert.equal(fmt.formatCurrency(0, 'JPY'), '0');
+    });
+  });
+
+  await test('formatCurrencyWhole withholds the symbol AND the grouping', async () => {
+    await withGateShut(async () => {
+      assert.equal(fmt.formatCurrencyWhole(1234567.89, 'UYU'), '1234568');
+      assert.equal(fmt.formatCurrencyWhole(1234567.89, 'USD'), '1234568');
+      assert.equal(fmt.formatCurrencyWhole(-1234567.89, 'UYU'), '-1234568');
+      assert.equal(fmt.formatCurrencyWhole(812.24, 'UYU'), '812');
+    });
+  });
+
+  await test('re-opening the gate restores symbol AND separators for both families', async () => {
+    // The other half of the contract: a gate stuck shut would render every
+    // real balance bare forever, which is its own outage.
+    fmt.setCurrencySymbolGate(true);
+    assert.equal(fmt.formatCurrency(1234567.89, 'UYU'), '$U 1.234.567,89');
+    assert.equal(fmt.formatCurrency(1234567.89, 'USD'), 'US$ 1,234,567.89');
+    assert.equal(fmt.formatCurrency(1234567.89, 'XYZ'), 'XYZ 1,234,567.89');
+    assert.equal(fmt.formatCurrency(1234.56, 'JPY'), '¥ 1,235');
+    assert.equal(fmt.formatCurrencyWhole(1234567.89, 'UYU'), '$U 1.234.568');
+    assert.equal(fmt.formatCurrencyWhole(1234567.89, 'USD'), 'US$ 1,234,568');
+  });
+
+  await test('this section leaves the gate OPEN (no leak into later consumers)', () => {
+    // A harness that shuts the gate and forgets to re-open it would leave every
+    // later assertion — and any module importing this one — rendering bare.
+    assert.equal(
+      fmt.isCurrencySymbolGateOpen(),
+      true,
+      'the gate must be back open after the fail-closed section',
+    );
+    assert.equal(fmt.formatCurrency(1234567.89, 'USD'), 'US$ 1,234,567.89');
+  });
+
   console.log(`\n[tests] ${passed} passed, ${failed} failed`);
   if (failed > 0) {
     process.exitCode = 1;

@@ -12,6 +12,7 @@
     "paths": {
       "@/lib/supabase": ["./scripts/test-stubs/supabase.ts"],
       "@/lib/supabase/storage-adapter": ["./scripts/test-stubs/storage-adapter.ts"],
+      "expo-localization": ["./scripts/test-stubs/expo-localization.ts"],
       "react-native": ["./scripts/test-stubs/react-native.ts"],
       "@/*": ["./src/*"]
     },
@@ -25,6 +26,8 @@
     "../src/features/auth/use-session-store.ts",
     "../src/lib/auth/auth-listener-registry.ts",
     "../src/lib/auth/profile-sync.ts",
+    "../src/i18n/device-currency.ts",
+    "../src/i18n/detector.ts",
     "../src/lib/query-client.ts",
     "../src/lib/query-keys.ts",
     "../src/lib/format.ts",
@@ -35,6 +38,7 @@
     "../src/stores/use-settings-store.ts",
     "../src/types/index.ts",
     "../scripts/test-stubs/globals.d.ts",
+    "../scripts/test-stubs/expo-localization.ts",
     "../scripts/test-stubs/supabase.ts",
     "../scripts/test-stubs/storage-adapter.ts",
     "../scripts/test-stubs/react-native.ts"

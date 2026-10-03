@@ -14,12 +14,13 @@
  * bounded by `AUTH_RESTORE_TIMEOUT_MS` so a hung storage backend can never
  * leave the splash up forever.
  */
-import type { Session } from '@supabase/supabase-js';
+import type { Session, User as AuthUser } from '@supabase/supabase-js';
 import { create } from 'zustand';
 
 import { flushPendingAcceptance } from '@/features/legal/pending-acceptance';
+import { detectDeviceDefaultCurrency } from '@/i18n/device-currency';
 import { registerAuthStateListener } from '@/lib/auth/auth-listener-registry';
-import { ensureProfile } from '@/lib/auth/profile-sync';
+import { ensureProfile, ensureProfileCurrency } from '@/lib/auth/profile-sync';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
 import { logOutRevenueCat } from '@/lib/revenuecat';
@@ -129,6 +130,29 @@ function isDuplicateAccountError(
   return DUPLICATE_ACCOUNT_MARKERS.some((marker) => haystack.includes(marker));
 }
 
+/**
+ * The one sign-in-time profile write chain, shared by BOTH call sites
+ * (bootstrap `restore()` and the `SIGNED_IN` auth event) so they cannot drift
+ * apart.
+ *
+ * ORDER IS LOAD-BEARING: `ensureProfileCurrency` is a create-only INSERT, so it
+ * has to run while the row still does not exist. Run after the upsert and the
+ * seed can never fire, because the upsert would have created the row first.
+ * On every later sign-in the insert is rejected (23505) and swallowed inside
+ * `ensureProfileCurrency`, so the second and subsequent runs write nothing —
+ * a currency the user chose is never overwritten.
+ *
+ * Never rejects: both writers swallow their own failures, so this can stay
+ * fire-and-forget at the call sites. That is the whole reason they can `void`
+ * it: with no rejection to handle, a bare `void` is the complete
+ * fire-and-forget form and neither sign-in path waits on the write.
+ */
+async function seedThenEnsureProfile(user: AuthUser): Promise<void> {
+  await ensureProfileCurrency(user.id, detectDeviceDefaultCurrency());
+  await ensureProfile(user);
+  await queryClient.invalidateQueries({ queryKey: queryKeys.profile(user.id) });
+}
+
 export const useSessionStore = create<SessionState>((set) => ({
   // Real auth: start signed out until restore() finds a stored session.
   session: null,
@@ -185,16 +209,20 @@ export const useSessionStore = create<SessionState>((set) => ({
             if (stale()) return;
             set({ session });
             if (session.user) {
-              // Backfill the profile row, then invalidate the profile query
-              // so a read that already resolved shows the backfilled identity
-              // instead of "You" until the query goes stale (60s) or relaunch.
-              // ensureProfile never rejects, so the .then chain cannot produce
-              // an unhandled rejection; fire-and-forget stays non-blocking.
-              void ensureProfile(session.user).then(() =>
-                queryClient.invalidateQueries({
-                  queryKey: queryKeys.profile(session.user.id),
-                }),
-              );
+              // Region-derived currency seed FIRST (currency-universality
+              // REQ-5.2): it is a create-only INSERT, so it must fire before
+              // the upsert creates the row — the other order would make the
+              // seed unreachable forever. On every later sign-in the insert is
+              // rejected (23505) and swallowed, leaving the user's own choice
+              // untouched. Backfill the profile row, then invalidate the
+              // profile query so a read that already resolved shows the
+              // backfilled identity instead of "You" until the query goes
+              // stale (60s) or relaunch. `void` on a single call:
+              // `seedThenEnsureProfile` never rejects (both writers swallow
+              // their own failures), so there is no rejection to handle and
+              // sign-in is not blocked on the write. Ordering rationale and
+              // the never-rejects guarantee live in its JSDoc above.
+              void seedThenEnsureProfile(session.user);
             }
           }
           // No stored session: stay signed out; the gate shows the sign-in
@@ -397,13 +425,13 @@ function initAuthStateListener(): void {
           // profile query so the UI re-renders with the fresh identity (the
           // bootstrap restore handles the relaunch case separately).
           if (session.user) {
-            // ensureProfile never rejects, so the .then chain cannot produce
-            // an unhandled rejection; fire-and-forget stays non-blocking.
-            void ensureProfile(session.user).then(() =>
-              queryClient.invalidateQueries({
-                queryKey: queryKeys.profile(session.user.id),
-              }),
-            );
+            // Region seed before the identity backfill — see the bootstrap
+            // call site for why the order is load-bearing. `void` on a single
+            // call: `seedThenEnsureProfile` never rejects (both writers
+            // swallow their own failures), so there is nothing to handle and
+            // the sign-in is not blocked on the write. Ordering rationale and
+            // the never-rejects guarantee live in its JSDoc above.
+            void seedThenEnsureProfile(session.user);
             // Legal-consent queue-then-flush (legal-compliance U5, AD-2):
             // replay any pending acceptances the sign-up screen queued BEFORE
             // the network sign-up call — the email on the flag may differ from

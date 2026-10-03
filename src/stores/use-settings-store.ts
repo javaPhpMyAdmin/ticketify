@@ -23,9 +23,20 @@ import { useHouseholdStore } from '@/stores/use-household-store';
  * is the authority. `currencyHydrated` records whether that row has actually
  * been read, and it starts `false`. Screens that render money therefore must
  * consult it (via `useCurrencyHydrated`) instead of trusting `currency`, and
- * the currency formatters withhold their symbol until it flips. Rendering the
- * seed's symbol before the row lands would show a real balance in the wrong
- * unit, which is worse than showing the bare number.
+ * the currency formatters withhold the whole UNIT CONVENTION until it flips —
+ * the symbol AND the separators. Rendering the seed's convention before the
+ * row lands would show a real balance in the wrong unit, which is worse than
+ * showing the bare number: because grouping is keyed by currency code, a
+ * `'USD'` seed renders a UYU balance as `1,234.56`, which that user reads as
+ * `1234,56`-worth of pesos being off by 1000x (see `currencySymbolGateOpen`
+ * in `src/lib/format.ts`, the module that actually enforces this).
+ *
+ * The seed is `USD`, the single universal default (currency-universality
+ * REQ-4). It is a pre-hydration placeholder only: on first launch the row is
+ * created carrying the DEVICE's region-derived code, and after hydration the
+ * row's own value wins. It is deliberately NOT derived from the device region
+ * at module init — that would flash the region currency at users who chose a
+ * different one, the same class of bug this gate exists to prevent.
  *
  * The two mutators are deliberately narrow and asymmetric on purpose:
  * `markCurrencyHydrated()` only ever sets the flag (it can never un-hydrate),
@@ -51,7 +62,7 @@ interface SettingsState {
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   monthly_budget: 1200,
-  currency: 'UYU',
+  currency: 'USD',
   household_sharing: false,
   currencyHydrated: false,
   setBudget: (monthly_budget) => set({ monthly_budget }),
