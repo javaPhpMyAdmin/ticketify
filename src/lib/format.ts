@@ -28,55 +28,114 @@ export interface FormatDateOpts {
 }
 
 // ---------------------------------------------------------------------------
-// Currency policy (AD-6) — currency code is the authority of format
+// Currency catalog (AD-1) — currency code is the authority of format
+//
+// This module is the SINGLE owner of the supported-currency catalog: the two
+// grouping code arrays are the source, and the supported set, the grouping
+// Sets and the symbol table are all derived from them. It keeps ZERO runtime
+// imports on purpose — `scripts/tsconfig.format-currency-test.json` compiles
+// this file as its single root, and `src/i18n/detector.ts` references the
+// `SupportedCurrency` type only (`import type`, erased at runtime).
 // ---------------------------------------------------------------------------
 
 /**
- * LATAM currencies: thousands `.`, decimals `,` (es-AR / pt-BR / es-MX /
- * es-CL / es-CO / es-PE convention). The full ISO 4217 set the app
- * surfaces — anything missing falls back to the INTL grouping.
+ * LATAM ISO 4217 codes: thousands `.`, decimals `,` (es-AR / pt-BR / es-MX /
+ * es-CL / es-CO / es-PE convention).
  */
-export const LATAM_CURRENCIES: ReadonlySet<string> = new Set([
+export const LATAM_CURRENCY_CODES = [
   'ARS', // Peso argentino
   'BRL', // Real brasileño
   'CLP', // Peso chileno
   'COP', // Peso colombiano
   'MXN', // Peso mexicano
   'PEN', // Sol peruano
+  'PYG', // Guaraní paraguayo
   'UYU', // Peso uruguayo
-]);
+] as const;
 
 /**
- * INTL currencies: thousands `,`, decimals `.` (USD / EUR / GBP / JPY /
- * etc.). Anything outside both sets also lands here (the spec rule:
- * unknown code → INTL default).
+ * INTL ISO 4217 codes: thousands `,`, decimals `.` (USD / EUR / GBP / JPY /
+ * etc.). Anything outside both sets also lands here (the spec rule: unknown
+ * code → INTL default).
  */
-export const INTL_CURRENCIES: ReadonlySet<string> = new Set([
+export const INTL_CURRENCY_CODES = [
   'AUD',
   'CAD',
   'EUR',
   'GBP',
   'JPY',
   'USD',
+] as const;
+
+/** Every code the app can speak — the union the catalog, the symbol table and
+ *  the currency selector are all typed against. */
+export type SupportedCurrency =
+  | (typeof LATAM_CURRENCY_CODES)[number]
+  | (typeof INTL_CURRENCY_CODES)[number];
+
+/**
+ * The supported set, in a FIXED order (LATAM then INTL, by code — never by
+ * localized name) so switching the UI language can never reshuffle the
+ * selector rows.
+ */
+export const SUPPORTED_CURRENCIES: readonly SupportedCurrency[] = [
+  ...LATAM_CURRENCY_CODES,
+  ...INTL_CURRENCY_CODES,
+];
+
+/** Grouping lookup `formatCurrency` reads — derived from LATAM_CURRENCY_CODES. */
+export const LATAM_CURRENCIES: ReadonlySet<string> = new Set(
+  LATAM_CURRENCY_CODES,
+);
+
+/** Grouping lookup `formatCurrency` reads — derived from INTL_CURRENCY_CODES. */
+export const INTL_CURRENCIES: ReadonlySet<string> = new Set(INTL_CURRENCY_CODES);
+
+/**
+ * Currencies with NO minor unit: CLP (peso), JPY (yen), PEN (sol) and PYG
+ * (guaraní). Their smallest circulating unit is the whole one, so
+ * `formatCurrency` rounds to the nearest unit and emits no decimal separator
+ * — printing `¥ 1,234.56` fabricates a cent that does not exist and misstates
+ * the amount.
+ *
+ * The spec names `JPY` and `PYG` (REQ-2 prose) and then pins whole-amount
+ * output for `CLP` and `PEN` in REQ-2.1/2.2 and acceptance gate 2 — all four
+ * are factually zero-decimal, so all four belong here.
+ *
+ * Deliberately NOT included: `COP`, which is factually zero-decimal in
+ * circulation but is excluded by the recorded scope decision (widening the
+ * set changes what every existing COP balance looks like and is a separate
+ * product call, not a catalog cleanup).
+ */
+export const ZERO_DECIMAL_CURRENCIES: ReadonlySet<string> = new Set([
+  'CLP',
+  'JPY',
+  'PEN',
+  'PYG',
 ]);
 
 /**
- * Symbol lookup keyed by ISO 4217 code. Unknown codes fall back to the
- * code itself as the symbol (e.g. `XYZ 1,234.56` — same convention the
- * old `formatCurrency` used, kept for backward compatibility with the
- * existing call sites).
+ * Symbol lookup keyed by ISO 4217 code. Typed `Record<SupportedCurrency,
+ * string>` so a MISSING SYMBOL IS A `tsc` ERROR rather than a runtime
+ * `code-as-symbol` surprise (REQ-1.3). Reads with a code outside the catalog
+ * still fall back to the code itself (`XYZ 1,234.56`) — that path is a
+ * widening at the READ, not a widening of the table.
  */
-export const CURRENCY_SYMBOL: Record<string, string> = {
+export const CURRENCY_SYMBOL: Record<SupportedCurrency, string> = {
   ARS: '$',
   AUD: 'A$',
   BRL: 'R$',
   CAD: 'CA$',
+  CLP: '$',
+  COP: '$',
   EUR: '€',
   GBP: '£',
   JPY: '¥',
   MXN: '$',
-  UYU: '$U',
+  PEN: 'S/',
+  PYG: '₲',
   USD: 'US$',
+  UYU: '$U',
 };
 
 // ---------------------------------------------------------------------------
@@ -694,7 +753,11 @@ export function isCurrencySymbolGateOpen(): boolean {
  */
 function currencySymbolPrefix(upperCode: string, rawCode: string): string {
   if (!currencySymbolGateOpen) return '';
-  const symbol = CURRENCY_SYMBOL[upperCode] ?? rawCode;
+  // The TABLE is compile-time exhaustive over `SupportedCurrency`; this READ
+  // is deliberately wider so an unknown code (a legacy row, a typo) still
+  // renders as `XYZ 1,234.56` instead of throwing.
+  const table: Readonly<Record<string, string>> = CURRENCY_SYMBOL;
+  const symbol = table[upperCode] ?? rawCode;
   return `${symbol} `;
 }
 
@@ -738,8 +801,13 @@ export function formatCurrency(value: number, currencyCode: string): string {
   const upperCode = currencyCode.toUpperCase();
   const isLATAM = LATAM_CURRENCIES.has(upperCode);
   const symbolPrefix = currencySymbolPrefix(upperCode, currencyCode);
-  const fixed = Math.abs(value).toFixed(2);
-  const [intPart, decPart] = fixed.split('.');
+  // A zero-decimal code has no fraction to print: round to the whole unit and
+  // leave `decPart` empty, which makes the `hasNonZeroDecimal` guard below
+  // fall through to the grouped integer. Grouping still runs on `intPart`, so
+  // `1234.56` → `1235` → `1.235` and `100.4` → `100`.
+  const isZeroDecimal = ZERO_DECIMAL_CURRENCIES.has(upperCode);
+  const fixed = Math.abs(value).toFixed(isZeroDecimal ? 0 : 2);
+  const [intPart, decPart = ''] = fixed.split('.');
   // Hand-rolled grouping: thousands separator every 3 digits from the
   // right, no leading separator.
   const groupSep = isLATAM ? '.' : ',';

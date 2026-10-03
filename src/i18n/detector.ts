@@ -33,7 +33,18 @@
  *
  * The function is deliberately region-aware for Spanish ONLY: `pt-PT` must
  * still land on `pt-BR` (we ship no European Portuguese) and `en-GB` on `en`.
+ *
+ * ── Currency (REQ-3) ──────────────────────────────────────────────────────
+ * This module also owns the region's DEFAULT CURRENCY, via the same
+ * `resolveRegionCode` normalizer. The catalog type comes from
+ * `src/lib/format.ts` with `import type` ONLY — erased at compile time, so
+ * this module keeps zero runtime imports and its single-root harness
+ * (`tsconfig.i18n-detector-test.json`) keeps working untouched. `getLocales()`
+ * is deliberately absent here (NFR-2 purity): the native adapter lives in
+ * `src/i18n/device-currency.ts`.
  */
+import type { SupportedCurrency } from '@/lib/format';
+
 export type SupportedLocale =
   | 'en'
   | 'es-419'
@@ -105,6 +116,10 @@ export const PLURAL_SECOND_PERSON: Readonly<
  * Normalize an Apple-style or BCP-47 tag into `[language, region]`.
  * Underscores become hyphens, everything is lowercased, and a
  * single-segment tag yields `null` for the region.
+ *
+ * The region field is NOT parsed here — it is delegated to
+ * `resolveRegionCode`, the single region normalizer this module exposes to
+ * `detectDefaultCurrency` as well.
  */
 function splitTag(languageTag: string): {
   language: string;
@@ -112,32 +127,57 @@ function splitTag(languageTag: string): {
 } {
   const normalized = languageTag.trim().toLowerCase().replace(/_/g, '-');
   const [language = '', ...rest] = normalized.split('-');
-  // BCP-47 allows a 3-digit UN M.49 region (`es-419`). A subtags-looking
-  // segment that is neither 2 alpha nor 3 digits is a variant/singleton
-  // (`es-Ar-x-private`) — skip it when hunting for the region.
-  const region = rest.find(
-    (seg) => /^[a-z]{2}$/.test(seg) || /^\d{3}$/.test(seg),
-  );
-  return { language, region: region ?? null };
+  return {
+    language,
+    // The language subtag is excluded from the hunt: a bare `es` carries NO
+    // region, and letting it be read as one would resolve every region-less
+    // Spanish device to the Peninsular override.
+    region: resolveRegionCode(rest.join('-'), null),
+  };
 }
 
 /**
- * Resolve the region for a tag that may carry it INLINE (`es-AR`,
- * `es_ES`) or arrive separately from `getLocales()[i].regionCode`.
- * The explicit `regionCode` argument wins when present and non-empty —
- * it is the platform's own answer, and on iOS it is more reliable than
- * parsing the tag.
+ * Resolve the region a device is IN, from a tag that may carry it INLINE
+ * (`es-AR`, `es_ES`, `es-Ar-x-private`) or from the platform's own answer in
+ * `getLocales()[i].regionCode`.
+ *
+ * Contract (shared by `detectLocale` AND `detectDefaultCurrency` — one
+ * implementation, so the locale and the currency can never disagree about
+ * which country a device is in):
+ *
+ *   1. trim, `_` → `-`, upper-case. Case and separator are normalized away.
+ *   2. An explicit non-empty `regionCode` wins OUTRIGHT — it is the
+ *      platform's own answer, and on iOS it beats parsing the tag.
+ *   3. Otherwise take the LAST segment that is regionish: two alpha
+ *      characters (`AR`) or a three-digit UN M.49 code (`419`). "Last" is what
+ *      makes a bare `'MX'` resolve to `MX` (it is the only segment) while
+ *      `es-419-MX` resolves to `MX`, not to the macro-region.
+ *   4. Variant and private-use subtags (`x`, `private`, `POSIX`) are skipped:
+ *      they are neither two alpha nor three digits.
+ *
+ * Pure: no `Intl`, no clock, no native bridge, no module-level state.
+ *
+ * @param languageTag A BCP-47 / Apple tag, a bare region code, or empty.
+ * @param regionCode Optional `getLocales()[i].regionCode`.
+ * @returns An UPPERCASE region (`'MX'`, `'419'`), or `null` when there is none.
  */
-function resolveRegion(
-  inlineRegion: string | null,
+export function resolveRegionCode(
+  languageTag?: string | null,
   regionCode?: string | null,
 ): string | null {
-  const explicit = regionCode?.trim().toLowerCase().replace(/_/g, '-');
+  const explicit = regionCode?.trim().replace(/_/g, '-').toUpperCase() ?? '';
   if (explicit) {
     const [head = ''] = explicit.split('-');
     if (head) return head;
   }
-  return inlineRegion;
+  const segments = (
+    languageTag?.trim().replace(/_/g, '-').toUpperCase() ?? ''
+  ).split('-');
+  for (let i = segments.length - 1; i >= 0; i -= 1) {
+    const segment = segments[i] ?? '';
+    if (/^[A-Z]{2}$/.test(segment) || /^\d{3}$/.test(segment)) return segment;
+  }
+  return null;
 }
 
 /**
@@ -167,7 +207,7 @@ export function detectLocale(
     case 'en':
       return 'en';
     case 'es':
-      switch (resolveRegion(region, regionCode)) {
+      switch (resolveRegionCode(region, regionCode)?.toLowerCase()) {
         case 'ar':
           return 'es-AR';
         case 'es':
@@ -180,6 +220,51 @@ export function detectLocale(
     default:
       return DEFAULT_LOCALE;
   }
+}
+
+/**
+ * Region → default currency, keyed by UPPERCASE ISO region exactly as
+ * `resolveRegionCode` yields it.
+ *
+ * Keyed on the COUNTRY, never on the language: `en-GB` is `GBP` even though
+ * the app speaks generic English there. `419` (the Latin-American macro-region)
+ * and any country the app does not ship a currency for are absent on purpose —
+ * a macro-region must never be guessed into one country's currency.
+ */
+export const REGION_DEFAULT_CURRENCY: Readonly<
+  Partial<Record<string, SupportedCurrency>>
+> = {
+  AR: 'ARS',
+  AU: 'AUD',
+  BR: 'BRL',
+  CA: 'CAD',
+  CL: 'CLP',
+  CO: 'COP',
+  ES: 'EUR',
+  GB: 'GBP',
+  JP: 'JPY',
+  MX: 'MXN',
+  PE: 'PEN',
+  PY: 'PYG',
+  US: 'USD',
+  UY: 'UYU',
+};
+
+/**
+ * The currency a device region's currency should be, as a PURE function of
+ * the region. Never `null`: an absent, empty or unmapped region resolves to
+ * `USD`, the one code that is valid everywhere (REQ-3 scenario 4).
+ *
+ * @param languageTag A BCP-47 / Apple tag (`es_MX`) or a bare region (`MX`).
+ * @param regionCode Optional `getLocales()[i].regionCode`; wins over the tag.
+ * @returns One of the fourteen `SUPPORTED_CURRENCIES` codes.
+ */
+export function detectDefaultCurrency(
+  languageTag?: string | null,
+  regionCode?: string | null,
+): SupportedCurrency {
+  const region = resolveRegionCode(languageTag, regionCode);
+  return (region && REGION_DEFAULT_CURRENCY[region]) || 'USD';
 }
 
 /**
