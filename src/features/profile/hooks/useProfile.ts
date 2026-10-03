@@ -107,8 +107,9 @@ export function useProfile(): UseProfileResult {
     const profileCurrency = profileQuery.data?.currency;
     if (!profileCurrency) return;
     const settings = useSettingsStore.getState();
-    if (settings.currency !== profileCurrency) {
-      settings.setCurrency(profileCurrency);
+    const normalized = profileCurrency.toUpperCase();
+    if (settings.currency !== normalized) {
+      settings.setCurrency(normalized);
     }
     if (profileQuery.isError) return;
     settings.markCurrencyHydrated();
