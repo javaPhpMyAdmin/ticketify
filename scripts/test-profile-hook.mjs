@@ -434,8 +434,6 @@ async function run() {
       await unmountProbe(renderer);
     }
   });
-  );
-
 
   await test('the gate stays SHUT while the profile read is in flight', async () => {
     resetAll();
@@ -521,8 +519,6 @@ async function run() {
       await unmountProbe(renderer);
     }
   });
-  );
-
 
   await test('a RETRYING transient read keeps the gate shut across its attempts', async () => {
     resetAll();
@@ -556,8 +552,6 @@ async function run() {
       await unmountProbe(renderer);
     }
   });
-  );
-
 
   await test('a retry after a failed read opens the gate once the row lands', async () => {
     resetAll();
@@ -591,8 +585,6 @@ async function run() {
       await unmountProbe(renderer);
     }
   });
-  );
-
 
   await test('no session: the gate never opens and no profile query runs', async () => {
     resetAll();
@@ -620,8 +612,6 @@ async function run() {
       await unmountProbe(renderer);
     }
   });
-  );
-
 
   await test('the store DECLARES the gate shut (fail-closed at boot)', () => {
     // Behavioral tests cannot catch this one: every test calls resetAll(),
@@ -734,8 +724,6 @@ async function run() {
       await unmountProbe(renderer);
     }
   });
-  );
-
 
   console.log('\n[tests] currency symbol gate (lib/format)\n');
 
@@ -800,8 +788,6 @@ async function run() {
       await unmountProbe(renderer);
     }
   });
-  );
-
 
   await test('a shut gate on a negative value leaves no dangling separator', async () => {
     formatMod.setCurrencySymbolGate(true);
@@ -880,8 +866,6 @@ async function run() {
       await unmountProbe(renderer);
     }
   });
-  );
-
 
   console.log('\n[tests] profile currency write\n');
 
@@ -937,8 +921,6 @@ async function run() {
       await unmountProbe(renderer);
     }
   });
-  );
-
 
   await test('setCurrency failure returns the user-safe error and invalidates nothing', async () => {
     resetAll();
@@ -971,8 +953,6 @@ async function run() {
       await unmountProbe(renderer);
     }
   });
-  );
-
 
   await test('convergence: post-write refetch re-hydrates the store to the persisted currency', async () => {
     resetAll();
@@ -1017,8 +997,6 @@ async function run() {
       await unmountProbe(renderer);
     }
   });
-  );
-
 
   await test('no session: the write guard returns an error and touches no network', async () => {
     resetAll();
@@ -1045,8 +1023,6 @@ async function run() {
       await unmountProbe(renderer);
     }
   });
-  );
-
 
   console.log('\n[tests] ensureProfileCurrency: create-only region seed\n');
 
