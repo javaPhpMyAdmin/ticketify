@@ -41,7 +41,7 @@ export default function CurrencySelectorScreen() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSelect = async (code: string) => {
+  const handleSelect = async (code: (typeof SUPPORTED_CURRENCIES)[number]) => {
     if (saving) return;
     // Tapping the already-active currency has nothing to persist — close.
     if (code === currency) {
