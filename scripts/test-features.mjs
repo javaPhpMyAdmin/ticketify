@@ -345,6 +345,21 @@ async function run() {
     );
   });
 
+  await test('setProfileCurrency canonicalizes the code to uppercase at the write boundary', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('profiles', [{ id: 'u1' }]);
+    const result = await profileMod.setProfileCurrency('u1', 'mxn');
+    assert.equal(result.status, 'ok');
+    // NFR-1: every code the app WRITES is uppercase ISO 4217. Case folding
+    // stays display-side in formatCurrency, so canonicalizing here is the
+    // single boundary that makes the invariant true for every future caller.
+    assert.deepEqual(
+      stubMod.__getUpdated('profiles'),
+      { currency: 'MXN' },
+      'a lowercase submitted code must be stored uppercase',
+    );
+  });
+
   await test('setProfileCurrency surfaces a user-safe error on DB failure, never raw text', async () => {
     resetAll();
     stubMod.__failNextUpdate('profiles', {

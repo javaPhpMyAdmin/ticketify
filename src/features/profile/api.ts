@@ -45,6 +45,11 @@ export type ProfileWriteResult =
  * `auth.uid() = id` server-side. `.select('id')` returns the updated row:
  * a 0-row result (no profiles row — nothing creates it on signup) fails
  * closed instead of silently "succeeding" (same pattern as updateReceipt).
+ *
+ * The code is upper-cased HERE, at the write boundary, so every code the app
+ * persists is canonical uppercase ISO 4217 no matter what casing a caller
+ * submits (NFR-1). Case folding for display stays in `formatCurrency`, which
+ * still renders a legacy lowercase row identically.
  */
 export async function setProfileCurrency(
   userId: string,
@@ -55,7 +60,7 @@ export async function setProfileCurrency(
   }
   const { data, error } = (await supabase
     .from('profiles')
-    .update({ currency })
+    .update({ currency: currency.toUpperCase() })
     .eq('id', userId)
     .select('id')) as unknown as {
     data: { id: string }[] | null;

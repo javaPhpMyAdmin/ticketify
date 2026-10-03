@@ -27,6 +27,11 @@ import { useHouseholdStore } from '@/stores/use-household-store';
  * seed's symbol before the row lands would show a real balance in the wrong
  * unit, which is worse than showing the bare number.
  *
+ * The seed is `USD`, the single universal default (currency-universality
+ * REQ-4). It is a pre-hydration placeholder only: on first launch the row is
+ * created carrying the DEVICE's region-derived code, and after hydration the
+ * row's own value wins.
+ *
  * The two mutators are deliberately narrow and asymmetric on purpose:
  * `markCurrencyHydrated()` only ever sets the flag (it can never un-hydrate),
  * so a late-arriving good payload cannot re-close a gate a later error opened;
@@ -51,7 +56,7 @@ interface SettingsState {
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   monthly_budget: 1200,
-  currency: 'UYU',
+  currency: 'USD',
   household_sharing: false,
   currencyHydrated: false,
   setBudget: (monthly_budget) => set({ monthly_budget }),
