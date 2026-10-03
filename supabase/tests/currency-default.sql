@@ -160,6 +160,49 @@ begin
   assert v_untouched_cur = 'UYU',
     format('0041 must not override an explicitly-chosen currency, got %s', coalesce(v_untouched_cur, 'NULL'));
 
+
+  ---------------------------------------------------------------------------
+  -- §4. unique_violation guard (23505) and anti-clobber guarantee
+  ---------------------------------------------------------------------------
+  declare
+    v_dup_23505 boolean := false;
+    v_pre_cur   text;
+    v_post_cur  text;
+    v_dup_id    uuid   := 'cd000000-0000-0000-0000-00000000c5d3';
+  begin
+    -- Seed a known row with an explicit currency
+    insert into auth.users (id, email)
+    values (v_dup_id, 'currency-default-dup@i18n.test.local')
+    on conflict (id) do nothing;
+
+    insert into public.profiles (id, currency)
+    values (v_dup_id, 'EUR')
+    on conflict (id) do nothing;
+
+    select currency into v_pre_cur from public.profiles where id = v_dup_id;
+    assert v_pre_cur = 'EUR',
+      format('duplicate guard seed must be EUR, got %s', coalesce(v_pre_cur, 'NULL'));
+
+    -- Attempt to insert the SAME id again (should raise unique_violation/23505)
+    begin
+      insert into public.profiles (id, currency) values (v_dup_id, 'USD');
+    exception
+      when unique_violation then
+        v_dup_23505 := true;
+    end;
+
+    assert v_dup_23505 = true,
+      'expected duplicate insert into profiles to raise unique_violation (23505)';
+
+    -- Currency must remain unchanged
+    select currency into v_post_cur from public.profiles where id = v_dup_id;
+    assert v_post_cur = v_pre_cur,
+      format('a rejected duplicate insert must not change currency (pre=%s, post=%s)', v_pre_cur, coalesce(v_post_cur, 'NULL'));
+
+    -- Cleanup
+    delete from public.profiles where id = v_dup_id;
+    delete from auth.users where id = v_dup_id;
+  end;
   -- Cleanup: leave the scratch DB exactly as we found it.
   delete from public.profiles where id in (v_user, v_user_fresh);
   delete from auth.users   where id in (v_user, v_user_fresh);
