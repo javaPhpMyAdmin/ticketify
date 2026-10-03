@@ -668,22 +668,66 @@ profileApiMod = await load('src/features/profile/api.js');
 
   console.log('\n[tests] currency symbol gate (lib/format)\n');
 
-  await test('the formatter gate withholds only the symbol, never the amount', async () => {
+  await test('the formatter gate withholds the whole UNIT CONVENTION, not just the symbol', async () => {
     formatMod.setCurrencySymbolGate(true);
     assert.equal(formatMod.formatCurrency(1234.5, 'USD'), 'US$ 1,234.50');
     assert.equal(formatMod.formatCurrency(1234.5, 'UYU'), '$U 1.234,50');
 
     formatMod.setCurrencySymbolGate(false);
+    // Grouping is keyed BY CURRENCY CODE, and until the profile row lands the
+    // code is only the store's seed — so a shut gate that still grouped would
+    // print the seed's conventions over a real balance. `$U`-less but still
+    // `1.234,50` is not a neutral placeholder either: it is an INTL seed
+    // reading at a LATAM user, off by 1000x. Both codes collapse to the same
+    // bare number instead.
     assert.equal(
-      formatMod.formatCurrency(1234.5, 'USD'),
-      '1,234.50',
-      'the bare INTL-grouped amount, no unit',
+      formatMod.formatCurrency(1234567.89, 'USD'),
+      '1234567.89',
+      'the bare INTL-seeded amount: no unit, no thousands separator',
     );
     assert.equal(
-      formatMod.formatCurrency(1234.5, 'UYU'),
-      '1.234,50',
-      'the bare LATAM-grouped amount — grouping still follows the currency code',
+      formatMod.formatCurrency(1234567.89, 'UYU'),
+      '1234567.89',
+      'the bare LATAM-seeded amount: identical, so no convention is claimed',
     );
+  });
+
+  await test('the store flag drives the module gate shut until hydration lands', async () => {
+    // The end-to-end shape of the F1 fix: the flag the screens read and the
+    // module-level gate the formatters read are the same fact, so flipping the
+    // store flag must be enough to change what a money screen renders — with
+    // no separator left over on either side of the transition.
+    resetAll();
+    signIn();
+    stubMod.__setTableRead('profiles', { rows: [PROFILE_EUR] });
+    stubMod.__setTableRead('scan_usage', { rows: [SCAN_USAGE_ROW] });
+
+    const store = settingsStoreMod.useSettingsStore;
+    const renderAsScreensWould = (code) => formatMod.formatCurrency(1234567.89, code);
+
+    assert.equal(store.getState().currencyHydrated, false);
+    assert.equal(store.getState().currency, 'UYU', 'pre-hydration the store still holds the seed');
+    formatMod.setCurrencySymbolGate(false);
+    assert.equal(renderAsScreensWould(store.getState().currency), '1234567.89');
+
+    const renderer = await mountProbe(() => store.getState().currencyHydrated);
+    try {
+      assert.equal(store.getState().currencyHydrated, true, 'the profile row landed');
+      assert.equal(store.getState().currency, 'EUR');
+      formatMod.setCurrencySymbolGate(store.getState().currencyHydrated);
+      assert.equal(
+        renderAsScreensWould(store.getState().currency),
+        '€ 1,234,567.89',
+        'after hydration the real currency renders with BOTH its symbol and its separators',
+      );
+      assert.equal(
+        renderAsScreensWould('UYU'),
+        '$U 1.234.567,89',
+        'the LATAM family gets LATAM separators back, not the seed\'s INTL ones',
+      );
+    } finally {
+      await unmountProbe(renderer);
+    }
   });
 
   await test('a shut gate on a negative value leaves no dangling separator', async () => {
@@ -693,7 +737,7 @@ profileApiMod = await load('src/features/profile/api.js');
     formatMod.setCurrencySymbolGate(false);
     assert.equal(
       formatMod.formatCurrency(-1234.56, 'USD'),
-      '-1,234.56',
+      '-1234.56',
       'the sign must sit against the number, not against a missing symbol',
     );
     assert.doesNotMatch(
@@ -706,15 +750,15 @@ profileApiMod = await load('src/features/profile/api.js');
   await test('a shut gate withholds the unknown-code fallback too', async () => {
     formatMod.setCurrencySymbolGate(true);
     assert.equal(
-      formatMod.formatCurrency(1234.56, 'XYZ'),
-      'XYZ 1,234.56',
+      formatMod.formatCurrency(1234567.89, 'XYZ'),
+      'XYZ 1,234,567.89',
       'an unknown code renders as itself while open',
     );
 
     formatMod.setCurrencySymbolGate(false);
     assert.equal(
-      formatMod.formatCurrency(1234.56, 'XYZ'),
-      '1,234.56',
+      formatMod.formatCurrency(1234567.89, 'XYZ'),
+      '1234567.89',
       'the code is not a currency either — withholding it is the whole point',
     );
   });
@@ -722,12 +766,18 @@ profileApiMod = await load('src/features/profile/api.js');
   await test('formatCurrencyWhole honors the gate as well', async () => {
     formatMod.setCurrencySymbolGate(true);
     assert.equal(formatMod.formatCurrencyWhole(812.24, 'UYU'), '$U 812');
+    assert.equal(formatMod.formatCurrencyWhole(1234567.89, 'UYU'), '$U 1.234.568');
 
     formatMod.setCurrencySymbolGate(false);
     assert.equal(
       formatMod.formatCurrencyWhole(812.24, 'UYU'),
       '812',
       'the whole-number form withholds the symbol as well',
+    );
+    assert.equal(
+      formatMod.formatCurrencyWhole(1234567.89, 'UYU'),
+      '1234568',
+      'and the grouping — 812 has nothing to group and could not catch a revert',
     );
   });
 
