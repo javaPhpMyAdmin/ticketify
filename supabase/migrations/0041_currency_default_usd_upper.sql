@@ -1,0 +1,57 @@
+-- ============================================================================
+-- Ticketify — 0041_currency_default_usd_upper.sql
+--
+-- Change: currency-universality (slice 2, T-10)
+-- Phase:  currency-default alignment
+-- Supersedes: 0040_currency_usd_default.sql, which set the same column's
+--   default to the LOWERCASE literal 'usd'. 0040 stays in the chain — it has
+--   already run on every environment and rewriting history is not an option —
+--   so this migration moves the default from 'usd' to 'USD'.
+--
+-- Why uppercase
+-- -------------
+-- NFR-1 makes every code the app WRITES canonical uppercase ISO 4217, and the
+-- column DEFAULT is one of those three write boundaries (selector submit,
+-- region seed, column default). The other two are enforced in code:
+--
+--   - `ensureProfileCurrency` upper-cases before its create-only `.insert()`.
+--   - `setProfileCurrency` upper-cases before its `.update()`.
+--
+-- A column default is not code, so nothing was upper-casing it. With 0040's
+-- 'usd' in place, a profile row created by any path that omits the column was
+-- born lowercase while every other write path was uppercase — the same column
+-- holding two spellings of one value, which is exactly what NFR-1 exists to
+-- prevent. Display-side case folding lives in `formatCurrency`, so 'USD' and
+-- 'usd' already render identically; nothing in the UI changes.
+--
+-- SCOPE — this migration changes the COLUMN DEFAULT ONLY:
+--   1. `public.profiles.currency` default 'usd' -> 'USD'.
+--   2. NO `update` of existing rows.
+--   3. NO `check` constraint.
+--
+-- On (2), the precedent is deliberate and load-bearing. `0007_currency_uyu.sql`
+-- set this same column's default to 'UYU' AND ran a one-time backfill over
+-- every existing row. That backfill destroyed information that could not be
+-- recovered: a currency the user never chose was indistinguishable from one
+-- they did, because reading the row only tells you what it now holds. It is
+-- cited here as the reason this file stays a default migration — 0007
+-- conflated "what new rows are born as" with "what every row should contain",
+-- and only one of those two questions was ever asked.
+--
+-- Existing rows keep whatever they hold. A stored 'usd' from 0040's era stays
+-- 'usd': it was a real value written by a real code path, and this migration
+-- has no basis for deciding the user meant something else. Reads are
+-- case-insensitive by way of `toUpperCase()` in `formatCurrency`, so those rows
+-- display correctly without being rewritten.
+--
+-- On (3), NFR-1 explicitly forbids introducing a
+-- `check (currency in (...))` constraint. The column stays free text so a
+-- future catalog addition needs no migration, and the invariant is enforced in
+-- the write path rather than retrofitted onto rows that already exist.
+--
+-- Reversal: `alter table public.profiles alter column currency set default
+-- 'usd';` restores 0040's declaration and touches no data.
+-- ============================================================================
+
+alter table public.profiles
+  alter column currency set default 'USD';
