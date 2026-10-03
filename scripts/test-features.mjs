@@ -360,6 +360,21 @@ async function run() {
     );
   });
 
+  await test('setProfileCurrency rejects out-of-catalog codes without touching the network', async () => {
+    resetAll();
+    // An out-of-catalog code must be rejected at the validation boundary
+    // with the user-safe error and must never reach the network.
+    stubMod.__setDeleteRead('profiles', [{ id: 'u1' }]);
+    const result = await profileMod.setProfileCurrency('u1', 'CHF');
+    assert.equal(result.status, 'error', 'out-of-catalog code is rejected');
+    assert.equal(result.message, profileMod.WRITE_ERROR_MESSAGE);
+    assert.equal(
+      stubMod.__getCallLog().length,
+      0,
+      'no network when code is rejected',
+    );
+  });
+
   await test('setProfileCurrency surfaces a user-safe error on DB failure, never raw text', async () => {
     resetAll();
     stubMod.__failNextUpdate('profiles', {
