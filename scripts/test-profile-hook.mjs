@@ -238,6 +238,43 @@ function signIn() {
   sessionStoreMod.useSessionStore.setState({ session: FAKE_SESSION });
 }
 
+/**
+ * Runs `fn` with console.debug / console.warn captured, then restores them.
+ *
+ * The currency-seeding observability contract is a LOG SEVERITY contract:
+ * "which level did this failure report at, and did it name the cause?" There is
+ * no return value and no store state to assert on — the console IS the
+ * externally visible surface, so capturing it is the only way to pin it.
+ *
+ * Capturing rather than stubbing keeps the assertions behavioral: a pin fails
+ * both when a failure is silenced entirely and when it is reported at the
+ * wrong severity, which is exactly the regression being guarded.
+ */
+async function captureLogs(fn) {
+  const captured = { debug: [], warn: [] };
+  const real = { debug: console.debug, warn: console.warn };
+  console.debug = (...args) => captured.debug.push(args.map(String).join(' '));
+  console.warn = (...args) => captured.warn.push(args.map(String).join(' '));
+  try {
+    await fn();
+  } finally {
+    console.debug = real.debug;
+    console.warn = real.warn;
+  }
+  return captured;
+}
+
+/** No log line may carry an account identifier, an email or a uuid. */
+function assertNoUserIdentifiers(lines, where) {
+  for (const line of lines) {
+    assert.doesNotMatch(
+      line,
+      /user@example\.com|\bu1\b|[0-9a-f]{8}-[0-9a-f]{4}-/i,
+      `${where}: a log line must carry no user identifier or PII — got: ${line}`,
+    );
+  }
+}
+
 async function run() {
   console.log('\n[tests] compiling useProfile + auth graph + query-client + stubs…');
   compile();
@@ -1144,6 +1181,199 @@ profileApiMod = await load('src/features/profile/api.js');
       [],
       'ensureProfile must not seed currency — the seed write is structurally separate',
     );
+  });
+
+  // ==========================================================================
+  // Fallback observability (W1/W2): a seed that silently falls back to USD, or
+  // silently never lands, is invisible exactly where it is most expensive.
+  // The contract is the LOG LEVEL, so that is what these pins assert.
+  // ==========================================================================
+  console.log('\n[tests] fallback observability: no silent USD, no silent skip\n');
+
+  await test('a THROWN getLocales() warns and names the USD fallback', async () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocalesThrow(true);
+    try {
+      const logs = await captureLogs(() => {
+        assert.equal(
+          deviceCurrencyMod.detectDeviceDefaultCurrency(),
+          'USD',
+          'a native-bridge failure still degrades to the universal default, not a throw',
+        );
+      });
+      assert.equal(logs.warn.length, 1, 'a broken native bridge is exactly one warn');
+      assert.match(
+        logs.warn[0],
+        /device region detection failed/i,
+        'the log must name the failure, not just the fallback',
+      );
+      assert.match(logs.warn[0], /USD/, 'the log must name what it fell back to');
+      assert.deepEqual(
+        logs.debug,
+        [],
+        'a thrown error is an outage, not a debug detail',
+      );
+      assertNoUserIdentifiers([...logs.warn, ...logs.debug], 'device-currency warn');
+    } finally {
+      localizationStubMod.__setDeviceLocalesThrow(false);
+    }
+  });
+
+  await test('an EMPTY locale list is debug, and is told apart from a throw', async () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocales([]);
+    const logs = await captureLogs(() => {
+      assert.equal(deviceCurrencyMod.detectDeviceDefaultCurrency(), 'USD');
+    });
+    assert.deepEqual(
+      logs.warn,
+      [],
+      'a device that simply reports no locales is not an outage — warn here would be noise on every such boot',
+    );
+    assert.equal(logs.debug.length, 1, 'but it must not be silent either');
+    assert.match(
+      logs.debug[0],
+      /no locales/i,
+      'the empty array and the thrown error are different failures and read differently',
+    );
+    assert.match(logs.debug[0], /USD/);
+  });
+
+  await test('the expected duplicate seed logs at DEBUG, never warn', async () => {
+    resetAll();
+    // Every sign-in after the first one lands here. Warn on it would be a
+    // warn on every single sign-in forever — noise that teaches the team to
+    // ignore this line, which is how a REAL failure below gets missed.
+    stubMod.__failNextInsert('profiles', {
+      message: 'duplicate key value violates unique constraint "profiles_pkey"',
+      code: '23505',
+    });
+    const logs = await captureLogs(() =>
+      profileSyncMod.ensureProfileCurrency('u1', 'UYU'),
+    );
+    assert.deepEqual(logs.warn, [], 'the desired steady state must not raise a warn');
+    assert.equal(logs.debug.length, 1, 'but it is reported, once');
+    assert.match(logs.debug[0], /already exists/i);
+    assertNoUserIdentifiers([...logs.warn, ...logs.debug], 'duplicate seed log');
+  });
+
+  await test('an RLS denial warns AND carries the error code', async () => {
+    resetAll();
+    // The failure the split exists for: the seed never landed, every profile
+    // row is born USD-regardless, and nothing said so.
+    stubMod.__failNextInsert('profiles', {
+      message: 'new row violates row-level security policy for table "profiles"',
+      code: '42501',
+    });
+    const logs = await captureLogs(() =>
+      profileSyncMod.ensureProfileCurrency('u1', 'MXN'),
+    );
+    assert.deepEqual(logs.debug, [], 'this is not the expected case');
+    assert.equal(logs.warn.length, 1, 'a denied seed must raise exactly one warn');
+    assert.match(logs.warn[0], /42501/, 'the code is what says RLS vs 5xx vs typo');
+    assert.match(logs.warn[0], /row-level security/i, 'and the cause must be readable');
+    assertNoUserIdentifiers([...logs.warn, ...logs.debug], 'RLS warn');
+  });
+
+  await test('a missing table and a 5xx both warn with their own code', async () => {
+    // 42P01 (undefined_table) is the pre-migration case, 500xx the upstream
+    // case. Neither is the expected duplicate, so neither may be demoted.
+    for (const code of ['42P01', '50001']) {
+      resetAll();
+      stubMod.__failNextInsert('profiles', {
+        // Deliberately does NOT mention the code: a pin whose message happens
+        // to contain "42P01" would pass even if the code field were never read.
+        message: 'simulated upstream failure',
+        code,
+      });
+      const logs = await captureLogs(() =>
+        profileSyncMod.ensureProfileCurrency('u1', 'MXN'),
+      );
+      assert.deepEqual(logs.debug, [], `${code} is not the expected duplicate`);
+      assert.equal(logs.warn.length, 1, `${code} must warn exactly once`);
+      assert.match(logs.warn[0], new RegExp(code), `${code} must name itself`);
+      assertNoUserIdentifiers([...logs.warn, ...logs.debug], `${code} warn`);
+    }
+  });
+
+  await test('a THROWN transport error is classified too, and never rethrown', async () => {
+    // supabase-js resolves unique violations into `{ error }`, so the catch is
+    // the transport path — but it must not become a second, louder blind spot
+    // if some client ever throws the duplicate instead of resolving it.
+    resetAll();
+    const realFrom = stubMod.supabase.from;
+    try {
+      stubMod.supabase.from = () => {
+        const err = new Error('duplicate key value violates unique constraint');
+        err.code = '23505';
+        throw err;
+      };
+      const dup = await captureLogs(() =>
+        profileSyncMod.ensureProfileCurrency('u1', 'UYU'),
+      );
+      assert.deepEqual(dup.warn, [], 'a thrown 23505 is still the expected case');
+      assert.equal(dup.debug.length, 1);
+
+      stubMod.supabase.from = () => {
+        const err = new Error('fetch failed');
+        err.code = 'ECONNREFUSED';
+        throw err;
+      };
+      const real = await captureLogs(() =>
+        profileSyncMod.ensureProfileCurrency('u1', 'UYU'),
+      );
+      assert.deepEqual(real.debug, [], 'a network failure is not the expected case');
+      assert.equal(real.warn.length, 1);
+      assert.match(real.warn[0], /ECONNREFUSED/);
+
+      stubMod.supabase.from = () => {
+        throw new Error('opaque transport failure');
+      };
+      const codeless = await captureLogs(() =>
+        profileSyncMod.ensureProfileCurrency('u1', 'UYU'),
+      );
+      assert.equal(
+        codeless.warn.length,
+        1,
+        'a codeless failure still warns — it must not fall back to debug',
+      );
+      assert.match(codeless.warn[0], /NONE/, 'and says so the reader knows why');
+    } finally {
+      stubMod.supabase.from = realFrom;
+    }
+  });
+
+  await test('an unreadable failure shape still warns with a stated reason', async () => {
+    // A throw that carries neither an Error nor a message must not degrade
+    // into silence — and must say that the reason is unknown rather than
+    // inventing one.
+    resetAll();
+    const realFrom = stubMod.supabase.from;
+    try {
+      stubMod.supabase.from = () => {
+        throw 'a bare string';
+      };
+      const logs = await captureLogs(() =>
+        profileSyncMod.ensureProfileCurrency('u1', 'MXN'),
+      );
+      assert.equal(logs.warn.length, 1);
+      assert.match(
+        logs.warn[0],
+        /a bare string/,
+        'a thrown string IS the only diagnostic there is — swallowing it hides the failure',
+      );
+
+      stubMod.supabase.from = () => {
+        throw { nothing: 'useful' };
+      };
+      const opaque = await captureLogs(() =>
+        profileSyncMod.ensureProfileCurrency('u1', 'MXN'),
+      );
+      assert.equal(opaque.warn.length, 1);
+      assert.match(opaque.warn[0], /no readable message/);
+    } finally {
+      stubMod.supabase.from = realFrom;
+    }
   });
 
   console.log(`\n[tests] registered ${passed + failed} pins`);

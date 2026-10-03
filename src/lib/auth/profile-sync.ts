@@ -44,6 +44,63 @@ import type { User as AuthUser } from '@supabase/supabase-js';
 
 import { supabase } from '@/lib/supabase';
 
+/** Postgres unique-violation. The `ON CONFLICT`-free seed INSERT hits this on
+ *  every sign-in after the first, so it is the EXPECTED outcome and not an
+ *  incident. */
+const PG_DUPLICATE_KEY = '23505';
+
+/** Message fragments that identify the same unique violation when the client
+ *  hands back no `code` (a PostgREST error through some transports carries only
+ *  `message`). Mirrors `use-session-store`'s duplicate-account classifier. */
+const DUPLICATE_KEY_MARKERS = ['23505', 'duplicate key', 'unique constraint'];
+
+/**
+ * Whether an error is the seed INSERT losing to an already-existing row.
+ *
+ * Accepts both shapes the failure arrives in: the resolved `{ error }` object
+ * from supabase-js (a PostgREST error with `code`) and a thrown transport
+ * error (often just an `Error` with a message). Getting this classification
+ * wrong in EITHER direction is a real defect: treating the expected duplicate
+ * as a failure trains the team to ignore this log line, and treating a genuine
+ * RLS/network failure as "expected" hides a seeding bug entirely.
+ */
+function isDuplicateKeyError(error: unknown): boolean {
+  if (error === null || typeof error !== 'object') return false;
+  const { code, message } = error as { code?: unknown; message?: unknown };
+  if (code === PG_DUPLICATE_KEY) return true;
+  const haystack = `${typeof code === 'string' ? code : ''} ${
+    typeof message === 'string' ? message : ''
+  }`.toLowerCase();
+  return DUPLICATE_KEY_MARKERS.some((marker) => haystack.includes(marker));
+}
+
+/**
+ * The error's message, or a marker when the failure carries none.
+ *
+ * Deliberately does NOT gate on `instanceof Error`: supabase-js resolves a
+ * PostgREST failure as a PLAIN object (`PostgrestError` — `message`, `code`,
+ * `details`), never an `Error` subclass, so an `instanceof`-only read would
+ * replace every real database cause on the main path with a generic string and
+ * leave the log saying nothing. Read the field, and say so when it is absent.
+ */
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string' && err) return err;
+  if (err !== null && typeof err === 'object') {
+    const { message } = err as { message?: unknown };
+    if (typeof message === 'string' && message) return message;
+  }
+  return 'a failure with no readable message';
+}
+
+/** The error's Postgres/HTTP code, when it has one — the field that says
+ *  whether this is a missing table, an RLS denial or a 5xx. */
+function errorCode(err: unknown): string {
+  if (err === null || typeof err !== 'object') return 'NONE';
+  const { code } = err as { code?: unknown };
+  return typeof code === 'string' && code ? code : 'NONE';
+}
+
 /**
  * Writes the region-derived default currency at profile-row CREATION only.
  *
@@ -51,8 +108,14 @@ import { supabase } from '@/lib/supabase';
  * @param currency Region-derived ISO 4217 code; upper-cased here so this
  *   write boundary is canonical regardless of the caller's casing (NFR-1).
  *
- * Never rejects: an existing row (23505), a missing table, or an RLS denial
- * all resolve quietly with a `console.warn`, exactly like `ensureProfile`.
+ * Never rejects, so auth is never blocked by this call. The two failure
+ * classes are logged at DIFFERENT severities on purpose: the duplicate is the
+ * desired steady state (the user's own choice stands) and is debug noise,
+ * while an RLS denial / missing table / 5xx means the seed silently never
+ * landed and is worth a warn carrying the code.
+ *
+ * Logs carry no user identifiers: the id is never interpolated, and neither is
+ * anything else that identifies the account.
  */
 export async function ensureProfileCurrency(
   userId: string,
@@ -64,16 +127,34 @@ export async function ensureProfileCurrency(
       .from('profiles')
       .insert({ id: userId, currency: currency.toUpperCase() });
     if (error) {
-      // Non-fatal by contract. The overwhelmingly common cause is 23505 (the
-      // row already exists), which is the desired outcome: the user's own
-      // choice stands.
-      console.warn('[auth] ensureProfileCurrency skipped:', error.message);
+      if (isDuplicateKeyError(error)) {
+        // Expected from the second sign-in onward: the row exists, so the seed
+        // wrote nothing and a currency the user chose is untouched.
+        console.debug(
+          '[auth] ensureProfileCurrency: the profile row already exists, seed not applied (expected after first sign-in)',
+        );
+      } else {
+        console.warn(
+          `[auth] ensureProfileCurrency failed (code=${errorCode(error)}):`,
+          errorMessage(error),
+        );
+      }
     }
   } catch (err) {
-    console.warn(
-      '[auth] ensureProfileCurrency failed:',
-      err instanceof Error ? err.message : err,
-    );
+    // A throw is never the duplicate case in practice — supabase-js resolves
+    // unique violations into `{ error }` — but a transport that throws a
+    // 23505-shaped error must not be reported as an outage, so the same
+    // classifier runs on the caught value.
+    if (isDuplicateKeyError(err)) {
+      console.debug(
+        '[auth] ensureProfileCurrency: the profile row already exists, seed not applied (expected after first sign-in)',
+      );
+    } else {
+      console.warn(
+        `[auth] ensureProfileCurrency threw (code=${errorCode(err)}):`,
+        errorMessage(err),
+      );
+    }
   }
 }
 
