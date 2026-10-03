@@ -145,6 +145,49 @@ async function run() {
     },
   );
 
+  console.log('\n[tests] catalog single source of truth (AD-1)\n');
+
+  await test('SUPPORTED_CURRENCIES is the 14-code catalog, no duplicates', () => {
+    // REQ-1.1: the ordered set the selector renders. Pinned here (and again,
+    // cross-file, in test-currency-catalog) because a 13th or 15th code is
+    // exactly the drift this catalog exists to prevent.
+    assert.equal(fmt.SUPPORTED_CURRENCIES.length, 14);
+    assert.equal(new Set(fmt.SUPPORTED_CURRENCIES).size, 14);
+    assert.deepEqual(
+      [...fmt.SUPPORTED_CURRENCIES].sort(),
+      [
+        'ARS', 'AUD', 'BRL', 'CAD', 'CLP', 'COP', 'EUR', 'GBP', 'JPY',
+        'MXN', 'PEN', 'PYG', 'USD', 'UYU',
+      ],
+    );
+  });
+
+  await test('the grouping Sets are derived from the catalog (no fourth list)', () => {
+    // AD-1: LATAM/INTL are the SOURCE; the Sets formatCurrency groups with
+    // are derived from them, so the two must partition the catalog exactly.
+    const grouped = [...fmt.LATAM_CURRENCIES, ...fmt.INTL_CURRENCIES].sort();
+    assert.deepEqual(grouped, [...fmt.SUPPORTED_CURRENCIES].sort());
+  });
+
+  await test('every catalog code resolves a symbol (never a bare code)', () => {
+    // REQ-1.3. The table is typed `Record<SupportedCurrency, string>` so a
+    // missing entry is a `tsc` error; this is the runtime half of the same
+    // guarantee (the loop is non-vacuous — 14 codes are asserted above).
+    for (const code of fmt.SUPPORTED_CURRENCIES) {
+      assert.ok(fmt.CURRENCY_SYMBOL[code], `${code} has no symbol`);
+    }
+  });
+
+  await test('the codes missing from the old symbol table now resolve', () => {
+    // AD-1 adds CLP / PEN / PYG. `Record<SupportedCurrency, string>` also
+    // forces COP, which shipped in the LATAM set with no symbol at all and so
+    // rendered as the bare code `COP 1.234,56` — REQ-1.3 forbids that.
+    assert.equal(fmt.CURRENCY_SYMBOL.CLP, '$');
+    assert.equal(fmt.CURRENCY_SYMBOL.PEN, 'S/');
+    assert.equal(fmt.CURRENCY_SYMBOL.PYG, '₲');
+    assert.equal(fmt.CURRENCY_SYMBOL.COP, '$');
+  });
+
   console.log(`\n[tests] ${passed} passed, ${failed} failed`);
   if (failed > 0) {
     process.exitCode = 1;
