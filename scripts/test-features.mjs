@@ -143,6 +143,12 @@ function installRequireHook() {
       request = join(outDir, 'scripts', 'test-stubs', 'storage-adapter.js');
     } else if (request === 'expo-file-system') {
       request = join(outDir, 'scripts', 'test-stubs', 'expo-file-system.js');
+    } else if (request === 'expo-localization') {
+      // The sign-in graph reaches the device-currency adapter, the sole
+      // getLocales() reader on the currency path (precedent:
+      // test-i18n-init.mjs). Without this branch node tries to load the
+      // real native module.
+      request = join(outDir, 'scripts', 'test-stubs', 'expo-localization.js');
     } else if (request === 'react-native') {
       // Mirrors the auth harness: the real package cannot load in plain node
       // (flow syntax); `query-client.ts` only touches AppState + Platform.OS.

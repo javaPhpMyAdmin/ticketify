@@ -105,6 +105,11 @@ function installRequireHook() {
       request = join(outDir, 'scripts/test-stubs/storage-adapter.js');
     } else if (request === 'react-native') {
       request = join(outDir, 'scripts/test-stubs/react-native.js');
+    } else if (request === 'expo-localization') {
+      // The device-currency adapter is the sole getLocales() reader in the
+      // sign-in path (precedent: test-i18n-init.mjs). Without this branch the
+      // compiled use-session-store graph tries to load the real native module.
+      request = join(outDir, 'scripts/test-stubs/expo-localization.js');
     } else if (request.startsWith('@/')) {
       request = join(outDir, 'src', request.slice(2));
     }
@@ -115,6 +120,8 @@ function installRequireHook() {
 const load = (rel) => import(pathToFileURL(join(outDir, rel)).href);
 
 let stubMod;
+let deviceCurrencyMod;
+let localizationStubMod;
 let profileApiMod;
 let profileHookMod;
 let profileSyncMod;
@@ -222,6 +229,9 @@ function resetAll() {
   });
   formatMod.setCurrencySymbolGate(true);
   sessionStoreMod.useSessionStore.setState({ session: null });
+  localizationStubMod.__setDeviceLocales([
+    { languageTag: 'en-US', languageCode: 'en', regionCode: 'US', currencyCode: 'USD' },
+  ]);
 }
 
 function signIn() {
@@ -237,8 +247,10 @@ async function run() {
   installRequireHook();
   console.log('[tests] loading compiled modules…');
 
-  stubMod = await load('scripts/test-stubs/supabase.js');
-  profileApiMod = await load('src/features/profile/api.js');
+stubMod = await load('scripts/test-stubs/supabase.js');
+localizationStubMod = await load('scripts/test-stubs/expo-localization.js');
+deviceCurrencyMod = await load('src/i18n/device-currency.js');
+profileApiMod = await load('src/features/profile/api.js');
   profileHookMod = await load('src/features/profile/hooks/useProfile.js');
   profileSyncMod = await load('src/lib/auth/profile-sync.js');
   sessionStoreMod = await load('src/features/auth/use-session-store.js');
@@ -246,6 +258,10 @@ async function run() {
   formatMod = await load('src/lib/format.js');
   queryClientMod = await load('src/lib/query-client.js');
   useProfile = profileHookMod.useProfile;
+  // Captured straight off the production store singleton right after import,
+  // BEFORE any reset mutates it: this is the cold-boot seed a money screen
+  // would read while the profile row is still in flight.
+  const storeSeedAtImport = settingsStoreMod.useSettingsStore.getState().currency;
 
   console.log('\n[tests] profile hydrate\n');
 
@@ -900,6 +916,114 @@ async function run() {
   });
 
   console.log('\n[tests] ensureProfileCurrency: create-only region seed\n');
+
+  await test('the settings store seeds USD, not the legacy UYU', () => {
+    assert.equal(
+      storeSeedAtImport,
+      'USD',
+      'REQ-4.1 / NFR-7: USD is the single universal default the store seeds before hydration',
+    );
+  });
+
+  await test('detectDeviceDefaultCurrency derives MXN from an es-MX device', () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocales([
+      { languageTag: 'es-MX', languageCode: 'es', regionCode: 'MX', currencyCode: null },
+    ]);
+    assert.equal(deviceCurrencyMod.detectDeviceDefaultCurrency(), 'MXN');
+  });
+
+  await test('detectDeviceDefaultCurrency derives USD from an en-US device', () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocales([
+      { languageTag: 'en-US', languageCode: 'en', regionCode: 'US', currencyCode: 'USD' },
+    ]);
+    assert.equal(deviceCurrencyMod.detectDeviceDefaultCurrency(), 'USD');
+  });
+
+  await test('detectDeviceDefaultCurrency falls back to USD when the region is unmapped', () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocales([
+      { languageTag: 'sv-SE', languageCode: 'sv', regionCode: 'SE', currencyCode: null },
+    ]);
+    assert.equal(
+      deviceCurrencyMod.detectDeviceDefaultCurrency(),
+      'USD',
+      'REQ-5.3: an unmapped device region seeds the universal default, never null',
+    );
+  });
+
+  await test('detectDeviceDefaultCurrency survives a throwing getLocales()', () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocalesThrow(true);
+    try {
+      assert.equal(
+        deviceCurrencyMod.detectDeviceDefaultCurrency(),
+        'USD',
+        'a native-bridge failure must degrade to the universal default, not crash sign-in',
+      );
+    } finally {
+      localizationStubMod.__setDeviceLocalesThrow(false);
+    }
+  });
+
+  await test('the SIGNED_IN chain seeds BEFORE the identity upsert', async () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocales([
+      { languageTag: 'es-MX', languageCode: 'es', regionCode: 'MX', currencyCode: null },
+    ]);
+    stubMod.__setTableRead('profiles', { rows: [PROFILE_EUR] });
+    stubMod.__setTableRead('scan_usage', { rows: [SCAN_USAGE_ROW] });
+
+    const listener = stubMod.__getLastAuthStateListener();
+    await act(async () => {
+      listener('SIGNED_IN', FAKE_SESSION);
+    });
+
+    const writes = stubMod
+      .__getCallLog()
+      .filter((e) => e.kind === 'insert' || e.kind === 'upsert')
+      .map((e) => e.kind);
+    assert.deepEqual(
+      writes,
+      ['insert', 'upsert'],
+      'the seed must precede the upsert, or the upsert creates the row first and the seed can never fire',
+    );
+    assert.deepEqual(
+      stubMod.__getInserted('profiles'),
+      [{ id: 'u1', currency: 'MXN' }],
+      'REQ-5.2: a first sign-in on an MX device creates the row with MXN',
+    );
+  });
+
+  await test('the restore chain seeds BEFORE the identity upsert', async () => {
+    resetAll();
+    localizationStubMod.__setDeviceLocales([
+      { languageTag: 'es-MX', languageCode: 'es', regionCode: 'MX', currencyCode: null },
+    ]);
+    stubMod.__setSupabaseBehavior({
+      getSession: async () => ({ data: { session: FAKE_SESSION }, error: null }),
+    });
+
+    await act(async () => {
+      await sessionStoreMod.useSessionStore.getState().restore();
+    });
+
+    const writes = stubMod
+      .__getCallLog()
+      .filter((e) => e.kind === 'insert' || e.kind === 'upsert')
+      .map((e) => e.kind);
+    assert.deepEqual(
+      writes,
+      ['insert', 'upsert'],
+      'the bootstrap restore seeds first too — both call sites must carry the seed',
+    );
+    assert.deepEqual(
+      stubMod.__getInserted('profiles'),
+      [{ id: 'u1', currency: 'MXN' }],
+      'the restored session seeds the same region-derived code',
+    );
+  });
 
   await test('region seed is a plain INSERT of (id, currency) — never an upsert', async () => {
     resetAll();

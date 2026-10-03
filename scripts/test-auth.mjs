@@ -85,6 +85,12 @@ function installRequireHook() {
       request = join(outDir, 'scripts', 'test-stubs', 'web-browser.js');
     } else if (request === 'expo-linking') {
       request = join(outDir, 'scripts', 'test-stubs', 'linking.js');
+    } else if (request === 'expo-localization') {
+      // The sign-in graph reaches the device-currency adapter, the sole
+      // getLocales() reader on the currency path (precedent:
+      // test-i18n-init.mjs). Without this branch node tries to load the
+      // real native module.
+      request = join(outDir, 'scripts', 'test-stubs', 'expo-localization.js');
     } else if (request === 'react-native') {
       // query-client.ts (imported by the session store for the SIGNED_OUT
       // cache clear) touches AppState/Platform; the real package cannot load

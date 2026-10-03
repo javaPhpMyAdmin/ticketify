@@ -15,6 +15,7 @@
       "@/lib/supabase": ["./scripts/test-stubs/supabase.ts"],
       "@/lib/supabase/storage-adapter": ["./scripts/test-stubs/storage-adapter.ts"],
       "@/features/home": ["./scripts/test-stubs/features-home.ts"],
+      "expo-localization": ["./scripts/test-stubs/expo-localization.ts"],
       "react-native": ["./scripts/test-stubs/react-native.ts"],
       "react-native-safe-area-context": ["./scripts/test-stubs/safe-area-context.ts"],
       "expo-router": ["./scripts/test-stubs/expo-router.ts"],

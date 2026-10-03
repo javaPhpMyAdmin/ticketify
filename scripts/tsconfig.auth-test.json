@@ -15,6 +15,7 @@
       "expo-web-browser": ["./scripts/test-stubs/web-browser.ts"],
       "expo-linking": ["./scripts/test-stubs/linking.ts"],
       "expo-router": ["./scripts/test-stubs/expo-router.ts"],
+      "expo-localization": ["./scripts/test-stubs/expo-localization.ts"],
       "react-native": ["./scripts/test-stubs/react-native.ts"],
       "@/*": ["./src/*"]
     },
