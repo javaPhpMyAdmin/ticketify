@@ -23,8 +23,7 @@
  *      Supabase client; a structural scan is the proportionate check, and it
  *      pins the "no second list" rule textually.
  *
- * The count is derived from `SUPPORTED_CURRENCIES.length`, never restated as a
- * magic number: the leaf-count pin (797) belongs to
+ * The leaf-count pin (797) belongs to
  * `scripts/test-i18n-catalog-parity.mjs`, and duplicating it here would create
  * a second place to update on the next catalog bump.
  *
@@ -32,7 +31,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -108,6 +107,9 @@ async function run() {
   const fmt = await import(
     pathToFileURL(join(outDir, 'src', 'lib', 'format.js')).href
   );
+  const detector = await import(
+    pathToFileURL(join(outDir, 'src', 'i18n', 'detector.js')).href
+  );
 
   const codes = fmt.SUPPORTED_CURRENCIES;
 
@@ -162,7 +164,84 @@ async function run() {
       assert.deepEqual(json, {}, `${locale}/currency.json must stay an empty override`);
     }
   });
+  // ── 2b. locale label content pins and anti-paste guard ────────────────
+  console.log('\n[tests] locale label content is correct (no English paste)\n');
 
+  const ptBRPinned = {
+    UYU: 'Peso uruguaio',
+    USD: 'Dólar americano',
+    ARS: 'Peso argentino',
+    BRL: 'Real brasileiro',
+    AUD: 'Dólar australiano',
+    CAD: 'Dólar canadense',
+    CLP: 'Peso chileno',
+    COP: 'Peso colombiano',
+    EUR: 'Euro',
+    GBP: 'Libra esterlina',
+    JPY: 'Iene japonês',
+    MXN: 'Peso mexicano',
+    PEN: 'Sol peruano',
+    PYG: 'Guarani',
+  };
+  const es419Pinned = {
+    UYU: 'Peso uruguayo',
+    USD: 'Dólar estadounidense',
+    ARS: 'Peso argentino',
+    BRL: 'Real brasileño',
+    AUD: 'Dólar australiano',
+    CAD: 'Dólar canadiense',
+    CLP: 'Peso chileno',
+    COP: 'Peso colombiano',
+    EUR: 'Euro',
+    GBP: 'Libra esterlina',
+    JPY: 'Yen japonés',
+    MXN: 'Peso mexicano',
+    PEN: 'Sol peruano',
+    PYG: 'Guaraní paraguayo',
+  };
+  const enPinned = {
+    UYU: 'Uruguayan peso',
+    USD: 'US dollar',
+    ARS: 'Argentine peso',
+    BRL: 'Brazilian real',
+    AUD: 'Australian dollar',
+    CAD: 'Canadian dollar',
+    CLP: 'Chilean peso',
+    COP: 'Colombian peso',
+    EUR: 'Euro',
+    GBP: 'British pound sterling',
+    JPY: 'Japanese yen',
+    MXN: 'Mexican peso',
+    PEN: 'Peruvian sol',
+    PYG: 'Paraguayan guaraní',
+  };
+
+  for (const locale of FULL_LOCALES) {
+    await test(`${locale} currency.json values match pinned values`, () => {
+      const json = JSON.parse(
+        readFileSync(join(localesDir, locale, 'currency.json'), 'utf8'),
+      );
+      const pinned = locale === 'pt-BR' ? ptBRPinned : locale === 'es-419' ? es419Pinned : enPinned;
+      for (const code of codes) {
+        assert.equal(json[code], pinned[code], `${locale}.${code} value does not match pinned value`);
+      }
+    });
+  }
+
+  await test('anti-paste guard: pt-BR and es-419 differ from en for all codes', () => {
+    for (const code of codes) {
+      assert.notEqual(ptBRPinned[code], enPinned[code], `pt-BR.${code} must differ from en.${code}`);
+      assert.notEqual(es419Pinned[code], enPinned[code], `es-419.${code} must differ from en.${code}`);
+    }
+  });
+
+
+
+  await test('REGION_DEFAULT_CURRENCY values exist in catalog', () => {
+    for (const [region, currency] of Object.entries(detector.REGION_DEFAULT_CURRENCY)) {
+      assert.ok(fmt.SUPPORTED_CURRENCIES.includes(currency), `${region} -> ${currency} not in SUPPORTED_CURRENCIES`);
+    }
+  });
   // ── 3. the selector REFERENCES the catalog ──────────────────────────────
   console.log('\n[tests] settings selector consumes the catalog\n');
 
@@ -269,7 +348,6 @@ async function run() {
 
   await test('no migration constrains currency to an IN (...) list', () => {
     const migrationsDir = join(root, 'supabase', 'migrations');
-    const { readdirSync } = require('node:fs');
     const offenders = [];
     for (const file of readdirSync(migrationsDir)) {
       if (!file.endsWith('.sql')) continue;
