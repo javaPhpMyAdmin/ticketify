@@ -220,14 +220,14 @@ async function run() {
 
   console.log('\n[tests] shared region resolver (one normalizer, two consumers)\n');
 
-await test('resolveRegionCode("es_ES") → "ES" (separator + case normalized)', () => {
+  await test('resolveRegionCode("es_ES") → "ES" (separator + case normalized)', () => {
     // One implementation, two consumers: `detectLocale` (locale) and
     // `detectDefaultCurrency` (currency) both parse regions through here, so
     // normalization can never drift between them.
     assert.equal(mod.resolveRegionCode('es_ES'), 'ES');
   });
 
-await test('resolveRegionCode("es") → "ES" (a bare region IS a region)', () => {
+  await test('resolveRegionCode("es") → "ES" (a bare region IS a region)', () => {
     // The resolver is STRUCTURAL: the whole string is a region candidate,
     // which is what lets `detectDefaultCurrency('MX')` (REQ-3 scenario 1)
     // read a bare region. `detectLocale` never hands it a bare language
@@ -236,37 +236,37 @@ await test('resolveRegionCode("es") → "ES" (a bare region IS a region)', () =>
     assert.equal(mod.resolveRegionCode('es'), 'ES');
   });
 
-await test('resolveRegionCode("es-419") → "419" (UN M.49 is a region)', () => {
+  await test('resolveRegionCode("es-419") → "419" (UN M.49 is a region)', () => {
     assert.equal(mod.resolveRegionCode('es-419'), '419');
   });
 
-await test('resolveRegionCode("es-Ar-x-private") → "AR" (singletons skipped)', () => {
+  await test('resolveRegionCode("es-Ar-x-private") → "AR" (singletons skipped)', () => {
     // `x` is a private-use singleton (1 alpha) and `private` is a 7-letter
     // subtag; neither is regionish, so the hunt walks past them.
     assert.equal(mod.resolveRegionCode('es-Ar-x-private'), 'AR');
   });
 
-await test('resolveRegionCode("es-MX", "AR") → "AR" (explicit region wins)', () => {
+  await test('resolveRegionCode("es-MX", "AR") → "AR" (explicit region wins)', () => {
     // The device is IN Argentina; the language preference does not override
     // the platform's own region answer.
     assert.equal(mod.resolveRegionCode('es-MX', 'AR'), 'AR');
   });
 
-await test('resolveRegionCode(undefined) and ("") → null (no region)', () => {
+  await test('resolveRegionCode(undefined) and ("") → null (no region)', () => {
     assert.equal(mod.resolveRegionCode(undefined), null);
     assert.equal(mod.resolveRegionCode(''), null);
     assert.equal(mod.resolveRegionCode('   '), null);
   });
 
-await test('resolveRegionCode takes the LAST regionish segment', () => {
+  await test('resolveRegionCode takes the LAST regionish segment', () => {
     // `es-419-MX`: the M.49 macro-region comes first, the country last, and
     // the country is the more specific answer.
     assert.equal(mod.resolveRegionCode('es-419-MX'), 'MX');
   });
 
-console.log('\n[tests] region → default currency (every supported code reachable)\n');
+  console.log('\n[tests] region → default currency (every supported code reachable)\n');
 
-await test('all fourteen mapped regions return their currency code', () => {
+  await test('all fourteen mapped regions return their currency code', () => {
     // Table-driven from the spec map, one pair per code. Non-vacuous: the
     // table holds fourteen distinct regions.
     const table = [
@@ -291,7 +291,7 @@ await test('all fourteen mapped regions return their currency code', () => {
     }
   });
 
-await test('REGION_DEFAULT_CURRENCY maps 14 uppercase regions to 14 codes', () => {
+  await test('REGION_DEFAULT_CURRENCY maps 14 uppercase regions to 14 codes', () => {
     const regions = Object.keys(mod.REGION_DEFAULT_CURRENCY);
     const codes = Object.values(mod.REGION_DEFAULT_CURRENCY);
     assert.equal(regions.length, 14);
@@ -304,7 +304,7 @@ await test('REGION_DEFAULT_CURRENCY maps 14 uppercase regions to 14 codes', () =
     }
   });
 
-await test('an absent, empty or unmapped region falls back to USD', () => {
+  await test('an absent, empty or unmapped region falls back to USD', () => {
     // Universal, never regional: a device we cannot place gets the one code
     // that is valid everywhere.
     assert.equal(mod.detectDefaultCurrency('XX'), 'USD');
@@ -316,7 +316,7 @@ await test('an absent, empty or unmapped region falls back to USD', () => {
     assert.equal(mod.detectDefaultCurrency('es-419'), 'USD');
   });
 
-await test('region resolution is case- and separator-insensitive', () => {
+  await test('region resolution is case- and separator-insensitive', () => {
     // REQ-3 scenario 5: `'mx'` and the Apple-style `es_MX` tag both resolve
     // through the SAME normalizer, never a second parser.
     assert.equal(mod.detectDefaultCurrency('mx'), 'MXN');
@@ -324,9 +324,9 @@ await test('region resolution is case- and separator-insensitive', () => {
     assert.equal(mod.detectDefaultCurrency('es-MX'), 'MXN');
   });
 
-console.log('\n[tests] currency is region-driven, never language-driven\n');
+  console.log('\n[tests] currency is region-driven, never language-driven\n');
 
-await test('en-GB + region GB → GBP while detectLocale still says en', () => {
+  await test('en-GB + region GB → GBP while detectLocale still says en', () => {
     // The trap: an English device in Britain gets POUNDS, but the app still
     // speaks generic English. Currency detection must not regionalize a
     // language.
@@ -334,14 +334,14 @@ await test('en-GB + region GB → GBP while detectLocale still says en', () => {
     assert.equal(mod.detectLocale('en-GB', 'GB'), 'en');
   });
 
-await test('an explicit device region overrides the tag for currency too', () => {
+  await test('an explicit device region overrides the tag for currency too', () => {
     // iOS reports `es-MX` on a UY device; the row the user is actually in
     // wins.
     assert.equal(mod.detectDefaultCurrency('es-MX', 'UY'), 'UYU');
     assert.equal(mod.detectLocale('es-MX', 'UY'), 'es-419');
   });
 
-await test('detectDefaultCurrency is deterministic and stateless', () => {
+  await test('detectDefaultCurrency is deterministic and stateless', () => {
     // NFR-2: no module-level mutable state, no Intl, no native bridge. Two
     // calls with the same input must agree, and one call must not influence
     // the next.
@@ -354,7 +354,7 @@ await test('detectDefaultCurrency is deterministic and stateless', () => {
     assert.equal(mod.detectDefaultCurrency('JP'), 'JPY');
   });
 
-await test('detectDefaultCurrency always returns a supported, non-null code', () => {
+  await test('detectDefaultCurrency always returns a supported, non-null code', () => {
     // The signature promises `SupportedCurrency`, never `null` — REQ-3.
     for (const region of ['MX', 'XX', '', undefined, 'es', 'es-419', '419']) {
       const code = mod.detectDefaultCurrency(region);
@@ -363,7 +363,7 @@ await test('detectDefaultCurrency always returns a supported, non-null code', ()
     }
   });
 
-console.log(`\n[tests] ${passed} passed, ${failed} failed`);
+  console.log(`\n[tests] ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
   rmSync(workdir, { recursive: true, force: true });
 }

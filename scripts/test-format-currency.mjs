@@ -159,30 +159,30 @@ async function run() {
 
   console.log('\n[tests] zero-decimal minor units + symbol coverage (AD-5)\n');
 
-await test('formatCurrency CLP → "$ 1.235" (LATAM, whole amount)', () => {
+  await test('formatCurrency CLP → "$ 1.235" (LATAM, whole amount)', () => {
     // CLP has no minor unit, and it renders `$` like the other regional
     // pesos — the localized NAME in the catalog is what tells ARS / CLP /
     // COP / MXN apart. REQ-2.1.
     assert.equal(fmt.formatCurrency(1234.56, 'CLP'), '$ 1.235');
   });
 
-await test('formatCurrency PEN → "S/ 1.235" (LATAM, "S/" symbol, whole amount)', () => {
+  await test('formatCurrency PEN → "S/ 1.235" (LATAM, "S/" symbol, whole amount)', () => {
     // PEN retired the centavo; `S/` is the sol's symbol. REQ-2.2.
     assert.equal(fmt.formatCurrency(1234.56, 'PEN'), 'S/ 1.235');
   });
 
-await test('formatCurrency PYG → "₲ 1.235" (LATAM, guaraní symbol, whole)', () => {
+  await test('formatCurrency PYG → "₲ 1.235" (LATAM, guaraní symbol, whole)', () => {
     // `₲` is U+20B2. If a device font has no glyph for it, the symbol falls
     // back to the CODE (`PYG 1.235`) — one-line table change, verified on
     // device by the manual REQ-2.7 step.
     assert.equal(fmt.formatCurrency(1234.56, 'PYG'), '₲ 1.235');
   });
 
-await test('formatCurrency PYG 100.4 → "₲ 100" (sub-unit fraction rounds away)', () => {
+  await test('formatCurrency PYG 100.4 → "₲ 100" (sub-unit fraction rounds away)', () => {
     assert.equal(fmt.formatCurrency(100.4, 'PYG'), '₲ 100');
   });
 
-await test('every zero-decimal code renders without a decimal separator', () => {
+  await test('every zero-decimal code renders without a decimal separator', () => {
     // Triangulation on the OTHER branch and across BOTH grouping styles: JPY
     // groups INTL, CLP / PEN / PYG group LATAM — and none of the four keeps a
     // `.` or `,` fraction. COP is absent on purpose (recorded scope decision).
@@ -204,7 +204,7 @@ await test('every zero-decimal code renders without a decimal separator', () => 
     assert.equal(fmt.formatCurrency(1234.56, 'COP'), '$ 1.234,56');
   });
 
-await test('formatCurrency takes no locale argument (format is code-driven)', () => {
+  await test('formatCurrency takes no locale argument (format is code-driven)', () => {
     // REQ-2.6 / REQ-2.5: the UI locale cannot reach the number shape, so a
     // zero-decimal code renders identically under `en` and `es-419`. The
     // guarantee is structural — there is no third parameter to branch on.
@@ -213,14 +213,14 @@ await test('formatCurrency takes no locale argument (format is code-driven)', ()
     assert.equal(fmt.formatCurrency(1234.56, 'ARS'), '$ 1.234,56');
   });
 
-await test('a legacy lowercase row renders like an uppercase one', () => {
+  await test('a legacy lowercase row renders like an uppercase one', () => {
     // Migration 0040 defaulted the column to lowercase `'usd'`, and no
     // migration in this change may rewrite those rows — so the display side
     // case-folds and the two must be indistinguishable.
     assert.equal(fmt.formatCurrency(1234.56, 'usd'), 'US$ 1,234.56');
   });
 
-await test('all 14 catalog codes render symbol-prefixed (never a bare code)', () => {
+  await test('all 14 catalog codes render symbol-prefixed (never a bare code)', () => {
     // REQ-1.3.3. The loop is non-vacuous: the catalog is asserted to hold 14
     // distinct codes in the section below.
     for (const code of fmt.SUPPORTED_CURRENCIES) {
@@ -233,7 +233,7 @@ await test('all 14 catalog codes render symbol-prefixed (never a bare code)', ()
     }
   });
 
-console.log('\n[tests] catalog single source of truth (AD-1)\n');
+  console.log('\n[tests] catalog single source of truth (AD-1)\n');
 
   await test('SUPPORTED_CURRENCIES is the 14-code catalog, no duplicates', () => {
     // REQ-1.1: the ordered set the selector renders. Pinned here (and again,
