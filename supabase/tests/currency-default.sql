@@ -12,27 +12,27 @@
 -- ------------
 -- §1. The column default. `public.profiles.currency` must default to the
 --     canonical UPPERCASE `'USD'`. Asserted on the RAW catalog string, so a
---     Postgres that renders the literal as `'usd'::text` (its usual
+--     Postgres that renders the literal as `'USD'::text` (its usual
 --     `pg_get_expr` rendering) is compared on VALUE, not on formatting — a
---     string compare against `'usd'` alone would fail on a correct catalog.
+--     string compare against `'USD'` alone would fail on a correct catalog.
 -- §2. The default FIRES, and the column stores an explicit value verbatim.
 --     Two properties, both observable from a post-migration smoke test:
---       (a) a profile inserted WITHOUT a currency is born 'usd';
+--       (a) a profile inserted WITHOUT a currency is born 'USD';
 --       (b) a profile inserted WITH 'UYU' keeps 'UYU' — i.e. the default is
 --           not shadowed by a CHECK, a normalizing rule, or a trigger that
---           forces 'usd' over a real user choice. Verified by mutation: a
---           `before insert or update` trigger setting `new.currency='usd'`
+--           forces 'USD' over a real user choice. Verified by mutation: a
+--           `before insert or update` trigger setting `new.currency='USD'`
 --           fails this file.
 --
 --     LIMITATION — read this before trusting §2(b) as a backfill guard. This
 --     class of test runs AFTER the migration chain, so it CANNOT detect a
---     one-time `update ... set currency = 'usd'` backfill: the backfill has
---     already finished by the time the fixtures are inserted, and no
---     surviving row reveals it. 0041's "declares a default, rewrites nothing"
---     property is therefore pinned by its own migration header and by review,
---     NOT by this file. What §2(b) does pin is the durable, always-on
---     enforcement surface (triggers / CHECKs / coercions), which is how the bug
---     actually returns.
+--     one-time lowercase backfill of the kind an EARLIER migration performed
+--     (`update ... set currency = 'usd'`): such a backfill has already finished
+--     by the time the fixtures are inserted, and no surviving row reveals it.
+--     0041's "declares a default, rewrites nothing" property is therefore
+--     pinned by its own migration header and by review, NOT by this file. What
+--     §2(b) does pin is the durable, always-on enforcement surface (triggers /
+--     CHECKs / coercions), which is how the bug actually returns.
 -- §3. The column's nullability and type are unchanged (`text NOT NULL`), so
 --     the migration did not widen or loosen anything on its way through.
 --
@@ -62,7 +62,7 @@ declare
   v_untouched_cur text;
 begin
   ---------------------------------------------------------------------------
-  -- §1. The column default is exactly the canonical lowercase 'usd'
+  -- §1. The column default is exactly the canonical UPPERCASE 'USD'
   ---------------------------------------------------------------------------
   select
     pg_get_expr(d.adbin, d.adrelid),
@@ -136,7 +136,7 @@ begin
     format('an explicitly-chosen UYU row must survive 0041 untouched, got %s', coalesce(v_seeded_cur, 'NULL'));
 
   -- Now the default itself: a profile inserted WITHOUT a currency must be
-  -- born 'usd'. This is the behavior the migration exists to change, and it
+  -- born 'USD'. This is the behavior the migration exists to change, and it
   -- is only observable through a real insert.
   insert into auth.users (id, email)
   values (v_user_fresh, 'currency-default-fresh@i18n.test.local')

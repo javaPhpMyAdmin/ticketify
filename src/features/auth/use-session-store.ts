@@ -143,7 +143,9 @@ function isDuplicateAccountError(
  * a currency the user chose is never overwritten.
  *
  * Never rejects: both writers swallow their own failures, so this can stay
- * fire-and-forget at the call sites.
+ * fire-and-forget at the call sites. That is the whole reason they can `void`
+ * it: with no rejection to handle, a bare `void` is the complete
+ * fire-and-forget form and neither sign-in path waits on the write.
  */
 async function seedThenEnsureProfile(user: AuthUser): Promise<void> {
   await ensureProfileCurrency(user.id, detectDeviceDefaultCurrency());
@@ -215,9 +217,11 @@ export const useSessionStore = create<SessionState>((set) => ({
               // untouched. Backfill the profile row, then invalidate the
               // profile query so a read that already resolved shows the
               // backfilled identity instead of "You" until the query goes
-              // stale (60s) or relaunch. Neither call rejects, so the .then
-              // chain cannot produce an unhandled rejection; fire-and-forget
-              // stays non-blocking.
+              // stale (60s) or relaunch. `void` on a single call:
+              // `seedThenEnsureProfile` never rejects (both writers swallow
+              // their own failures), so there is no rejection to handle and
+              // sign-in is not blocked on the write. Ordering rationale and
+              // the never-rejects guarantee live in its JSDoc above.
               void seedThenEnsureProfile(session.user);
             }
           }
@@ -422,9 +426,11 @@ function initAuthStateListener(): void {
           // bootstrap restore handles the relaunch case separately).
           if (session.user) {
             // Region seed before the identity backfill — see the bootstrap
-            // call site for why the order is load-bearing. Neither call
-            // rejects, so the .then chain cannot produce an unhandled
-            // rejection; fire-and-forget stays non-blocking.
+            // call site for why the order is load-bearing. `void` on a single
+            // call: `seedThenEnsureProfile` never rejects (both writers
+            // swallow their own failures), so there is nothing to handle and
+            // the sign-in is not blocked on the write. Ordering rationale and
+            // the never-rejects guarantee live in its JSDoc above.
             void seedThenEnsureProfile(session.user);
             // Legal-consent queue-then-flush (legal-compliance U5, AD-2):
             // replay any pending acceptances the sign-up screen queued BEFORE

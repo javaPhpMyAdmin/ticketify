@@ -284,10 +284,10 @@ async function run() {
   installRequireHook();
   console.log('[tests] loading compiled modules…');
 
-stubMod = await load('scripts/test-stubs/supabase.js');
-localizationStubMod = await load('scripts/test-stubs/expo-localization.js');
-deviceCurrencyMod = await load('src/i18n/device-currency.js');
-profileApiMod = await load('src/features/profile/api.js');
+  stubMod = await load('scripts/test-stubs/supabase.js');
+  localizationStubMod = await load('scripts/test-stubs/expo-localization.js');
+  deviceCurrencyMod = await load('src/i18n/device-currency.js');
+  profileApiMod = await load('src/features/profile/api.js');
   profileHookMod = await load('src/features/profile/hooks/useProfile.js');
   profileSyncMod = await load('src/lib/auth/profile-sync.js');
   sessionStoreMod = await load('src/features/auth/use-session-store.js');
