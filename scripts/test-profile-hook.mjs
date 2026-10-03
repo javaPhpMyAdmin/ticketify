@@ -117,6 +117,7 @@ const load = (rel) => import(pathToFileURL(join(outDir, rel)).href);
 let stubMod;
 let profileApiMod;
 let profileHookMod;
+let profileSyncMod;
 let sessionStoreMod;
 let settingsStoreMod;
 let formatMod;
@@ -239,6 +240,7 @@ async function run() {
   stubMod = await load('scripts/test-stubs/supabase.js');
   profileApiMod = await load('src/features/profile/api.js');
   profileHookMod = await load('src/features/profile/hooks/useProfile.js');
+  profileSyncMod = await load('src/lib/auth/profile-sync.js');
   sessionStoreMod = await load('src/features/auth/use-session-store.js');
   settingsStoreMod = await load('src/stores/use-settings-store.js');
   formatMod = await load('src/lib/format.js');
@@ -895,6 +897,79 @@ async function run() {
     } finally {
       await unmountProbe(renderer);
     }
+  });
+
+  console.log('\n[tests] ensureProfileCurrency: create-only region seed\n');
+
+  await test('region seed is a plain INSERT of (id, currency) — never an upsert', async () => {
+    resetAll();
+    await profileSyncMod.ensureProfileCurrency('u1', 'MXN');
+
+    const log = stubMod.__getCallLog();
+    assert.deepEqual(
+      log.filter((e) => e.kind === 'upsert'),
+      [],
+      'the seed must NEVER upsert: an upsert would overwrite a chosen currency on every sign-in',
+    );
+    assert.deepEqual(
+      log.filter((e) => e.kind === 'insert' && e.table === 'profiles'),
+      [{ kind: 'insert', table: 'profiles' }],
+      'the seed must be exactly one plain INSERT into profiles',
+    );
+    assert.deepEqual(
+      stubMod.__getInserted('profiles'),
+      [{ id: 'u1', currency: 'MXN' }],
+      'the insert payload carries the profile id and the region-derived code',
+    );
+  });
+
+  await test('an existing row (23505) is swallowed and produces zero further writes', async () => {
+    resetAll();
+    // Postgres rejects the seed INSERT with a unique violation once the row
+    // exists. The call must resolve (never reject) and write nothing.
+    stubMod.__failNextInsert('profiles', {
+      message: 'duplicate key value violates unique constraint "profiles_pkey"',
+      code: '23505',
+    });
+    await profileSyncMod.ensureProfileCurrency('u1', 'UYU');
+
+    const log = stubMod.__getCallLog();
+    assert.deepEqual(
+      log.filter((e) => e.kind === 'insert'),
+      [{ kind: 'insert', table: 'profiles' }],
+      'only the seed insert itself is attempted',
+    );
+    assert.deepEqual(
+      log.filter((e) => e.kind === 'upsert' || e.kind === 'update'),
+      [],
+      'a rejected seed must fall back to no write at all (the existing row survives)',
+    );
+  });
+
+  await test('the seed writes canonical uppercase even from a lowercase code', async () => {
+    resetAll();
+    await profileSyncMod.ensureProfileCurrency('u1', 'mxn');
+    assert.deepEqual(
+      stubMod.__getInserted('profiles'),
+      [{ id: 'u1', currency: 'MXN' }],
+      'NFR-1: every code the app writes is uppercase ISO 4217',
+    );
+  });
+
+  await test('the identity backfill stays a single upsert — no currency insert', async () => {
+    resetAll();
+    await profileSyncMod.ensureProfile(FAKE_SESSION.user);
+    const log = stubMod.__getCallLog();
+    assert.deepEqual(
+      log.filter((e) => e.kind === 'upsert'),
+      [{ kind: 'upsert', table: 'profiles' }],
+      'ensureProfile remains one upsert on profiles',
+    );
+    assert.deepEqual(
+      log.filter((e) => e.kind === 'insert'),
+      [],
+      'ensureProfile must not seed currency — the seed write is structurally separate',
+    );
   });
 
   console.log(`\n[tests] registered ${passed + failed} pins`);

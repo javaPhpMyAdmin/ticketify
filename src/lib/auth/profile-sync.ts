@@ -23,10 +23,59 @@
  * fail with a missing-table error. Profile sync must never break an
  * otherwise-valid auth session, so all failures are swallowed here — but they
  * are still logged so a silent backfill outage stays observable.
+ *
+ * `ensureProfileCurrency` is the ONLY writer of `profiles.currency` at sign-in
+ * time and it is CREATE-ONLY: a plain INSERT, never an upsert. On first launch
+ * the row does not exist yet, so the insert creates it carrying the
+ * region-derived code; on every later sign-in Postgres rejects the duplicate
+ * with 23505 and the error is swallowed, leaving the row — and therefore a
+ * currency the user deliberately chose — untouched. Clobbering is not
+ * "avoided" by a guard here, it is structurally unrepresentable. A conditional
+ * update (`is('currency', <default>)`) was rejected precisely because it would
+ * rewrite a user who deliberately picked `USD` on an `MX` device, which is
+ * indistinguishable from a seeded row.
+ *
+ * ORDERING: this must run BEFORE `ensureProfile`, because the upsert creates
+ * the row first and the seed could then never fire. Supabase-only imports live
+ * here (no `getLocales()`): the native adapter is `src/i18n/device-currency.ts`
+ * and the caller passes the already-derived code in.
  */
 import type { User as AuthUser } from '@supabase/supabase-js';
 
 import { supabase } from '@/lib/supabase';
+
+/**
+ * Writes the region-derived default currency at profile-row CREATION only.
+ *
+ * @param userId  The signed-in user's profile id (`auth.uid()`).
+ * @param currency Region-derived ISO 4217 code; upper-cased here so this
+ *   write boundary is canonical regardless of the caller's casing (NFR-1).
+ *
+ * Never rejects: an existing row (23505), a missing table, or an RLS denial
+ * all resolve quietly with a `console.warn`, exactly like `ensureProfile`.
+ */
+export async function ensureProfileCurrency(
+  userId: string,
+  currency: string,
+): Promise<void> {
+  try {
+    // INSERT (never upsert). An existing row → 23505 → swallowed → zero writes.
+    const { error } = await supabase
+      .from('profiles')
+      .insert({ id: userId, currency: currency.toUpperCase() });
+    if (error) {
+      // Non-fatal by contract. The overwhelmingly common cause is 23505 (the
+      // row already exists), which is the desired outcome: the user's own
+      // choice stands.
+      console.warn('[auth] ensureProfileCurrency skipped:', error.message);
+    }
+  } catch (err) {
+    console.warn(
+      '[auth] ensureProfileCurrency failed:',
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
 
 export async function ensureProfile(user: AuthUser): Promise<void> {
   try {
