@@ -248,6 +248,7 @@ let featureMod;
 let stubMod;
 let queryClientMod;
 let sessionStoreMod;
+let settingsStoreMod;
 let householdStoreMod;
 let queryKeysMod;
 let hrefMod;
@@ -273,6 +274,7 @@ async function run() {
   queryClientMod = await load('src/lib/query-client.js');
   sessionStoreMod = await load('src/features/auth/use-session-store.js');
   householdStoreMod = await load('src/stores/use-household-store.js');
+  settingsStoreMod = await load('src/stores/use-settings-store.js');
   queryKeysMod = await load('src/lib/query-keys.js');
   hrefMod = await load('src/features/charts/categoryHref.js');
   catsMod = await load('src/features/home/categories.js');
@@ -584,6 +586,17 @@ async function run() {
     queryClientMod.queryClient.getQueryCache().clear();
     sessionStoreMod.useSessionStore.setState({ session: null });
     householdStoreMod.useHouseholdStore.setState({ household: null });
+    // These assertions render amounts, so they depend on a currency. Pin it
+    // explicitly instead of inheriting `useSettingsStore`'s seed: the seed is
+    // USD as of currency-universality REQ-4.1, and before that fix these seven
+    // '$U ...' assertions silently passed only because the seed happened to be
+    // UYU. 'UYU' is kept here because the suite pins LATAM grouping ('.' for
+    // thousands) and these expectations were written against it. A harness that
+    // renders money states its currency; it does not borrow one.
+    settingsStoreMod.useSettingsStore.setState({
+      currency: 'UYU',
+      currencyHydrated: true,
+    });
     captured = null;
   };
 
