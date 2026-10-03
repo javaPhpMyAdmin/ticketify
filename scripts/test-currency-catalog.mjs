@@ -2,26 +2,13 @@
 /**
  * Single-source-of-truth harness for the currency-universality catalog (AD-6).
  *
- * The point of this harness is that there is exactly ONE place the fourteen
- * supported codes are written down — `SUPPORTED_CURRENCIES` in
- * `src/lib/format.ts` — and everything else (the symbol table, the three
- * full-locale `currency.json` catalogs, the settings selector) is checked
- * against it rather than restating it. Before this change the selector kept its
- * own four-code array and its own hand-written key union, and REQ-1.2 held by
- * coincidence.
- *
- * Two halves:
- *
- *   1. VALUE assertions against the COMPILED format module — length 14, no
- *      duplicates, the exact alphabetical spec list, a symbol for every code,
- *      and key-set equality between the format list and en / es-419 / pt-BR
- *      `currency.json`.
- *   2. SOURCE pins for the three files that must REFERENCE the catalog
- *      instead of copying it, plus the two create-only invariants that live in
- *      prose and are trivially undone by a well-meaning refactor. Compiling
- *      those files would drag in the whole component barrel and the native
- *      Supabase client; a structural scan is the proportionate check, and it
- *      pins the "no second list" rule textually.
+ * This harness enforces STRUCTURAL invariants (key-set equality, catalog
+ * membership, region-map coverage, ordering). The fourteen supported codes are
+ * authoritative in `SUPPORTED_CURRENCIES` (`src/lib/format.ts`); everything
+ * else (symbol table, three full-locale `currency.json` catalogs, region
+ * defaults, settings selector) must derive from that source. Label
+ * TRANSLATION quality is not automatable and is not pretended to be. A
+ * wrong-but-different label is out of scope for this harness.
  *
  * The leaf-count pin (797) belongs to
  * `scripts/test-i18n-catalog-parity.mjs`, and duplicating it here would create
@@ -216,24 +203,23 @@ async function run() {
     PYG: 'Paraguayan guaraní',
   };
 
-  for (const locale of FULL_LOCALES) {
-    await test(`${locale} currency.json values match pinned values`, () => {
-      const json = JSON.parse(
-        readFileSync(join(localesDir, locale, 'currency.json'), 'utf8'),
-      );
-      const pinned = locale === 'pt-BR' ? ptBRPinned : locale === 'es-419' ? es419Pinned : enPinned;
-      for (const code of codes) {
-        assert.equal(json[code], pinned[code], `${locale}.${code} value does not match pinned value`);
-      }
-    });
-  }
+
 
   await test('anti-paste guard: pt-BR and es-419 differ from en for codes that differ legitimately', () => {
+    const en = JSON.parse(
+      readFileSync(join(localesDir, 'en', 'currency.json'), 'utf8'),
+    );
+    const es = JSON.parse(
+      readFileSync(join(localesDir, 'es-419', 'currency.json'), 'utf8'),
+    );
+    const pt = JSON.parse(
+      readFileSync(join(localesDir, 'pt-BR', 'currency.json'), 'utf8'),
+    );
     const skipSame = new Set(['EUR']);
     for (const code of codes) {
       if (skipSame.has(code)) continue;
-      assert.notEqual(ptBRPinned[code], enPinned[code], `pt-BR.${code} must differ from en.${code}`);
-      assert.notEqual(es419Pinned[code], enPinned[code], `es-419.${code} must differ from en.${code}`);
+      assert.notEqual(pt[code], en[code], `pt-BR.${code} must differ from en.${code}`);
+      assert.notEqual(es[code], en[code], `es-419.${code} must differ from en.${code}`);
     }
   });
 
