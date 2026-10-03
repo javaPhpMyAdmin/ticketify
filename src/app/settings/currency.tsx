@@ -6,21 +6,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Card, Divider, Icon, Pressable, Text, View } from '@/components';
 import { useProfile } from '@/features/profile';
+import es419Currency from '@/i18n/locales/es-419/currency.json';
+import { SUPPORTED_CURRENCIES } from '@/lib/format';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
 
 /**
- * The currencies the app offers (ISO 4217 codes). Labels are pulled
- * from the `currency` catalog so the locale-aware name (e.g.
- * "Uruguayan peso" in en, "Peso uruguayo" in es-AR) wins at render
- * time. The code stays as the ISO 4217 string for storage.
+ * The label keys this screen may ask i18next for, derived from the SHIPPED
+ * Spanish base catalog rather than a hand-written union. A supported code
+ * with no `currency.<code>` key is a `tsc` error here, not a raw key painted
+ * on screen at runtime.
  */
-const CURRENCY_CODES: ReadonlyArray<string> = [
-  'UYU',
-  'USD',
-  'ARS',
-  'BRL',
-];
+type CurrencyKey = keyof typeof es419Currency;
 
 /**
  * Full-screen currency selector reached from the profile screen's
@@ -29,6 +26,13 @@ const CURRENCY_CODES: ReadonlyArray<string> = [
  * the profile and budget queries are invalidated by the hook, and the
  * settings store re-hydrates from the profile row. A failed write shows
  * the user-safe message inline instead of navigating.
+ *
+ * Rows are driven by `SUPPORTED_CURRENCIES` — the one catalog in
+ * `src/lib/format.ts` — so this screen can never drift from what the app
+ * actually supports. Labels come from the `currency` catalog, so the
+ * locale-aware name (e.g. "Uruguayan peso" in en, "Peso uruguayo" in
+ * es-AR) wins at render time; the code stays the ISO 4217 string for
+ * storage.
  */
 export default function CurrencySelectorScreen() {
   const { t } = useTranslation(['settings', 'currency', 'common']);
@@ -74,16 +78,15 @@ export default function CurrencySelectorScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Card padding={spacing.xs}>
-          {CURRENCY_CODES.map((code, idx) => {
+          {SUPPORTED_CURRENCIES.map((code, idx) => {
             const selected = code === currency;
-            // Currency code is the runtime key — the catalog type guarantees
-            // these exact 4 strings resolve, but TS can't follow a dynamic
-            // template against a fixed union, so we narrow via `as`.
-            const label = t(`currency:${code}` as
-              | 'currency:UYU'
-              | 'currency:USD'
-              | 'currency:ARS'
-              | 'currency:BRL');
+            // Currency code is the runtime key. `satisfies` (not `as`) is
+            // load-bearing: a plain `as` would happily narrow a 15-member
+            // union down to the 14 the catalog ships and pass, so the guard
+            // below would be decorative. This makes an unresolvable code a
+            // tsc error instead of a raw key painted on screen.
+            const labelKey = `currency:${code}` satisfies `currency:${CurrencyKey}`;
+            const label = t(labelKey);
             return (
               <View key={code}>
                 <Pressable
@@ -104,7 +107,7 @@ export default function CurrencySelectorScreen() {
                     <Icon name="checkmark" size={18} color={colors.primary} />
                   ) : null}
                 </Pressable>
-                {idx < CURRENCY_CODES.length - 1 ? <Divider /> : null}
+                {idx < SUPPORTED_CURRENCIES.length - 1 ? <Divider /> : null}
               </View>
             );
           })}
