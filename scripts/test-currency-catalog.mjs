@@ -25,7 +25,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -47,6 +47,155 @@ const SPEC_LIST = [
   'ARS', 'AUD', 'BRL', 'CAD', 'CLP', 'COP', 'EUR',
   'GBP', 'JPY', 'MXN', 'PEN', 'PYG', 'USD', 'UYU',
 ];
+
+/** Every currency code this app has EVER shipped, retired ones INCLUDED.
+ *
+ *  This is a HAND-MAINTAINED HISTORICAL RECORD, deliberately NOT derived from
+ *  `SPEC_LIST`. An earlier revision wrote `const CATALOG_LEDGER = [...SPEC_LIST]`
+ *  and the guard was inert: `SPEC_LIST` is pinned equal to the live catalog, so
+ *  a maintainer who retires a code properly — dropping it from
+ *  `SUPPORTED_CURRENCIES` AND from `SPEC_LIST`, which the ~8 required edits
+ *  amount to — deletes it from a derived ledger too, and there is nothing left
+ *  to flag. A ledger that shrinks with the thing it audits cannot audit it.
+ *  So: hand-write the codes. Once a code appears here it stays here forever,
+ *  even after it leaves the catalog. `retirementProblems` below then requires
+ *  every one of them to be either still live or retired with a real backfill.
+ *
+ *  Why this matters at all: `ensureProfileCurrency` is INSERT-only, so it can
+ *  never repair a profile whose stored `currency` has left the catalog. That
+ *  row keeps a code no picker row matches (zero selected rows — the `CHF` case
+ *  pinned in §3b) until a human taps a valid row, silently re-basing every
+ *  amount in the app. Retiring a currency can therefore strand real profiles.
+ *  `tsc` does stop the SLOPPY shrink (`Record<SupportedCurrency, string>` and
+ *  the region map are exact types), but a clean shrink compiles fine. Nothing at
+ *  the storage layer catches it: `profiles.currency` is deliberately free text
+ *  (0041) and §5 forbids a CHECK constraint.
+ *
+ *  EDITING RULES: add a code here only if the app has shipped it. To retire a
+ *  live code, do NOT remove it from this array — register it in
+ *  `RETIRED_CURRENCIES` below.
+ *
+ *  RESIDUAL HOLE, stated plainly rather than papered over: removing a code from
+ *  THIS array and from the catalog in the same change is self-consistent, so
+ *  no assertion fires. There is no external record of what was once shipped, so
+ *  this guard cannot close that path — review is the only defense. An edit to
+ *  this array is therefore a ledger change, and should be reviewed as one. */
+const CATALOG_LEDGER = [
+  'ARS', 'AUD', 'BRL', 'CAD', 'CLP', 'COP', 'EUR',
+  'GBP', 'JPY', 'MXN', 'PEN', 'PYG', 'USD', 'UYU',
+];
+
+/** Retired code -> the migration file in `supabase/migrations/` that rewrites
+ *  `profiles.currency` for everyone still holding that code.
+ *
+ *  EMPTY TODAY, and the harness says so in its output rather than letting four
+ *  green lines imply active protection: with no retirements, three of the §1b
+ *  checks have nothing to iterate. That is why §1b also drives
+ *  `retirementProblems` with SYNTHETIC fixtures — each failure mode below is
+ *  proven to be caught today, instead of shipping a guard that has never run and
+ *  breaking for the first time during an actual retirement.
+ *
+ *  Populate on the change that retires a code, e.g. after a backfill lands:
+ *
+ *    const RETIRED_CURRENCIES = {
+ *      COP: '0042_currency_retire_cop.sql',
+ *    }; */
+const RETIRED_CURRENCIES = {};
+
+/** Validates the retirement ledger. Returns an array of human-readable
+ *  problems; empty means consistent.
+ *
+ *  `readMigration(file)` returns the migration's SQL, or `null` when the file
+ *  does not exist. It is injected so §1b can exercise every failure mode against
+ *  fixtures without touching the real migrations directory.
+ *
+ *  This is deliberately a FLOOR, not proof of a backfill. It can only require
+ *  that the named migration exists and contains an UPDATE that writes the
+ *  currency column while mentioning the code — it cannot prove the UPDATE
+ *  targets the right rows, or that anyone ran it. Do not describe it as more. */
+function retirementProblems({ ledger, live, retired, readMigration }) {
+  const problems = [];
+  const liveSet = new Set(live);
+  const retiredKeys = Object.keys(retired);
+
+  const stranded = ledger.filter(
+    (code) => !liveSet.has(code) && !retiredKeys.includes(code),
+  );
+  if (stranded.length > 0) {
+    problems.push(
+      `these codes left SUPPORTED_CURRENCIES but appear in neither the live ` +
+        `catalog nor RETIRED_CURRENCIES, so every profile still storing one is ` +
+        `stranded with no selectable row: ${stranded.join(', ')}. Register each ` +
+        `in RETIRED_CURRENCIES naming the migration that rewrites its holders, ` +
+        `or put it back in SUPPORTED_CURRENCIES.`,
+    );
+  }
+
+  if (ledger.length !== live.length + retiredKeys.length) {
+    problems.push(
+      `CATALOG_LEDGER holds ${ledger.length} codes but the live catalog ` +
+        `(${live.length}) plus RETIRED_CURRENCIES (${retiredKeys.length}) ` +
+        `account for ${live.length + retiredKeys.length}. Retiring a code means ` +
+        `registering it, not deleting it from the ledger.`,
+    );
+  }
+
+  const stillLive = retiredKeys.filter((code) => liveSet.has(code));
+  if (stillLive.length > 0) {
+    problems.push(
+      `these codes are registered as retired but still ship in ` +
+        `SUPPORTED_CURRENCIES: ${stillLive.join(', ')}`,
+    );
+  }
+
+  for (const [code, file] of Object.entries(retired)) {
+    const sql = readMigration(file);
+    if (sql === null) {
+      problems.push(
+        `retiring ${code} names migration ${file}, which does not exist in ` +
+          `supabase/migrations/ — stranded profiles need a real backfill`,
+      );
+      continue;
+    }
+    // Strip line comments BEFORE scanning, but NOT inside string literals:
+    // otherwise `-- SCOPE` satisfies a search for `COP` (0041's only mention of
+    // COP is inside that word, and 0041 rewrites no rows), while a naive strip
+    // would also eat `--` inside a literal and truncate a real statement —
+    // `set notes = 'a -- b', currency = 'USD'` lost its currency assignment that
+    // way. Quoted strings are matched first and kept, `''` escapes included.
+    // KNOWN LIMIT: a `--` inside a dollar-quoted body ($$...$$) is still treated
+    // as a comment, which can only cause a false REJECT of a valid backfill, not
+    // a false accept — the safe direction to err in.
+    const stripped = sql.replace(/'(?:''|[^'])*'|--[^\n]*/g, (m) =>
+      m.startsWith("'") ? m : '',
+    );
+    if (!new RegExp(`\\b${code}\\b`, 'i').test(stripped)) {
+      problems.push(
+        `${file} is named as the backfill for ${code} but never references ` +
+          `${code} outside a comment; it cannot be the migration that repairs ` +
+          `its holders`,
+      );
+      continue;
+    }
+    // Require an ACTUAL assignment to the currency column inside a SET clause.
+    // A bare "the word currency appears after SET" is not enough:
+    // `update profiles set notes = 'x' where currency = 'COP'` mentions currency
+    // only in its WHERE and backfills nothing. Every SET clause in the file is
+    // considered, so a migration with a `set search_path` preamble plus a real
+    // backfill still passes.
+    const writesCurrency = [...stripped.matchAll(/\bset\b([\s\S]*?)(?:\bwhere\b|\bfrom\b|\breturning\b|;|$)/gi)]
+      .some((m) => /\bcurrency\b\s*=/i.test(m[1]));
+    if (!writesCurrency) {
+      problems.push(
+        `${file} mentions ${code} but never ASSIGNS the currency column in any ` +
+          `SET clause; a mention, or an update that writes a different column, ` +
+          `is not a backfill`,
+      );
+    }
+  }
+
+  return problems;
+}
 
 const tmpRoot = join(root, 'node_modules', '.tmp');
 mkdirSync(tmpRoot, { recursive: true });
@@ -123,6 +272,222 @@ async function run() {
 
   await test('the sorted catalog equals the 14 codes the spec names', () => {
     assert.deepEqual([...codes].sort(), SPEC_LIST);
+  });
+
+  // ── 1b. retirement ledger: a code may not leave the catalog unaccounted for
+  // `ensureProfileCurrency` is INSERT-only, so a profile whose stored code left
+  // the catalog is never repaired: the picker selects zero rows and only a
+  // manual tap recovers it. The storage layer cannot catch that (currency is
+  // free text by design, §5 forbids a CHECK constraint), so a shrink is caught
+  // HERE or not at all.
+
+  const migrationsDir = join(root, 'supabase', 'migrations');
+  const readRealMigration = (file) => {
+    const full = join(migrationsDir, file);
+    return existsSync(full) ? readFileSync(full, 'utf8') : null;
+  };
+
+  console.log(
+    `\n[tests] retirement ledger (retirements registered: ` +
+      `${Object.keys(RETIRED_CURRENCIES).length})`,
+  );
+  if (Object.keys(RETIRED_CURRENCIES).length === 0) {
+    console.log(
+      '  note: no currency has ever been retired, so the per-migration checks ' +
+        'below have nothing to iterate against the REAL registry. The synthetic ' +
+        'fixtures that follow still exercise every failure mode.',
+    );
+  }
+
+  await test('the retirement ledger is consistent', () => {
+    assert.deepEqual(
+      retirementProblems({
+        ledger: CATALOG_LEDGER,
+        live: codes,
+        retired: RETIRED_CURRENCIES,
+        readMigration: readRealMigration,
+      }),
+      [],
+    );
+  });
+
+  // The validator above is only worth trusting if it rejects bad input, so each
+  // failure mode is driven through a fixture. This is what makes an empty
+  // RETIRED_CURRENCIES safe to ship: the guard is exercised today rather than
+  // for the first time during a live retirement.
+  const LIVE_14 = [...SPEC_LIST];
+  // Fixtures retire COP because it is genuinely in the catalog — an earlier
+  // draft used CHF, which the catalog never shipped, so every fixture silently
+  // produced zero problems and every "rejects" assertion passed vacuously.
+  const BACKFILL = "update profiles set currency = 'USD' where currency = 'COP';";
+  const without = (code) => LIVE_14.filter((c) => c !== code);
+  const fixture = (files) => (file) =>
+    Object.prototype.hasOwnProperty.call(files, file) ? files[file] : null;
+  // Assert the mode is REPORTED, not the exact count: one bad state can trip
+  // several rules at once (a stray retirement also breaks the ledger identity),
+  // and pinning the count would make these tests brittle without making them
+  // stricter about the thing that matters.
+  const assertReports = (problems, pattern) => {
+    assert.ok(
+      problems.some((p) => pattern.test(p)),
+      `expected a problem matching ${pattern}; got ${JSON.stringify(problems)}`,
+    );
+  };
+
+  await test('the validator rejects a code stranded by a catalog shrink', () => {
+    const problems = retirementProblems({
+      ledger: CATALOG_LEDGER,
+      live: without('COP'),
+      retired: {},
+      readMigration: fixture({}),
+    });
+    assertReports(problems, /stranded/);
+    assertReports(problems, /COP/);
+  });
+
+  await test('the validator rejects a retirement with no migration', () => {
+    const problems = retirementProblems({
+      ledger: CATALOG_LEDGER,
+      live: without('COP'),
+      retired: { COP: '9999_absent.sql' },
+      readMigration: fixture({}),
+    });
+    assertReports(problems, /does not exist/);
+  });
+
+  await test('the validator rejects a migration that only mentions the code', () => {
+    // The real 0041 trap: its only occurrence of `COP` is inside `-- SCOPE`, and
+    // it rewrites no rows. A substring search passes this; a comment-stripped
+    // search does not.
+    const problems = retirementProblems({
+      ledger: CATALOG_LEDGER,
+      live: without('COP'),
+      retired: { COP: 'scope_only.sql' },
+      readMigration: fixture({
+        'scope_only.sql': '-- SCOPE: retire COP\nselect 1;\n',
+      }),
+    });
+    assertReports(problems, /never references COP/);
+  });
+
+  await test('the validator rejects a migration that rewrites no rows', () => {
+    const problems = retirementProblems({
+      ledger: CATALOG_LEDGER,
+      live: without('COP'),
+      retired: { COP: 'mention_only.sql' },
+      readMigration: fixture({ 'mention_only.sql': "select 'COP';\n" }),
+    });
+    assertReports(problems, /never ASSIGNS/);
+  });
+
+  await test('the validator rejects an update that writes a different column', () => {
+    // The word `currency` appears, but only in the WHERE clause. A naive
+    // "UPDATE ... SET ... currency" proximity check accepts this and a stranded
+    // profile gets no backfill at all.
+    const problems = retirementProblems({
+      ledger: CATALOG_LEDGER,
+      live: without('COP'),
+      retired: { COP: 'wrong_column.sql' },
+      readMigration: fixture({
+        'wrong_column.sql': "update profiles set notes = 'x' where currency = 'COP';\n",
+      }),
+    });
+    assertReports(problems, /never ASSIGNS/);
+  });
+
+  await test('the validator survives a comment marker inside a string literal', () => {
+    // A naive `--` strip truncates this at the `--` and loses the currency
+    // assignment, wrongly rejecting a perfectly good backfill.
+    assert.deepEqual(
+      retirementProblems({
+        ledger: CATALOG_LEDGER,
+        live: without('COP'),
+        retired: { COP: 'literal_dash.sql' },
+        readMigration: fixture({
+          'literal_dash.sql':
+            "update profiles set notes = 'a -- b', currency = 'USD' where currency = 'COP';\n",
+        }),
+      }),
+      [],
+    );
+  });
+
+  await test('the validator accepts a backfill among unrelated statements', () => {
+    // Several SET clauses in one file, only one of which writes currency: a
+    // `set search_path` preamble must not disqualify the real backfill.
+    assert.deepEqual(
+      retirementProblems({
+        ledger: CATALOG_LEDGER,
+        live: without('COP'),
+        retired: { COP: '0042_retire_cop.sql' },
+        readMigration: fixture({
+          '0042_retire_cop.sql': [
+            'set search_path = public;',
+            "update profiles set display_name = 'x' where id = '1';",
+            "update profiles set currency = 'USD' where currency = 'COP';",
+          ].join('\n'),
+        }),
+      }),
+      [],
+    );
+  });
+
+  await test('the validator rejects a retired code that is still live', () => {
+    const problems = retirementProblems({
+      ledger: CATALOG_LEDGER,
+      live: LIVE_14,
+      retired: { COP: 'backfill.sql' },
+      readMigration: fixture({ 'backfill.sql': BACKFILL }),
+    });
+    assertReports(problems, /still ship/);
+  });
+
+  await test('the validator rejects a ledger edited out of step with the catalog', () => {
+    // A ledger that loses a code the catalog still ships is caught by the
+    // identity check. The residual hole is documented on CATALOG_LEDGER and is
+    // NOT tested here because it is not detectable: dropping a code from the
+    // ledger AND the catalog together is self-consistent, so nothing fails and
+    // only review catches it.
+    const problems = retirementProblems({
+      ledger: without('COP'),
+      live: LIVE_14,
+      retired: {},
+      readMigration: fixture({}),
+    });
+    assertReports(problems, /CATALOG_LEDGER holds/);
+  });
+
+  await test('the validator accepts a proper retirement', () => {
+    // And the happy path, so the fixtures above cannot be satisfied by simply
+    // rejecting everything.
+    assert.deepEqual(
+      retirementProblems({
+        ledger: CATALOG_LEDGER,
+        live: without('COP'),
+        retired: { COP: '0042_retire_cop.sql' },
+        readMigration: fixture({ '0042_retire_cop.sql': BACKFILL }),
+      }),
+      [],
+    );
+  });
+
+  await test('the validator accepts a case-insensitive backfill', () => {
+    // 0041 is direct evidence that lowercase values exist in the wild, so a
+    // correct backfill may well write `lower(currency) = 'cop'`. A
+    // case-sensitive check would reject it and train the author to append a
+    // comment instead.
+    assert.deepEqual(
+      retirementProblems({
+        ledger: CATALOG_LEDGER,
+        live: without('COP'),
+        retired: { COP: '0042_retire_cop.sql' },
+        readMigration: fixture({
+          '0042_retire_cop.sql':
+            "update profiles set currency = 'USD' where lower(currency) = 'cop';",
+        }),
+      }),
+      [],
+    );
   });
 
   await test('the catalog order is pinned to the declared sequence', () => {
