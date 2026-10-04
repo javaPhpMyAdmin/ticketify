@@ -227,6 +227,9 @@ async function run() {
 
 
 
+  // Labels legitimately identical to English are whitelisted here and pinned below.
+  const SHARED_TERM_WHITELIST = new Set(['EUR']);
+
   await test('anti-paste guard: pt-BR and es-419 differ from en for codes that differ legitimately', () => {
     const en = JSON.parse(
       readFileSync(join(localesDir, 'en', 'currency.json'), 'utf8'),
@@ -237,12 +240,27 @@ async function run() {
     const pt = JSON.parse(
       readFileSync(join(localesDir, 'pt-BR', 'currency.json'), 'utf8'),
     );
-    const skipSame = new Set(['EUR']);
+    const skipSame = SHARED_TERM_WHITELIST;
     for (const code of codes) {
       if (skipSame.has(code)) continue;
       assert.notEqual(pt[code], en[code], `pt-BR.${code} must differ from en.${code}`);
       assert.notEqual(es[code], en[code], `es-419.${code} must differ from en.${code}`);
     }
+  });
+
+  await test('shared term exemption pinned: EUR labels are identical', () => {
+    const en = JSON.parse(
+      readFileSync(join(localesDir, 'en', 'currency.json'), 'utf8'),
+    );
+    const es = JSON.parse(
+      readFileSync(join(localesDir, 'es-419', 'currency.json'), 'utf8'),
+    );
+    const pt = JSON.parse(
+      readFileSync(join(localesDir, 'pt-BR', 'currency.json'), 'utf8'),
+    );
+    assert.equal(pt.EUR, 'Euro');
+    assert.equal(es.EUR, 'Euro');
+    assert.equal(en.EUR, 'Euro');
   });
 
 
