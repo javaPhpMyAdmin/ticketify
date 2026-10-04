@@ -173,13 +173,14 @@ jobs:
         run: supabase db query --local --file supabase/tests/legal-acceptances.sql
 
       - name: Run currency-default SQL smoke test
-        # Pins the 0040 contract (app-i18n G5): public.profiles.currency
-        # declares the canonical LOWERCASE 'usd' default (asserted on the
-        # value inside pg_get_expr, so `'usd'::text` passes and `'USD'`
-        # does not); the default actually fires on a row that omits the
-        # column; an explicitly-supplied 'UYU' is stored verbatim, so no
-        # CHECK/trigger coerces a real user choice; the column is still
-        # text NOT NULL. Seeds and deletes its own fixtures.
-        # Note: 0040 declares a default only — it deliberately does NOT
-        # repeat 0007's backfill, so existing 'UYU' rows are untouched.
+        # Pins the 0041 contract (app-i18n G5): public.profiles.currency
+        # declares the canonical UPPERCASE 'USD' default, asserted
+        # CASE-SENSITIVELY (`~`, not `~*`) on the value inside
+        # pg_get_expr — so `'USD'::text` passes — plus a case-sensitive
+        # negative rejecting any lowercase `'usd'` literal; the default
+        # actually fires on a row that omits the column; an explicitly-
+        # supplied 'UYU' survives verbatim, so no CHECK/trigger coerces
+        # a real user choice; the column is still text NOT NULL; and a
+        # duplicate insert raises unique_violation (23505) leaving the
+        # stored currency untouched (create-only, never a clobber).
         run: supabase db query --local --file supabase/tests/currency-default.sql
