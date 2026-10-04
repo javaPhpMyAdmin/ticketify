@@ -172,6 +172,13 @@ jobs:
         # ON DELETE CASCADE, and anon denial.
         run: supabase db query --local --file supabase/tests/legal-acceptances.sql
 
+      - name: Run delete-account SQL smoke test
+        # Pins the 0036 contract: public.delete_user_account(uuid) is
+        # SECURITY DEFINER, EXECUTE restricted (no anon/public), cascades to
+        # related rows, preserves profiles for audit as needed and leaves no
+        # orphaned state; owned by postgres.
+        run: supabase db query --local --file supabase/tests/delete-account.sql
+
       - name: Run currency-default SQL smoke test
         # Pins the 0041 contract (app-i18n G5): public.profiles.currency
         # declares the canonical UPPERCASE 'USD' default, asserted
