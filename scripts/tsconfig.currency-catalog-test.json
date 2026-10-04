@@ -17,6 +17,7 @@
   },
   "include": [
     "../src/lib/format.ts",
+    "../src/lib/currency-selection.ts",
     "../src/i18n/detector.ts"
   ]
 }

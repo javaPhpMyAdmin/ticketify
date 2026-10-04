@@ -10,6 +10,13 @@
  * TRANSLATION quality is not automatable and is not pretended to be. A
  * wrong-but-different label is out of scope for this harness.
  *
+ * §3b is the one deliberate exception to "structural only": the picker's
+ * selected-row decision was extracted into `src/lib/currency-selection.ts`, a
+ * PURE and dependency-free module, precisely so it could be pinned
+ * BEHAVIORALLY here. A regex over `currency.tsx` can prove the text still says
+ * `code === currency`; it can never observe which rows actually render as
+ * selected, which is where the reported regression lived.
+ *
  * The leaf-count pin (797) belongs to
  * `scripts/test-i18n-catalog-parity.mjs`, and duplicating it here would create
  * a second place to update on the next catalog bump.
@@ -96,6 +103,9 @@ async function run() {
   );
   const detector = await import(
     pathToFileURL(join(outDir, 'src', 'i18n', 'detector.js')).href
+  );
+  const { isCurrencySelected } = await import(
+    pathToFileURL(join(outDir, 'src', 'lib', 'currency-selection.js')).href
   );
 
   const codes = fmt.SUPPORTED_CURRENCIES;
@@ -322,6 +332,74 @@ async function run() {
       selector,
       /regionDefault|region_default|\bdefault:\s*true/i,
       'no region-default marker may reappear in the selector',
+    );
+  });
+
+  // ── 3b. the picker SELECTS what the store says (behavioral) ─────────────
+  //
+  // The reported regression was a SELECTION bug, not a formatting bug: a
+  // stored lowercase 'usd' (written by an earlier migration) rendered
+  // correctly in every money formatter because those case-fold, yet matched
+  // no UPPERCASE catalog code, so no row appeared selected and
+  // `accessibilityState={{ selected }}` was false for all fourteen. The user
+  // could not distinguish "my currency is gone" from "the list doesn't know
+  // it", and tapping another row is a SILENT currency change that re-bases
+  // every amount in the app.
+  //
+  // Asserting `useSettingsStore.getState().currency === 'USD'` after hydration
+  // (see test-profile-hook.mjs) covers only HALF of that: revert the
+  // normalization at the hydration boundary and the store assertion is still
+  // green while the bug is back in full. These pins call the predicate the
+  // component actually renders with.
+  console.log('\n[tests] picker selected-row decision (behavioral)\n');
+
+  const selectedFor = (current) => codes.filter((code) => isCurrencySelected(code, current));
+
+  await test("current 'USD' selects exactly ONE row, and it is USD", () => {
+    assert.deepEqual(selectedFor('USD'), ['USD']);
+  });
+
+  await test("legacy lowercase 'usd' selects exactly ONE row: USD (the regression)", () => {
+    assert.deepEqual(selectedFor('usd'), ['USD']);
+    // The mixed-case spelling is the same decision, asserted so a future
+    // "normalize to lowercase" edit cannot silently flip the direction.
+    assert.deepEqual(selectedFor('uSd'), ['USD']);
+  });
+
+  await test('an out-of-catalog current value selects ZERO rows (no fallback row invented)', () => {
+    // Pinned, not wished: a currency the catalog does not ship renders an
+    // unselected list. The graceful-degradation UI for it is a tracked
+    // follow-up; inventing a synthetic row here would hide the gap.
+    assert.deepEqual(selectedFor('CHF'), []);
+    assert.deepEqual(selectedFor('usd2'), []);
+  });
+
+  await test('no current currency selects ZERO rows', () => {
+    for (const empty of [null, undefined, '']) {
+      assert.deepEqual(selectedFor(empty), [], `${JSON.stringify(empty)} must select nothing`);
+    }
+  });
+
+  await test('every catalog code is selectable — not a hardcoded truthy table', () => {
+    // Guards the failure mode where a predicate is written against a few codes
+    // (or is accidentally always true): each code, fed in as the current
+    // value, must select ITSELF and nothing else.
+    assert.equal(codes.length, 14);
+    for (const code of codes) {
+      assert.deepEqual(selectedFor(code), [code], `${code} must be selectable`);
+    }
+  });
+
+  await test('the picker calls the predicate instead of inlining its own compare', () => {
+    assert.match(
+      selector,
+      /const\s+selected\s*=\s*isCurrencySelected\(\s*code\s*,\s*currency\s*\)/,
+      'currency.tsx must derive `selected` from the pinned predicate, not re-implement it',
+    );
+    assert.doesNotMatch(
+      selector,
+      /const\s+selected\s*=\s*code\s*===/,
+      'an inlined case-sensitive `code === currency` is the exact regression being prevented',
     );
   });
 
