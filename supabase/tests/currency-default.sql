@@ -48,9 +48,9 @@
 -- dies mid-file cannot strand rows. That handler used to be absent: the only
 -- cleanup sat at the very end, after every assert, which a failure skips. The
 -- re-raise is load-bearing — see the block comment at the foot of the file for
--- why `assert_failure` must be named explicitly (PL/pgSQL's `OTHERS` does not
--- match it) and what the cleanup can and cannot achieve given subtransaction
--- rollback.
+-- why `assert_failure` is named explicitly (for version-independence, NOT
+-- because `OTHERS` is known to skip it) and what the cleanup can and cannot
+-- achieve given subtransaction rollback.
 --
 -- Structure: the whole file is a SINGLE `DO` block (same constraint as the
 -- rest of supabase/tests/*.sql — `supabase db query --local --file` prepares
@@ -235,14 +235,16 @@ exception
   -- ---------------------------------------------------------------------------
   -- Cleanup — FAILURE path. Same two deletes, then `raise;`.
   --
-  -- `assert_failure` is listed EXPLICITLY and is not optional: per the
-  -- PostgreSQL docs, `OTHERS` "matches every error type except QUERY_CANCELED
-  -- and ASSERT_FAILURE". Every failure this file is built to detect is a
-  -- failed `assert` (SQLSTATE P0004), so a plain `when others` would compile,
-  -- look correct, and never fire once — verified against this stack by
-  -- mutation, not by reading. `assert_failure or others` is one branch and
-  -- covers both the assertion failures and any other error the block can hit
-  -- (a missing table, a permission error).
+  -- `assert_failure` is named EXPLICITLY so this file does not have to bet on
+  -- one of two contradictory sources: the PostgreSQL docs say `OTHERS` "matches
+  -- every error type except QUERY_CANCELED and ASSERT_FAILURE", but a probe
+  -- against this stack (PG 17.6, the Docker image CI uses) shows `WHEN OTHERS`
+  -- DOES catch a failed `assert` — `perform assert(false, ...)` under
+  -- `when others` surfaced the handler, not the assert message. Rather than
+  -- encode either claim as fact, `assert_failure or others` is one branch that
+  -- covers the assertion failures and any other error the block can hit (a
+  -- missing table, a permission error) on every version. Naming the condition
+  -- is documentation-by-construction, not a workaround.
   --
   -- The bare `raise;` is load-bearing in the other direction: it re-raises the
   -- original error with its original message and SQLSTATE, so the run still
