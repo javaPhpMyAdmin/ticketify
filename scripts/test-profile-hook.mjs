@@ -321,6 +321,28 @@ async function run() {
       await unmountProbe(renderer);
     }
   });
+  await test('hydration normalizes lowercase currency to uppercase', async () => {
+    resetAll();
+    signIn();
+    stubMod.__setTableRead('profiles', {
+      rows: [{ ...PROFILE_EUR, currency: 'usd' }],
+    });
+    stubMod.__setTableRead('scan_usage', { rows: [SCAN_USAGE_ROW] });
+
+    assert.equal(settingsStoreMod.useSettingsStore.getState().currency, 'UYU');
+
+    const renderer = await mountProbe(storeHydratedTo('USD'));
+    try {
+      assert.equal(
+        settingsStoreMod.useSettingsStore.getState().currency,
+        'USD',
+        'lowercase profile row currency was normalized to uppercase',
+      );
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
 
   await test('skip-equal: equal-currency hydrate + unchanged re-render never notify subscribers', async () => {
     resetAll();

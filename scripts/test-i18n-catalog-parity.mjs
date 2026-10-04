@@ -5,13 +5,13 @@
  * Pins the shape of the Spanish locale family that
  * `i18n-spanish-regionalization` introduced:
  *
- *   en / pt-BR          full catalogs (787 leaves, 18 namespaces)
+ *   en / pt-BR          full catalogs (797 leaves, 18 namespaces)
  *   es-419              the Spanish BASE — full catalog, source of truth
  *   es-AR               sparse Rioplatense override (voseo)
  *   es-ES               sparse Peninsular override (perfect compounds + lexicon)
  *
  * 49 tests, composed as:
- *   R-1  full completeness (18 files / 787 leaves across en / es-419 / pt-BR)
+ *   R-1  full completeness (18 files / 797 leaves across en / es-419 / pt-BR)
  *   R-1  identical key sets across en / es-419 / pt-BR
  *   R-4  es-ES and es-AR key sets are subsets of es-419 (no invented keys)
  *   T3-1 sparse shape + PENINSULAR_EMPTY_NAMESPACES (7 namespaces pinned BY NAME)
@@ -52,7 +52,9 @@ const PENINSULAR_EMPTY_NAMESPACES = {
   bootSplash: 'Splash/brand copy is locale-neutral and shipped identically.',
   categories: 'The 13 system category labels read identically in Spain.',
   common: 'Shared verbs and nouns carry no regional form.',
-  currency: 'Currency formatting is an Intl concern, not catalog copy.',
+  currency:
+    'Currency names are region-neutral catalog copy; the CODE owns formatting ' +
+    '(`src/lib/format.ts`), so no Peninsular override exists.',
   date:
     'Month/weekday arrays are shared; src/lib/format.ts maps es-ES to the ' +
     'es-419 MONTHS_FULL_ES arrays on purpose (no genuine Peninsular divergence).',
@@ -227,12 +229,12 @@ async function run() {
   console.log('\n[i18n-parity] five-locale catalog hierarchy\n');
 
   // ── R-1: full completeness ────────────────────────────────────────────
-  await test('R-1 full completeness: en / es-419 / pt-BR each ship 18 files / 787 leaves', () => {
+  await test('R-1 full completeness: en / es-419 / pt-BR each ship 18 files / 797 leaves', () => {
     for (const locale of FULL_LOCALES) {
       const files = localeFiles(locale);
       assert.equal(files.length, 18, `${locale} must ship 18 namespace files`);
       const leaves = fullLeafMap(locale);
-      assert.equal(leaves.size, 787, `${locale} must ship exactly 787 leaves`);
+      assert.equal(leaves.size, 797, `${locale} must ship exactly 797 leaves`);
     }
   });
 

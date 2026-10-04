@@ -9,6 +9,7 @@
  * `setHouseholdSharing` stays a no-op: the household-sharing switch must
  * remain non-functional in this change.
  */
+import { SUPPORTED_CURRENCIES } from '@/lib/format';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import {
   readProfileRow,
@@ -58,9 +59,13 @@ export async function setProfileCurrency(
   if (!isSupabaseConfigured) {
     return { status: 'error', message: WRITE_ERROR_MESSAGE };
   }
+  const canonical = currency.toUpperCase();
+  if (!SUPPORTED_CURRENCIES.includes(canonical as (typeof SUPPORTED_CURRENCIES)[number])) {
+    return { status: 'error', message: WRITE_ERROR_MESSAGE };
+  }
   const { data, error } = (await supabase
     .from('profiles')
-    .update({ currency: currency.toUpperCase() })
+    .update({ currency: canonical })
     .eq('id', userId)
     .select('id')) as unknown as {
     data: { id: string }[] | null;

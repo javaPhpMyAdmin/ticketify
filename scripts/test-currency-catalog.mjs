@@ -1,0 +1,482 @@
+#!/usr/bin/env node
+/**
+ * Single-source-of-truth harness for the currency-universality catalog (AD-6).
+ *
+ * This harness enforces STRUCTURAL invariants (key-set equality, catalog
+ * membership, region-map coverage, ordering). The fourteen supported codes are
+ * authoritative in `SUPPORTED_CURRENCIES` (`src/lib/format.ts`); everything
+ * else (symbol table, three full-locale `currency.json` catalogs, region
+ * defaults, settings selector) must derive from that source. Label
+ * TRANSLATION quality is not automatable and is not pretended to be. A
+ * wrong-but-different label is out of scope for this harness.
+ *
+ * §3b is the one deliberate exception to "structural only": the picker's
+ * selected-row decision was extracted into `src/lib/currency-selection.ts`, a
+ * PURE and dependency-free module, precisely so it could be pinned
+ * BEHAVIORALLY here. A regex over `currency.tsx` can prove the text still says
+ * `code === currency`; it can never observe which rows actually render as
+ * selected, which is where the reported regression lived.
+ *
+ * The leaf-count pin (797) belongs to
+ * `scripts/test-i18n-catalog-parity.mjs`, and duplicating it here would create
+ * a second place to update on the next catalog bump.
+ *
+ * Usage: pnpm test:currency-catalog
+ */
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const require = createRequire(import.meta.url);
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = join(__dirname, '..');
+const tscBin = require.resolve('typescript/bin/tsc');
+const harnessConfig = join(__dirname, 'tsconfig.currency-catalog-test.json');
+
+const localesDir = join(root, 'src', 'i18n', 'locales');
+const FULL_LOCALES = ['en', 'es-419', 'pt-BR'];
+
+/** The exact set the spec names, spelled out here ONCE on purpose: this is the
+ *  only place the list is restated, and it exists to catch a silent ADD or
+ *  REMOVE from `SUPPORTED_CURRENCIES`. The catalog itself stays the authority
+ *  for order. */
+const SPEC_LIST = [
+  'ARS', 'AUD', 'BRL', 'CAD', 'CLP', 'COP', 'EUR',
+  'GBP', 'JPY', 'MXN', 'PEN', 'PYG', 'USD', 'UYU',
+];
+
+const tmpRoot = join(root, 'node_modules', '.tmp');
+mkdirSync(tmpRoot, { recursive: true });
+const workdir = mkdtempSync(join(tmpRoot, 'currency-catalog-test-'));
+const outDir = join(workdir, 'out');
+
+let passed = 0;
+let failed = 0;
+
+async function test(name, fn) {
+  const started = Date.now();
+  try {
+    await fn();
+    passed += 1;
+    console.log(`  ok    ${name} (${Date.now() - started}ms)`);
+  } catch (err) {
+    failed += 1;
+    console.error(`  FAIL  ${name}`);
+    console.error(String((err && err.stack) || err));
+  }
+}
+
+function compile() {
+  execFileSync(
+    process.execPath,
+    [tscBin, '-p', harnessConfig, '--outDir', outDir],
+    { cwd: root, stdio: ['ignore', 'inherit', 'inherit'] },
+  );
+}
+
+/** Isolate one exported function's body so a scan cannot be satisfied (or
+ *  broken) by a sibling in the same file. `profile-sync.ts` has a legitimate
+ *  `.upsert(` in `ensureProfile` and a forbidden one in
+ *  `ensureProfileCurrency`; only a slice tells them apart.
+ *
+ *  The `\s*\(` is load-bearing, not decoration: a plain indexOf for
+ *  `ensureProfile` matches `ensureProfileCurrency` first (it is the earlier
+ *  declaration and a strict prefix), so the "is ensureProfile's payload clean"
+ *  scan silently ran against the wrong function and reported a pass/fail for
+ *  code it never read. */
+function sliceFunction(src, name) {
+  const decl = new RegExp(`export async function ${name}\\s*\\(`);
+  const match = decl.exec(src);
+  assert.ok(match, `${name} not found`);
+  const rest = src.indexOf('\nexport ', match.index + 1);
+  return src.slice(match.index, rest === -1 ? src.length : rest);
+}
+
+async function run() {
+  console.log('\n[tests] compiling format module (catalog authority)…');
+  compile();
+  const fmt = await import(
+    pathToFileURL(join(outDir, 'src', 'lib', 'format.js')).href
+  );
+  const detector = await import(
+    pathToFileURL(join(outDir, 'src', 'i18n', 'detector.js')).href
+  );
+  const { isCurrencySelected } = await import(
+    pathToFileURL(join(outDir, 'src', 'lib', 'currency-selection.js')).href
+  );
+
+  const codes = fmt.SUPPORTED_CURRENCIES;
+
+  // ── 1. the catalog itself ───────────────────────────────────────────────
+  console.log('\n[tests] catalog shape\n');
+
+  await test('SUPPORTED_CURRENCIES carries exactly 14 codes', () => {
+    assert.equal(codes.length, 14);
+  });
+
+  await test('SUPPORTED_CURRENCIES has no duplicates (Set size == length)', () => {
+    assert.equal(new Set(codes).size, codes.length);
+  });
+
+  await test('the sorted catalog equals the 14 codes the spec names', () => {
+    assert.deepEqual([...codes].sort(), SPEC_LIST);
+  });
+
+  await test('the catalog order is pinned to the declared sequence', () => {
+    assert.deepEqual(
+      codes,
+      [
+        'ARS',
+        'BRL',
+        'CLP',
+        'COP',
+        'MXN',
+        'PEN',
+        'PYG',
+        'UYU',
+        'AUD',
+        'CAD',
+        'EUR',
+        'GBP',
+        'JPY',
+        'USD',
+      ],
+    );
+  });
+
+  await test('every code resolves a non-empty symbol, never a bare fallback', () => {
+    for (const code of codes) {
+      const symbol = fmt.CURRENCY_SYMBOL[code];
+      assert.ok(symbol, `${code} has no CURRENCY_SYMBOL entry`);
+      assert.notEqual(symbol, code, `${code} must not fall back to its own code`);
+    }
+  });
+
+  // ── 2. the locale catalogs track the format list ────────────────────────
+  console.log('\n[tests] locale currency.json track the format catalog\n');
+
+  for (const locale of FULL_LOCALES) {
+    await test(`${locale} currency.json key set === SUPPORTED_CURRENCIES`, () => {
+      const json = JSON.parse(
+        readFileSync(join(localesDir, locale, 'currency.json'), 'utf8'),
+      );
+      assert.deepEqual(
+        Object.keys(json).sort(),
+        [...codes].sort(),
+        `${locale} currency.json has drifted from the catalog`,
+      );
+      for (const [key, value] of Object.entries(json)) {
+        assert.equal(typeof value, 'string', `${locale}.${key} must be a string`);
+        assert.notEqual(value.trim(), '', `${locale}.${key} must not be blank`);
+      }
+    });
+  }
+
+  await test('es-AR and es-ES inherit currency via es-419 (both stay {})', () => {
+    for (const locale of ['es-AR', 'es-ES']) {
+      const json = JSON.parse(
+        readFileSync(join(localesDir, locale, 'currency.json'), 'utf8'),
+      );
+      assert.deepEqual(json, {}, `${locale}/currency.json must stay an empty override`);
+    }
+  });
+  // ── 2b. locale label content — anti-paste guard and the shared-term pin ─
+  console.log('\n[tests] locale label content is correct (no English paste)\n');
+
+  // The three per-locale label tables that used to sit here (42 duplicated
+  // strings) are GONE, and their absence is the point: they were a second
+  // copy of the shipped `currency.json` files that had to be hand-updated in
+  // lockstep, and had already drifted. Label content is now read from the
+  // shipped files and compared cross-file, so a locale edit cannot leave a
+  // stale copy behind asserting the old value. What is still pinned here is
+  // what a cross-file comparison cannot express: that the two locales which
+  // legitimately share a term with en say so EXPLICITLY.
+  //
+  // Labels legitimately identical to English are whitelisted here and pinned below.
+  const SHARED_TERM_WHITELIST = new Set(['EUR']);
+
+  await test('shared-term exemption is scoped to EUR alone', () => {
+    // An EXEMPTION list that can grow silently is not a guard, it is a leak.
+    // Demonstrated: add 'USD' here and revert pt-BR.USD to the English
+    // "US dollar", and both harnesses stay green — test:currency-catalog (this
+    // file) and test:i18n-catalog-parity — while a shipped locale paints an
+    // English string. Pinning EUR's three labels only proves the exemption is
+    // justified; nothing stopped the NEXT code from being exempted, and the
+    // growth is invisible in the diff of a locale file. A new entry has to be
+    // argued HERE, in a test that fails until it is.
+    assert.deepEqual(
+      [...SHARED_TERM_WHITELIST],
+      ['EUR'],
+      'the shared-term exemption must stay EUR alone: it is the one ISO code whose name is spelled identically in en, es-419 and pt-BR, so it is the only label that may match the English source legitimately',
+    );
+  });
+
+  await test('anti-paste guard: pt-BR and es-419 differ from en for codes that differ legitimately', () => {
+    const en = JSON.parse(
+      readFileSync(join(localesDir, 'en', 'currency.json'), 'utf8'),
+    );
+    const es = JSON.parse(
+      readFileSync(join(localesDir, 'es-419', 'currency.json'), 'utf8'),
+    );
+    const pt = JSON.parse(
+      readFileSync(join(localesDir, 'pt-BR', 'currency.json'), 'utf8'),
+    );
+    const skipSame = SHARED_TERM_WHITELIST;
+    for (const code of codes) {
+      if (skipSame.has(code)) continue;
+      assert.notEqual(pt[code], en[code], `pt-BR.${code} must differ from en.${code}`);
+      assert.notEqual(es[code], en[code], `es-419.${code} must differ from en.${code}`);
+    }
+  });
+
+  await test('shared term exemption pinned: EUR labels are identical', () => {
+    const en = JSON.parse(
+      readFileSync(join(localesDir, 'en', 'currency.json'), 'utf8'),
+    );
+    const es = JSON.parse(
+      readFileSync(join(localesDir, 'es-419', 'currency.json'), 'utf8'),
+    );
+    const pt = JSON.parse(
+      readFileSync(join(localesDir, 'pt-BR', 'currency.json'), 'utf8'),
+    );
+    assert.equal(pt.EUR, 'Euro');
+    assert.equal(es.EUR, 'Euro');
+    assert.equal(en.EUR, 'Euro');
+  });
+
+
+
+  await test('REGION_DEFAULT_CURRENCY values exist in catalog', () => {
+    for (const [region, currency] of Object.entries(detector.REGION_DEFAULT_CURRENCY)) {
+      assert.ok(fmt.SUPPORTED_CURRENCIES.includes(currency), `${region} -> ${currency} not in SUPPORTED_CURRENCIES`);
+    }
+  });
+  // ── 3. the selector REFERENCES the catalog ──────────────────────────────
+  console.log('\n[tests] settings selector consumes the catalog\n');
+
+  const selector = readFileSync(join(root, 'src', 'app', 'settings', 'currency.tsx'), 'utf8');
+
+  await test('currency.tsx imports SUPPORTED_CURRENCIES from the format module', () => {
+    assert.match(
+      selector,
+      /import\s*\{[^}]*\bSUPPORTED_CURRENCIES\b[^}]*\}\s*from\s*'@\/lib\/format'/,
+      'the selector must import the catalog, not redeclare it',
+    );
+    assert.match(selector, /SUPPORTED_CURRENCIES\.map\(/);
+  });
+
+  await test('currency.tsx declares no currency-code array of its own', () => {
+    // Matches `const FOO = ['UYU', ...]` / ReadonlyArray<string> style lists.
+    assert.doesNotMatch(
+      selector,
+      /const\s+[A-Z_]*CURRENC[A-Z_]*\w*\s*(:\s*ReadonlyArray<[^>]*>)?\s*=/,
+      'a second code array in the selector is the exact drift this change removed',
+    );
+    assert.doesNotMatch(
+      selector,
+      /'currency:[A-Z]{3}'/,
+      'a hand-written currency key union is back in the selector',
+    );
+  });
+
+  await test('currency.tsx has no `as` cast on its i18n key (the T-8 lesson)', () => {
+    // `as \`currency:${CurrencyKey}\`` typechecks while silently narrowing a
+    // wider union down to the catalog's — an assertion between two unions only
+    // needs one direction of assignability. The guard that actually bites is
+    // `satisfies`, which demands every member be assignable. Pinning BOTH cast
+    // spellings so the decorative one cannot come back wearing a type-level
+    // comment claiming it is a guard.
+    assert.doesNotMatch(
+      selector,
+      /as\s+`?currency:/,
+      'the selector must derive its key with `satisfies`, never `as`',
+    );
+    assert.match(
+      selector,
+      /satisfies\s+`currency:\$\{CurrencyKey\}`/,
+      'the selector must narrow its i18n key with `satisfies`',
+    );
+  });
+
+  await test('currency.tsx carries no region-default badge (REQ-6.6)', () => {
+    assert.doesNotMatch(
+      selector,
+      /regionDefault|region_default|\bdefault:\s*true/i,
+      'no region-default marker may reappear in the selector',
+    );
+  });
+
+  // ── 3b. the picker SELECTS what the store says (behavioral) ─────────────
+  //
+  // The reported regression was a SELECTION bug, not a formatting bug: a
+  // stored lowercase 'usd' (written by an earlier migration) rendered
+  // correctly in every money formatter because those case-fold, yet matched
+  // no UPPERCASE catalog code, so no row appeared selected and
+  // `accessibilityState={{ selected }}` was false for all fourteen. The user
+  // could not distinguish "my currency is gone" from "the list doesn't know
+  // it", and tapping another row is a SILENT currency change that re-bases
+  // every amount in the app.
+  //
+  // Asserting `useSettingsStore.getState().currency === 'USD'` after hydration
+  // (see test-profile-hook.mjs) covers only HALF of that: revert the
+  // normalization at the hydration boundary and the store assertion is still
+  // green while the bug is back in full. These pins call the predicate the
+  // component actually renders with.
+  console.log('\n[tests] picker selected-row decision (behavioral)\n');
+
+  const selectedFor = (current) => codes.filter((code) => isCurrencySelected(code, current));
+
+  await test("current 'USD' selects exactly ONE row, and it is USD", () => {
+    assert.deepEqual(selectedFor('USD'), ['USD']);
+  });
+
+  await test("legacy lowercase 'usd' selects exactly ONE row: USD (the regression)", () => {
+    assert.deepEqual(selectedFor('usd'), ['USD']);
+    // The mixed-case spelling is the same decision, asserted so a future
+    // "normalize to lowercase" edit cannot silently flip the direction.
+    assert.deepEqual(selectedFor('uSd'), ['USD']);
+  });
+
+  await test('an out-of-catalog current value selects ZERO rows (no fallback row invented)', () => {
+    // Pinned, not wished: a currency the catalog does not ship renders an
+    // unselected list. The graceful-degradation UI for it is a tracked
+    // follow-up; inventing a synthetic row here would hide the gap.
+    assert.deepEqual(selectedFor('CHF'), []);
+    assert.deepEqual(selectedFor('usd2'), []);
+  });
+
+  await test('no current currency selects ZERO rows', () => {
+    for (const empty of [null, undefined, '']) {
+      assert.deepEqual(selectedFor(empty), [], `${JSON.stringify(empty)} must select nothing`);
+    }
+  });
+
+  await test('every catalog code is selectable — not a hardcoded truthy table', () => {
+    // Guards the failure mode where a predicate is written against a few codes
+    // (or is accidentally always true): each code, fed in as the current
+    // value, must select ITSELF and nothing else.
+    assert.equal(codes.length, 14);
+    for (const code of codes) {
+      assert.deepEqual(selectedFor(code), [code], `${code} must be selectable`);
+    }
+  });
+
+  await test('the picker calls the predicate instead of inlining its own compare', () => {
+    assert.match(
+      selector,
+      /const\s+selected\s*=\s*isCurrencySelected\(\s*code\s*,\s*currency\s*\)/,
+      'currency.tsx must derive `selected` from the pinned predicate, not re-implement it',
+    );
+    assert.doesNotMatch(
+      selector,
+      /const\s+selected\s*=\s*code\s*===/,
+      'an inlined case-sensitive `code === currency` is the exact regression being prevented',
+    );
+  });
+
+  await test('the checkmark and the a11y state read the SAME `selected` value', () => {
+    // The comment above `const selected` in currency.tsx promises the visual
+    // checkmark and `accessibilityState` "cannot drift apart" because both read
+    // that one value. Nothing pinned the promise, and it breaks from inside a
+    // single row: `{code === currency.toUpperCase() || selected ? <Icon
+    // name="checkmark" …/> : null}` leaves `selected` derived from the pinned
+    // predicate, so every behavioral assertion above still passes — while a
+    // stored lowercase 'usd' paints the checkmark on a row the predicate does
+    // not select, and screen readers are told the opposite. The regression
+    // returns with every behavioural pin satisfied. So pin where `selected` is
+    // CONSUMED, not only where it is derived.
+    const checkmark = /\{([^{}]*?)\?\s*\(\s*<Icon\b[^>]*\bname=["']checkmark["']/.exec(selector);
+    assert.ok(checkmark, 'the checkmark Icon must still be rendered by a ternary');
+    assert.equal(
+      checkmark[1].trim(),
+      'selected',
+      'the checkmark must be gated on `selected` alone — an inline `code === …` there re-opens the regression while every behavioural pin stays green',
+    );
+    assert.match(
+      selector,
+      /accessibilityState=\{\{\s*selected\s*\}\}/,
+      '`accessibilityState` must read the same `selected` value as the checkmark',
+    );
+  });
+
+  // ── 4. create-only seeding survives a refactor ──────────────────────────
+  console.log('\n[tests] profile creation seeds, never clobbers\n');
+
+  const profileSync = readFileSync(join(root, 'src', 'lib', 'auth', 'profile-sync.ts'), 'utf8');
+
+  await test('ensureProfileCurrency INSERTS and never upserts', () => {
+    const body = sliceFunction(profileSync, 'ensureProfileCurrency');
+    assert.match(body, /\.insert\(/, 'ensureProfileCurrency must stay a create-only .insert()');
+    assert.doesNotMatch(
+      body,
+      /\.upsert\(/,
+      'a .upsert() here would overwrite a currency the user already chose',
+    );
+    assert.doesNotMatch(
+      body,
+      /\.update\(/,
+      'a .update() here would overwrite a currency the user already chose',
+    );
+  });
+
+  await test("ensureProfile's payload still carries no currency", () => {
+    const body = sliceFunction(profileSync, 'ensureProfile');
+    // `ensureProfile` legitimately .upsert()s the profile row; what it must
+    // never do is put a currency in that payload, or every sign-in would
+    // silently reset the user's choice.
+    assert.doesNotMatch(
+      body,
+      /currency/i,
+      'ensureProfile must not mention currency — the region seed owns that column',
+    );
+  });
+
+  await test('use-settings-store seeds USD, not the legacy UYU', () => {
+    const store = readFileSync(join(root, 'src', 'stores', 'use-settings-store.ts'), 'utf8');
+    assert.match(
+      store,
+      /currency:\s*'USD'/,
+      "the settings store's pre-hydration seed must be the universal default",
+    );
+    assert.doesNotMatch(
+      store,
+      /currency:\s*'UYU'/,
+      'the legacy UYU seed must not come back as the store default',
+    );
+  });
+
+  // ── 5. NFR-1: the invariant is enforced in code, not in a constraint ────
+  console.log('\n[tests] NFR-1 — no currency CHECK constraint\n');
+
+  await test('no migration constrains currency to an IN (...) list', () => {
+    const migrationsDir = join(root, 'supabase', 'migrations');
+    const offenders = [];
+    for (const file of readdirSync(migrationsDir)) {
+      if (!file.endsWith('.sql')) continue;
+      const sql = readFileSync(join(migrationsDir, file), 'utf8')
+        .replace(/--[^\n]*/g, ''); // strip line comments before scanning
+      if (/check\s*\([^)]*currency[^)]*\bin\s*\(/i.test(sql)) {
+        offenders.push(file);
+      }
+    }
+    assert.deepEqual(offenders, [], `currency CHECK constraints found in: ${offenders}`);
+  });
+
+  console.log(
+    `\n[currency-catalog] ${passed} passed, ${failed} failed` +
+      (failed ? '' : ' — the catalog has exactly one source of truth'),
+  );
+  if (failed > 0) process.exit(1);
+}
+
+run().then(
+  () => rmSync(workdir, { recursive: true, force: true }),
+  (err) => {
+    rmSync(workdir, { recursive: true, force: true });
+    console.error(err);
+    process.exit(1);
+  },
+);

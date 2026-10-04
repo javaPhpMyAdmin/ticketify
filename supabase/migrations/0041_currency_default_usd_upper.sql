@@ -5,8 +5,8 @@
 -- Phase:  currency-default alignment
 -- Supersedes: 0040_currency_usd_default.sql, which set the same column's
 --   default to the LOWERCASE literal 'usd'. 0040 stays in the chain — it has
---   already run on every environment and rewriting history is not an option —
---   so this migration moves the default from 'usd' to 'USD'.
+--   landed on main prior to this branch; this migration moves the default
+--   without rewriting existing rows, so the default changes from 'usd' to 'USD'.
 --
 -- Why uppercase
 -- -------------
