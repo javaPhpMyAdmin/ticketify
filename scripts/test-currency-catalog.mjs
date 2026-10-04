@@ -377,6 +377,31 @@ async function run() {
     );
   });
 
+  await test('the checkmark and the a11y state read the SAME `selected` value', () => {
+    // The comment above `const selected` in currency.tsx promises the visual
+    // checkmark and `accessibilityState` "cannot drift apart" because both read
+    // that one value. Nothing pinned the promise, and it breaks from inside a
+    // single row: `{code === currency.toUpperCase() || selected ? <Icon
+    // name="checkmark" …/> : null}` leaves `selected` derived from the pinned
+    // predicate, so every behavioral assertion above still passes — while a
+    // stored lowercase 'usd' paints the checkmark on a row the predicate does
+    // not select, and screen readers are told the opposite. The regression
+    // returns with every behavioural pin satisfied. So pin where `selected` is
+    // CONSUMED, not only where it is derived.
+    const checkmark = /\{([^{}]*?)\?\s*\(\s*<Icon\b[^>]*\bname=["']checkmark["']/.exec(selector);
+    assert.ok(checkmark, 'the checkmark Icon must still be rendered by a ternary');
+    assert.equal(
+      checkmark[1].trim(),
+      'selected',
+      'the checkmark must be gated on `selected` alone — an inline `code === …` there re-opens the regression while every behavioural pin stays green',
+    );
+    assert.match(
+      selector,
+      /accessibilityState=\{\{\s*selected\s*\}\}/,
+      '`accessibilityState` must read the same `selected` value as the checkmark',
+    );
+  });
+
   // ── 4. create-only seeding survives a refactor ──────────────────────────
   console.log('\n[tests] profile creation seeds, never clobbers\n');
 
