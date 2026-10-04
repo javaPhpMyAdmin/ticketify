@@ -42,6 +42,16 @@
 -- NOTHING, and are removed in the same DO block — so the file is idempotent
 -- and safe to re-run, and leaves the scratch DB as it found it.
 --
+-- Cleanup runs on BOTH paths. The three fixtures are removed by one pair of
+-- deletes on the success path AND by an identical pair inside an
+-- `exception when assert_failure or others ... raise;` handler, so a run that
+-- dies mid-file cannot strand rows. That handler used to be absent: the only
+-- cleanup sat at the very end, after every assert, which a failure skips. The
+-- re-raise is load-bearing — see the block comment at the foot of the file for
+-- why `assert_failure` must be named explicitly (PL/pgSQL's `OTHERS` does not
+-- match it) and what the cleanup can and cannot achieve given subtransaction
+-- rollback.
+--
 -- Structure: the whole file is a SINGLE `DO` block (same constraint as the
 -- rest of supabase/tests/*.sql — `supabase db query --local --file` prepares
 -- the file as one statement). A failing `assert` aborts the block and fails
@@ -52,6 +62,11 @@ do $$
 declare
   v_user       uuid := 'cd000000-0000-0000-0000-00000000c5d1'; -- §2 already-chosen 'UYU' fixture
   v_user_fresh uuid := 'cd000000-0000-0000-0000-00000000c5d2'; -- §2 default-firing fixture (no currency given)
+  v_dup_id     uuid := 'cd000000-0000-0000-0000-00000000c5d3'; -- §4 duplicate-insert fixture. Declared HERE,
+                                                                    -- not inside the §4 block: the failure-path
+                                                                    -- handler at the foot of this block has to
+                                                                    -- reach all three fixture ids, and a variable
+                                                                    -- declared in the §4 block does not outlive it.
 
   v_default_expr text;
   v_default_val  text;
@@ -168,7 +183,6 @@ begin
     v_dup_23505 boolean := false;
     v_pre_cur   text;
     v_post_cur  text;
-    v_dup_id    uuid   := 'cd000000-0000-0000-0000-00000000c5d3';
   begin
     -- Seed a known row with an explicit currency
     insert into auth.users (id, email)
@@ -199,14 +213,56 @@ begin
     assert v_post_cur = v_pre_cur,
       format('a rejected duplicate insert must not change currency (pre=%s, post=%s)', v_pre_cur, coalesce(v_post_cur, 'NULL'));
 
-    -- Cleanup
-    delete from public.profiles where id = v_dup_id;
-    delete from auth.users where id = v_dup_id;
+    -- No cleanup here on purpose: §4's fixture is removed by the single
+    -- cleanup statement below, which runs on BOTH the success and the failure
+    -- path. Two cleanup sites meant one of them could be skipped by a future
+    -- edit, and the one at the end of the file was on no failure path at all.
   end;
-  -- Cleanup: leave the scratch DB exactly as we found it.
-  delete from public.profiles where id in (v_user, v_user_fresh);
-  delete from auth.users   where id in (v_user, v_user_fresh);
+
+  -- ---------------------------------------------------------------------------
+  -- Cleanup — success path
+  -- ---------------------------------------------------------------------------
+  -- Leave the scratch DB exactly as we found it. Plain deletes against the three
+  -- fixed fixture ids (no ON CONFLICT clause involved here): the inserts above
+  -- are all `on conflict do nothing`, so a row left behind by an interrupted
+  -- run is simply removed and re-running stays clean.
+  delete from public.profiles where id in (v_user, v_user_fresh, v_dup_id);
+  delete from auth.users   where id in (v_user, v_user_fresh, v_dup_id);
 
   raise notice 'currency-default smoke test passed (0041)';
+
+exception
+  -- ---------------------------------------------------------------------------
+  -- Cleanup — FAILURE path. Same two deletes, then `raise;`.
+  --
+  -- `assert_failure` is listed EXPLICITLY and is not optional: per the
+  -- PostgreSQL docs, `OTHERS` "matches every error type except QUERY_CANCELED
+  -- and ASSERT_FAILURE". Every failure this file is built to detect is a
+  -- failed `assert` (SQLSTATE P0004), so a plain `when others` would compile,
+  -- look correct, and never fire once — verified against this stack by
+  -- mutation, not by reading. `assert_failure or others` is one branch and
+  -- covers both the assertion failures and any other error the block can hit
+  -- (a missing table, a permission error).
+  --
+  -- The bare `raise;` is load-bearing in the other direction: it re-raises the
+  -- original error with its original message and SQLSTATE, so the run still
+  -- exits non-zero. Swallowing it here would turn a genuinely broken
+  -- migration into a green run.
+  --
+  -- Honest scope of what these deletes can achieve: a PL/pgSQL block with an
+  -- EXCEPTION clause runs as a subtransaction, so when an assert fires the
+  -- block's statements are already rolled back by the time this handler runs —
+  -- measured on this stack, the handler sees 0 of the rows the block inserted.
+  -- Under the `supabase db query` runner that also means these deletes are
+  -- defensive no-ops, and a pre-fix failing run of this file was verified to
+  -- leave 0 fixture rows behind. They earn their place for the case that
+  -- actually bites: someone later adding a handler that swallows the error to
+  -- "make CI green". Without the `raise;`, and with the cleanup skipped the way
+  -- it was before this change, that edit would COMMIT the fixtures.
+  ---------------------------------------------------------------------------
+  when assert_failure or others then
+    delete from public.profiles where id in (v_user, v_user_fresh, v_dup_id);
+    delete from auth.users   where id in (v_user, v_user_fresh, v_dup_id);
+    raise;
 end
 $$;
