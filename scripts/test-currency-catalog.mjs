@@ -115,6 +115,28 @@ async function run() {
     assert.deepEqual([...codes].sort(), SPEC_LIST);
   });
 
+  await test('the catalog order is pinned to the declared sequence', () => {
+    assert.deepEqual(
+      codes,
+      [
+        'ARS',
+        'BRL',
+        'CLP',
+        'COP',
+        'MXN',
+        'PEN',
+        'PYG',
+        'UYU',
+        'AUD',
+        'CAD',
+        'EUR',
+        'GBP',
+        'JPY',
+        'USD',
+      ],
+    );
+  });
+
   await test('every code resolves a non-empty symbol, never a bare fallback', () => {
     for (const code of codes) {
       const symbol = fmt.CURRENCY_SYMBOL[code];
