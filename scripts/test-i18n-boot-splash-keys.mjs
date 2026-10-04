@@ -3,15 +3,16 @@
  * Node harness for the `bootSplash` namespace i18n key set.
  *
  * Mirrors `scripts/test-i18n-onboarding-keys.mjs`: asserts three
- * contracts on the bootSplash catalogs read directly from disk
- * (`src/i18n/locales/{es-AR,en,pt-BR}/bootSplash.json`):
+ * contracts on the bootSplash catalogs (resolved via fallback chains;
+ * `es-AR` and `es-ES` are sparse overrides over `es-419`):
  *
- *   1. PARITY — the three locales have IDENTICAL key sets.
+ *   1. PARITY — all five locales have IDENTICAL key sets.
  *   2. PRESENCE — every key the splash redesign consumes exists in
  *      every locale as a non-empty value (loadingA11y, tagline,
- *      status1, status2, status3, versionBadge).
- *   3. STABLE SHAPES — status1/2/3 stay aligned with the prior Spanish
- *      boot copy so an in-place string refactor ships red.
+ *      statusLoadingFinancial, statusSyncingTickets, statusReadyToScan,
+ *      versionBadge).
+ *   3. STABLE SHAPES — the status keys stay aligned so an in-place string
+ *      refactor ships red.
  *
  * Usage: pnpm test:i18n-boot-splash-keys
  *

@@ -3,12 +3,13 @@
  * Dependency-free node harness for the in-app legal content slice
  * (legal-compliance U2, content L2/L3). Pattern: `scripts/test-legal-links.mjs`.
  *
- * The `legal` i18n namespace ships three locale catalogs
+ * The `legal` i18n namespace ships five locale catalogs
  * (`src/i18n/locales/<locale>/legal.json`, `es-419` = source of truth,
- * RESOLVED through each locale's fallback chain)
+ * RESOLVED through each locale's fallback chain; `es-AR` and `es-ES` are
+ * sparse regional overrides)
  * that define the Privacy Policy and Terms documents as section arrays.
  * The spec (legal-content REQ-2) requires: identical key sets across the
- * three catalogs and non-empty values everywhere — the parity contract that
+ * five catalogs and non-empty values everywhere — the parity contract that
  * the hosted Markdown mirrors (U3) will extend to disk files.
  *
  * Sections:

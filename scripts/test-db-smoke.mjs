@@ -8,11 +8,15 @@
  * supabase/tests/legal-acceptances.sql and
  * supabase/tests/currency-default.sql).
  *
- * This is intentionally NOT part of the `pnpm test` chain. The Node test suite
- * (test:*) is 100% dependency-free of Docker and runs anywhere. This script
- * boots the local Supabase stack (Docker required), which would break the
- * default test suite for anyone without Docker — so it lives behind its own
- * `pnpm test:sql` entry point.
+ * `test:sql` was added to the master `pnpm test` chain on purpose (commit
+ * 43f5518, 2026-09-17, "chore(test): wire delete-account.sql into test:sql + master
+ * test chain (WU-1.3)"), specifically to cover the SQL tier (notably
+ * `delete-account.sql`) as part of the `verify` CI job. The SQL smoke runner
+ * itself boots the local Supabase stack (Docker required) via
+ * `assertDocker()`, so `pnpm test` does require Docker locally when it reaches
+ * the `test:sql` segment — a real consequence for contributors without Docker.
+ * Run `pnpm test:sql` directly when iterating locally, or just run `pnpm test`
+ * and let it stop at the SQL step if Docker isn't available.
  *
  * What it does:
  *   1. Verifies the Docker daemon is reachable (fails fast with a clear message).
