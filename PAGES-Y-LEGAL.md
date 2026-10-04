@@ -11,13 +11,17 @@ Te lo divido en 3 partes: (A) habilitar Pages, (B) qué hay hoy y qué hacer con
 3. En **Branch**: elegí **`main`** y folder **`/docs`** → **Save**.
 4. Esperá ~1-2 min. Te aparece arriba del settings: **"Your site is live at https://javaPhpMyAdmin.github.io/ticketify/"**.
 
-Una vez activo, las 6 URLs quedan servidas automáticamente (Jekyll renderiza cada `.md` a HTML):
+Una vez activo, las 10 URLs quedan servidas automáticamente (Jekyll renderiza cada `.md` a HTML):
 
 ```
-https://javaPhpMyAdmin.github.io/ticketify/legal/es-AR/privacy/
-https://javaPhpMyAdmin.github.io/ticketify/legal/es-AR/terms/
 https://javaPhpMyAdmin.github.io/ticketify/legal/en/privacy/
 https://javaPhpMyAdmin.github.io/ticketify/legal/en/terms/
+https://javaPhpMyAdmin.github.io/ticketify/legal/es-419/privacy/
+https://javaPhpMyAdmin.github.io/ticketify/legal/es-419/terms/
+https://javaPhpMyAdmin.github.io/ticketify/legal/es-AR/privacy/
+https://javaPhpMyAdmin.github.io/ticketify/legal/es-AR/terms/
+https://javaPhpMyAdmin.github.io/ticketify/legal/es-ES/privacy/
+https://javaPhpMyAdmin.github.io/ticketify/legal/es-ES/terms/
 https://javaPhpMyAdmin.github.io/ticketify/legal/pt-BR/privacy/
 https://javaPhpMyAdmin.github.io/ticketify/legal/pt-BR/terms/
 ```
@@ -27,12 +31,12 @@ https://javaPhpMyAdmin.github.io/ticketify/legal/pt-BR/terms/
 Decime "Pages activo" y yo corro:
 
 ```bash
-for u in es-AR en pt-BR; do for d in privacy terms; do
+for u in en es-419 es-AR es-ES pt-BR; do for d in privacy terms; do
   echo -n "$u/$d: "; curl -sS -o /dev/null -w "%{http_code}\n" \
     "https://javaPhpMyAdmin.github.io/ticketify/legal/$u/$d/"; done; done
 ```
 
-Tiene que dar **200** en las 6. Si alguna da **404**: revisá que el folder en GitHub Pages settings sea **`/docs`** (no `/` ni `/root`) — suele ser el único punto de falla.
+Tiene que dar **200** en las 10. Si alguna da **404**: revisá que el folder en GitHub Pages settings sea **`/docs`** (no `/` ni `/root`) — suele ser el único punto de falla.
 
 ---
 
@@ -46,8 +50,8 @@ Hoy hay **texto DRAFT** en el repo, marcado como BORRADOR en cada archivo. Lo ar
 - Para salir del paso y mandar a Play Store, podés subirlo así, poner la fecha de vigencia y versionar cuando lo apruebes.
 
 ### Opción 2 (recomendada): darle el draft a un abogado
-- Los archivos viven en `docs/legal/{es-AR,en,pt-BR}/{privacy,terms}.md`.
-- También está la **fuente canónica** en `src/i18n/locales/{es-AR,en,pt-BR}/legal.json` (es-AR es la fuente; en y pt-BR son espejos).
+- Los archivos viven en `docs/legal/{en,es-419,es-AR,es-ES,pt-BR}/{privacy,terms}.md` (10 archivos).
+- La **fuente canónica** es `es-419` (`src/i18n/locales/es-419/legal.json`), no `es-AR`. `es-AR` y `es-ES` son **sparse overrides** (solo claves que divergen de `es-419`), mientras que `en` y `pt-BR` son catálogos completos. El generador resuelve el catálogo (`resolveNamespace`) para escribir los mirrors, por lo que refleja lo que ve la app (herencia incluida) — eso es determinista y lo que `test:legal-content` valida.
 - Estructura que ya cubre lo que Play/Data Safety/LGPD piden:
 
 **Privacy (8 secciones):**
@@ -92,7 +96,7 @@ Esto es lo que declaramos hoy en el draft — tiene que ser **idéntico** a lo q
 - Contactos, calendario, micrófono ❌ (el RECORD_AUDIO lo sacamos en #118)
 - Salud, navegación web, etc.
 
-Si tu abogado te cambia/agrega algo (ej. un proveedor nuevo, una categoría de datos extra), lo actualizamos en los 3 locales + regeneramos los mirrors.
+Si tu abogado te cambia/agrega algo (ej. un proveedor nuevo, una categoría de datos extra), lo actualizamos en la fuente canónica y en los catálogos afectados (es-419 + cualquier sparse override que corresponda), regeneramos los mirrors para todos los 5 locales y validamos con los tests.
 
 ---
 
@@ -102,7 +106,7 @@ El flujo es: editar catálogos → regenerar mirrors → commit.
 
 ### 1. Editar la fuente canónica
 
-Los catálogos en `src/i18n/locales/{es-AR,en,pt-BR}/legal.json` son la **fuente de verdad**. Cada sección es un array de objetos con `id`, `title`, `body`. Ejemplo:
+Los catálogos en `src/i18n/locales/{en,es-419,es-AR,es-ES,pt-BR}/legal.json` conforman el conjunto. La **fuente de verdad** es `es-419` (`src/i18n/locales/es-419/legal.json`). `es-AR` y `es-ES` son sparse overrides (solo claves que difieren de `es-419`); `en` y `pt-BR` son catálogos completos. Cada sección es un array de objetos con `id`, `title`, `body`. Ejemplo:
 
 ```json
 {
@@ -115,9 +119,9 @@ Los catálogos en `src/i18n/locales/{es-AR,en,pt-BR}/legal.json` son la **fuente
 }
 ```
 
-- **Editá primero `es-AR/legal.json`** (la fuente).
-- Después actualizá `en/legal.json` y `pt-BR/legal.json` con la traducción.
-- Mantené los mismos `id` de sección en los 3 locales (el harness `test:legal-content` rompe si falta una).
+- **Editá primero `es-419/legal.json`** (la fuente canónica).
+- Después actualizá `en/legal.json` y `pt-BR/legal.json` con la traducción. Si hay diferencias regionales (es-AR/es-ES), editá **solo** las claves que cambian en sus respectivos archivos (sparse).
+- Mantené los mismos `id` de sección entre documentos y respetá la paridad de claves que valida `test:legal-content` (rompe si falta una clave o hay desajustes entre locales).
 
 ### 2. Regenerar los mirrors en `docs/legal/`
 
@@ -127,8 +131,8 @@ Una sola línea:
 node scripts/generate-legal-markdown.mjs
 ```
 
-Esto lee los 3 catálogos y reescribe los 6 `.md` en `docs/legal/`. El harness **`test:legal-content`** corre automáticamente en `pnpm test` y verifica que:
-- los 6 mirrors existen,
+Esto lee todos los 5 catálogos (resolviendo herencias para los overrides) y reescribe los 10 `.md` en `docs/legal/`. El harness **`test:legal-content`** corre automáticamente en `pnpm test` y verifica que:
+- los mirrors existen para los 5 locales (2 docs cada uno, 10 archivos),
 - son **byte-idénticos** a una regeneración fresca (no drift),
 - contienen el texto de cada sección verbatim.
 

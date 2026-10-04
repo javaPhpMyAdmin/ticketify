@@ -89,87 +89,42 @@ It ends with a `raise notice` on success. Like the others it is a single
 `DO`/`assert` block, idempotent, and runs via `pnpm test:sql` (its step is
 registered in `scripts/test-db-smoke.mjs`) and via the CI `db-smoke` job.
 
-## `trial-freeze-guard.sql`
 
-A fail-closed smoke test for the trial-freeze security fix (migration 0035).
-Covers:
-
-1. **Catalog**: `sync_client_subscription(text)` and
-   `expire_overdue_trials()` exist, are `SECURITY DEFINER`, owned by
-   `postgres`, with least-privilege grants (no EXECUTE for anon/public,
-   EXECUTE for `authenticated` only).
-2. **Guard A (claim guard)**: a profile in an ACTIVE trial
-   (`subscription_status='trial'`, `trial_ends_at` in the future,
-   `tier='pro'`) is REJECTED when claiming `'none'` or `'expired'` with the
-   exact message `cannot change subscription status during active trial`,
-   and nothing is mutated (status, tier, and `trial_ends_at` all intact);
-   self-claiming `'trial'` stays allowed.
-3. **Guard A no-regression**: a user NOT in a trial (no `trial_ends_at`)
-   can still claim `'none'`/`'expired'` freely — the free lifecycle is
-   preserved and neither claim ever changes `tier` or writes
-   `trial_ends_at`.
-4. **Guard B (status-independent materializer)**: `expire_overdue_trials`
-   keys on the trial window (`trial_ends_at <= now()` AND `tier='pro'`)
-   instead of `subscription_status='trial'` — a pre-fix FROZEN row
-   (`status='none'`, `tier='pro'`, past `trial_ends_at`) self-heals to
-   `expired`/`free`, a classic overdue `'trial'` row still expires (0020
-   behavior preserved), and an in-window trial is untouched.
-5. **Paid-subscriber protection**: a REAL payer (`status='active'`,
-   `tier='pro'`, `ever_paid=true`) carrying a stale PAST `trial_ends_at`
-   survives `expire_overdue_trials` untouched — B can never downgrade a
-   paying user to free.
-
-It ends with a `raise notice` on success. Like the others it is a single
-`DO`/`assert` block, idempotent, and runs via `pnpm test:sql` (its step is
-registered in `scripts/test-db-smoke.mjs`) and via the CI `db-smoke` job.
 
 ## `currency-default.sql`
 
 A fail-closed smoke test for the i18n workstream's currency-default alignment
-(migration 0040). Covers:
+(migration 0041). Covers:
 
-1. **The column default**: `public.profiles.currency` declares `'usd'` — the
-   canonical **lowercase** ISO 4217 form. Asserted against the value inside the
-   rendered `pg_get_expr` output (a real catalog shows `'usd'::text`), so a
-   correct schema is not rejected over formatting. Case is load-bearing, not
-   cosmetic: the settings screen submits lowercase, and only `CURRENCY_SYMBOL`
-   in `src/lib/format.ts` upper-cases at format time.
+1. **The column default**: `public.profiles.currency` declares `'USD'` — the
+   canonical **UPPERCASE** ISO 4217 form. The test asserts case-sensitively
+   against the rendered `pg_get_expr` output (so `'USD'::text` passes) and
+   rejects any lowercase `'usd'` literal in the default expression. Case is
+   load-bearing, not cosmetic.
 2. **The default actually fires**: a profile inserted without a currency is
-   born `'usd'`, while a profile inserted WITH `'UYU'` keeps `'UYU'`. That
+   born `'USD'`, while a profile inserted WITH `'UYU'` keeps `'UYU'`. That
    second half is what proves no CHECK, normalizing rule, or trigger is
-   overriding a real user choice — confirmed by mutation (a `before insert or
-   update` trigger forcing `new.currency = 'usd'` fails this file).
+   overriding a real user choice.
 3. **Nothing else moved**: the column is still `text NOT NULL`.
 
-It seeds two fixed-UUID fixtures (`cd000000-…-c5d1/c5d2`, disjoint from every
-other smoke test's range), asserts, and deletes them inside the same `DO` block,
-so it is idempotent and leaves the scratch DB untouched — verified over three
-consecutive runs with zero residue.
+It seeds fixed-UUID fixtures (disjoint from every other smoke test's range),
+asserts, and deletes them inside the same `DO` block, so it is idempotent and
+leaves the scratch DB untouched.
 
 > **Known limitation, stated rather than papered over.** A post-migration smoke
-> test structurally cannot detect a one-time `update … set currency` backfill:
-> by the time it runs, the backfill has finished and no surviving row reveals
-> it. 0040's "declares a default, rewrites no rows" property is therefore
-> pinned by its migration header and review, **not** by this file. 0007 is the
-> migration that backfilled, and its `update` clause is right there in the
-> chain for a reviewer to see.
+> test structurally cannot detect a one-time backfill; that property is pinned
+> by the migration header and review, **not** by this file.
 
 Like the others it ends with a `raise notice` on success, is a single
 `DO`/`assert` block, and runs via `pnpm test:sql` (its step is registered in
 `scripts/test-db-smoke.mjs`) and via the CI `db-smoke` job.
 
-> **Runner drift (known, pre-existing).** This directory holds **9** `.sql`
-> files, but the two runners do not cover the same 8:
->
-> | runner | files | not run |
-> | --- | --- | --- |
-> | `pnpm test:sql` (`scripts/test-db-smoke.mjs`) | 8 | `recalculate-on-purchase-items-update.sql` |
-> | CI `db-smoke` (`.github/workflows/ci.yml`) | 8 | `delete-account.sql` |
->
-> Each runner therefore misses one file the other covers. Neither gap is
-> caused by `currency-default.sql`, which is wired into both. Left as-is here
-> rather than silently fixed: adding a test to a runner changes what CI
-> enforces, and that belongs in its own reviewed change.
+> **Runner coverage.** This directory holds **9** `.sql` files. The local runner
+> `scripts/test-db-smoke.mjs` executes all 9 SQL files (including
+> `delete-account.sql` and `recalculate-on-purchase-items-update.sql`). The CI
+> `db-smoke` job in `.github/workflows/ci.yml` executes all 9 SQL files, with
+> `delete-account.sql` added to the CI job alongside the others. Neither runner
+> omits any of the smoke tests.
 
 ## Running it locally
 
@@ -191,9 +146,11 @@ This runs `scripts/test-db-smoke.mjs`, which:
    step list. Any raised assertion fails the query and the script exits
    non-zero.
 
-> This script is deliberately **not** wired into `pnpm test`. The Node suite is
-> Docker-free; pulling the entire Supabase stack into it would break `pnpm test`
-> for anyone without Docker. Run `pnpm test:sql` separately when you have Docker.
+> `test:sql` is part of the master `pnpm test` chain so that the SQL tier is
+> covered by the `verify` CI job. The Node suite requires Docker when it reaches
+> the `test:sql` segment; run `pnpm test:sql` directly when iterating locally
+> without running the full chain, or be aware Docker is required if you run the
+> full `pnpm test`.
 
 > The first `supabase start` pulls container images and can take several minutes.
 
