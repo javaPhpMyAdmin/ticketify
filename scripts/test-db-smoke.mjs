@@ -146,6 +146,9 @@ run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'household-to
 console.log('\n== Running user-categories SQL smoke test ==\n');
 run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'user-categories.sql')]);
 
+console.log('\n== Running recalculate-on-purchase-items-update SQL smoke test ==\n');
+run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'recalculate-on-purchase-items-update.sql')]);
+
 console.log('\n== Running household-gate-tier SQL smoke test ==\n');
 run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'household-gate-tier.sql')]);
 
