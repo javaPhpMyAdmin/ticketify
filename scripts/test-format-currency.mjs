@@ -172,9 +172,10 @@ async function run() {
   });
 
   await test('formatCurrency PYG → "₲ 1.235" (LATAM, guaraní symbol, whole)', () => {
-    // `₲` is U+20B2. If a device font has no glyph for it, the symbol falls
-    // back to the CODE (`PYG 1.235`) — one-line table change, verified on
-    // device by the manual REQ-2.7 step.
+    // `₲` is U+20B2, and `CURRENCY_SYMBOL.PYG` is the unconditional literal
+    // `'₲'` — nothing here probes the device font for the glyph. The only
+    // code-as-symbol fallback (`table[upperCode] ?? rawCode`) fires solely for
+    // codes ABSENT from the table, so PYG never degrades to `PYG 1.235`.
     assert.equal(fmt.formatCurrency(1234.56, 'PYG'), '₲ 1.235');
   });
 
