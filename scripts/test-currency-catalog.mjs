@@ -198,6 +198,22 @@ async function run() {
   // Labels legitimately identical to English are whitelisted here and pinned below.
   const SHARED_TERM_WHITELIST = new Set(['EUR']);
 
+  await test('shared-term exemption is scoped to EUR alone', () => {
+    // An EXEMPTION list that can grow silently is not a guard, it is a leak.
+    // Demonstrated: add 'USD' here and revert pt-BR.USD to the English
+    // "US dollar", and both harnesses stay green — test:currency-catalog (this
+    // file) and test:i18n-catalog-parity — while a shipped locale paints an
+    // English string. Pinning EUR's three labels only proves the exemption is
+    // justified; nothing stopped the NEXT code from being exempted, and the
+    // growth is invisible in the diff of a locale file. A new entry has to be
+    // argued HERE, in a test that fails until it is.
+    assert.deepEqual(
+      [...SHARED_TERM_WHITELIST],
+      ['EUR'],
+      'the shared-term exemption must stay EUR alone: it is the one ISO code whose name is spelled identically in en, es-419 and pt-BR, so it is the only label that may match the English source legitimately',
+    );
+  });
+
   await test('anti-paste guard: pt-BR and es-419 differ from en for codes that differ legitimately', () => {
     const en = JSON.parse(
       readFileSync(join(localesDir, 'en', 'currency.json'), 'utf8'),
