@@ -44,9 +44,11 @@ shipped `currency.json` keys.
 `PEN` → `S/`, and `PYG` → `₲` (U+20B2). Where the `₲` glyph is not covered by
 the platform font, the PYG symbol MUST degrade to the code as symbol (`PYG`),
 never to a missing-glyph box. `ZERO_DECIMAL_CURRENCIES` SHALL be exported and
-SHALL contain `JPY` and `PYG`; `formatCurrency` MUST render a zero-decimal code
-as a whole amount rounded to the nearest unit and MUST NOT emit a decimal
-separator for it, regardless of the active UI locale.
+SHALL contain `CLP`, `JPY`, `PEN`, and `PYG` — every code this capability pins
+whole-amount output for in scenarios 1, 2, 3, 4 and 5 below — and no code the
+recorded scope decision excludes (`COP`, see Non-Goals); `formatCurrency` MUST
+render a zero-decimal code as a whole amount rounded to the nearest unit and
+MUST NOT emit a decimal separator for it, regardless of the active UI locale.
 
 **Given/When/Then**:
 
@@ -68,7 +70,7 @@ separator for it, regardless of the active UI locale.
 
 ### REQ-3: Region-derived default currency
 
-`detectDefaultCurrency(regionCode?)` SHALL be exported from
+`detectDefaultCurrency(languageTag?, regionCode?)` SHALL be exported from
 `src/i18n/detector.ts` as a pure function over a region code and SHALL always
 return a supported code, never `null`. Its mapping SHALL be: `AR`→`ARS`,
 `AU`→`AUD`, `BR`→`BRL`, `CA`→`CAD`, `CL`→`CLP`, `CO`→`COP`, `ES`→`EUR`,
@@ -191,7 +193,14 @@ grouping plus the zero-decimal behavior — including the JPY change from
 `¥ 1,234.56` to `¥ 1,235`. `scripts/test-detector-regional.mjs` SHALL pin every
 mapped region, the USD fallback, and the language-independence of
 `detectDefaultCurrency`. `scripts/test-i18n-catalog-parity.mjs` SHALL pin 797
-leaves. `pnpm test` and `pnpm typecheck` MUST pass.
+leaves. `scripts/test-currency-catalog.mjs` SHALL pin the single-source-of-truth
+invariants that no per-file harness can reach: that the compiled
+`SUPPORTED_CURRENCIES` holds exactly the fourteen codes above with no duplicates
+and that the three full-locale `currency` key sets equal it, that the selector
+references that set instead of declaring its own, and that the create-only seed
+(`ensureProfileCurrency` uses `.insert(`, never `.upsert(`/`.update(`) and the
+`USD` store seed hold. It SHALL NOT restate the 797 leaf count — that pin
+belongs to the parity harness alone. `pnpm test` and `pnpm typecheck` MUST pass.
 
 ## Acceptance Gates
 

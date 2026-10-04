@@ -4,7 +4,7 @@
 
 Ticketify mobile ships multilingual UI copy and locale-aware formatters across **five** locales in a base + sparse-override hierarchy: `en` (generic English), `es-419` (neutral Latin-American Spanish — the Spanish **base, source of truth, and runtime default**), `es-AR` (Rioplatense Spanish voseo override), `es-ES` (Peninsular Spanish `vosotros` override), and `pt-BR` (Brazilian Portuguese). `es-AR` and `es-ES` carry only the leaves that genuinely diverge from `es-419`; the catalog shape is specified by `locale-catalog-hierarchy`, and device-tag resolution by `spanish-regional-detection`. The capability covers device locale detection via `expo-localization`, a manual override persisted in `expo-secure-store` and surfaced through a Settings selector, CLDR `_one` / `_other` plural keys via i18next v26, and locale-aware formatters for dates, months, weekdays, time, percentages, and currency. Currency formatting follows a **hybrid policy**: the **currency code** drives the number grouping, decimals, and symbol (so `ARS`/`UYU` always render with LATAM grouping `.` thousands + `,` decimals, `USD`/`EUR` always render with international grouping `,` thousands + `.` decimals), while the **user's UI locale** drives string-based labels and any auxiliary text — `formatCurrency` is independent of `i18next.language` and takes the currency code as the formatting authority.
 
-Out of scope (recap): grammatical-gender selectors; backend strings (none exist); locales beyond the five shipped (en / es-419 / es-AR / es-ES / pt-BR); right-to-left languages; `dayjs` / `date-fns` / `Intl` adoption; server-side locale-aware RPCs; a first-run onboarding language picker; a `profiles.locale` column; changing the default currency code (`UYU` stays default regardless of UI language).
+Out of scope (recap): grammatical-gender selectors; backend strings (none exist); locales beyond the five shipped (en / es-419 / es-AR / es-ES / pt-BR); right-to-left languages; `dayjs` / `date-fns` / `Intl` adoption; server-side locale-aware RPCs; a first-run onboarding language picker; a `profiles.locale` column; changing the default currency code — the default is `USD` and stays independent of UI language (NFR-7), and the seed, the region-derived default, and the no-backfill rule are owned by `currency-universality` REQ-3 / REQ-4 / REQ-5.
 
 ## Requirements
 
@@ -50,6 +50,10 @@ The system SHALL provide a Settings selector screen (`src/app/settings/language.
 
 The system SHALL expose locale-aware formatters operating per the hybrid policy: the **currency code** drives the number grouping, decimals, and symbol (LATAM currencies `ARS`/`UYU`/`BRL`/`MXN` always render with `.` thousands + `,` decimals; international currencies `USD`/`EUR`/`GBP` always render with `,` thousands + `.` decimals), while the **user's UI locale** drives string-based labels and any auxiliary text. The formatter surface SHALL include `formatDate`, `formatShortDate`, `formatMonthFull`, `formatMonthAbbr`, `formatWeekday`, `formatRelativeDay`, `formatTime`, `formatPercent`, and `formatCurrency`. `formatCurrency(value, currencyCode)` SHALL be independent of `i18next.language` — its signature takes the currency code as the formatting authority and reads the UI locale internally only for label choices. `formatRelativeDay` SHALL produce `Hoy` / `Today` / `Hoje` for today, `Ayer` / `Yesterday` / `Ontem` for yesterday, and `formatShortDate` output otherwise. `formatTime` SHALL use `a. m.` / `p. m.` meridiem in es-AR and 24-hour notation (`14:30`) in pt-BR and en. PR 2 SHALL ship these as wrappers that accept a `locale` argument and keep legacy es-AR behavior on no-locale call sites; PR 3 SHALL consolidate into a single locale-aware implementation.
 
+(Previously: scenario 9 stated `formatCurrency(1234.56, 'ARS')` → `ARS 1.234,56`. The shipped formatter has always rendered `$ 1.234,56` (`CURRENCY_SYMBOL.ARS = '$'`) and `scripts/test-format-currency.mjs` pins that string. This delta aligns the spec with the code — no behavior change — and is required because this change touches the symbol table.)
+
+> Source: change `currency-universality` (archived 2026-10-03). Merged from delta `openspec/changes/archive/2026-10-03-currency-universality/specs/app-i18n/spec.md`.
+
 **Given/When/Then**:
 
 1. Given locale is `en` and the input date is today, When `formatRelativeDay(today)` runs, Then output is `Today`.
@@ -60,7 +64,7 @@ The system SHALL expose locale-aware formatters operating per the hybrid policy:
 6. Given locale is `pt-BR` and `'2027-02-12T14:30'`, When `formatTime` runs, Then output is `14:30`.
 7. Given currency code is `USD` and the UI locale is `es-AR`, When `formatCurrency(1234.56, 'USD')` runs, Then output is `US$ 1,234.56` (USD drives international grouping: `,` thousands + `.` decimals — the UI locale does not change the number shape).
 8. Given currency code is `USD` and the UI locale is `en`, When `formatCurrency(1234.56, 'USD')` runs, Then output is `US$ 1,234.56` (USD drives international grouping: `,` thousands + `.` decimals).
-9. Given currency code is `ARS` and the UI locale is `en`, When `formatCurrency(1234.56, 'ARS')` runs, Then output is `ARS 1.234,56` (ARS drives LATAM grouping: `.` thousands + `,` decimals, regardless of the UI locale).
+9. Given currency code is `ARS` and the UI locale is `en`, When `formatCurrency(1234.56, 'ARS')` runs, Then output is `$ 1.234,56` (ARS drives LATAM grouping: `.` thousands + `,` decimals, and the `CURRENCY_SYMBOL` entry for ARS is `$`, regardless of the UI locale).
 10. Given currency code is `UYU` and the UI locale is `pt-BR`, When `formatCurrency(1234.56, 'UYU')` runs, Then output is `$U 1.234,56` (UYU drives LATAM grouping: `.` thousands + `,` decimals).
 11. Given currency code is `BRL` and the UI locale is `en`, When `formatCurrency(1234.56, 'BRL')` runs, Then output is `R$ 1.234,56` (BRL drives LATAM grouping regardless of the UI locale).
 
@@ -98,13 +102,19 @@ The system SHALL set each screen's title via `<Stack.Screen options={{ title }} 
 
 ### REQ-8: Currency label translation (`currency.*` namespace)
 
-The system SHALL expose currency display names as i18n keys under the `currency.*` namespace, NOT as hardcoded Spanish strings. At minimum the catalog SHALL cover `UYU`, `USD`, `ARS`, `BRL`: `Peso uruguayo` / `Uruguayan peso` / `Peso uruguaio`; `Dólar estadounidense` / `US dollar` / `Dólar americano`; `Peso argentino` / `Argentine peso` / `Peso argentino`; `Real brasileño` / `Brazilian real` / `Real brasileiro`. These labels SHALL appear in `src/app/settings/currency.tsx` and any other selector that surfaces currency names.
+The system SHALL expose currency display names as i18n keys under the `currency.*` namespace, NOT as hardcoded strings, for exactly the fourteen codes in `currency-universality` REQ-1 (`ARS`, `AUD`, `BRL`, `CAD`, `CLP`, `COP`, `EUR`, `GBP`, `JPY`, `MXN`, `PEN`, `PYG`, `USD`, `UYU`). The three full locales (`en`, `es-419`, `pt-BR`) SHALL each carry all fourteen keys — including the existing `UYU` / `USD` / `ARS` / `BRL` names (`Peso uruguayo` / `Uruguayan peso` / `Peso uruguaio`; `Dólar estadounidense` / `US dollar` / `Dólar americano`; `Peso argentino` / `Argentine peso` / `Peso argentino`; `Real brasileño` / `Brazilian real` / `Real brasileiro`). `es-AR` and `es-ES` SHALL keep the namespace empty (`{}`) and inherit the Spanish base: a currency name is region-neutral catalog copy, not a formatting concern. The catalog key type SHALL derive from the shipped `currency.json` keys rather than a hand-written union. These labels SHALL appear in `src/app/settings/currency.tsx` and any other selector that surfaces currency names.
+
+(Previously: "At minimum the catalog SHALL cover `UYU`, `USD`, `ARS`, `BRL`". The four-code floor is replaced by the fourteen-code supported set; the `es-AR`/`es-ES` empty-override decision is now stated explicitly instead of being implied by the parity harness.)
+
+> Source: change `currency-universality` (archived 2026-10-03). Merged from delta `openspec/changes/archive/2026-10-03-currency-universality/specs/app-i18n/spec.md`.
 
 **Given/When/Then**:
 
-1. Given locale is `es-AR`, When the currency selector renders the UYU row, Then the label is `Peso uruguayo`.
+1. Given locale is `es-AR`, When the currency selector renders the UYU row, Then the label is `Peso uruguayo` (resolved through `es-419`, not empty).
 2. Given locale is `en`, When the currency selector renders the UYU row, Then the label is `Uruguayan peso`.
 3. Given locale is `pt-BR`, When the currency selector renders the BRL row, Then the label is `Real brasileiro`.
+4. Given locale is `es-ES` and the row is `MXN`, When the label resolves, Then it comes from `es-419` (sparse-override inheritance) and is never an empty string or a raw key.
+5. Given a supported code with no matching key in `es-419`, When the selector source is type-checked, Then `pnpm typecheck` fails rather than the row rendering a raw key at runtime.
 
 ### REQ-9: Regional second-person register (voseo / vosotros / tuteo)
 
@@ -156,6 +166,18 @@ The system SHALL provide full feature parity across all five locales for `src/ap
 2. Given `CategoryDonut` renders a UYU slice, When the chart draws the label, Then the formatted text matches `formatCurrency(value, 'UYU', locale)` exactly.
 3. Given `formatShortDate` runs for locale `en` and `'2027-02-12'`, When the output is compared to the picker internals' `formatDateES` rewrite, Then they share the same locale-keyed data source — no separate `MONTHS_*_ES` array exists in `format.ts`.
 
+### REQ-14: Currency catalog acceptance gate
+
+The catalog-parity acceptance criteria SHALL cover the extended `currency.*` namespace: the three full locales ship all fourteen keys, the two regional Spanish overrides ship `{}`, and the selector renders exactly the `currency-universality` supported set with no second hardcoded list.
+
+> Source: change `currency-universality` (archived 2026-10-03). Merged from delta `openspec/changes/archive/2026-10-03-currency-universality/specs/app-i18n/spec.md`. This is the `app-i18n`-side acceptance statement for what `currency-universality` REQ-6 and REQ-1.2 own normatively; the counts themselves are restated here because the `currency` namespace is an i18n catalog and the parity harness is an i18n gate.
+
+**Given/When/Then**:
+
+1. Given `scripts/test-i18n-catalog-parity.mjs` runs after this change, When its full-completeness check executes, Then it reports 18 namespace files and 797 leaves per full locale.
+2. Given `es-AR/currency.json` and `es-ES/currency.json`, When they are read, Then both are `{}` and `currency` is still a named member of both the `EMPTY_FILES` set and the `PENINSULAR_EMPTY_NAMESPACES` map.
+3. Given the currency selector source, When it is read, Then no second currency-code array and no hand-written `as 'currency:…' | …` union exists.
+
 ## Non-Functional Requirements
 
 ### NFR-1: Bundle size
@@ -184,7 +206,11 @@ Locale JSON files SHALL bundle via Metro. The system SHALL function offline on f
 
 ### NFR-7: Currency default and locale independence
 
-The default currency code (`UYU`) SHALL stay independent of UI language. Changing the active language SHALL NOT change the persisted default currency code, and `formatCurrency` SHALL continue to use the currency code's symbol regardless of which UI locale is active.
+The default currency code SHALL be `USD` and SHALL stay independent of UI language. Changing the active language SHALL NOT change the persisted currency, and `formatCurrency` SHALL continue to use the currency code's symbol and grouping regardless of which UI locale is active. The seed, the region-derived default, and the no-backfill rule are owned by `currency-universality` REQ-3 / REQ-4 / REQ-5.
+
+(Previously: "The default currency code (`UYU`) SHALL stay independent of UI language", with a matching Purpose out-of-scope line asserting "`UYU` stays default". Both now say `USD`, and the region-derived default is a separate capability rather than an unstated exception.)
+
+> Source: change `currency-universality` (archived 2026-10-03). Merged from delta `openspec/changes/archive/2026-10-03-currency-universality/specs/app-i18n/spec.md`.
 
 ### NFR-8: Five-locale catalog integrity
 
@@ -204,6 +230,9 @@ The Rioplatense register (`vos`, voseo conjugations) SHALL appear only in `es-AR
 5b. Unit — catalog parity (`scripts/test-i18n-catalog-parity.mjs`): five-locale file set, 18 namespaces each, sparse-override invariants, and the `es-AR`/`es-ES` leaf pins all pass.
 6. a11y: VoiceOver / TalkBack reads localized strings on `ReceiptRow`, `ItemDetail`, and `ChartLegendItem`.
 7. Plurals: `daysRemaining = 1` and `daysRemaining = 5` render correctly per locale (`Queda 1 día` / `1 day left` / `Resta 1 dia` and `Quedan 5 días` / `5 days left` / `Restam 5 dias`); `0` uses `_other`.
-8. Currency format: `formatCurrency(1234.56, 'USD')` = `US$ 1,234.56` regardless of UI locale (USD drives international grouping: `,` thousands + `.` decimals); `formatCurrency(1234.56, 'ARS')` = `ARS 1.234,56` regardless of UI locale (ARS drives LATAM grouping: `.` thousands + `,` decimals); `formatCurrency(1234.56, 'BRL')` = `R$ 1.234,56` regardless of UI locale.
+8. Currency format: `formatCurrency(1234.56, 'USD')` = `US$ 1,234.56` regardless of UI locale (USD drives international grouping: `,` thousands + `.` decimals); `formatCurrency(1234.56, 'ARS')` = `$ 1.234,56` regardless of UI locale (ARS drives LATAM grouping: `.` thousands + `,` decimals); `formatCurrency(1234.56, 'BRL')` = `R$ 1.234,56` regardless of UI locale.
 9. Boot: cold start in each locale shows localized labels on the first frame — no raw-key flash.
 10. Out-of-scope guarantees: `Intl.*`, `i18next-icu`, `dayjs`, `date-fns`, `_zero` plural keys, and a first-run language picker SHALL NOT appear in the codebase after this change.
+11. Currency catalog: the three full locales each ship all fourteen `currency.*` keys, `es-AR` / `es-ES` ship `{}` for that namespace, and the selector renders exactly the `currency-universality` supported set (no second hardcoded list).
+
+> Gates 8 and 11: change `currency-universality` (archived 2026-10-03). Gate 8 was corrected to the shipped `$ 1.234,56`; gate 11 is new. No existing gate was renumbered.
