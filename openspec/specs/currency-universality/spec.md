@@ -75,10 +75,14 @@ MUST NOT emit a decimal separator for it, regardless of the active UI locale.
    under `en`, Then both outputs are identical (no locale branch).
 7. Given the app bundles no font asset, When the platform-resolved font that
    paints `formatCurrency` output is checked for U+20B2 coverage, Then the glyph
-   is present — read from the shipped platform font's `cmap`, so a reader can
-   verify it without a physical device. Font files change across OS versions, so
-   this check SHALL be repeated whenever the platform font changes instead of
-   being assumed to hold forever.
+   is present. Coverage SHALL be verified programmatically through the platform's
+   glyph-resolution API — for iOS, use CoreText (e.g. `CTFontGetGlyphsForCharacters`
+   against the system font); for Android, verify via the render/test artifact used
+   to validate the symbol. Scanning standalone font `.ttf` files is NOT a valid
+   probe on iOS, because the system font is not a loose file in the runtime's
+   font tree and a cmap scan yields false negatives. Font files change across OS
+   versions, so this check SHALL be repeated whenever the platform font changes
+   instead of being assumed to hold forever.
 
 ### REQ-3: Region-derived default currency
 
