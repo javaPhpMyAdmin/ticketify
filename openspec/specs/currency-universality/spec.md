@@ -41,9 +41,17 @@ shipped `currency.json` keys.
 ### REQ-2: Complete symbol table and zero-decimal minor units
 
 `CURRENCY_SYMBOL` SHALL cover all fourteen supported codes, adding `CLP` → `$`,
-`PEN` → `S/`, and `PYG` → `₲` (U+20B2). Where the `₲` glyph is not covered by
-the platform font, the PYG symbol MUST degrade to the code as symbol (`PYG`),
-never to a missing-glyph box. `ZERO_DECIMAL_CURRENCIES` SHALL be exported and
+`PEN` → `S/`, and `PYG` → `₲` (U+20B2) unconditionally. No runtime code-as-symbol
+fallback for `₲` exists and none SHALL be introduced: the app bundles no font
+asset, so the symbol is painted by the platform-resolved font, and neither
+supported platform exposes a glyph-availability signal at runtime — a fallback
+would push the branch into the view layer and make `formatCurrency`
+environment-dependent instead of pure. Platform coverage of U+20B2 is an
+acceptance-time verification (scenario 7) that SHALL be repeated whenever the
+platform font changes rather than assumed to hold; a platform found without
+coverage is handled by scenario 5's same-change rule, where the
+`CURRENCY_SYMBOL` entry and the `scripts/test-format-currency.mjs` pin that
+asserts it move together. `ZERO_DECIMAL_CURRENCIES` SHALL be exported and
 SHALL contain `CLP`, `JPY`, `PEN`, and `PYG` — every code this capability pins
 whole-amount output for in scenarios 1, 2, 3, 4 and 5 below — and no code the
 recorded scope decision excludes (`COP`, see Non-Goals); `formatCurrency` MUST
@@ -65,8 +73,16 @@ MUST NOT emit a decimal separator for it, regardless of the active UI locale.
    `scripts/test-format-currency.mjs` pin MUST be updated in the same change.
 6. Given a zero-decimal code, When `formatCurrency` runs under `es-419` and
    under `en`, Then both outputs are identical (no locale branch).
-7. Given a device font with no U+20B2 coverage, When the PYG symbol renders,
-   Then it reads `PYG` (code-as-symbol fallback), never an empty glyph.
+7. Given the app bundles no font asset, When the platform-resolved font that
+   paints `formatCurrency` output is checked for U+20B2 coverage, Then the glyph
+   is present. Coverage SHALL be verified programmatically through the platform's
+   glyph-resolution API — for iOS, use CoreText (e.g. `CTFontGetGlyphsForCharacters`
+   against the system font); for Android, verify via the render/test artifact used
+   to validate the symbol. Scanning standalone font `.ttf` files is NOT a valid
+   probe on iOS, because the system font is not a loose file in the runtime's
+   font tree and a cmap scan yields false negatives. Font files change across OS
+   versions, so this check SHALL be repeated whenever the platform font changes
+   instead of being assumed to hold forever.
 
 ### REQ-3: Region-derived default currency
 

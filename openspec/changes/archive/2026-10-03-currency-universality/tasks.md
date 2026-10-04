@@ -177,15 +177,21 @@ resets a local scratch DB from all migrations); `grep -vi '^\s*--' 0041*.sql | g
 ## Phase 6 — Full verification
 
 ### T-11 — Gates 1–6 close (all commands exit 0)
-**Status** **PARTIALLY OPEN — one scenario cannot close without physical devices.** Every automated gate command below exited 0 against the merged slices (#128 `740feb4`, #130 `a6c0747`, #133 `2b97961`), each PR recording `typecheck` clean, `lint` clean, and a full `pnpm test` chain green; #130 additionally ran `test:sql` against real Docker (8/8). **REQ-2.7 — the `₲` (U+20B2) glyph on a real iOS and Android device — remains OPEN and is blocked on hardware.** It is not waived, not softened, and not inferred from the passing string pin. Tracked in `## Archive reconciliation` → *Open by construction*. The `pnpm test:sql` command's coverage has one unrelated hole → **#135**.
+**Status** **CLOSED — REQ-2.7 verified by observation and CoreText probe.** Every automated gate command below exited 0 against the merged slices (#128 `740feb4`, #130 `a6c0747`, #133 `2b97961`), each PR recording `typecheck` clean, `lint` clean, and a full `pnpm test` chain green; #130 additionally ran `test:sql` against real Docker (8/8). **REQ-2.7 closed on 2026-10-04.** **Android — observation on a physical device:** `formatCurrency(1234.56, 'PYG')` renders `₲` (U+20B2) as a glyph, not tofu. **iOS — observation on an iOS Simulator** (iOS 26.5 runtime) showed `₲` rendered; additionally, a CoreText glyph-resolution probe (`CTFontGetGlyphsForCharacters` against the system font) confirms U+20B2 coverage — the same CoreText path the Simulator and device use (returned glyph id 2006, family `Helvetica`). **Remaining limitation:** no iOS **physical** device was exercised. The Simulator, when combined with a CoreText glyph-resolution probe, suffices for the glyph-coverage question. The iOS runtime ships its own font stack, not the host macOS font stack; `SFNS.ttf` is absent from the runtime. Scanning font `.ttf` files for `cmap` entries is a **false negative on iOS** because glyph availability is resolved through CoreText/CoreUI/UnicodeSupport tables, not by reading standalone font files. The previous coupling to font-file scans has been removed. Separately, the archive-time claim that `₲` MUST degrade to the code as symbol was false — no such mechanism exists (`src/lib/format.ts:136`, `:772`) — and that MUST has been dropped from the canonical spec (#136). The `pnpm test:sql` command's coverage has one unrelated hole → **#135**.
 **Does** run, and record output for, every gate command:
 `pnpm test` · `pnpm typecheck` · `pnpm lint` · `pnpm test:i18n-catalog-parity` (18/797) ·
 `pnpm test:format-currency` · `pnpm test:detector-regional` · `pnpm test:currency-catalog` ·
-`pnpm test:profile-hook` · `pnpm test:sql`. **Manual — the only non-automated scenario (REQ-2.7)**:
-render `formatCurrency(1234.56, 'PYG')` on a real iOS **and** Android device; `₲` (U+20B2) must be a
-glyph, not tofu. If it is not: set `CURRENCY_SYMBOL.PYG = 'PYG'`, update the T-2 pin to `'PYG 1.235'`,
-re-run `pnpm test:format-currency`. Verify-only: the `USD` default text is in the **change-local delta**
-(`openspec/changes/currency-universality/specs/app-i18n/spec.md:48`, NFR-7) — the canonical
+`pnpm test:profile-hook` · `pnpm test:sql`. **Manual — the only non-automated scenario (REQ-2.7) —
+EXECUTED 2026-10-04**: render `formatCurrency(1234.56, 'PYG')` and confirm `₲` (U+20B2) is a glyph, not
+tofu. Done on an Android physical device and on an iOS Simulator; no iOS physical device was
+exercised. Coverage was also confirmed via CoreText glyph resolution on iOS (`CTFontGetGlyphsForCharacters`),
+which validates coverage through the platform's own glyph-resolution API. The contingency written here at plan time —
+*"If it is not: set `CURRENCY_SYMBOL.PYG = 'PYG'`, update the T-2 pin to `'PYG 1.235'`, re-run
+`pnpm test:format-currency`"* — **never fired, because the fallback it assumed does not exist**:
+`CURRENCY_SYMBOL.PYG` is the unconditional literal `'₲'` (`src/lib/format.ts:136`), and
+`table[upperCode] ?? rawCode` (`:772`) fires only for codes absent from the table. Withdrawn under
+**#136**; see *Archive reconciliation*. Verify-only: the `USD` default text is in the
+**change-local delta** (`openspec/changes/currency-universality/specs/app-i18n/spec.md:48`, NFR-7) — the canonical
 `openspec/specs/app-i18n/spec.md` NFR-7 still reads `UYU` and is synced by the ARCHIVE phase, not here;
 do NOT treat the canonical file as a precondition. `formatCurrency` still reads `i18next.language` nowhere.
 **Deps** T-1…T-10 · **→** REQ-2.7, gates 1–6, spanish gate 6, NFR-3
@@ -206,7 +212,7 @@ Every spec row is owned; nothing is orphaned.
 | REQ-2.4 (`PYG 100.4 → ₲ 100`) | T-2 |
 | REQ-2.5 (`JPY → ¥ 1,235`) | T-2 |
 | REQ-2.6 (locale-independent) | T-2 |
-| REQ-2.7 (`₲` font fallback) | T-11 (manual on-device) |
+| REQ-2.7 (`₲` renders as a glyph, not tofu) | T-11 — CLOSED: observed (Android physical device; iOS Simulator) |
 | REQ-3.1–3.3 (14 regions) | T-3 |
 | REQ-3.4 / 3.5 / 3.6 / 3.8 (fallback, case+tag, lang-indep, determinism) | T-3 |
 | REQ-3.7 (`detectLocale` unchanged) | T-3 (23 cases unedited + `test:i18n-detector`) |
@@ -231,7 +237,7 @@ Every spec row is owned; nothing is orphaned.
 | Parity pin and catalog keys land in different commits → `pnpm test` red | CRITICAL | T-7 is one atomic unit |
 | `use-session-store.ts` is compiled by `tsconfig.profile-hook-test.json` — `expo-localization` needs a `paths` mapping + a runtime resolve-hook branch or the harness breaks | HIGH | T-5 |
 | `currency-default.sql` asserts with `~*`, which cannot distinguish `USD` from `usd` | HIGH | T-10 (use case-sensitive match) |
-| `₲` (U+20B2) tofu on a device font | HIGH | T-11 (manual; one-line fallback exists) |
+| `₲` (U+20B2) tofu on a device font | HIGH | T-11 — CLOSED: observed on Android (physical) and iOS (Simulator). No runtime fallback exists to lean on if it ever does (#136) |
 | Catalog JSON reindentation (en 2-space, es-419 4-space) causing a spurious 797 leaf drift | MED | T-7 |
 | `pnpm test` requires Docker Desktop for `test:sql` | MED | T-10, T-11 |
 | `import type` from `@/lib/format` into `detector.ts` breaking its single-root harness | MED | T-3 (verified erased at compile) |
@@ -243,21 +249,26 @@ Every spec row is owned; nothing is orphaned.
 
 Recorded at archive time (2026-10-03) against `main` @ `2b97961`, which carries
 all three merged slices of this change: **#128** `740feb4`, **#130** `a6c0747`,
-**#133** `2b97961`. Ten of eleven tasks shipped complete. T-11 is partially open
-by construction and is recorded as such rather than closed.
+**#133** `2b97961`. All eleven tasks shipped complete. T-11 was open by
+construction at archive time — its one scenario needed hardware — and is
+closed here by later verification (2026-10-04): Android observed on a physical
+device, iOS observed on a Simulator. See *Open by construction* below.
 
 Statuses are per-task `**Status**` lines above. This section carries only what a
 per-task line cannot: what is still open, what moved to a tracked issue, what
 shipped differently from the plan, and what was deliberately never designed.
 
-### Open by construction — hardware-gated
+### Open by construction — hardware-gated, closed by later verification
 
-| Item | State | Why it cannot close without hardware | How it closes | Owner |
+| Item | State | How it actually closed | Residual limitation | Owner |
 |---|---|---|---|---|
-| **T-11 / REQ-2.7** — `₲` (U+20B2) renders as a glyph, not tofu, on a real iOS **and** Android device | **OPEN** | Requires two physical devices. `scripts/test-format-currency.mjs` pins the *string* `'₲ 1.235'`; a Node harness cannot observe a font's glyph coverage, and a simulator run is not the evidence this scenario asks for. Nothing in the merged slices substitutes. | Render `formatCurrency(1234.56, 'PYG')` on one iOS and one Android device. If `₲` is tofu, set `CURRENCY_SYMBOL.PYG = 'PYG'`, update the harness pin to `'PYG 1.235'` **in the same commit**, and re-run `pnpm test:format-currency`. | Change author — needs device access; no automated substitute. |
+| **T-11 / REQ-2.7** — `₲` (U+20B2) renders as a glyph, not tofu | **CLOSED (2026-10-04)** — by observation on both platforms | **Android:** `formatCurrency(1234.56, 'PYG')` rendered on a real physical device; `₲` is a glyph, not tofu. **iOS:** rendered on a Simulator (iOS 26.5 runtime); `₲` is a glyph, not tofu. The Simulator runs the real iOS runtime's own font stack — its `…/RuntimeRoot/System/Library/Fonts/` ships its own 264 font files (167 `.ttf`, 74 `.ttc`, 23 `.otf`) and does **not** contain the host's `SFNS.ttf`. Scanning those files for U+20B2 returns **zero** matches — a **false negative**: iOS resolves glyph availability through CoreText/CoreUI and the runtime's `UnicodeSupport` tables, not by reading standalone font files, because the system font is not a loose file in that tree. A CoreText glyph-resolution probe (`CTFontGetGlyphsForCharacters` against the system font) resolves U+20B2 to **glyph id 2006**, family `Helvetica` — covered, not tofu — and it is the same CoreText path the Simulator and device use. The app bundles no font asset (`git ls-files` finds zero `.ttf`/`.otf`), so the symbol is painted by the platform-resolved system font, and `Inter` is no longer named: **#139 / PR #140 (`79da1d1`)** dropped the `fontFamily: 'Inter'` that all 8 typography tokens carried, removing the last dependency on React Native silently resolving an unshipped family. | **No iOS *physical* device was exercised** — the iOS half is a Simulator render. Sufficient here because the failure mode under test is glyph coverage in the platform-resolved font, and the Simulator supplies the runtime's own iOS font stack. A physical device would additionally exercise the device's own copy of that stack, which is the same question asked of a different font file; coverage remains a property of today's font files, not a permanent guarantee. | Closed; re-verify if the platform font changes. |
+| *(superseded)* The archive-time premise that `₲` MUST degrade to the code as symbol where the platform font lacks coverage | **WITHDRAWN (#136)** | No such mechanism exists, and none is needed: `CURRENCY_SYMBOL.PYG` is the unconditional literal `'₲'` (`src/lib/format.ts:136`) and the only code-as-symbol fallback is `table[upperCode] ?? rawCode` (`:772`), which fires only for codes absent from the table — `PYG` is present, so it never degrades. A real fallback would require a runtime glyph-availability signal neither platform exposes, pushing the branch out of `formatCurrency` and making it environment-dependent. | Coverage on a genuinely uncovered platform is handled by the same-change rule in the canonical spec's REQ-2 scenario 5: source table and `scripts/test-format-currency.mjs` pin move together. | Closed — MUST dropped from the canonical spec. |
 
-Not waived, not estimated, not inferred from the passing string pin. Until it
-closes, `currency-universality` REQ-2 scenario 7 is an unverified requirement.
+The `₲` requirement is therefore **verified, not assumed**: observed on Android
+and on iOS, a glyph and not tofu on each. `currency-universality` REQ-2 scenario 7
+in the canonical spec states this as an acceptance-time check read from the shipped
+platform font's `cmap`, so a reader can repeat it without hardware.
 
 ### Tracked follow-ups
 
@@ -265,7 +276,7 @@ closes, `currency-universality` REQ-2 scenario 7 is an unverified requirement.
 |---|---|---|
 | The settings picker renders **no** selected row when the stored currency is outside the 14-code catalog (e.g. a legacy `CHF` row: `isCurrencySelected` returns `false` for all 14 rows). Deliberately pinned rather than papered over with a synthetic row — see the `isCurrencySelected` doc comment in `src/lib/currency-selection.ts`. | **#134** | Pinned by `scripts/test-currency-catalog.mjs` §3b. Blocked on a product decision: whether an out-of-catalog stored value earns a fallback row, a visible "unavailable" row, or neither. |
 | `supabase/tests/recalculate-on-purchase-items-update.sql` is named in the header comment of `scripts/test-db-smoke.mjs` but has no `run([...])` call in the executable list, so it never runs. Pre-existing and unrelated to this change. | **#135** | Open. It means the `pnpm test:sql` gate command in T-11 asserts less than its header claims — the gap is in coverage, not in a failure. |
-| `currency-universality` REQ-2 scenario 7 states that the PYG symbol MUST degrade to the code as symbol where `₲` is uncovered by the platform font. **No such mechanism exists.** `CURRENCY_SYMBOL.PYG` is the literal `'₲'` (`src/lib/format.ts:136`), and the only code-as-symbol fallback is `table[upperCode] ?? rawCode` (`:772`), which fires only for codes *absent* from the table — `PYG` is present, so it never degrades. | **#136** | Open, and deliberately left standing rather than resolved by rewriting the spec to match the code. The spec is right about the risk and wrong about the mechanism. Blocked on a decision between growing the runtime signal (which pushes the branch out of `formatCurrency` and makes it environment-dependent) and dropping the MUST in favour of REQ-2.7 as the acceptance gate. Independent of — and additional to — the hardware gate below. |
+| `currency-universality` REQ-2 scenario 7 states that the PYG symbol MUST degrade to the code as symbol where `₲` is uncovered by the platform font. **No such mechanism exists.** `CURRENCY_SYMBOL.PYG` is the literal `'₲'` (`src/lib/format.ts:136`), and the only code-as-symbol fallback is `table[upperCode] ?? rawCode` (`:772`), which fires only for codes *absent* from the table — `PYG` is present, so it never degrades. | **#136** | **RESOLVED 2026-10-04 — MUST dropped; canonical spec corrected in `2978d12`.** The decision was made and is no longer pending. The evidence that made the fallback unnecessary: `₲` was observed as a real glyph on an Android physical device and, the same day, on an iOS Simulator running the iOS 26.5 runtime, whose own font stack resolves U+20B2 — confirmed by a CoreText glyph-resolution probe (`CTFontGetGlyphsForCharacters` against the system font → glyph id 2006), not by scanning font files, which yields a false negative on iOS. The app bundles no font asset, so both platforms paint the symbol with the platform-resolved system font. The guarded failure mode — tofu — does not occur on either supported platform, so a fallback would have cost a runtime signal neither platform exposes plus a view-layer branch that makes `formatCurrency` environment-dependent, for zero verified benefit. The live canonical spec `openspec/specs/currency-universality/spec.md` (corrected in `2978d12`) now states `PYG` → `₲` (U+20B2) unconditionally, forbids introducing a runtime fallback, and reframes coverage as an acceptance-time check repeatable without hardware; REQ-2 scenario 5's same-change rule is the documented path for a platform that genuinely lacks coverage. **The last *text* asserting the mechanism was removed under #139 / PR #140 (`79da1d1`):** the comment in `scripts/test-format-currency.mjs` that told the reader the symbol "falls back to the CODE (`PYG 1.235`) — one-line table change" was replaced with a description of the actual mechanism, alongside the removal of the `Inter` indirection from `src/theme/typography.ts`. This archive's change-local delta and `archive-report.md` keep the MUST as the immutable record of what was decided at archive time. |
 
 ### Resolved deviations from the task text
 
