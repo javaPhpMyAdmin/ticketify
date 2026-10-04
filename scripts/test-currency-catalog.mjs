@@ -183,60 +183,18 @@ async function run() {
       assert.deepEqual(json, {}, `${locale}/currency.json must stay an empty override`);
     }
   });
-  // ── 2b. locale label content pins and anti-paste guard ────────────────
+  // ── 2b. locale label content — anti-paste guard and the shared-term pin ─
   console.log('\n[tests] locale label content is correct (no English paste)\n');
 
-  const ptBRPinned = {
-    UYU: 'Peso uruguaio',
-    USD: 'Dólar americano',
-    ARS: 'Peso argentino',
-    BRL: 'Real brasileiro',
-    AUD: 'Dólar australiano',
-    CAD: 'Dólar canadense',
-    CLP: 'Peso chileno',
-    COP: 'Peso colombiano',
-    EUR: 'Euro',
-    GBP: 'Libra esterlina',
-    JPY: 'Iene japonês',
-    MXN: 'Peso mexicano',
-    PEN: 'Sol peruano',
-    PYG: 'Guarani',
-  };
-  const es419Pinned = {
-    UYU: 'Peso uruguayo',
-    USD: 'Dólar estadounidense',
-    ARS: 'Peso argentino',
-    BRL: 'Real brasileño',
-    AUD: 'Dólar australiano',
-    CAD: 'Dólar canadiense',
-    CLP: 'Peso chileno',
-    COP: 'Peso colombiano',
-    EUR: 'Euro',
-    GBP: 'Libra esterlina',
-    JPY: 'Yen japonés',
-    MXN: 'Peso mexicano',
-    PEN: 'Sol peruano',
-    PYG: 'Guaraní paraguayo',
-  };
-  const enPinned = {
-    UYU: 'Uruguayan peso',
-    USD: 'US dollar',
-    ARS: 'Argentine peso',
-    BRL: 'Brazilian real',
-    AUD: 'Australian dollar',
-    CAD: 'Canadian dollar',
-    CLP: 'Chilean peso',
-    COP: 'Colombian peso',
-    EUR: 'Euro',
-    GBP: 'British pound sterling',
-    JPY: 'Japanese yen',
-    MXN: 'Mexican peso',
-    PEN: 'Peruvian sol',
-    PYG: 'Paraguayan guaraní',
-  };
-
-
-
+  // The three per-locale label tables that used to sit here (42 duplicated
+  // strings) are GONE, and their absence is the point: they were a second
+  // copy of the shipped `currency.json` files that had to be hand-updated in
+  // lockstep, and had already drifted. Label content is now read from the
+  // shipped files and compared cross-file, so a locale edit cannot leave a
+  // stale copy behind asserting the old value. What is still pinned here is
+  // what a cross-file comparison cannot express: that the two locales which
+  // legitimately share a term with en say so EXPLICITLY.
+  //
   // Labels legitimately identical to English are whitelisted here and pinned below.
   const SHARED_TERM_WHITELIST = new Set(['EUR']);
 
