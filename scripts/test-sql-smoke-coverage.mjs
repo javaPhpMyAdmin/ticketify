@@ -7,7 +7,7 @@
  * The `db-smoke` job (`.github/workflows/ci.yml`) and the local harness
  * (`scripts/test-db-smoke.mjs`) each hardcode their own list of files from
  * `supabase/tests/`. Two hardcoded lists and nothing that compares them was the
- * exact gap this change exists to close: commit 43f5518 re-added `test:sql` to
+ * exact gap this change exists to close: commit 43f5518 added `test:sql` to
  * the master chain because `delete-account.sql` was on disk and in the local
  * harness but missing from `db-smoke`, and the only reason that was ever
  * visible was a human reading two YAML/`run(...)` lists side by side. Drop a

@@ -223,4 +223,4 @@ A frozen-lockfile install, `tsc --noEmit` clean, `expo lint` with zero errors, e
 - No dependency audit.
 - No EAS build check.
 
-One asymmetry worth knowing: the local SQL harness applies a platform-grant overlay, so it asserts the same contracts as CI against a different privilege baseline. That asymmetry is why `test:sql` stays out of the master chain. See `supabase/tests/README.md:136-142`.
+One asymmetry worth knowing: the local SQL harness applies a platform-grant overlay, so it asserts the same contracts as CI against a different privilege baseline. That asymmetry is why `test:sql` stays out of the master chain. See the *Do not re-add `test:sql` to the master chain* note in `supabase/tests/README.md`.
