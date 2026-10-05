@@ -53,7 +53,11 @@
  * that revokes table-level grants would be masked by this overlay; keep
  * asserting at the RLS/routine level, not on raw table grants.
  *
- * Requirements: Docker daemon running + the Supabase CLI (`supabase`) on PATH.
+ * Requirements: Docker daemon running + the Supabase CLI, which is a
+ * project-local devDependency at `node_modules/.bin/supabase` and is NOT on your
+ * shell PATH. The bare `supabase` spawn in `run()` below resolves only because
+ * `pnpm run` prepends `node_modules/.bin`, so invoke this harness as
+ * `pnpm test:sql` — `node scripts/test-db-smoke.mjs` fails with ENOENT.
  *
  * Run: pnpm test:sql   (or `pnpm test:all` for the Node + SQL tiers together)
  */
