@@ -119,12 +119,27 @@ Like the others it ends with a `raise notice` on success, is a single
 `DO`/`assert` block, and runs via `pnpm test:sql` (its step is registered in
 `scripts/test-db-smoke.mjs`) and via the CI `db-smoke` job.
 
-> **Runner coverage.** This directory holds **9** `.sql` files. The local runner
-> `scripts/test-db-smoke.mjs` executes all 9 SQL files (including
-> `delete-account.sql` and `recalculate-on-purchase-items-update.sql`). The CI
-> `db-smoke` job in `.github/workflows/ci.yml` executes all 9 SQL files, with
-> `delete-account.sql` added to the CI job alongside the others. Neither runner
-> omits any of the smoke tests.
+> **Runner coverage.** Both runners execute **every** `.sql` file in this
+> directory; there is no partial runner left to reconcile. No count is written
+> here on purpose — a tenth file would falsify any numeral below without
+> falsifying the build. `scripts/test-sql-smoke-coverage.mjs` (wired into the
+> master `pnpm test` chain) reads the disk and both runners and fails if any
+> file here is missing from either, if either names a file that does not exist,
+> or if the two runners disagree with each other.
+
+> | Runner | SQL files run | Entry point |
+> |--------|---------------|-------------|
+> | Local harness | all of them | `pnpm test:sql` (`scripts/test-db-smoke.mjs`) |
+> | CI `db-smoke` job | all of them | `.github/workflows/ci.yml` (own `supabase start` + `db reset`, one `db query` step per file) |
+> | CI `verify` job | none | runs `pnpm test`, which no longer includes `test:sql` |
+
+> The `verify` job executing none of these files is intentional, not a gap: the
+> SQL tier is owned solely by `db-smoke`, so no runner is left that omits a smoke
+> test. The two
+> runners are not interchangeable — the local harness additionally applies a
+> platform-grant overlay for older CLI versions whose `db reset` boots with
+> truncated privileges, so it asserts the same contracts against a different
+> privilege baseline than CI does.
 
 ## Running it locally
 
@@ -141,23 +156,43 @@ This runs `scripts/test-db-smoke.mjs`, which:
    `supabase/migrations/` to a scratch DB.
 3. `supabase db reset --local` — deterministically rebuilds the catalog from
    scratch so the smoke test sees exactly what the migrations declare.
-4. `supabase db query --local --file <file>` — runs each smoke test,
+4. Re-applies the platform's table/sequence grants — a regression guard for CLI
+   versions whose `db reset` boots with truncated default privileges. CI pins
+   CLI 2.116.0 and does not need this step; see the overlay note in
+   `scripts/test-db-smoke.mjs`.
+5. `supabase db query --local --file <file>` — runs each smoke test,
    `currency-default.sql` last. See `scripts/test-db-smoke.mjs` for the exact
    step list. Any raised assertion fails the query and the script exits
    non-zero.
 
-> `test:sql` is part of the master `pnpm test` chain so that the SQL tier is
-> covered by the `verify` CI job. The Node suite requires Docker when it reaches
-> the `test:sql` segment; run `pnpm test:sql` directly when iterating locally
-> without running the full chain, or be aware Docker is required if you run the
-> full `pnpm test`.
+> **Three entry points, three tiers.** `pnpm test` runs the Node suite only and
+> is Docker-free in CI — it never boots Supabase. `pnpm test:sql` runs the SQL
+> tier alone and is the only local command that needs Docker. `pnpm test:all`
+> runs both, in that order. In CI the SQL tier is owned solely by the
+> `db-smoke` job; `verify` runs `pnpm test` and covers none of these files.
+> Do not re-add `test:sql` to the master chain: that was a temporary
+> workaround (commit 43f5518) to get `delete-account.sql` into CI while it was
+> missing from `db-smoke`, and that gap is now closed — `scripts/test-sql-smoke-coverage.mjs`
+> fails the build if a file on disk is missing from either runner.
+>
+> **The one networked Node step.** "Docker-free" is absolute for CI, not for a
+> developer with a local stack running: `scripts/test-legal-consent.mjs` §7
+> performs a live PostgREST fetch, gated behind `TEST_LIVE_SUPABASE_URL` and
+> `TEST_LIVE_SUPABASE_ANON_KEY` (export them from `supabase status -o env`).
+> Unset — as CI leaves them — that step prints a skip line and the suite is
+> fully offline.
 
 > The first `supabase start` pulls container images and can take several minutes.
 
 ## Running it in CI
 
-GitHub Actions runs the same steps in a dedicated `db-smoke` job
-(`.github/workflows/ci.yml`): `supabase/setup-cli@v1` installs the CLI, then
-`supabase start` (Postgres only) + `supabase db reset --local` build the
-catalog, then one `supabase db query --local -f <file>` step PER smoke test executes
-them and fails the build on any assertion failure.
+The `db-smoke` job (`.github/workflows/ci.yml`) is the sole owner of the SQL
+tier in CI — the `verify` job does not run any of these files. It is
+self-sufficient rather than a wrapper around the local harness:
+`supabase/setup-cli@v1` installs CLI 2.116.0, then `supabase start` (Postgres
+only) + `supabase db reset --local` build the catalog, then one
+`supabase db query --local --file <file>` step PER smoke test executes them and
+fails the build on any assertion failure. It does NOT invoke
+`scripts/test-db-smoke.mjs` and does NOT apply the local harness's
+platform-grant overlay — the pinned CLI's boot already grants the platform
+defaults.

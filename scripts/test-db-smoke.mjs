@@ -4,19 +4,31 @@
  * supabase/tests/recalculate-on-purchase-items-update.sql,
  * supabase/tests/household-gate-tier.sql,
  * supabase/tests/trial-cutover.sql,
- * supabase/tests/delete-account.sql,
- * supabase/tests/legal-acceptances.sql and
+ * supabase/tests/legal-acceptances.sql,
+ * supabase/tests/delete-account.sql and
  * supabase/tests/currency-default.sql).
  *
- * `test:sql` was added to the master `pnpm test` chain on purpose (commit
- * 43f5518, 2026-09-17, "chore(test): wire delete-account.sql into test:sql + master
- * test chain (WU-1.3)"), specifically to cover the SQL tier (notably
- * `delete-account.sql`) as part of the `verify` CI job. The SQL smoke runner
- * itself boots the local Supabase stack (Docker required) via
- * `assertDocker()`, so `pnpm test` does require Docker locally when it reaches
- * the `test:sql` segment — a real consequence for contributors without Docker.
- * Run `pnpm test:sql` directly when iterating locally, or just run `pnpm test`
- * and let it stop at the SQL step if Docker isn't available.
+ * `test:sql` is intentionally NOT part of the master `pnpm test` chain. The
+ * Node `test:*` suite needs no Docker and runs anywhere; this script boots the
+ * local Supabase stack, so it lives behind its own entry point. Run
+ * `pnpm test:all` for both tiers. (One caveat on "needs no Docker": every Node
+ * harness except one stays offline, but `scripts/test-legal-consent.mjs` §7
+ * performs a live PostgREST fetch when TEST_LIVE_SUPABASE_URL and
+ * TEST_LIVE_SUPABASE_ANON_KEY are exported. CI sets neither, so CI is
+ * Docker-free; a developer with a local stack running and those two vars
+ * exported gets a network call too.)
+ *
+ * CI ownership: the `db-smoke` job (`.github/workflows/ci.yml`) is the sole
+ * owner of the SQL tier. It is self-sufficient: it pins CLI 2.116.0, runs its
+ * own `supabase start` and `db reset --local`, then executes each file with its
+ * own `db query` step. This harness is the local equivalent, plus the platform
+ * grant overlay below, which exists because the CLI resolved locally may be
+ * older and boot `db reset` with truncated privileges.
+ *
+ * Do NOT re-add `test:sql` to the master chain. Commit 43f5518 did so to get
+ * `delete-account.sql` into CI while it was missing from `db-smoke`; that gap
+ * is closed, and re-adding it makes two jobs assert the same contracts against
+ * different privilege baselines.
  *
  * What it does:
  *   1. Verifies the Docker daemon is reachable (fails fast with a clear message).
@@ -43,7 +55,7 @@
  *
  * Requirements: Docker daemon running + the Supabase CLI (`supabase`) on PATH.
  *
- * Run: pnpm test:sql
+ * Run: pnpm test:sql   (or `pnpm test:all` for the Node + SQL tiers together)
  */
 
 import { execFileSync } from 'node:child_process';
@@ -164,11 +176,11 @@ run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'trial-cutove
 // run manually when the operator invokes the <1h rollback runbook.
 // See supabase/manual/0040_rc_trial_rollback.sql for the runbook header.
 
-console.log('\n== Running delete-account SQL smoke test ==\n');
-run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'delete-account.sql')]);
-
 console.log('\n== Running legal-acceptances SQL smoke test ==\n');
 run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'legal-acceptances.sql')]);
+
+console.log('\n== Running delete-account SQL smoke test ==\n');
+run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'delete-account.sql')]);
 
 console.log('\n== Running currency-default SQL smoke test ==\n');
 run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'currency-default.sql')]);
