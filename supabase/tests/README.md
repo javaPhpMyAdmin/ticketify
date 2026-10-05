@@ -1,16 +1,24 @@
 # Ticketify — SQL smoke tests
 
-This directory holds SQL-level smoke tests that assert the **schema catalog**
-of the pro/quotas workstream. They are intentionally READ-ONLY: they never
-apply migrations and never mutate data — every check runs against Postgres
-system catalogs using `DO`/`assert` blocks.
+This directory holds the fail-closed smoke tests that make up the **SQL tier**:
+the part of the test surface that needs a real Postgres catalog. None of them
+applies a migration and none ever runs against production — the local harness
+and CI both build a throwaway database from `supabase/migrations/` first.
+`pro-subscription.sql` is pure catalog reads; the rest seed fixtures with fixed
+UUIDs, because a column default or an RLS policy is only observable through a
+real write. Each is idempotent (`on conflict do nothing`, plus a self-deleting
+pair where the file cleans up), and it is safe that some of them leave rows
+behind: both runners rebuild the catalog with `db reset` immediately before the
+suite. Every file is a single `DO`/`assert` block — plain SQL, not pgTAP.
 
 ## `pro-subscription.sql`
 
 A fail-closed smoke test covering:
 
 1. `profiles` tier-lifecycle columns (`tier`, `subscription_status`,
-   `trial_ends_at`, `ever_paid`).
+   `ever_paid`). `trial_ends_at` is **not** among them: migration 0039 dropped
+   the column and `trial-cutover.sql` asserts the drop, so trial eligibility
+   belongs to the Play Console / App Store Connect native intro offers.
 2. `set_profile_tier(uuid, text)` exists, is `SECURITY DEFINER`, owned by
    `postgres`, with least-privilege grants (REVOKEd from anon/authenticated).
 3. `webhook_events` ledger: primary key, RLS enabled, `uid()`-scoped SELECT.
@@ -75,21 +83,24 @@ A fail-closed smoke test for the household-subscription security fix
    `sync_client_subscription('active')` exploit path) is REJECTED with
    `Pro subscription required to create a household`, and nothing is
    written (no household row, no `household_id`).
-3. **No trial regression**: a Pro user and a trialing user
-   (`tier='pro'`, `subscription_status='trial'` — the state
-   `start_free_trial` produces) both create households successfully, with
-   owner membership and `profiles.household_id` set.
-4. **`sync_client_subscription` rejections**: `'active'` is rejected for
-   free AND Pro users (exact error message asserted, no mutation); the
-   remaining claims (`'none'`/`'trial'`/`'expired'`) are accepted but never
-   change `tier` and never write `trial_ends_at` — they cannot grant Pro
-   capability or freeze the expiry materialization.
+3. **The tier-only gate still admits Pro**: a Pro user (`tier='pro'`) creates a
+   household successfully, with owner membership and `profiles.household_id`
+   set. There is no trialing case left to test — 0039 dropped
+   `start_free_trial` and narrowed `subscription_status` to
+   `('none','active')`, so the file's trialing fixture was removed along with
+   the assertion it existed for.
+4. **`sync_client_subscription` rejections**: `'active'` is rejected for free
+   AND Pro users (exact error message asserted, no mutation) — paid status is
+   the RevenueCat webhook's alone. `'none'` is the one value a client can still
+   claim: it is accepted, and it never changes `tier`, so it cannot grant Pro
+   capability. `'trial'` and `'expired'` are neither accepted nor
+   representable — 0039 §9d narrowed the RPC's allow-list to `('none')` and
+   dropped `expire_overdue_trials`, so there is no expiry materialization left
+   to freeze.
 
 It ends with a `raise notice` on success. Like the others it is a single
 `DO`/`assert` block, idempotent, and runs via `pnpm test:sql` (its step is
 registered in `scripts/test-db-smoke.mjs`) and via the CI `db-smoke` job.
-
-
 
 ## `currency-default.sql`
 
@@ -106,6 +117,10 @@ A fail-closed smoke test for the i18n workstream's currency-default alignment
    second half is what proves no CHECK, normalizing rule, or trigger is
    overriding a real user choice.
 3. **Nothing else moved**: the column is still `text NOT NULL`.
+4. **A rejected write changes nothing**: re-inserting an existing `profiles.id`
+   raises `unique_violation` (23505) and leaves the stored currency untouched,
+   so a profile write is create-only and can never clobber a currency another
+   path already set.
 
 It seeds fixed-UUID fixtures (disjoint from every other smoke test's range),
 asserts, and deletes them inside the same `DO` block, so it is idempotent and
@@ -126,24 +141,28 @@ Like the others it ends with a `raise notice` on success, is a single
 > master `pnpm test` chain) reads the disk and both runners and fails if any
 > file here is missing from either, if either names a file that does not exist,
 > or if the two runners disagree with each other.
-
+>
 > | Runner | SQL files run | Entry point |
 > |--------|---------------|-------------|
 > | Local harness | all of them | `pnpm test:sql` (`scripts/test-db-smoke.mjs`) |
 > | CI `db-smoke` job | all of them | `.github/workflows/ci.yml` (own `supabase start` + `db reset`, one `db query` step per file) |
 > | CI `verify` job | none | runs `pnpm test`, which no longer includes `test:sql` |
-
+>
 > The `verify` job executing none of these files is intentional, not a gap: the
-> SQL tier is owned solely by `db-smoke`, so no runner is left that omits a smoke
-> test. The two
-> runners are not interchangeable — the local harness additionally applies a
-> platform-grant overlay for older CLI versions whose `db reset` boots with
-> truncated privileges, so it asserts the same contracts against a different
-> privilege baseline than CI does.
+> SQL tier is owned solely by `db-smoke`, so no runner is left that omits a
+> smoke test. The two runners are not interchangeable — the local harness
+> additionally applies a platform-grant overlay for older CLI versions whose
+> `db reset` boots with truncated privileges, so it asserts the same contracts
+> against a different privilege baseline than CI does.
 
 ## Running it locally
 
-Requires **Docker** (daemon running) and the **Supabase CLI** on `PATH`.
+Requires a running **Docker** daemon. The Supabase CLI is a project-local
+devDependency at `node_modules/.bin/supabase` and is **not** on your shell
+`PATH`. `scripts/test-db-smoke.mjs` shells out to a bare `supabase` command,
+which resolves only because `pnpm run` prepends `node_modules/.bin` to `PATH`.
+Use `pnpm test:sql`, not `node scripts/test-db-smoke.mjs` — invoked directly the
+harness fails with `ENOENT`.
 
 ```bash
 pnpm test:sql
@@ -167,13 +186,22 @@ This runs `scripts/test-db-smoke.mjs`, which:
 
 > **Three entry points, three tiers.** `pnpm test` runs the Node suite only and
 > is Docker-free in CI — it never boots Supabase. `pnpm test:sql` runs the SQL
-> tier alone and is the only local command that needs Docker. `pnpm test:all`
-> runs both, in that order. In CI the SQL tier is owned solely by the
-> `db-smoke` job; `verify` runs `pnpm test` and covers none of these files.
-> Do not re-add `test:sql` to the master chain: that was a temporary
-> workaround (commit 43f5518) to get `delete-account.sql` into CI while it was
-> missing from `db-smoke`, and that gap is now closed — `scripts/test-sql-smoke-coverage.mjs`
-> fails the build if a file on disk is missing from either runner.
+> tier alone and is the only one of the two that needs Docker; `pnpm test:all`
+> runs both, in that order, and needs Docker for the same reason. In CI the SQL
+> tier is owned solely by the `db-smoke` job; `verify` runs `pnpm test` and
+> covers none of these files.
+>
+> **Do not re-add `test:sql` to the master chain.** Commit `43f5518` added it
+> as a temporary workaround: `delete-account.sql` was on disk and in the local
+> harness but missing from `db-smoke`, so wiring the SQL tier into the chain was
+> the only way to get that file into CI. That gap is closed, and
+> `scripts/test-sql-smoke-coverage.mjs` fails the build if a file on disk is
+> missing from either runner — but that guard closes the *coverage* gap only.
+> The chain entry also ran the same smoke files in two jobs against two
+> different privilege baselines: `verify` reached them through this harness,
+> platform-grant overlay included, while `db-smoke` ran them without it. The
+> overlay is the weaker of the two by design, so CI keeps the stronger baseline
+> and the tier stays single-owner.
 >
 > **The one networked Node step.** "Docker-free" is absolute for CI, not for a
 > developer with a local stack running: `scripts/test-legal-consent.mjs` §7
