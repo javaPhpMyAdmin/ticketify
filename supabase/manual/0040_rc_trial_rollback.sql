@@ -20,7 +20,7 @@
 --       trial lifecycle so the pre-cutover client code can be reinstated
 --       via `git revert <merge-sha>`.
 --   - Design §"Rollback Runbook (<1h)" + ADR-2 (backfill semantics).
---   - The smoke `supabase/tests/trial-rollback.sql` (paired with
+--   - The smoke `supabase/manual/trial-rollback.sql` (paired with
 --       0039_rc_trial_cutover.sql) asserts the pre-cutover catalog
 --       state is restored.
 --
@@ -47,7 +47,7 @@
 -- `IF NOT EXISTS` for DDL. Running this migration twice in a row leaves
 -- the DB in the same state. Running 0039 → 0040 in sequence on a fresh
 -- `supabase db reset --local` returns the catalog to the pre-0039 state
--- (verified by `supabase/tests/trial-rollback.sql`).
+-- (verified by `supabase/manual/trial-rollback.sql`).
 --
 -- What this migration does
 -- ------------------------
