@@ -22,7 +22,7 @@ The test surface has two tiers. They have different prerequisites and different 
 
 | Command | Runs |
 |---|---|
-| `pnpm test` | The whole Node tier: 56 chained Node ESM harnesses |
+| `pnpm test` | The whole Node tier: every chained Node ESM harness |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm lint` | `expo lint` |
 | `pnpm generate:legal-docs` | Regenerates `docs/legal/` |
