@@ -120,8 +120,6 @@ The Supabase client deliberately does **not** throw on import when these are mis
 | `EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE` | Simulates an expired entitlement. Not present in `.env.example`. |
 | `EXPO_PUBLIC_ONBOARDING_PREVIEW` | Forces the onboarding wizard on every launch |
 
-`EXPO_PUBLIC_GEMINI_MODEL` appears in `.env.example` and is read nowhere in the codebase. The edge function reads the unprefixed `GEMINI_MODEL`. Setting it does nothing.
-
 ### Edge-function secrets
 
 Server-side only. These are **not** `EXPO_PUBLIC_`-prefixed, are not read by the app bundle, and are set with `supabase secrets set`.
