@@ -166,7 +166,7 @@ Things that will trip you up:
 
 - The git repo root is the `mobile/` directory itself, not its parent.
 - `ios/` and `android/` are git-ignored as generated output, yet `android/` still has 2 tracked files.
-  - The rule does match them: `git check-ignore -v --no-index <path>` reports `.gitignore:52:/android` for both XML files.
+  - The rule does match them: `git check-ignore -v --no-index <path>` reports `.gitignore:50:/android` for both XML files.
   - Tracked files are exempt from ignore rules. They were committed before the rule existed and stay tracked; `git add` on a *new* file under `android/` is silently dropped, so the trap is invisible until you go looking for the file.
 - `supabase/manual/` is deliberately outside the migration chain.
   - `db reset` applies `supabase/migrations/` atomically, so a rollback living there would immediately undo the forward cutover it belongs to.
