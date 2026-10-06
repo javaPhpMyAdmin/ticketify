@@ -8,12 +8,21 @@
  * a pure side-effect carrier that renders null — it cannot EXECUTE in
  * plain node (React tree + the real react-native `AppState` native
  * module). Following the repo's F4 pattern (test-delete-account.mjs pins
- * _layout.tsx / delete-account.tsx by source), the contracts below are
- * pinned on the MEANINGFUL TOKENS of the source with whitespace-flexible
- * regexes: a revert, a partial re-wire, or a copy-paste into the wrong
- * effect FAILS the suite; a cosmetic reformat does not.
+ * _layout.tsx / delete-account.tsx by source), the contracts below pin
+ * the MEANINGFUL TOKENS of the source with whitespace-flexible regexes,
+ * and a cosmetic reformat does not disturb them. What they establish is
+ * that those tokens are PRESENT and in the right ORDER — nothing more.
+ * They do not follow control flow, so a token left in place behind a
+ * statement that short-circuits first is invisible to them: an early
+ * `return` ahead of the guards leaves this suite green even though the
+ * feature never runs. Section 0 pins the mount for exactly that reason,
+ * but any short-circuit after it is still undetectable. Read a pass here
+ * as "written as specified", not "executes as specified".
  *
  * Sections:
+ *
+ *   0. MOUNTED — `_layout.tsx` imports `ProBootstrap` and renders it.
+ *      Every contract below is inert if it never mounts.
  *
  *   1. FOREGROUND entitlement refresh (fix 1 — the real bug). The file
  *      must import `AppState` from react-native and subscribe to its
@@ -43,8 +52,7 @@
  *        (b) mirror the `isProOverrideEnabled` branch in the per-user
  *            effect (forcing the EXPIRED state) — with the expired branch
  *            ORDERED FIRST so that when BOTH overrides are set, the
- *            EXPIRED one wins (the conservative/locked default), a
- *            contract documented in a comment.
+ *            EXPIRED one wins (the conservative/locked default).
  *
  *   3. DON'T-TOUCH approvals — the existing `customerInfoUpdate` listener
  *      attachment (`attachCustomerInfoListener` + `setProEntitlement(snapshot)`)
@@ -89,6 +97,28 @@ async function run() {
     join(root, 'src', 'features', 'pro', 'gate.ts'),
     'utf8',
   );
+  const layoutSource = readFileSync(
+    join(root, 'src', 'app', '_layout.tsx'),
+    'utf8',
+  );
+
+  // ---------------------------------------------------------------------
+  // 0. The bootstrap is MOUNTED — everything below is inert if it isn't.
+  // ---------------------------------------------------------------------
+  console.log('\n[tests] pro-bootstrap — mounted in the app shell\n');
+
+  await test('ProBootstrap is imported by _layout.tsx and rendered in the app shell', () => {
+    assert.match(
+      layoutSource,
+      /import \{\s*ProBootstrap\s*\}\s*from '@\/features\/pro';/,
+      '_layout.tsx must import ProBootstrap from the feature barrel',
+    );
+    assert.match(
+      layoutSource,
+      /<ProBootstrap\s*\/>/,
+      '_layout.tsx must render <ProBootstrap />, or the wiring below never runs',
+    );
+  });
 
   // ---------------------------------------------------------------------
   // 1. Foreground entitlement refresh (fix 1).
@@ -132,7 +162,15 @@ async function run() {
     // native module + API key + configure (see revenuecat.ts).
     assert.match(foregroundBlock, /activeUserIdRef\.current === null/, 'no read while signed out');
     assert.match(foregroundBlock, /!identityBridgedRef\.current/, 'only a bridged identity may read');
-    assert.match(foregroundBlock, /isProOverrideEnabled\(\)/, 'the true dev override blocks the read');
+    // Match the two overrides CONJOINED, which only the pre-read guard is.
+    // The post-await re-check (`if (isProOverrideEnabled()) return;`) carries
+    // no `||`, so a bare /isProOverrideEnabled\(\)/ is satisfied by it too and
+    // pins neither this test's name nor the guard it describes.
+    assert.match(
+      foregroundBlock,
+      /isProOverrideEnabled\(\)\s*\|\|\s*isProExpiredOverrideEnabled\(\)/,
+      'both dev overrides must block the read BEFORE it starts',
+    );
     assert.match(foregroundBlock, /isProExpiredOverrideEnabled\(\)/, 'the expired dev override also blocks the read');
   });
 
@@ -200,11 +238,10 @@ async function run() {
       /EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE === 'true'/,
       'the override must read EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE with the strict "true" contract',
     );
-    assert.match(
-      gateSource,
-      /EXPIRED override wins/,
-      'the mutual-exclusivity contract (expired wins, conservative/locked default) must be documented in gate.ts',
-    );
+    // The "expired wins" contract is asserted on CODE, not on gate.ts's prose:
+    // the two ordering tests below compare indexOf across the effect body.
+    // Matching a comment here would fail on a rewrap while the code it named
+    // stays exactly as it was, so it is deliberately not asserted.
   });
 
   await test('pro-bootstrap imports the expired override from gate', () => {
