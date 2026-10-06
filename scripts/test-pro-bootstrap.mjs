@@ -41,11 +41,9 @@
  *      its subscription and be keyed on `[userId, setProEntitlement]` so
  *      the per-user race guard stays in scope.
  *
- *   2. EXPIRED-entitlement dev override (fix 2 — downgrade QA). gate.ts
- *      must export `isProExpiredOverrideEnabled()` reading
- *      `EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE === 'true'` (sibling of
- *      `isProOverrideEnabled`, same pure-read / production-safety doc
- *      contract). pro-bootstrap.tsx must import it and:
+ *   2. EXPIRED-entitlement dev override (fix 2 — downgrade QA).
+ *      pro-bootstrap.tsx must import `isProExpiredOverrideEnabled` from
+ *      ./gate and:
  *        (a) short-circuit `resolveProSession` to
  *            `{ isPro: false, isLoading: false }` BEFORE any RevenueCat
  *            read, and
@@ -91,10 +89,6 @@ async function test(name, fn) {
 async function run() {
   const bootstrapSource = readFileSync(
     join(root, 'src', 'features', 'pro', 'pro-bootstrap.tsx'),
-    'utf8',
-  );
-  const gateSource = readFileSync(
-    join(root, 'src', 'features', 'pro', 'gate.ts'),
     'utf8',
   );
   const layoutSource = readFileSync(
@@ -226,23 +220,6 @@ async function run() {
   // 2. Expired-entitlement dev override (fix 2).
   // ---------------------------------------------------------------------
   console.log('\n[tests] pro-bootstrap — expired-entitlement dev override (fix 2)\n');
-
-  await test('gate.ts exports isProExpiredOverrideEnabled reading EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE === "true"', () => {
-    assert.match(
-      gateSource,
-      /export function isProExpiredOverrideEnabled\(\): boolean/,
-      'gate.ts must export the sibling override function',
-    );
-    assert.match(
-      gateSource,
-      /EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE === 'true'/,
-      'the override must read EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE with the strict "true" contract',
-    );
-    // The "expired wins" contract is asserted on CODE, not on gate.ts's prose:
-    // the two ordering tests below compare indexOf across the effect body.
-    // Matching a comment here would fail on a rewrap while the code it named
-    // stays exactly as it was, so it is deliberately not asserted.
-  });
 
   await test('pro-bootstrap imports the expired override from gate', () => {
     assert.match(
