@@ -2022,9 +2022,9 @@ async function editorWiringTests() {
   // level: the price must flow through the fixed-rule `parseMoney`, never a
   // bare `parseFloat` (REQ-7 — bare parseFloat returns NaN on `'1.234'`,
   // which silently breaks the symmetric thousands-grouping rule).
-  await test('editor: price parses through parseMoney (no bare parseFloat)', () => {
+  await test('editor: price parses through parseMoney(priceStr, currency)', () => {
     assert.ok(
-      /parseMoney\(\s*priceStr\s*,/.test(editorSource),
+      /parseMoney\(\s*priceStr\s*,\s*currency\s*\)/.test(editorSource),
       'the price buffer must be parsed through parseMoney(priceStr, currency)',
     );
     assert.ok(
@@ -2033,10 +2033,10 @@ async function editorWiringTests() {
     );
   });
 
-  await test('editor: parseMoney receives the settings currency (zero-decimal rounding)', () => {
+  await test('editor: currency is bound from the settings store (not a literal)', () => {
     assert.ok(
-      editorSource.includes('useSettingsStore'),
-      'the editor must read the settings currency for zero-decimal rounding',
+      editorSource.includes('const currency = useSettingsStore('),
+      'the editor must read the settings currency (zero-decimal rounding input)',
     );
   });
 

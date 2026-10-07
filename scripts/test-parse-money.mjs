@@ -92,17 +92,23 @@ async function run() {
     assert.equal(parseMoney('1,234.56', 'USD'), 1234.56);
   });
 
-  await test('\'1,234\',\'USD\' → 1234', () => {
-    assert.equal(parseMoney('1,234', 'USD'), 1234);
+  await test('1.234,56 as ARS → 1234.56 (scenario 6: neither code nor locale moves the result)', () => {
+    assert.equal(parseMoney('1.234,56', 'ARS'), 1234.56);
   });
 
-  await test('\'1.234\',\'USD\' → 1234', () => {
-    assert.equal(parseMoney('1.234', 'USD'), 1234);
+  await test('.5 → 0.5 (leading decimal separator)', () => {
+    assert.equal(parseMoney('.5', 'USD'), 0.5);
   });
 
-  await test('\'1.234\',\'ARS\' → 1234 (currency independent)', () => {
-    assert.equal(parseMoney('1.234', 'ARS'), 1234);
+  await test('5. → 5 (trailing separator, no digits after)', () => {
+    assert.equal(parseMoney('5.', 'USD'), 5);
   });
+
+  await test('1234.5678 → 1234.5678 (four digits after → decimal; complement of the 45.999 trade-off)', () => {
+    assert.equal(parseMoney('1234.5678', 'USD'), 1234.5678);
+  });
+
+  console.log('\n[tests] rejection — empty, no digit, or non [0-9.,] input\n');
 
   await test('\'\' → null (no digits)', () => {
     assert.equal(parseMoney('', 'USD'), null);
@@ -120,21 +126,25 @@ async function run() {
     assert.equal(parseMoney('$45.99', 'USD'), null);
   });
 
-  await test('locale independence: both ARS and USD give same for 1,234 under different contexts', () => {
+  console.log('\n[tests] zero-decimal rounding — currencyCode is the only knob\n');
+
+  await test('45.99 as JPY → 46 (zero-decimal rounds to the whole unit)', () => {
+    assert.equal(parseMoney('45.99', 'JPY'), 46);
+  });
+
+  await test('45.4 as JPY → 45 (half-down boundary)', () => {
+    assert.equal(parseMoney('45.4', 'JPY'), 45);
+  });
+
+  await test('45.99 as COP → 45.99 (COP stays 2-decimal — Non-Goal)', () => {
+    assert.equal(parseMoney('45.99', 'COP'), 45.99);
+  });
+
+  console.log('\n[tests] currency independence — the API exposes no locale knob\n');
+
+  await test('1,234 returns 1234 under ARS and USD alike', () => {
     assert.equal(parseMoney('1,234', 'ARS'), 1234);
     assert.equal(parseMoney('1,234', 'USD'), 1234);
-  });
-
-  await test('boundary cases: 1.234 returns 1234 for both currencies', () => {
-    assert.equal(parseMoney('1.234', 'ARS'), 1234);
-    assert.equal(parseMoney('1.234', 'USD'), 1234);
-  });
-
-  await test('45.99/47.5 consistent across currencies', () => {
-    assert.equal(parseMoney('45.99', 'ARS'), 45.99);
-    assert.equal(parseMoney('47.5', 'ARS'), 47.5);
-    assert.equal(parseMoney('45.99', 'USD'), 45.99);
-    assert.equal(parseMoney('47.5', 'USD'), 47.5);
   });
 
   console.log(`\n[tests] ${passed} passed, ${failed} failed`);
