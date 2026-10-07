@@ -2016,6 +2016,30 @@ async function editorWiringTests() {
     );
   });
 
+  // ── ItemEditorModal (money-integrity slice C, 1.3): price parse ────────
+  // RN component internals (useSettingsStore, RN TextInput) are unreachable
+  // from a node harness, so the money-input contract is pinned at the source
+  // level: the price must flow through the fixed-rule `parseMoney`, never a
+  // bare `parseFloat` (REQ-7 — bare parseFloat returns NaN on `'1.234'`,
+  // which silently breaks the symmetric thousands-grouping rule).
+  await test('editor: price parses through parseMoney (no bare parseFloat)', () => {
+    assert.ok(
+      /parseMoney\(\s*priceStr\s*,/.test(editorSource),
+      'the price buffer must be parsed through parseMoney(priceStr, currency)',
+    );
+    assert.ok(
+      !/parseFloat\(\s*priceStr\s*\)/.test(editorSource),
+      'bare parseFloat(priceStr) must be replaced by parseMoney',
+    );
+  });
+
+  await test('editor: parseMoney receives the settings currency (zero-decimal rounding)', () => {
+    assert.ok(
+      editorSource.includes('useSettingsStore'),
+      'the editor must read the settings currency for zero-decimal rounding',
+    );
+  });
+
   // ── manual.tsx (5.2): write category_id on add + edit ──────────────────
   const manualSource = readFileSync(
     join(root, 'src/app/ticket/manual.tsx'),

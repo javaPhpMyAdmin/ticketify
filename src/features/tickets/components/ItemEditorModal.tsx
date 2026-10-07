@@ -4,9 +4,11 @@ import { useTranslation } from 'react-i18next';
 
 import { BottomSheet, FieldGroup, Icon, Text } from '@/components';
 import { useCategoryCatalog } from '@/features/categories';
+import { useSettingsStore } from '@/stores/use-settings-store';
 import { getExpenseCategory } from '@/features/home/categories';
 import { parseQuantity } from '@/features/tickets/manual-form';
 import { truncateCategoryName } from '@/lib/format';
+import { parseMoney } from '@/lib/parse-money';
 import { colors, radii, spacing, typography } from '@/theme';
 
 import {
@@ -73,6 +75,7 @@ export function ItemEditorModal({
 }: ItemEditorModalProps) {
   const { t } = useTranslation(['tickets', 'a11y', 'common']);
   const { catalog } = useCategoryCatalog();
+  const currency = useSettingsStore((s) => s.currency);
   const [name, setName] = useState(initialValues?.name ?? '');
   const [quantityStr, setQuantityStr] = useState(
     initialValues != null ? String(initialValues.quantity) : '1',
@@ -112,15 +115,16 @@ export function ItemEditorModal({
 
   const trimmed = name.trim();
   const quantity = parseQuantity(quantityStr);
-  const unit_price = parseFloat(priceStr);
+  const unit_price = parseMoney(priceStr, currency);
   const canSave =
     trimmed.length > 0 &&
     quantity !== null &&
+    unit_price !== null &&
     Number.isFinite(unit_price) &&
     unit_price >= 0;
 
   const handleSave = () => {
-    if (!canSave || quantity === null) return;
+    if (!canSave || quantity === null || unit_price === null) return;
     onSave({ name: trimmed, quantity, unit_price, category_id: categoryId });
   };
 
