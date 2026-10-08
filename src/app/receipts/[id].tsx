@@ -91,8 +91,8 @@ function purchaseToFeedRow(p: PurchaseWithItems) {
     payment_method: p.payment_method,
     // Row unit (REQ-8): carried from the detail read so every render on
     // this screen labels with the receipt's own currency (null on legacy
-    // rows → the viewer profile fills in).
-    currency: p.currency ?? null,
+    // rows → the viewer profile fills in). Required on PurchaseWithItems.
+    currency: p.currency,
     wants_snacks_total: items
       .filter((i) => i.is_impulse)
       .reduce((sum, i) => sum + i.amount, 0),

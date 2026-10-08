@@ -404,9 +404,10 @@ export default function ReviewReceiptScreen() {
               // carries it (purchaseToDraft), so the optimistic row keeps
               // the store row's origin — a manual ticket stays manual.
               is_manual: existing?.is_manual ?? false,
-              // The edit draft's unit mirrors the row's (purchaseToDraft
-              // seeds it; nothing on this path rewrites it), so threading
-              // it keeps the optimistic row labeled until the refetch.
+              // The edit draft's unit starts as the row's (purchaseToDraft
+              // seeds it) and the switcher may relabel it in edit mode;
+              // threading the CURRENT draft value keeps the optimistic row
+              // labeled until the refetch.
               currency: draft.currency ?? null,
             },
             reviewItemsToFeedItems(draft.items),

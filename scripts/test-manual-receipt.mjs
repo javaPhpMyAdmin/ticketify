@@ -869,6 +869,16 @@ async function run() {
       );
     });
 
+    await test("D2.6: an empty-string unit still emits p_currency (explicit-value guard, S2)", async () => {
+      const res = await buildSaveReceiptArgs('user-1', draft({ currency: '' }));
+      assert.ok(
+        'p_currency' in res.args,
+        "currency '' is an EXPLICIT value — the seam guard must be != null, not truthy " +
+          '(aligned with updateReceipt PATCH; an empty value is validated downstream, never silently dropped here)',
+      );
+      assert.equal(res.args.p_currency, '', 'the explicit value travels as given');
+    });
+
     // ------------------------------------------------------------------
     // E. saveManualReceipt — runtime save behavior (REQ-008..010)
     // ------------------------------------------------------------------

@@ -262,8 +262,9 @@ async function run() {
         // edit draft never carries it (purchaseToDraft), so the row keeps
         // the store row's origin — `?? false` when unknown (migration 0029).
         is_manual: false,
-        // The draft's unit mirrors the row's (purchaseToDraft seeds it) —
-        // threaded so the optimistic row keeps its label (REQ-8).
+        // The draft's unit starts as the row's (purchaseToDraft seeds it)
+        // and the switcher may relabel it — threaded so the optimistic row
+        // keeps its CURRENT label (REQ-8).
         currency: draft.currency ?? null,
       },
       reviewItemsToFeedItems(draft.items),

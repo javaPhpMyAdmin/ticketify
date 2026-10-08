@@ -801,14 +801,14 @@ export function useStoreDetail(storeName: string, monthKey?: string) {
   });
   const monthList = monthQuery.data ?? list;
   const normalizedTarget = storeName.trim().toLowerCase();
-    type ReceiptPurchase = {
-      receiptId: string;
-      storeName: string;
-      date: string;
-      amount: number;
-      purchaseItemId?: string;
-      currency?: string | null;
-    };
+  type ReceiptPurchase = {
+    receiptId: string;
+    storeName: string;
+    date: string;
+    amount: number;
+    purchaseItemId?: string;
+    currency?: string | null;
+  };
   const purchasesByReceipt = new Map<string, ReceiptPurchase>();
   let total = 0;
   for (const receipt of monthList) {

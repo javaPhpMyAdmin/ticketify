@@ -741,14 +741,17 @@ export async function buildSaveReceiptArgs(
       p_total: draft.total,
       p_payment_method: draft.payment_method,
       p_image_url: imageUrl,
-      // Unit (migration 0042, shape A): emitted ONLY when the draft
-      // carries one, so a unit-less draft keeps the deployed 7-key payload
-      // (f7 -> purchases.currency default NULL) while a detected or
-      // review-corrected unit sends the 8-key payload (f8 -> catalog
-      // re-check -> purchases.currency). REQ-8 #2: out-of-catalog values
-      // never get this far (toClientReceipt / the switcher validate), and
-      // the RPC re-checks anyway.
-      ...(draft.currency ? { p_currency: draft.currency } : {}),
+      // Unit (migration 0042, shape A): emitted whenever the draft's unit
+      // is not null/undefined — '' counts as an explicit value (the guard
+      // is `!= null`, aligned with updateReceipt's PATCH; validation
+      // happens downstream: toClientReceipt / the switcher / the RPC
+      // re-check). Absent (undefined) = no unit recorded, so a unit-less
+      // draft keeps the deployed 7-key payload (f7 -> purchases.currency
+      // default NULL) while a detected or review-corrected unit sends the
+      // 8-key payload (f8 -> catalog re-check -> purchases.currency).
+      // REQ-8 #2: out-of-catalog values never get this far and the RPC
+      // re-checks anyway.
+      ...(draft.currency != null ? { p_currency: draft.currency } : {}),
       // Origin (migration 0029): absent from the draft = scanned (false).
       // buildManualDraft (manual-receipt.ts) sets is_manual: true, so this
       // single seam serves BOTH flows — the server persists origin at
@@ -1109,9 +1112,11 @@ export function purchaseToDraft(purchase: PurchaseWithItems): ReceiptDraft {
     image_url: purchase.image_url ?? '',
     // The row's own unit (REQ-8): seeds the edit draft so every review
     // render labels with the stored unit. `null` (legacy) → omitted → the
-    // viewer profile fills in. Deliberately NOT mapped into updateReceipt's
-    // payload: an edit never rewrites the unit (REQ-8 s4) and the switcher
-    // is scan-mode only, so the draft value can only mirror the row.
+    // viewer profile fills in. On save, updateReceipt PATCHes the unit only
+    // when the draft still carries one (switcher relabel → normalizeCurrency
+    // → f8-parity re-check; unit-less draft → key omitted, stored unit
+    // untouched), and restorePurchase puts the pre-edit value back after a
+    // failed write.
     currency: purchase.currency ?? undefined,
     // Origin (is_manual) is deliberately NOT mapped (migration 0029, D1):
     // origin is immutable and the edit flow (updateReceipt) never writes
