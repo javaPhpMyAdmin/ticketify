@@ -20,12 +20,13 @@
 --   3. Non-member: zero rows (not an error).
 --   4. Household entry single-currency check (money-integrity 0043 §entry):
 --      create_household seeds households.currency from the creator's profile
---      currency; join_household raises currency_mismatch on a mismatched
---      profile currency and creates NO membership row; a NULL household
+--      currency (normalized upper/btrim, edge case included); join_household
+--      raises currency_mismatch / SQLSTATE CU001 on a mismatched profile
+--      currency and creates NO membership row; the rejected code stays
+--      usable once the caller fixes their currency; a NULL household
 --      currency skips the check (legacy households keep working); and a
 --      post-join profile-currency change revokes nothing — enforcement is
---      entry-only (household-sharing "Household Entry Single-Currency
---      Check" s1-s4).
+--      entry-only. Also pins join_household's SECDEF/owner/grants.
 --   5. Anon: EXECUTE denied (insufficient_privilege).
 --
 -- Structure: the whole file is a SINGLE `DO` block (the same constraint as
@@ -76,13 +77,19 @@ declare
   v_e_mismatch   uuid    := 'ea000000-0000-0000-0000-000000000003';
   v_e_joiner     uuid    := 'ea000000-0000-0000-0000-000000000004';
   v_e_legacy_hid uuid    := 'ea000000-0000-0000-0000-0000000000d1';
+  v_e_usd_creator uuid   := 'ea000000-0000-0000-0000-000000000005';
+  v_e_usd_joiner  uuid   := 'ea000000-0000-0000-0000-000000000006';
   v_e_hid        uuid;   -- household created under test in s1
+  v_e_usd_hid    uuid;   -- household created by the ' usd ' creator
   v_e_profile_cur text;
   v_e_hh_cur      text;
   v_e_members_before int;
   v_e_members_after  int;
   v_e_rows        int;
   v_e_joined_hid  uuid;
+  v_e_sqlstate    text;  -- captured via get stacked diagnostics (CU001 pin)
+  v_e_jh_secdef   boolean;
+  v_e_jh_owner    text;
 begin
   -- -------------------------------------------------------------------------
   -- 1. Catalog — migration 0031 contract
@@ -303,44 +310,87 @@ begin
        and column_name = 'currency'
   ), 'households.currency must exist (money-integrity 0043 §entry)';
 
+  -- join_household must satisfy the same SECDEF/owner/privilege pins that
+  -- household-gate-tier.sql asserts for create_household (0034 §3 / 0026 §5):
+  -- a `create or replace` resets EXECUTE to PUBLIC, and a non-postgres owner
+  -- would silently re-apply RLS inside the definer body.
+  assert to_regprocedure('public.join_household(text)') is not null,
+    'join_household(text) is missing (expected since 0014/0026)';
+
+  select p.prosecdef, pg_get_userbyid(p.proowner)
+    into v_e_jh_secdef, v_e_jh_owner
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname = 'join_household'
+     and p.pronargs = 1;
+
+  assert v_e_jh_secdef, 'join_household must be SECURITY DEFINER (0026 + 0043 §4)';
+  assert v_e_jh_owner = 'postgres', 'join_household must be owned by postgres (0043 §4)';
+
+  assert not has_function_privilege('anon', 'public.join_household(text)', 'EXECUTE'),
+    'anon must NOT be able to execute join_household (least privilege)';
+  assert not has_function_privilege('public', 'public.join_household(text)', 'EXECUTE'),
+    'public must NOT be able to execute join_household (least privilege)';
+  assert has_function_privilege('authenticated', 'public.join_household(text)', 'EXECUTE'),
+    'authenticated must be able to execute join_household';
+
+  -- Established-at-creation invariant (4R W2), informational only: the
+  -- households.currency write path is the definer RPC, pinned by the ABSENCE
+  -- of any client write path. 0043 §4 additionally revokes UPDATE (currency)
+  -- from authenticated — NOT asserted here on purpose: the smoke runner
+  -- re-applies the platform `grant all on all tables` after migrations, and
+  -- Postgres ignores a column-level revoke while a table-level UPDATE grant
+  -- exists (verified: has_column_privilege stays true after the revoke), so
+  -- a grant-level pin would be a lie. The runner's own policy is to assert
+  -- at the RLS/routine level, not on raw table grants.
+
   -- Teardown-first fixture: wipe whatever a previous run of THIS section
   -- left behind (household_members/invite_codes rows die with their
   -- households via FK cascade), then clear the profiles that pointed at them.
   delete from public.household_members
-   where user_id in (v_e_creator, v_e_match, v_e_mismatch, v_e_joiner)
-      or household_id in (select id from public.households where created_by = v_e_creator);
+   where user_id in (v_e_creator, v_e_match, v_e_mismatch, v_e_joiner, v_e_usd_creator, v_e_usd_joiner)
+      or household_id in (select id from public.households where created_by in (v_e_creator, v_e_usd_creator));
   delete from public.households
-   where created_by = v_e_creator or id = v_e_legacy_hid;
+   where created_by in (v_e_creator, v_e_usd_creator) or id = v_e_legacy_hid;
   update public.profiles set household_id = null
-   where id in (v_e_creator, v_e_match, v_e_mismatch, v_e_joiner);
+   where id in (v_e_creator, v_e_match, v_e_mismatch, v_e_joiner, v_e_usd_creator, v_e_usd_joiner);
 
   insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
   values
     ('00000000-0000-0000-0000-000000000000', v_e_creator,  'authenticated', 'authenticated', 'entry-creator@test.local',  '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
     ('00000000-0000-0000-0000-000000000000', v_e_match,    'authenticated', 'authenticated', 'entry-match@test.local',    '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
     ('00000000-0000-0000-0000-000000000000', v_e_mismatch, 'authenticated', 'authenticated', 'entry-mismatch@test.local', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
-    ('00000000-0000-0000-0000-000000000000', v_e_joiner,   'authenticated', 'authenticated', 'entry-joiner@test.local',   '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now())
+    ('00000000-0000-0000-0000-000000000000', v_e_joiner,   'authenticated', 'authenticated', 'entry-joiner@test.local',   '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
+    ('00000000-0000-0000-0000-000000000000', v_e_usd_creator, 'authenticated', 'authenticated', 'entry-usd-creator@test.local', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
+    ('00000000-0000-0000-0000-000000000000', v_e_usd_joiner,  'authenticated', 'authenticated', 'entry-usd-joiner@test.local',  '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now())
   on conflict (id) do nothing;
 
-  -- Creator is Pro (create_household's 0034 tier gate); the other three stay
-  -- free. Currencies are re-asserted by the UPDATE below: the do-nothing
-  -- insert cannot undo a currency that the s4 scenario flipped last run.
+  -- Creator is Pro (create_household's 0034 tier gate); the others stay free.
+  -- Currencies are re-asserted by the UPDATE below: the do-nothing insert
+  -- cannot undo a currency that an earlier scenario changed on a previous run.
+  -- The two USD fixtures exercise the normalization edge (4R W3): ' usd '
+  -- (lowercase + whitespace) as the seed, 'USD' as the joiner.
   insert into public.profiles (id, full_name, monthly_budget, currency, tier, created_at)
   values
-    (v_e_creator,  'Entry Creator',  0, 'UYU', 'pro',  now()),
-    (v_e_match,    'Entry Match',    0, 'UYU', 'free', now()),
-    (v_e_mismatch, 'Entry Mismatch', 0, 'ARS', 'free', now()),
-    (v_e_joiner,   'Entry Joiner',   0, 'CLP', 'free', now())
+    (v_e_creator,     'Entry Creator',     0, 'UYU',   'pro',  now()),
+    (v_e_match,       'Entry Match',       0, 'UYU',   'free', now()),
+    (v_e_mismatch,    'Entry Mismatch',    0, 'ARS',   'free', now()),
+    (v_e_joiner,      'Entry Joiner',      0, 'CLP',   'free', now()),
+    (v_e_usd_creator, 'Entry USD Creator', 0, ' usd ', 'pro',  now()),
+    (v_e_usd_joiner,  'Entry USD Joiner',  0, 'USD',   'free', now())
   on conflict (id) do nothing;
 
   update public.profiles
      set currency = case id
-           when v_e_creator  then 'UYU'
-           when v_e_match    then 'UYU'
-           when v_e_mismatch then 'ARS'
-           when v_e_joiner   then 'CLP'
+           when v_e_creator     then 'UYU'
+           when v_e_match       then 'UYU'
+           when v_e_mismatch    then 'ARS'
+           when v_e_joiner      then 'CLP'
+           when v_e_usd_creator then ' usd '
+           when v_e_usd_joiner  then 'USD'
          end
-   where id in (v_e_creator, v_e_match, v_e_mismatch, v_e_joiner);
+   where id in (v_e_creator, v_e_match, v_e_mismatch, v_e_joiner, v_e_usd_creator, v_e_usd_joiner);
 
   -- s1 — the creator's profile currency becomes the household currency.
   perform set_config('request.jwt.claims', '{"sub":"ea000000-0000-0000-0000-000000000001"}', true);
@@ -388,8 +438,19 @@ begin
   select household_id into v_e_joined_hid from public.profiles where id = v_e_match;
   assert v_e_joined_hid = v_e_hid, 'matching join must set profiles.household_id';
 
-  -- s3 — mismatched currency is rejected at entry: currency_mismatch raised,
-  --      membership count unchanged, no row for the caller, household_id NULL.
+  -- s3 — mismatched currency is rejected at entry (currency_mismatch /
+  --      SQLSTATE CU001). The SQLSTATE capture pins the NEW structured code:
+  --      house precedent is string-only errors (plain messages / P0002); the
+  --      dedicated class exists for observability and alert grouping, while
+  --      the message text stays exactly 'currency_mismatch' for clients.
+  --
+  --      Honesty note (4R W1): the join call sits inside this BEGIN…EXCEPTION
+  --      block, so the handler's implicit subtransaction rollback is what
+  --      guarantees "count unchanged / no membership row / household_id NULL"
+  --      below — they are NOT independent proofs of pre-write ordering. The
+  --      "check precedes every write" claim is verified by its code position
+  --      in 0043 §3 (between the capacity check and the code consumption),
+  --      not by these asserts.
   select count(*) into v_e_members_before
     from public.household_members where household_id = v_e_hid;
 
@@ -403,8 +464,11 @@ begin
       if sqlerrm = 'MISSING_EXPECTED_RAISE' then
         raise;
       end if;
+      get stacked diagnostics v_e_sqlstate = returned_sqlstate;
       assert sqlerrm = 'currency_mismatch',
         'mismatched join must raise currency_mismatch, got: ' || sqlerrm;
+      assert v_e_sqlstate = 'CU001',
+        'mismatched join must raise SQLSTATE CU001 (structured code), got: ' || v_e_sqlstate;
   end;
 
   select count(*) into v_e_members_after
@@ -419,6 +483,25 @@ begin
 
   select household_id into v_e_joined_hid from public.profiles where id = v_e_mismatch;
   assert v_e_joined_hid is null, 'rejected join must leave profiles.household_id NULL';
+
+  -- Rejected code stays usable (4R S4): correct the caller's profile currency
+  -- and reuse the SAME invite code — the user-visible contract is that a
+  -- rejected caller can retry once the mismatch is fixed. Consumption order
+  -- (check before consume) is code-position-verified in 0043 §3, same honesty
+  -- note as s3: the failure-path rollback masks it from black-box asserts.
+  update public.profiles set currency = 'UYU' where id = v_e_mismatch;
+
+  select public.join_household('entryx') into v_e_joined_hid;
+  assert v_e_joined_hid = v_e_hid,
+    'the rejected invite code must be reusable after the caller currency is corrected';
+
+  select count(*) into v_e_rows
+    from public.household_members
+   where household_id = v_e_hid and user_id = v_e_mismatch;
+  assert v_e_rows = 1, 'retried join must create the membership row';
+
+  select household_id into v_e_joined_hid from public.profiles where id = v_e_mismatch;
+  assert v_e_joined_hid = v_e_hid, 'retried join must set profiles.household_id';
 
   -- s4 — enforced only at entry: flipping the member's profile currency
   --      AFTER a successful join revokes nothing (nothing re-validates).
@@ -448,6 +531,42 @@ begin
   select household_id into v_e_joined_hid from public.profiles where id = v_e_joiner;
   assert v_e_joined_hid = v_e_legacy_hid,
     'legacy NULL-currency join must set profiles.household_id';
+
+  -- Normalization edge (4R W3): a household seeded from ' usd ' (lowercase +
+  -- surrounding whitespace) must be reachable by a 'USD' caller. Both halves
+  -- of upper(btrim(...)) are load-bearing here — drop upper() and the seed
+  -- becomes 'usd'; drop btrim() and it becomes ' usd ' (or ' usd ' after
+  -- upper) — either way the 'USD' caller is wrongly rejected AND the seed
+  -- assert below fails. The lowercase seed matters: a purely uppercase seed
+  -- (' USD ') would stay blind to a missing upper(), because the caller side
+  -- is already uppercase.
+  perform set_config('request.jwt.claims', '{"sub":"ea000000-0000-0000-0000-000000000005"}', true);
+
+  select public.create_household('Entry Normalized Household') into v_e_usd_hid;
+  assert v_e_usd_hid is not null,
+    'create_household must succeed for the Pro '' usd '' creator';
+
+  select currency into v_e_hh_cur from public.households where id = v_e_usd_hid;
+  assert v_e_hh_cur = 'USD',
+    'households.currency must be seeded via upper(btrim(...)), got: ' || coalesce(v_e_hh_cur, 'NULL');
+
+  insert into public.invite_codes (household_id, code, created_by, expires_at)
+  values (v_e_usd_hid, 'entryu', v_e_usd_creator, now() + interval '72 hours');
+
+  perform set_config('request.jwt.claims', '{"sub":"ea000000-0000-0000-0000-000000000006"}', true);
+
+  select public.join_household('entryu') into v_e_joined_hid;
+  assert v_e_joined_hid = v_e_usd_hid,
+    'a ''USD'' caller must join a household seeded from '' usd '' (normalized compare)';
+
+  select count(*) into v_e_rows
+    from public.household_members
+   where household_id = v_e_usd_hid and user_id = v_e_usd_joiner;
+  assert v_e_rows = 1, 'normalization-edge join must create the membership row';
+
+  select household_id into v_e_joined_hid from public.profiles where id = v_e_usd_joiner;
+  assert v_e_joined_hid = v_e_usd_hid,
+    'normalization-edge join must set profiles.household_id';
 
   -- -------------------------------------------------------------------------
   -- 5. Anon denial (LAST: SET ROLE persists for the rest of the transaction).
