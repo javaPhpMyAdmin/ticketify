@@ -2078,6 +2078,14 @@ async function editorWiringTests() {
     );
   });
 
+  await test('manual: submit seeds the draft unit from the settings profile (W3 ruling)', () => {
+    assert.match(
+      manualSource,
+      /buildManualDraft\([\s\S]{0,400}currency,\s*\)/,
+      'handleSubmit must pass the profile currency into buildManualDraft so manual drafts are never born unit-less',
+    );
+  });
+
   // ── Review flow (5.3): catalog-aware chip, null default kept ───────────
   const rowSource = readFileSync(
     join(root, 'src/features/tickets/components/ReviewItemRow.tsx'),

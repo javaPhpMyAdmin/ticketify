@@ -544,6 +544,23 @@ async function run() {
     assert.equal(debit.card_type, 'debit');
   });
 
+  await test('seeds the profile unit when provided (W3 manual-draft seeding)', () => {
+    const d = buildManualDraft('Coto', '2026-09-01', [item()], 500, 'cash', null, 'CLP');
+    assert.equal(
+      d.currency,
+      'CLP',
+      'the passed profile unit must land on the draft (manual drafts are not born unit-less)',
+    );
+  });
+
+  await test('omits the currency key when no unit is passed (unit-less draft contract)', () => {
+    const d = buildManualDraft('Coto', '2026-09-01', [], 0, 'cash');
+    assert.ok(
+      !('currency' in d),
+      'no unit passed -> the key must be ABSENT, not undefined (7-key payload contract)',
+    );
+  });
+
   // ------------------------------------------------------------------
   // B. validateManualForm — stable error codes (REQ-006)
   // ------------------------------------------------------------------
@@ -824,6 +841,31 @@ async function run() {
         Object.keys(saveCalls[0].args).length,
         7,
         'wire payload stays 7-key for unit-less drafts',
+      );
+    });
+
+    await test('D2.5: a builder-seeded manual draft reaches the RPC as p_currency (W3 end-to-end)', async () => {
+      globalThis.__rpcResult = {
+        data: { ok: true, purchase_id: 'purchase-manual-clp', scans_used: 1, scans_limit: 15 },
+        error: null,
+      };
+      globalThis.__rpcCalls = [];
+      const manualDraft = buildManualDraft(
+        'Coto',
+        '2026-09-01',
+        [item()],
+        500,
+        'cash',
+        null,
+        'CLP',
+      );
+      await saveManualReceipt('user-1', manualDraft);
+      const saveCalls = globalThis.__rpcCalls.filter((c) => c.fn === 'save_receipt');
+      assert.equal(saveCalls.length, 1, 'exactly one save_receipt RPC call');
+      assert.equal(
+        saveCalls[0].args.p_currency,
+        'CLP',
+        'the builder-seeded unit must travel to the wire and persist',
       );
     });
 

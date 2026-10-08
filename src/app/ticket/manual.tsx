@@ -169,6 +169,10 @@ export default function ManualEntryScreen() {
         total,
         draft.payment_method,
         cardType,
+        // W3 ruling: a NEW manual draft carries the profile unit, so the
+        // save is never born unit-less (the store draft is reseeded empty
+        // on mount and never holds a unit itself).
+        currency,
       );
       // Block submit with user-friendly es-AR errors (REQ-006).
       const codes = validateManualForm(manualDraft);
