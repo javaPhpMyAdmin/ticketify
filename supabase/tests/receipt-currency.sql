@@ -163,7 +163,13 @@ begin
   -- p_is_manual: p_currency is REQUIRED. This is load-bearing (42P03 — see
   -- §2's header comment): re-defaulting p_currency would make the live
   -- 7-key call ambiguous and fail every save with PGRST203.
-  select coalesce(array_length(p.proargdefaults, 1), 0)
+  --
+  -- `pronargdefaults` (int4 NOT NULL) is the number of trailing arguments
+  -- that have defaults. NOT `proargdefaults`: that column is pg_node_tree,
+  -- and array_length(pg_node_tree, int) does not exist — the query would
+  -- error, abort the block, and silently skip every assertion below it
+  -- (the whole tail of this file ran only after this line was fixed).
+  select p.pronargdefaults
     into v_default_cnt
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
@@ -188,6 +194,50 @@ begin
            'public.save_receipt(uuid, date, numeric, text, text, public.purchase_item_input[], text, boolean)',
            'EXECUTE'),
     'PUBLIC must NOT have EXECUTE on the 8-param save_receipt (0042 §3: revoke after CREATE OR REPLACE on a new signature)';
+
+  -- 0042 re-stated the revoke/grant for ALL THREE arities (0042 §3: the 6-
+  -- param 0023/0032 body, the 7-param 0029/0032 body and the new 8-param),
+  -- but nothing here pinned the LEGACY two — a future migration that
+  -- re-defaults or re-replaces without re-revoking would open anon/PUBLIC
+  -- EXECUTE on the overloads the live 7-key client call resolves to.
+  -- §5 runs under `set role authenticated`, so the 7-arg call there is a
+  -- live EXECUTE exercise of the first assert below (a superuser call
+  -- would bypass ACLs and pin nothing).
+  assert has_function_privilege(
+           'authenticated',
+           'public.save_receipt(uuid, date, numeric, text, text, public.purchase_item_input[], boolean)',
+           'EXECUTE'),
+    'authenticated must have EXECUTE on the legacy 7-param save_receipt (0029/0032, re-stated by 0042 §3)';
+
+  assert has_function_privilege(
+           'authenticated',
+           'public.save_receipt(uuid, date, numeric, text, text, public.purchase_item_input[])',
+           'EXECUTE'),
+    'authenticated must have EXECUTE on the legacy 6-param save_receipt (0023/0032, re-stated by 0042 §3)';
+
+  assert not has_function_privilege(
+           'anon',
+           'public.save_receipt(uuid, date, numeric, text, text, public.purchase_item_input[], boolean)',
+           'EXECUTE'),
+    'anon must NOT have EXECUTE on the legacy 7-param save_receipt (0029 §4 / 0032 / 0042 §3)';
+
+  assert not has_function_privilege(
+           'anon',
+           'public.save_receipt(uuid, date, numeric, text, text, public.purchase_item_input[])',
+           'EXECUTE'),
+    'anon must NOT have EXECUTE on the legacy 6-param save_receipt (0023 §3 / 0032 / 0042 §3)';
+
+  assert not has_function_privilege(
+           'public',
+           'public.save_receipt(uuid, date, numeric, text, text, public.purchase_item_input[], boolean)',
+           'EXECUTE'),
+    'PUBLIC must NOT have EXECUTE on the legacy 7-param save_receipt (0029 §4 / 0032 / 0042 §3)';
+
+  assert not has_function_privilege(
+           'public',
+           'public.save_receipt(uuid, date, numeric, text, text, public.purchase_item_input[])',
+           'EXECUTE'),
+    'PUBLIC must NOT have EXECUTE on the legacy 6-param save_receipt (0023 §3 / 0032 / 0042 §3)';
 
   -- -------------------------------------------------------------------------
   -- Fixtures — one pro profile so the scan-cap increment always passes
@@ -280,8 +330,15 @@ begin
 
   -- -------------------------------------------------------------------------
   -- §5. The omitted-unit path: a 7-arg call (no p_currency) resolves to
-  --     the untouched 7-param overload and stores NULL
+  --     the untouched 7-param overload and stores NULL.
+  --
+  -- Runs as `authenticated`, NOT as the postgres superuser: the whole point
+  -- of this call is to exercise the granted EXECUTE end-to-end (superuser
+  -- bypasses ACLs, so a grant regression would pass unnoticed). `reset role`
+  -- immediately after restores the block's privileges for §6 and cleanup.
   -- -------------------------------------------------------------------------
+  set role authenticated;
+
   select ok, purchase_id into v_ok, v_pid
     from public.save_receipt(
       p_store_id       => null,
@@ -296,6 +353,8 @@ begin
     );
   assert v_ok and v_pid is not null,
     'the legacy 7-arg call (unit omitted) must still succeed — f8 must not make it ambiguous (shape A)';
+
+  reset role;
 
   select currency into v_stored from public.purchases where id = v_pid;
   assert v_stored is null,
@@ -347,6 +406,12 @@ exception
   -- place for the case that bites: a future handler added to "make CI green".
   -- -------------------------------------------------------------------------
   when assert_failure or others then
+    -- Defensive: if the failure fired between `set role authenticated` and
+    -- `reset role` (§5), restore the session role FIRST so these deletes
+    -- run with the block's privileges (auth.users especially — the
+    -- authenticated role may not touch it). RESET ROLE always returns to
+    -- the session user (postgres), so this is a no-op when already reset.
+    reset role;
     delete from public.purchases where user_id = v_user;
     delete from public.scan_usage where user_id = v_user;
     delete from public.profiles  where id = v_user;
