@@ -215,6 +215,15 @@ export interface HomeFeedReceiptRow {
   wants_snacks_total?: number;
   /** Per-category totals (slug -> amount), when the source provides them. */
   category_totals?: Record<string, number>;
+  /**
+   * The unit this receipt was recorded in (REQ-8, migration 0042), present
+   * when the read provides it (`features/home/api` surfaces it from
+   * `purchases.currency`); `null` on a legacy unit-less row. Producers that
+   * do not carry it (e.g. an optimistic row) can omit it. Consumers render
+   * `row.currency ?? viewer` — the profile only ever fills ABSENCE, a
+   * stored unit always wins (REQ-8 s4).
+   */
+  currency?: string | null;
   items?: HomeFeedItemRow[];
 }
 
@@ -242,6 +251,16 @@ export interface ReceiptDraft {
   card_brand?: string | null;
   /** Card kind detected on the receipt. Null when unknown/absent. */
   card_type?: CardType | null;
+  /**
+   * ISO 4217 unit the amounts are denominated in (money-integrity REQ-8).
+   * Absent = no unit detected (or the review screen was never touched) —
+   * `buildSaveReceiptArgs` then OMITS `p_currency` and the row stores NULL,
+   * so the receipt renders with the viewer's profile currency (REQ-8 #2).
+   * Set only by the scan parse (catalog-validated) or the review switcher,
+   * which RELABELS only: switching CLP → UYU never rewrites `total` or
+   * `items` (convert-on-switch is FX, out of scope).
+   */
+  currency?: string;
   items: ReviewItem[];
 }
 

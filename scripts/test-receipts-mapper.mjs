@@ -262,6 +262,10 @@ async function run() {
         // edit draft never carries it (purchaseToDraft), so the row keeps
         // the store row's origin — `?? false` when unknown (migration 0029).
         is_manual: false,
+        // The draft's unit starts as the row's (purchaseToDraft seeds it)
+        // and the switcher may relabel it — threaded so the optimistic row
+        // keeps its CURRENT label (REQ-8).
+        currency: draft.currency ?? null,
       },
       reviewItemsToFeedItems(draft.items),
     );
@@ -277,6 +281,8 @@ async function run() {
       // the built row carries it as undefined — the key is always present.
       payment_method: undefined,
       is_manual: false,
+      // This fixture draft carries no unit → null (viewer fallback).
+      currency: null,
       wants_snacks_total: 4,
       category_totals: { lacteos: 7, snacks: 4, otros: 3 },
       items: [

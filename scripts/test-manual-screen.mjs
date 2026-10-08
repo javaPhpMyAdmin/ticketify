@@ -2078,6 +2078,14 @@ async function editorWiringTests() {
     );
   });
 
+  await test('manual: submit seeds the draft unit from the settings profile (W3 ruling)', () => {
+    assert.match(
+      manualSource,
+      /buildManualDraft\([\s\S]{0,400}currency,\s*\)/,
+      'handleSubmit must pass the profile currency into buildManualDraft so manual drafts are never born unit-less',
+    );
+  });
+
   // ── Review flow (5.3): catalog-aware chip, null default kept ───────────
   const rowSource = readFileSync(
     join(root, 'src/features/tickets/components/ReviewItemRow.tsx'),
@@ -2117,6 +2125,134 @@ async function editorWiringTests() {
       reviewSource.includes('useCategoryCatalog') &&
         reviewSource.includes('catalog={catalog}'),
       'the review screen must supply the merged catalog for chip labels',
+    );
+  });
+
+  // ── Review unit switcher (money-integrity slice B, 2.5) ────────────────
+  // RN screen internals are unreachable from a node harness, so the
+  // switcher contract is pinned at the source level (design.md testing
+  // strategy, cell "Switcher render (source-pin)"):
+  //   * it renders the ONE catalog (SUPPORTED_CURRENCIES), not a hand list;
+  //   * a chip press writes draft.currency and NOTHING else — REQ-8 #5 is
+  //     relabel-only: switching CLP -> UYU must never touch total/items
+  //     (convert-on-switch is FX, out of scope by design).
+  await test('review: unit switcher renders the 14-code catalog', () => {
+    assert.ok(
+      /SUPPORTED_CURRENCIES\.map\(/.test(reviewSource),
+      'the switcher must map SUPPORTED_CURRENCIES (the one catalog), never a hardcoded list',
+    );
+    assert.ok(
+      reviewSource.includes('updateDraft({ currency: code })'),
+      'a chip press must write draft.currency through updateDraft',
+    );
+  });
+
+  await test('review: chip selected state reflects draft.currency (detected unit shown)', () => {
+    assert.ok(
+      /selected=\{\s*draft\?\.currency === code\s*\}/.test(reviewSource),
+      'the selected chip must come from draft.currency so the detected unit is visible',
+    );
+  });
+
+  await test('review: switcher is relabel-only — the patch carries currency and no other key (REQ-8 #5)', () => {
+    // Single-key patch object: if anyone ever widens this handler to also
+    // touch total / items (a silent FX conversion), the regex breaks.
+    assert.ok(
+      /updateDraft\(\{\s*currency:\s*code\s*\}\)/.test(reviewSource),
+      'the handler must patch ONLY { currency: code } — magnitudes stay untouched',
+    );
+    assert.ok(
+      !/updateDraft\(\{\s*currency:\s*code\s*,/.test(reviewSource),
+      'no second key may join the currency patch',
+    );
+  });
+
+  // ── money-integrity slice B (2.6): draft-based single-row renders bind
+  // the DRAFT unit with the profile currency as fallback (REQ-8 s4: rows
+  // and drafts keep their own unit; the profile only fills absence).
+  await test('manual entry item rows + total bind the draft unit (source pin)', () => {
+    const unitPrice = manualSource.match(
+      /formatCurrency\(item\.unit_price, draft\?\.currency \?\? currency\)/g,
+    );
+    assert.ok(
+      unitPrice && unitPrice.length === 1,
+      'the unit-price line must bind draft.currency with viewer fallback, got: ' +
+        (unitPrice?.length ?? 0),
+    );
+    const lineTotal = manualSource.match(
+      /formatCurrency\(item\.total_price, draft\?\.currency \?\? currency\)/g,
+    );
+    assert.ok(
+      lineTotal && lineTotal.length === 1,
+      'the line-total must bind draft.currency with viewer fallback, got: ' +
+        (lineTotal?.length ?? 0),
+    );
+    const grand = manualSource.match(
+      /formatCurrency\(total, draft\?\.currency \?\? currency\)/g,
+    );
+    assert.ok(
+      grand && grand.length === 1,
+      'the footer total must bind draft.currency with viewer fallback, got: ' +
+        (grand?.length ?? 0),
+    );
+  });
+
+  await test('review footer + item list bind the draft unit (source pin)', () => {
+    assert.ok(
+      reviewSource.includes('currency={draft?.currency ?? currency}'),
+      'ReceiptItemsList must receive the draft unit (ReviewItemRow renders through this prop)',
+    );
+    const sites = reviewSource.match(
+      /formatCurrency\([^,]+, draft\?\.currency \?\? currency\)/g,
+    );
+    assert.ok(
+      sites && sites.length === 3,
+      'footer total, declared total and mismatch detail must all bind draft.currency, got: ' +
+        (sites?.length ?? 0),
+    );
+  });
+
+  await test('the unit switcher renders in BOTH scan and edit mode (edit-path ruling, REQ-8 #6)', () => {
+    // Orchestrator ruling (edit path): an edit MAY correct the unit and the
+    // correction persists through updateReceipt (f8-parity catalog re-check
+    // client-side), so the switcher is no longer scan-only. This replaces
+    // the previous pin that asserted the !editingMode gate — a deliberate
+    // pin revision, not a weakening: the switcher stays present in both
+    // modes and edit-mode relabels are persisted, never silently dropped.
+    //
+    // Structure, not substring: a bare `includes('currencyBlock')` matches
+    // the STYLESHEET key even if the JSX were deleted entirely. Anchor on
+    // the View element and its SUPPORTED_CURRENCIES map instead, then
+    // forbid the old scan-only gate inside the JSX block itself.
+    assert.match(
+      reviewSource,
+      /<View style=\{styles\.currencyBlock\}>[\s\S]{0,400}SUPPORTED_CURRENCIES\.map\(/,
+      'the switcher JSX must render the currencyBlock View and map SUPPORTED_CURRENCIES',
+    );
+    const jsxStart = reviewSource.indexOf('<View style={styles.currencyBlock}>');
+    assert.ok(jsxStart !== -1, 'currencyBlock JSX not found');
+    const block = reviewSource.slice(jsxStart).split('</View>')[0];
+    assert.ok(
+      !block.includes('editingMode'),
+      'the switcher JSX itself must not be conditioned on editingMode',
+    );
+    assert.ok(
+      !/{!editingMode \?\s*\(\s*<View style=\{styles\.currencyBlock\}>/.test(
+        reviewSource,
+      ),
+      'the currency block must NOT be gated on !editingMode — edit mode persists relabels too',
+    );
+  });
+
+  await test('ReviewItemRow renders through its currency prop, never the profile store', () => {
+    assert.match(
+      rowSource,
+      /formatCurrency\(item\.total_price, currency\)/,
+      'the row must render with the currency it was given',
+    );
+    assert.ok(
+      !rowSource.includes('useSettingsStore'),
+      'the row must not read the profile currency itself — the caller binds the draft unit',
     );
   });
 }

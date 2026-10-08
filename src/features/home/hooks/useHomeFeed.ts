@@ -33,6 +33,12 @@ export interface ReceiptSummary {
    * "N escaneados · M manual" breakdown.
    */
   isManual: boolean;
+  /**
+   * The unit the receipt was recorded in (REQ-8), `null` on a legacy
+   * unit-less row. The home row renders `currency ?? profile` — the
+   * profile only fills absence (REQ-8 s4).
+   */
+  currency?: string | null;
 }
 
 /**
@@ -70,6 +76,15 @@ export interface CategoryItemSummary {
    * it undefined so their rendered behavior is unchanged.
    */
   quantity?: number;
+  /**
+   * The unit the collapsed amount is denominated in (REQ-8): the shared
+   * unit when every contributing receipt records the same one, `null`
+   * when the receipts span units or none carries one (mixed amounts have
+   * no single label without FX — out of scope; null falls back to the
+   * viewer's profile). Populated by `aggregateItemsByCategory`; other
+   * aggregators leave it undefined so their renders are unchanged.
+   */
+  currency?: string | null;
 }
 
 /**
@@ -88,6 +103,12 @@ export interface ReceiptSpendRecord {
    * optional keeps the aggregators (monthly overview, etc.) defensive.
    */
   total?: number;
+  /**
+   * The unit the receipt was recorded in (REQ-8), when the source row
+   * provides it — drill-down purchases attach it so single-row renders
+   * can label with the row's own unit.
+   */
+  currency?: string | null;
   category_totals?: Record<string, number>;
   items?: {
     /**
@@ -359,20 +380,54 @@ export function aggregateItemsByCategory(
   categoryKey: string,
   monthKey: string,
 ): CategoryItemSummary[] {
-  const totalsByItem = new Map<string, { amount: number; quantity: number }>();
+  const totalsByItem = new Map<
+    string,
+    {
+      amount: number;
+      quantity: number;
+      // undefined = nothing established yet; null = established as
+      // "unit-less"; string = the established unit.
+      currency: string | null | undefined;
+      mixed: boolean;
+    }
+  >();
   for (const receipt of list) {
     if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
     for (const item of receipt.items ?? []) {
       if (item.category !== categoryKey) continue;
       const key = normalizeItemName(item.name);
-      const current = totalsByItem.get(key) ?? { amount: 0, quantity: 0 };
+      const current = totalsByItem.get(key) ?? {
+        amount: 0,
+        quantity: 0,
+        currency: undefined,
+        mixed: false,
+      };
       current.amount += item.amount;
       current.quantity += item.quantity ?? 1;
+      // Unit of the collapsed row (REQ-8): it holds a single unit only
+      // while EVERY contributing receipt agrees — the moment two receipts
+      // disagree (a real unit mismatch OR a legacy unit-less row inside a
+      // summed amount) the collapsed figure has no single label without FX
+      // (out of scope) → null, the viewer-fallback signal.
+      const rowUnit = receipt.currency ?? null;
+      if (!current.mixed) {
+        if (current.currency === undefined) {
+          current.currency = rowUnit;
+        } else if (current.currency !== rowUnit) {
+          current.mixed = true;
+          current.currency = null;
+        }
+      }
       totalsByItem.set(key, current);
     }
   }
   return [...totalsByItem.entries()]
-    .map(([name, { amount, quantity }]) => ({ name, amount, quantity }))
+    .map(([name, { amount, quantity, currency, mixed }]) => ({
+      name,
+      amount,
+      quantity,
+      currency: mixed ? null : (currency ?? null),
+    }))
     .sort((a, b) => b.amount - a.amount);
 }
 
@@ -628,6 +683,8 @@ export interface ItemPurchaseSummary {
   date: string; // ISO
   amount: number;
   purchaseItemId?: string;
+  /** The owning receipt's unit (REQ-8); null/absent → viewer fallback. */
+  currency?: string | null;
 }
 
 /**
@@ -721,6 +778,7 @@ export function useItemDetail(itemName: string, monthKey = currentMonthKey()) {
         date: receipt.purchase_date,
         amount: item.amount,
         purchaseItemId: item.id,
+        currency: receipt.currency ?? null,
       });
     }
   }
@@ -749,6 +807,7 @@ export function useStoreDetail(storeName: string, monthKey?: string) {
     date: string;
     amount: number;
     purchaseItemId?: string;
+    currency?: string | null;
   };
   const purchasesByReceipt = new Map<string, ReceiptPurchase>();
   let total = 0;
@@ -773,6 +832,7 @@ export function useStoreDetail(storeName: string, monthKey?: string) {
           storeName: receipt.store_name ?? '',
           date: receipt.purchase_date,
           amount: receiptSubtotal,
+          currency: receipt.currency ?? null,
         });
       }
     }
@@ -835,6 +895,9 @@ export function mapPurchaseRowsToHomeFeed(
       // without the field (optimistic review row) default to false —
       // a just-scanned ticket is scanned until proven manual.
       isManual: item.is_manual ?? false,
+      // Row unit (REQ-8): null on legacy rows → the caller renders the
+      // viewer profile as the fallback (never persisted as a rewrite).
+      currency: item.currency ?? null,
     }));
 
   const categories = aggregateCategoriesByMonth(rows, monthKey, catalog);

@@ -157,7 +157,7 @@ export default function ItemDetailScreen() {
                       </Text>
                     </View>
                     <Text style={styles.purchaseAmount}>
-                      {formatCurrency(purchase.amount, currency)}
+                      {formatCurrency(purchase.amount, purchase.currency ?? currency)}
                     </Text>
                   </View>
                 </Pressable>

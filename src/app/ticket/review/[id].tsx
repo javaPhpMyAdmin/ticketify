@@ -49,7 +49,7 @@ import {
   useReceiptDraftDraft,
   useScanTicket,
 } from '@/features/tickets';
-import { formatCurrency, todayLocalISO } from '@/lib/format';
+import { formatCurrency, SUPPORTED_CURRENCIES, todayLocalISO } from '@/lib/format';
 import {
   getSignedReceiptPhotoUrl,
   resolveReceiptPhotoPath,
@@ -97,6 +97,10 @@ export default function ReviewReceiptScreen() {
   // so a stale edit session can't hijack a new scan.
   const editingId = useReceiptsStore((s) => s.editingId);
   const editingMode = editingId !== null && editingId === params.id;
+  // Unit switcher write slice (money-integrity slice B): the review screen
+  // patches ONLY draft.currency through the generic merge — the same seam
+  // useScanTicket uses to seed the parsed draft.
+  const updateDraft = useReceiptsStore((s) => s.updateDraft);
   // The receipt is denominated in the user's currency setting (default
   // UYU), the same store Home/History read — never a hardcoded code.
   const currency = useSettingsStore((s) => s.currency);
@@ -400,6 +404,11 @@ export default function ReviewReceiptScreen() {
               // carries it (purchaseToDraft), so the optimistic row keeps
               // the store row's origin — a manual ticket stays manual.
               is_manual: existing?.is_manual ?? false,
+              // The edit draft's unit starts as the row's (purchaseToDraft
+              // seeds it) and the switcher may relabel it in edit mode;
+              // threading the CURRENT draft value keeps the optimistic row
+              // labeled until the refetch.
+              currency: draft.currency ?? null,
             },
             reviewItemsToFeedItems(draft.items),
           );
@@ -620,6 +629,33 @@ export default function ReviewReceiptScreen() {
                     </View>
                   </View>
                 </View>
+                {/* Unit (money-integrity slice B, REQ-8 #5 / edit path #6):
+                    the receipt's own denomination, RELABEL-only — a chip
+                    press patches draft.currency and nothing else, so
+                    switching CLP → UYU never rewrites total/items
+                    (convert-on-switch is FX, out of scope). No detected
+                    unit → no chip selected → the save omits p_currency (or,
+                    in edit mode, updateReceipt omits the key) and the row
+                    keeps NULL (viewer fallback, REQ-8 #2).
+                    Renders in BOTH scan and edit mode (orchestrator ruling):
+                    scan persists through save_receipt's p_currency, an edit
+                    persists through updateReceipt's conditional PATCH —
+                    same catalog rule, re-checked client-side (no RPC). */}
+                <View style={styles.currencyBlock}>
+                  <Text style={styles.kicker}>
+                    {t('tickets:reviewCurrencyKicker')}
+                  </Text>
+                  <View style={styles.currencyRow}>
+                    {SUPPORTED_CURRENCIES.map((code) => (
+                      <Chip
+                        key={code}
+                        label={code}
+                        selected={draft?.currency === code}
+                        onPress={() => updateDraft({ currency: code })}
+                      />
+                    ))}
+                  </View>
+                </View>
               </Card>
 
               {/* Items */}
@@ -630,7 +666,7 @@ export default function ReviewReceiptScreen() {
                 {draft?.items ? (
                   <ReceiptItemsList
                     items={draft.items}
-                    currency={currency}
+                    currency={draft?.currency ?? currency}
                     catalog={catalog}
                     onPressCategory={(item) => setCategoryTarget(item)}
                     onToggleImpulse={(item, v) =>
@@ -652,7 +688,7 @@ export default function ReviewReceiptScreen() {
             <View style={styles.totalRow}>
               <Text style={styles.kicker}>{t('tickets:reviewTotalLabel')}</Text>
               <Text style={styles.totalValue}>
-                {formatCurrency(draft?.total ?? itemsTotal, currency)}
+                {formatCurrency(draft?.total ?? itemsTotal, draft?.currency ?? currency)}
               </Text>
             </View>
             {/* EDIT mode (soft hint, inline next to the total): the user is
@@ -685,12 +721,12 @@ export default function ReviewReceiptScreen() {
                 </Text>
                 {!matches ? (
                   <Text style={styles.matchesDetail}>
-                    {t('tickets:reviewDeclared')} {formatCurrency(draft.total, currency)}
+                    {t('tickets:reviewDeclared')} {formatCurrency(draft.total, draft?.currency ?? currency)}
                   </Text>
                 ) : itemsTotal > (draft?.total ?? 0) + 0.01 ? (
                   <Text style={styles.matchesDetail}>
                     {t('tickets:reviewDiscount')}{' '}
-                    {formatCurrency(itemsTotal - (draft?.total ?? 0), currency)}
+                    {formatCurrency(itemsTotal - (draft?.total ?? 0), draft?.currency ?? currency)}
                   </Text>
                 ) : null}
               </View>
@@ -862,6 +898,17 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   paymentRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  // Unit switcher (money-integrity slice B): wraps the 14 catalog codes
+  // like the payment chips — same pill rhythm, no horizontal scroll.
+  currencyBlock: {
+    marginTop: spacing.lg,
+    gap: spacing.xs,
+  },
+  currencyRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,

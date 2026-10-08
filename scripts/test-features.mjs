@@ -59,7 +59,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -1646,6 +1646,7 @@ async function run() {
     payment_method: 'card',
     image_url: `${USER_ID}/p-1.jpg`,
     status: 'confirmed',
+    currency: 'CLP',
     stores: { name: 'Whole Foods Market' },
     purchase_items: [
       {
@@ -1798,6 +1799,66 @@ async function run() {
     assert.equal(purchase.is_manual, true, 'manual origin survives the detail read');
   });
 
+  console.log('\n[tests] receipt row unit — detail read + edit draft (REQ-8 s4)\n');
+
+  await test('fetchPurchaseDetail surfaces the row currency; unit-less rows read null', async () => {
+    resetAll();
+    stubMod.__setTableRead('purchases', {
+      rows: [
+        {
+          id: 'p-clp',
+          store_id: 's1',
+          total: 5000,
+          purchase_date: '2026-08-02',
+          payment_method: 'cash',
+          image_url: null,
+          status: 'confirmed',
+          is_manual: false,
+          currency: 'CLP',
+          stores: { name: 'Feria' },
+          purchase_items: [],
+        },
+      ],
+    });
+    const withUnit = await ticketsMod.fetchPurchaseDetail('u1', 'p-clp');
+    assert.equal(withUnit.currency, 'CLP', 'the detail read must carry the row unit');
+    // The stub resolves armed rows unfiltered (no eq-id narrowing), so the
+    // legacy case gets its own arm.
+    resetAll();
+    stubMod.__setTableRead('purchases', {
+      rows: [
+        {
+          // Legacy row written before the column existed: no currency field.
+          id: 'p-legacy',
+          store_id: 's1',
+          total: 100,
+          purchase_date: '2026-08-02',
+          payment_method: 'cash',
+          image_url: null,
+          status: 'confirmed',
+          is_manual: false,
+          stores: { name: 'Feria' },
+          purchase_items: [],
+        },
+      ],
+    });
+    const legacy = await ticketsMod.fetchPurchaseDetail('u1', 'p-legacy');
+    assert.equal(
+      legacy.currency,
+      null,
+      'a unit-less row reads null (viewer fallback), never undefined',
+    );
+    // The column must be REQUESTED, not just mapped: the stub returns armed
+    // rows regardless of the select string, so pin the select at the source.
+    const src = readFileSync(join(root, 'src/features/tickets/api.ts'), 'utf8');
+    const sel = src.match(/\.select\(\s*`id, store_id,[^`]*purchase_date[^`]*`/);
+    assert.ok(sel, 'fetchPurchaseDetail must keep its joined select');
+    assert.ok(
+      sel[0].includes('currency'),
+      'the detail select must ask for the currency column',
+    );
+  });
+
   await test('purchaseToDraft preserves the purchase fields and maps category uuids to slugs', async () => {
     resetAll();
     const purchase = {
@@ -1860,6 +1921,35 @@ async function run() {
     assert.equal(draft.items[0].name, 'Leche', 'line order is preserved');
     assert.equal(draft.items[1].name, 'Galletas', 'line order is preserved');
     assert.ok(draft.items[0].temp_id && draft.items[1].temp_id, 'fresh temp ids for the review list keys');
+  });
+
+  await test('purchaseToDraft seeds the draft unit from the row (edit-mode render, REQ-8 s4)', () => {
+    const base = {
+      id: 'p-1',
+      store_id: 'store-1',
+      store_name: 'Feria',
+      purchase_date: '2026-08-02',
+      total: 5000,
+      payment_method: 'cash',
+      image_url: null,
+      status: 'confirmed',
+      items: [],
+    };
+    const draft = ticketsMod.purchaseToDraft({ ...base, currency: 'CLP' });
+    assert.equal(
+      draft.currency,
+      'CLP',
+      'the edit draft must carry the row unit so edit-mode renders label correctly',
+    );
+    const legacy = ticketsMod.purchaseToDraft({
+      ...base,
+      currency: null,
+    });
+    assert.equal(
+      legacy.currency,
+      undefined,
+      'a unit-less row seeds NO draft unit → viewer fallback on review',
+    );
   });
 
   await test('fetchPurchaseDetail surfaces the user-safe load message when the row is missing', async () => {
@@ -1966,6 +2056,69 @@ async function run() {
     );
   });
 
+  // ── money-integrity edit path (task 2.8, REQ-8 #6): the update payload
+  // carries the unit — f8 parity CLIENT-side (this path is a direct
+  // PostgREST PATCH: no update_receipt RPC exists, so there is no server
+  // re-check to lean on). Relabel only; magnitudes ride the draft. ──────
+  await test('updateReceipt persists an edit-mode unit relabel: normalized catalog code in the PATCH payload (REQ-8 #6)', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('purchases', [{ id: 'p-1' }]);
+    stubMod.__setTableRead('purchases', { rows: [PRE_EDIT_PURCHASE] });
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [] });
+    const draft = { ...DRAFT, currency: ' uyu ' };
+    const result = await ticketsMod.updateReceipt(USER_ID, 'p-1', draft);
+    assert.equal(result.id, 'p-1');
+    const updated = stubMod.__getUpdated('purchases');
+    assert.equal(
+      updated.currency,
+      'UYU',
+      'the payload must carry the unit normalized (trim + upper), f8 parity',
+    );
+    assert.equal(
+      updated.total,
+      42.18,
+      'a relabel never rewrites magnitudes — amounts ride the draft unchanged',
+    );
+  });
+
+  await test('updateReceipt stores no unit for an out-of-catalog edit value and never fails on it (f8 parity)', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('purchases', [{ id: 'p-1' }]);
+    stubMod.__setTableRead('purchases', { rows: [PRE_EDIT_PURCHASE] });
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [] });
+    const draft = { ...DRAFT, currency: 'XYZ' };
+    const result = await ticketsMod.updateReceipt(USER_ID, 'p-1', draft);
+    assert.equal(
+      result.id,
+      'p-1',
+      'an unknown code must not fail the edit (REQ-8 #6: never fails on the unit)',
+    );
+    const updated = stubMod.__getUpdated('purchases');
+    assert.equal(
+      updated.currency,
+      null,
+      'out-of-catalog → stored as no unit (viewer fallback), like the save path',
+    );
+  });
+
+  await test('updateReceipt omits the currency key for a unit-less draft (stored unit untouched)', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('purchases', [{ id: 'p-1' }]);
+    stubMod.__setTableRead('purchases', { rows: [PRE_EDIT_PURCHASE] });
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [] });
+    const draft = { ...DRAFT };
+    await ticketsMod.updateReceipt(USER_ID, 'p-1', draft);
+    const updated = stubMod.__getUpdated('purchases');
+    assert.ok(
+      !('currency' in updated),
+      'a draft without a unit must leave the column out of the payload entirely — ' +
+        'writing null here would wipe a legitimately stored unit on every ordinary edit',
+    );
+  });
+
   await test('updateReceipt uploads a device-local photo and persists the storage path', async () => {
     resetAll();
     stubMod.__setDeleteRead('purchases', [{ id: 'p-1' }]);
@@ -2065,6 +2218,12 @@ async function run() {
     assert.equal(restored.payment_method, 'card');
     assert.equal(restored.image_url, `${USER_ID}/p-1.jpg`);
     assert.equal(restored.status, 'confirmed');
+    assert.equal(
+      restored.currency,
+      'CLP',
+      'the rollback restores the ORIGINAL unit too — a failed edit must not ' +
+        'leave a half-applied relabel behind while restoring every other field',
+    );
     assert.ok(
       !('is_manual' in restored),
       'the restore UPDATE never writes the origin flag either (D1, migration 0029)',
@@ -2366,6 +2525,54 @@ async function run() {
       find(keySearch).state.isInvalidated,
       true,
       'item search refetches — a delete removes items from results',
+    );
+  });
+
+  // ── money-integrity slice B (2.6): the receipt detail screen renders
+  // THIS receipt's unit with the profile currency as fallback (REQ-8 s4).
+  // RN screen internals are unreachable from a node harness, so the
+  // binding is pinned at the source.
+  console.log('\n[tests] receipt detail unit binding (REQ-8 s4)\n');
+
+  await test('receipt detail maps the row unit onto the rendered feed row (source pin)', () => {
+    const src = readFileSync(join(root, 'src/app/receipts/[id].tsx'), 'utf8');
+    assert.match(
+      src,
+      /currency: p\.currency/,
+      'purchaseToFeedRow must carry the detail read unit onto the rendered row',
+    );
+    const hits =
+      src.match(
+        /formatCurrency\((?:receipt\.total|entry\.amount|item\.amount), receipt\.currency \?\? currency\)/g,
+      ) ?? [];
+    assert.equal(
+      hits.length,
+      3,
+      'total, category-entry and item rows must all bind receipt.currency with the profile fallback, got: ' +
+        hits.length,
+    );
+    assert.match(
+      src,
+      /<ReceiptCategoryItemsModal[\s\S]*?currency=\{receipt\.currency \?\? currency\}/,
+      'the category sheet must receive the receipt unit, not the bare profile',
+    );
+  });
+
+  await test('ReceiptCategoryItemsModal renders ONLY its currency prop (never the profile itself)', () => {
+    const src = readFileSync(
+      join(root, 'src/app/receipts/ReceiptCategoryItemsModal.tsx'),
+      'utf8',
+    );
+    const hits = src.match(/formatCurrency\([^,]+, currency\)/g) ?? [];
+    assert.equal(
+      hits.length,
+      2,
+      'item rows and the pinned total must both read the currency prop, got: ' +
+        hits.length,
+    );
+    assert.ok(
+      !src.includes('useSettingsStore'),
+      'the sheet must not read the profile currency — its caller binds the row unit',
     );
   });
 
@@ -2843,6 +3050,54 @@ async function run() {
     const junkParsed = await ticketsMod.parseTicket('file:///junk.jpg');
     assert.equal(junkParsed.card_brand, null);
     assert.equal(junkParsed.card_type, null);
+  });
+
+  await test('parseTicket maps the detected unit and drops out-of-catalog currency (REQ-8 #2)', async () => {
+    // Client-side wire gate (toClientReceipt -> normalizeCurrency): the edge
+    // catalog-checks too, but a tampered or stale payload must never seed a
+    // unit outside SUPPORTED_CURRENCIES — junk degrades to `undefined`,
+    // which the draft turns into an ABSENT p_currency (viewer fallback).
+    const invokeWithCurrency = async (currency) => {
+      resetAll();
+      expoFsMod.__setFileSource('file:///unit.jpg', {
+        size: 1024,
+        type: 'image/jpeg',
+        base64: 'aGk=',
+      });
+      stubMod.__setFunctionInvoke('parse-ticket', {
+        data: {
+          store_name: 'X',
+          purchase_date: '2026-08-02',
+          total: 4,
+          payment_method: 'cash',
+          ...(currency === undefined ? {} : { currency }),
+          items: [
+            { name: 'A', quantity: 1, unit_price: 4, total_price: 4, suggested_category_slug: null },
+          ],
+        },
+      });
+      return ticketsMod.parseTicket('file:///unit.jpg');
+    };
+
+    const clpParsed = await invokeWithCurrency('CLP');
+    assert.equal(clpParsed.currency, 'CLP', 'a catalog unit must reach the parsed receipt');
+
+    const normalized = await invokeWithCurrency(' usd ');
+    assert.equal(normalized.currency, 'USD', 'trim + uppercase, same rule as the edge');
+
+    const junkParsed = await invokeWithCurrency('XYZ');
+    assert.equal(
+      junkParsed.currency,
+      undefined,
+      'out-of-catalog currency must be dropped, never persisted as-is',
+    );
+
+    const oldPayload = await invokeWithCurrency(undefined);
+    assert.equal(
+      oldPayload.currency,
+      undefined,
+      'an old payload with no currency field stays unit-less',
+    );
   });
 
   await test('parseTicket sends the file MIME type and a non-zero timeout', async () => {

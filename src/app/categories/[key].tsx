@@ -157,7 +157,7 @@ export default function CategoryDetailScreen() {
                     {(item.quantity ?? 1) > 1 ? ` ×${item.quantity}` : ''}
                   </Text>
                   <Text style={styles.itemAmount}>
-                    {formatCurrency(item.amount, currency)}
+                    {formatCurrency(item.amount, item.currency ?? currency)}
                   </Text>
                 </View>
                 {idx < items.length - 1 ? <Divider /> : null}

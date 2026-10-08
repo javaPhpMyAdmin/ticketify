@@ -310,9 +310,20 @@ function compile() {
   `,
   );
 
+  // Catalog source of truth (W1): compile the REAL src/lib/format.ts beside
+  // the stub and re-export the catalog from it — no hand-written mirror left
+  // to drift (a catalog change in format.ts lands here automatically). Only
+  // the deterministic clock and id counter stay stubbed: tests assert a
+  // fixed purchase date and 'test-N' upload paths.
+  copyFileSync(
+    join(root, 'src', 'lib', 'format.ts'),
+    join(workdir, 'lib-stubs', 'format-real.ts'),
+  );
   writeFileSync(
     join(workdir, 'lib-stubs/format.ts'),
     `
+    export { SUPPORTED_CURRENCIES } from './format-real';
+    export type { SupportedCurrency } from './format-real';
     let _c = 0;
     export const tempId = () => 'test-' + (++_c);
     export const todayLocalISO = () => '2026-09-07';
@@ -410,7 +421,7 @@ function compile() {
     export type CardType = 'debit' | 'credit';
     export type PurchaseStatus = 'pending' | 'parsed' | 'confirmed' | 'failed';
     export interface Category { id: string; slug: string; name: string; kind: string; icon: string; color: string; sort_order: number; }
-    export interface ReceiptDraft { store_name: string; purchase_date: string; total: number; payment_method: PaymentMethod; is_manual?: boolean; image_url: string; card_brand?: string | null; card_type?: CardType | null; items: ReviewItem[]; }
+    export interface ReceiptDraft { store_name: string; purchase_date: string; total: number; payment_method: PaymentMethod; is_manual?: boolean; image_url: string; card_brand?: string | null; card_type?: CardType | null; currency?: string; items: ReviewItem[]; }
     export interface ReviewItem { temp_id: string; name: string; quantity: number; unit_price: number; total_price: number; category_id: string | null; is_impulse: boolean; ai_suggested_category_id: string | null; }
   `,
   );
@@ -531,6 +542,23 @@ async function run() {
     assert.equal(noCard.card_type, null);
     const debit = buildManualDraft('Coto', '2026-09-01', [], 0, 'card', 'debit');
     assert.equal(debit.card_type, 'debit');
+  });
+
+  await test('seeds the profile unit when provided (W3 manual-draft seeding)', () => {
+    const d = buildManualDraft('Coto', '2026-09-01', [item()], 500, 'cash', null, 'CLP');
+    assert.equal(
+      d.currency,
+      'CLP',
+      'the passed profile unit must land on the draft (manual drafts are not born unit-less)',
+    );
+  });
+
+  await test('omits the currency key when no unit is passed (unit-less draft contract)', () => {
+    const d = buildManualDraft('Coto', '2026-09-01', [], 0, 'cash');
+    assert.ok(
+      !('currency' in d),
+      'no unit passed -> the key must be ABSENT, not undefined (7-key payload contract)',
+    );
   });
 
   // ------------------------------------------------------------------
@@ -738,6 +766,117 @@ async function run() {
     await test('origin true when the draft is flagged manual (seam D4)', async () => {
       const res = await buildSaveReceiptArgs('user-1', draft({ is_manual: true }));
       assert.equal(res.args.p_is_manual, true);
+    });
+
+    // ------------------------------------------------------------------
+    // D2. p_currency — receipt denomination (money-integrity slice B, 2.4)
+    //
+    // Shape A (design decision row `save_receipt`): p_currency is REQUIRED
+    // and sits BEFORE the defaulted p_is_manual, so the seam MUST emit the
+    // key only when the draft carries a unit —
+    //   currency set  -> 8 keys -> 8-param f8 (catalog re-check)
+    //   no currency   -> 7 keys -> 7-param f7 -> column default NULL
+    // Never emit `p_currency: null`: an explicit null is still an 8-key
+    // call and would route to f8, diverging from the deployed 7-key
+    // contract that has been live since 0029.
+    // ------------------------------------------------------------------
+
+    await test('D2.1: seam emits p_currency when the draft carries a unit (8-arg route)', async () => {
+      const res = await buildSaveReceiptArgs('user-1', draft({ currency: 'CLP' }));
+      assert.equal(
+        res.args.p_currency,
+        'CLP',
+        'a draft.currency must reach the RPC args as p_currency',
+      );
+    });
+
+    await test('D2.2: seam OMITS p_currency when the draft carries none (7-arg route, f7 -> NULL)', async () => {
+      const res = await buildSaveReceiptArgs('user-1', draft());
+      assert.ok(
+        !('p_currency' in res.args),
+        'no draft.currency -> the key must be ABSENT (not null) so the payload stays 7-key',
+      );
+      assert.equal(
+        Object.keys(res.args).length,
+        7,
+        'exactly 7 keys — the pre-0042 payload shape, untouched for unit-less drafts',
+      );
+    });
+
+    await test('D2.3: saveManualReceipt RPC payload carries p_currency end-to-end (data-access s1)', async () => {
+      globalThis.__rpcResult = {
+        data: { ok: true, purchase_id: 'purchase-clp', scans_used: 1, scans_limit: 15 },
+        error: null,
+      };
+      globalThis.__rpcCalls = [];
+      await saveManualReceipt('user-1', draft({ currency: 'CLP', is_manual: true }));
+      const saveCalls = globalThis.__rpcCalls.filter((c) => c.fn === 'save_receipt');
+      assert.equal(saveCalls.length, 1, 'exactly one save_receipt RPC call');
+      assert.equal(
+        saveCalls[0].args.p_currency,
+        'CLP',
+        'the wire payload must carry the unit (the row persists CLP)',
+      );
+      assert.equal(
+        saveCalls[0].args.p_is_manual,
+        true,
+        'origin flag keeps travelling alongside the new arg',
+      );
+    });
+
+    await test('D2.4: saveReceipt (scan path) keeps the 7-key payload when no unit was detected', async () => {
+      globalThis.__rpcResult = {
+        data: { ok: true, purchase_id: 'purchase-714', scans_used: 1, scans_limit: 15 },
+        error: null,
+      };
+      globalThis.__rpcCalls = [];
+      await saveReceipt('user-1', draft());
+      const saveCalls = globalThis.__rpcCalls.filter((c) => c.fn === 'save_receipt');
+      assert.equal(saveCalls.length, 1, 'exactly one save_receipt RPC call');
+      assert.ok(
+        !('p_currency' in saveCalls[0].args),
+        'a unit-less draft must NOT emit p_currency on the wire (f7 -> column default NULL)',
+      );
+      assert.equal(
+        Object.keys(saveCalls[0].args).length,
+        7,
+        'wire payload stays 7-key for unit-less drafts',
+      );
+    });
+
+    await test('D2.5: a builder-seeded manual draft reaches the RPC as p_currency (W3 end-to-end)', async () => {
+      globalThis.__rpcResult = {
+        data: { ok: true, purchase_id: 'purchase-manual-clp', scans_used: 1, scans_limit: 15 },
+        error: null,
+      };
+      globalThis.__rpcCalls = [];
+      const manualDraft = buildManualDraft(
+        'Coto',
+        '2026-09-01',
+        [item()],
+        500,
+        'cash',
+        null,
+        'CLP',
+      );
+      await saveManualReceipt('user-1', manualDraft);
+      const saveCalls = globalThis.__rpcCalls.filter((c) => c.fn === 'save_receipt');
+      assert.equal(saveCalls.length, 1, 'exactly one save_receipt RPC call');
+      assert.equal(
+        saveCalls[0].args.p_currency,
+        'CLP',
+        'the builder-seeded unit must travel to the wire and persist',
+      );
+    });
+
+    await test("D2.6: an empty-string unit still emits p_currency (explicit-value guard, S2)", async () => {
+      const res = await buildSaveReceiptArgs('user-1', draft({ currency: '' }));
+      assert.ok(
+        'p_currency' in res.args,
+        "currency '' is an EXPLICIT value — the seam guard must be != null, not truthy " +
+          '(aligned with updateReceipt PATCH; an empty value is validated downstream, never silently dropped here)',
+      );
+      assert.equal(res.args.p_currency, '', 'the explicit value travels as given');
     });
 
     // ------------------------------------------------------------------

@@ -59,6 +59,11 @@ export function useScanTicket(): UseScanTicketResult {
         payment_method: parsed.payment_method,
         card_brand: parsed.card_brand,
         card_type: parsed.card_type,
+        // Unit detected by the edge (money-integrity REQ-8 #1): seeds the
+        // draft so the save persists the receipt's own denomination. Absent
+        // when no unit was detected — the key simply stays unset and
+        // buildSaveReceiptArgs omits p_currency (viewer fallback).
+        currency: parsed.currency,
         items: parsed.items,
       });
       setDraftId(tempId());

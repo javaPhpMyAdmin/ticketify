@@ -26,6 +26,7 @@
   "reviewFailedDialogTitle": "Não foi possível processar o comprovante",
   "reviewDateKicker": "DATA",
   "reviewPaymentKicker": "PAGAMENTO",
+  "reviewCurrencyKicker": "MOEDA",
   "reviewItemsHeader_one": "Item processado (1)",
   "reviewItemsHeader_other": "Itens processados ({{count}})",
   "reviewTotalLabel": "Total do comprovante",

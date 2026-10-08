@@ -86,6 +86,11 @@ export const MANUAL_FORM_ERROR = {
  * Card fields are optional display metadata; the seam and RPC never send
  * them (decision #1137: manual entries share scans_used/scans_limit;
  * `card_brand`/`card_type` are draft-only display).
+ *
+ * `currency` is the settings profile unit (W3): a NEW manual draft is seeded
+ * with it so the save is never born unit-less. Omitted (falsy) -> the key is
+ * ABSENT from the draft, preserving the 7-key payload contract for callers
+ * that genuinely have no unit to record.
  */
 export function buildManualDraft(
   storeName: string,
@@ -94,6 +99,7 @@ export function buildManualDraft(
   total: number,
   paymentMethod: PaymentMethod,
   cardType?: CardType | null,
+  currency?: string,
 ): ReceiptDraft {
   return {
     store_name: storeName,
@@ -104,6 +110,7 @@ export function buildManualDraft(
     is_manual: true,
     image_url: '',
     card_type: cardType ?? null,
+    ...(currency ? { currency } : {}),
     items,
   };
 }

@@ -109,6 +109,7 @@ function load(mod) {
 
 let homeMod;
 let catsMod;
+let fmtMod;
 
 async function run() {
   console.log('\n[tests] compiling home-feed modules…');
@@ -123,6 +124,9 @@ async function run() {
 
   homeMod = await load('src/features/home/hooks/useHomeFeed.js');
   catsMod = await load('src/features/home/categories.js');
+  // Real formatter (tsconfig.home-test.json includes src/lib/format.ts) for
+  // the end-to-end composition pin below.
+  fmtMod = await load('src/lib/format.js');
 
   console.log('\n[tests] normalizeItemName diacritic folding\n');
 
@@ -219,7 +223,7 @@ async function run() {
     );
     // Same normalized name collapses both rows; quantities sum 3 + 2 → 5.
     assert.deepEqual(out, [
-      { name: 'bolsa camiseta compo', amount: 4050, quantity: 5 },
+      { name: 'bolsa camiseta compo', amount: 4050, quantity: 5, currency: null },
     ]);
   });
 
@@ -248,7 +252,7 @@ async function run() {
       '2026-08',
     );
     // r1 has no quantity → counted as 1; r2 contributes 2 → 3 total.
-    assert.deepEqual(out, [{ name: 'yerba', amount: 2400, quantity: 3 }]);
+    assert.deepEqual(out, [{ name: 'yerba', amount: 2400, quantity: 3, currency: null }]);
   });
 
   await test('aggregateItemsByCategory scopes to category and month', () => {
@@ -274,7 +278,7 @@ async function run() {
       '2026-08',
     );
     // panaderia row excluded by category; July yogur excluded by month.
-    assert.deepEqual(out, [{ name: 'leche', amount: 50, quantity: 3 }]);
+    assert.deepEqual(out, [{ name: 'leche', amount: 50, quantity: 3, currency: null }]);
   });
 
   console.log('\n[tests] compareReceiptsByScan total order\n');
@@ -529,6 +533,7 @@ async function run() {
         amount: 55.5,
         imageUrl: null,
         isManual: false,
+        currency: null,
       },
       {
         id: 'p-manual',
@@ -537,6 +542,7 @@ async function run() {
         amount: 120,
         imageUrl: null,
         isManual: true,
+        currency: null,
       },
     ]);
     assert.equal(
@@ -548,6 +554,96 @@ async function run() {
       feed.receipts[0].isManual,
       false,
       'scanned receipt → isManual false',
+    );
+  });
+
+  console.log('\n[tests] row unit carried into summaries + drill-downs (REQ-8 s4)\n');
+
+  const unitRow = {
+    id: 'p-clp',
+    store_name: 'Coto',
+    purchase_date: '2026-08-06',
+    scanned_at: '2026-08-06T10:00:00.000Z',
+    total: 5000,
+    image_url: null,
+    status: 'confirmed',
+    payment_method: 'cash',
+    is_manual: false,
+    currency: 'CLP',
+    wants_snacks_total: 0,
+    category_totals: {},
+    items: [],
+  };
+
+  await test('mapPurchaseRowsToHomeFeed surfaces the row unit; unit-less rows read null', () => {
+    const withUnit = homeMod.mapPurchaseRowsToHomeFeed([unitRow], null, '2026-08');
+    assert.equal(
+      withUnit.receipts[0].currency,
+      'CLP',
+      'the ReceiptSummary must carry the row unit for the home row render',
+    );
+    const withoutUnit = homeMod.mapPurchaseRowsToHomeFeed(
+      [{ ...unitRow, currency: undefined }],
+      null,
+      '2026-08',
+    );
+    assert.equal(
+      withoutUnit.receipts[0].currency,
+      null,
+      'a legacy row reads null (viewer fallback), never undefined',
+    );
+  });
+
+  await test('a CLP row renders "$ 5.000" through formatCurrency (composition pin)', () => {
+    // End-to-end composition: the home row's amount binds the row unit into
+    // the formatter, so '$ 5.000' depends on BOTH hops — the unit carried by
+    // the mapper AND zero-decimal LATAM formatting — which neither the unit
+    // pin nor the formatter's own harness observes alone.
+    const feed = homeMod.mapPurchaseRowsToHomeFeed([unitRow], null, '2026-08');
+    const row = feed.receipts[0];
+    assert.equal(
+      fmtMod.formatCurrency(row.amount, row.currency),
+      '$ 5.000',
+      'the CLP summary row must render through the real formatter as $ 5.000',
+    );
+  });
+
+  await test('aggregateItemsByCategory keeps a single unit; mixed/absent collapses to null', () => {
+    const receipt = (id, currency, amount) => ({
+      id,
+      purchase_date: '2026-08-05',
+      ...(currency === undefined ? {} : { currency }),
+      items: [{ name: 'Yerba', amount, category: 'alimentos' }],
+    });
+    const allSame = homeMod.aggregateItemsByCategory(
+      [receipt('r1', 'CLP', 1100), receipt('r2', 'CLP', 1300)],
+      'alimentos',
+      '2026-08',
+    );
+    assert.equal(
+      allSame[0].currency,
+      'CLP',
+      'a collapsed row over same-unit receipts keeps that unit',
+    );
+    const mixed = homeMod.aggregateItemsByCategory(
+      [receipt('r1', 'CLP', 1100), receipt('r2', 'USD', 1300)],
+      'alimentos',
+      '2026-08',
+    );
+    assert.equal(
+      mixed[0].currency,
+      null,
+      'a collapsed row spanning units has no single unit → null (viewer fallback)',
+    );
+    const legacy = homeMod.aggregateItemsByCategory(
+      [receipt('r1', undefined, 1100)],
+      'alimentos',
+      '2026-08',
+    );
+    assert.equal(
+      legacy[0].currency,
+      null,
+      'legacy unit-less receipts collapse to null',
     );
   });
 
@@ -784,6 +880,84 @@ async function run() {
     assert.ok(
       /\[monthList,\s*householdTotal,\s*monthKey,\s*catalog\]/.test(src),
       'the feed memo must depend on the catalog',
+    );
+  });
+
+  // ── money-integrity slice B (2.6): single-row renders bind the row's
+  // OWN unit with the viewer profile as fallback. RN screen internals are
+  // unreachable from a node harness, so the binding is pinned at the
+  // source (design.md testing strategy; REQ-8 s4: a profile switch must
+  // not relabel stored rows — rows carry their own unit).
+  await test('home feed passes each receipt row unit to ReceiptRow (source pin)', () => {
+    const src = readFileSync(join(root, 'src/app/(tabs)/index.tsx'), 'utf8');
+    assert.match(
+      src,
+      /<ReceiptRow[\s\S]*?currency=\{r\.currency \?\? currency\}/,
+      'the ReceiptRow caller must bind r.currency with the profile fallback, not the bare profile',
+    );
+  });
+
+  await test('store + item drill-down purchases carry the receipt unit (source pin)', () => {
+    const src = readFileSync(
+      join(root, 'src/features/home/hooks/useHomeFeed.ts'),
+      'utf8',
+    );
+    const itemDetail = src.slice(
+      src.indexOf('export function useItemDetail'),
+      src.indexOf('export function useStoreDetail'),
+    );
+    const storeDetail = src.slice(src.indexOf('export function useStoreDetail'));
+    assert.match(
+      itemDetail,
+      /currency: receipt\.currency \?\? null/,
+      'useItemDetail must attach the source receipt unit to each purchase',
+    );
+    assert.match(
+      storeDetail,
+      /currency: receipt\.currency \?\? null/,
+      'useStoreDetail must attach the source receipt unit to each purchase',
+    );
+  });
+
+  await test('store drill-down rows render the row unit with viewer fallback (source pin)', () => {
+    const src = readFileSync(
+      join(root, 'src/app/stores/[name].tsx'),
+      'utf8',
+    );
+    const hits =
+      src.match(/formatCurrency\(purchase\.amount, purchase\.currency \?\? currency\)/g) ??
+      [];
+    assert.equal(
+      hits.length,
+      2,
+      'both the a11y label and the visible amount must bind the row unit, got: ' +
+        hits.length,
+    );
+  });
+
+  await test('item drill-down rows render the row unit with viewer fallback (source pin)', () => {
+    const src = readFileSync(join(root, 'src/app/items/[name].tsx'), 'utf8');
+    const hits =
+      src.match(/formatCurrency\(purchase\.amount, purchase\.currency \?\? currency\)/g) ??
+      [];
+    assert.equal(
+      hits.length,
+      1,
+      'the item purchase row must bind the receipt unit, got: ' + hits.length,
+    );
+  });
+
+  await test('category drill-down item rows render the collapsed unit with viewer fallback (source pin)', () => {
+    const src = readFileSync(
+      join(root, 'src/app/categories/[key].tsx'),
+      'utf8',
+    );
+    const hits =
+      src.match(/formatCurrency\(item\.amount, item\.currency \?\? currency\)/g) ?? [];
+    assert.equal(
+      hits.length,
+      1,
+      'the category item row must bind the collapsed row unit, got: ' + hits.length,
     );
   });
 

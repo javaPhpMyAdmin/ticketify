@@ -60,6 +60,12 @@ function compile() {
     .replace(/from ['"]\.\/card\.ts['"]/g, "from './card.js'");
   writeFileSync(join(srcDir, 'parse.ts'), parseSource);
 
+  // The client catalog is compiled alongside so the parity pin compares the
+  // edge's duplicate catalog against the REAL source of truth
+  // (`src/lib/format.ts`), not a hand-written copy inside this harness —
+  // a fixture would drift in lockstep with the duplicate and prove nothing.
+  copyFileSync(join(root, 'src', 'lib', 'format.ts'), join(srcDir, 'format.ts'));
+
   const tsconfig = {
     compilerOptions: {
       module: 'commonjs',
@@ -102,6 +108,11 @@ async function run() {
   compile();
   console.log('[tests] loading compiled module…');
   const parseMod = await load('src/parse.js');
+  const formatMod = await load('src/format.js');
+  const indexSource = readFileSync(
+    join(root, 'supabase', 'functions', 'parse-ticket', 'index.ts'),
+    'utf8',
+  );
   const {
     parseListJson,
     parseItem,
@@ -110,6 +121,7 @@ async function run() {
     ProviderOverloadedError,
     withProviderRetry,
     PROVIDER_RETRY_DELAYS_MS,
+    SUPPORTED_CURRENCIES,
   } = parseMod;
 
   console.log('\n[tests] parseListJson\n');
@@ -270,6 +282,169 @@ async function run() {
       items: [item()],
     });
     assert.equal(result.payment_method, 'other');
+  });
+
+  console.log('\n[tests] currency extraction (REQ-LIST-2/3/4, REQ-8)\n');
+
+  await test('parseListJson carries a catalog currency (REQ-LIST-2 s1)', () => {
+    const result = parseListJson({
+      items: [item()],
+      currency: 'CLP',
+    });
+    assert.equal(result.currency, 'CLP');
+    // REQ-LIST-4 s1: the unit rides alongside the pre-change members.
+    assert.equal(result.items.length, 1);
+    assert.equal(result.total, 45);
+  });
+
+  await test('parseListJson omits an absent currency and still succeeds (REQ-LIST-2 s2)', () => {
+    const result = parseListJson({ items: [item()] });
+    assert.equal('currency' in result, false);
+    assert.equal(result.items.length, 1);
+    assert.equal(result.total, 45);
+  });
+
+  await test('parseListJson drops an out-of-catalog currency without throwing (REQ-LIST-3 s1)', () => {
+    const result = parseListJson({
+      items: [item()],
+      currency: 'XYZ',
+    });
+    assert.equal('currency' in result, false);
+    // Items and total are untouched by a rejected unit — only the unit is
+    // dropped, so the receipt falls back to the viewer's profile currency.
+    assert.equal(result.items.length, 1);
+    assert.equal(result.total, 45);
+  });
+
+  await test('parseListJson upper-cases a lower-case catalog currency', () => {
+    const result = parseListJson({
+      items: [item()],
+      currency: 'clp',
+    });
+    assert.equal(result.currency, 'CLP');
+  });
+
+  await test('parseListJson drops a non-string currency instead of throwing', () => {
+    const result = parseListJson({
+      items: [item()],
+      currency: 5000,
+    });
+    assert.equal('currency' in result, false);
+  });
+
+  await test('parseReceiptJson carries a catalog currency (REQ-8 scan path)', () => {
+    const result = parseReceiptJson({
+      store_name: 'Coto',
+      purchase_date: '2026-08-13',
+      total: 5000,
+      payment_method: 'card',
+      items: [item()],
+      currency: 'CLP',
+    });
+    assert.equal(result.currency, 'CLP');
+    // REQ-LIST-4 s1's "every other member unchanged" equivalent for receipt mode.
+    assert.equal(result.store_name, 'Coto');
+    assert.equal(result.total, 5000);
+    assert.equal(result.payment_method, 'card');
+    assert.equal(result.items.length, 1);
+  });
+
+  await test('parseReceiptJson omits an absent currency (legacy shape unchanged)', () => {
+    const result = parseReceiptJson({
+      store_name: 'Coto',
+      purchase_date: '2026-08-13',
+      total: 100,
+      payment_method: 'other',
+      items: [item()],
+    });
+    assert.equal('currency' in result, false);
+  });
+
+  await test('parseReceiptJson drops an out-of-catalog currency without throwing (REQ-8 #2)', () => {
+    const result = parseReceiptJson({
+      store_name: 'Coto',
+      purchase_date: '2026-08-13',
+      total: 100,
+      payment_method: 'other',
+      items: [item()],
+      currency: 'XYZ',
+    });
+    assert.equal('currency' in result, false);
+    assert.equal(result.store_name, 'Coto');
+  });
+
+  console.log('\n[tests] prompt pins (index.ts source — the harness cannot import Deno)\n');
+
+  const receiptPrompt = /const PROMPT = `([\s\S]*?)`;/.exec(indexSource)?.[1];
+  const listPrompt = /const LIST_PROMPT = `([\s\S]*?)`;/.exec(indexSource)?.[1];
+
+  await test('receipt prompt asks for the ISO 4217 unit', () => {
+    assert.ok(receiptPrompt, 'PROMPT literal not found in index.ts');
+    assert.match(receiptPrompt, /ISO 4217/);
+    assert.match(receiptPrompt, /"currency"/);
+  });
+
+  await test('list prompt asks for the ISO 4217 unit', () => {
+    assert.ok(listPrompt, 'LIST_PROMPT literal not found in index.ts');
+    assert.match(listPrompt, /ISO 4217/);
+    assert.match(listPrompt, /"currency"/);
+  });
+
+  await test('both prompts keep the plain-numbers rule (symbols stay out of money fields)', () => {
+    assert.ok(receiptPrompt && listPrompt, 'prompt literals not found in index.ts');
+    assert.match(
+      receiptPrompt,
+      /All money values must be plain numbers without currency symbols or thousands separators\./,
+    );
+    assert.match(
+      listPrompt,
+      /All money values must be plain numbers without currency symbols or thousands separators\./,
+    );
+  });
+
+  await test('list-mode builder forwards the validated unit into the ParsedReceipt (REQ-LIST-4 s1)', () => {
+    const fn = /function listToReceipt\([\s\S]*?\n\}/.exec(indexSource);
+    assert.ok(fn, 'listToReceipt not found in index.ts');
+    // Assignment, not token: a bare /currency/ also matches the surrounding
+    // comments and the `currency` property on adjacent objects — pin the
+    // forwarding line itself.
+    assert.match(fn[0], /receipt\.currency\s*=\s*list\.currency/);
+  });
+
+  await test('list-mode builder leaves the other members defaulted (REQ-LIST-4 s2)', () => {
+    const fn = /function listToReceipt\([\s\S]*?\n\}/.exec(indexSource);
+    assert.ok(fn, 'listToReceipt not found in index.ts');
+    for (const member of [
+      "store_name: ''",
+      'payment_method:',
+      'card_brand: null',
+      'card_type: null',
+      'items: list.items',
+    ]) {
+      assert.ok(
+        fn[0].includes(member),
+        `listToReceipt must still default \`${member}\``,
+      );
+    }
+  });
+
+  console.log('\n[tests] edge catalog parity (duplicate + parity test — edge cannot import src/)\n');
+
+  await test("edge SUPPORTED_CURRENCIES matches src/lib/format.ts SUPPORTED_CURRENCIES", () => {
+    assert.ok(
+      Array.isArray(SUPPORTED_CURRENCIES),
+      'edge lib/parse.ts must export its own SUPPORTED_CURRENCIES duplicate',
+    );
+    assert.deepEqual(
+      [...SUPPORTED_CURRENCIES].sort(),
+      [...formatMod.SUPPORTED_CURRENCIES].sort(),
+      'edge duplicate catalog drifted from the client source of truth',
+    );
+    assert.equal(
+      new Set(SUPPORTED_CURRENCIES).size,
+      SUPPORTED_CURRENCIES.length,
+      'edge duplicate catalog has duplicate codes',
+    );
   });
 
   console.log('\n[tests] withProviderRetry (transient provider overload backoff)\n');

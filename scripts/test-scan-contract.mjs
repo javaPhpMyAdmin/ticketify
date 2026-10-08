@@ -196,9 +196,20 @@ function compile() {
   `,
   );
 
+  // Catalog source of truth (W1): compile the REAL src/lib/format.ts beside
+  // the stub and re-export the catalog from it — no hand-written mirror left
+  // to drift (a catalog change in format.ts lands here automatically). Only
+  // the clock and id counter stay stubbed (harness-local determinism, not
+  // catalog data).
+  copyFileSync(
+    join(root, 'src', 'lib', 'format.ts'),
+    join(workdir, 'lib-stubs', 'format-real.ts'),
+  );
   writeFileSync(
     join(workdir, 'lib-stubs/format.ts'),
     `
+    export { SUPPORTED_CURRENCIES } from './format-real';
+    export type { SupportedCurrency } from './format-real';
     let _c = 0;
     export const tempId = () => 'test-' + (++_c);
     export const todayLocalISO = () => new Date().toISOString().slice(0, 10);
@@ -258,7 +269,7 @@ function compile() {
     export type CardType = 'debit' | 'credit';
     export type PurchaseStatus = 'pending' | 'parsed' | 'confirmed' | 'failed';
     export interface Category { id: string; slug: string; name: string; kind: string; icon: string; color: string; sort_order: number; }
-    export interface ReceiptDraft { store_name: string; purchase_date: string; total: number; payment_method: PaymentMethod; is_manual?: boolean; image_url: string; items: ReviewItem[]; }
+    export interface ReceiptDraft { store_name: string; purchase_date: string; total: number; payment_method: PaymentMethod; is_manual?: boolean; image_url: string; currency?: string; items: ReviewItem[]; }
     export interface ReviewItem { temp_id: string; name: string; quantity: number; unit_price: number; total_price: number; category_id: string | null; is_impulse: boolean; ai_suggested_category_id: string | null; }
   `,
   );
@@ -806,9 +817,68 @@ async function run() {
         // buildManualDraft (is_manual: true), asserted in test-manual-receipt.
         const res = await buildSaveReceiptArgs('user-uuid', minDraft);
         assert.equal(res.args.p_is_manual, false);
-        // The arg is emitted even when the draft omits the field (always the
-        // 7-param RPC call — the overload resolves by explicit named arg).
+        // The arg is emitted even when the draft omits the field (the
+        // overload resolves by explicit named arg — 7-key payload, matching
+        // the 7-param f7 whenever the draft carries no unit).
         assert.ok('p_is_manual' in res.args);
+      },
+    );
+
+    await test(
+      'scan flow carries the detected unit: seam emits p_currency when draft.currency is set',
+      async () => {
+        // A scan CAN detect a unit (REQ-LIST-2 / REQ-8): the edge returns
+        // `currency`, the draft seeds it, and the seam must forward it so
+        // save_receipt persists the receipt's own denomination (8-arg route,
+        // shape A — see migration 0042's header).
+        const res = await buildSaveReceiptArgs('user-uuid', {
+          ...minDraft,
+          currency: 'USD',
+        });
+        assert.equal(
+          res.args.p_currency,
+          'USD',
+          'a detected unit must reach the RPC args as p_currency',
+        );
+      },
+    );
+
+    await test(
+      'scan flow without a detected unit keeps the 7-key payload (p_currency omitted)',
+      async () => {
+        // The common path (no unit on the receipt): the key must be ABSENT,
+        // not null — an explicit null would be an 8-key call (f8), while the
+        // deployed contract for unit-less drafts is 7-key (f7 -> column
+        // default NULL). REQ-8 #2: no unit detected -> nothing persisted.
+        const res = await buildSaveReceiptArgs('user-uuid', minDraft);
+        assert.ok(
+          !('p_currency' in res.args),
+          'no detected unit -> p_currency must be absent from the payload',
+        );
+        assert.equal(
+          Object.keys(res.args).length,
+          7,
+          'the unit-less wire payload stays exactly 7 keys',
+        );
+      },
+    );
+
+    await test(
+      'scan flow seeds draft.currency from the parsed receipt (prompt -> ReceiptDraft)',
+      async () => {
+        // useScanTicket is a React hook (unrunnable in node) — pinned at the
+        // source level like the other wiring pins: the parsed unit must be
+        // written into the draft in the SAME single updateDraft that seeds
+        // the rest, otherwise a detected CLP dies at the review screen and
+        // the save falls back to the viewer currency (breaking REQ-8 #1).
+        const hookSrc = readFileSync(
+          join(root, 'src/features/tickets/hooks/useScanTicket.ts'),
+          'utf8',
+        );
+        assert.ok(
+          hookSrc.includes('currency: parsed.currency'),
+          'useScanTicket must seed draft.currency from the parsed receipt',
+        );
       },
     );
 

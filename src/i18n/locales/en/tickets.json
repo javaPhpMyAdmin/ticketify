@@ -26,6 +26,7 @@
   "reviewFailedDialogTitle": "Couldn't process the receipt",
   "reviewDateKicker": "DATE",
   "reviewPaymentKicker": "PAYMENT",
+  "reviewCurrencyKicker": "CURRENCY",
   "reviewItemsHeader_one": "Processed item (1)",
   "reviewItemsHeader_other": "Processed items ({{count}})",
   "reviewTotalLabel": "Receipt total",

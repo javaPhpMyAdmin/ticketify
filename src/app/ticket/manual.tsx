@@ -169,6 +169,10 @@ export default function ManualEntryScreen() {
         total,
         draft.payment_method,
         cardType,
+        // W3 ruling: a NEW manual draft carries the profile unit, so the
+        // save is never born unit-less (the store draft is reseeded empty
+        // on mount and never holds a unit itself).
+        currency,
       );
       // Block submit with user-friendly es-AR errors (REQ-006).
       const codes = validateManualForm(manualDraft);
@@ -356,11 +360,11 @@ export default function ManualEntryScreen() {
                             {item.name}
                           </Text>
                           <Text style={styles.itemSub}>
-                            {item.quantity} × {formatCurrency(item.unit_price, currency)}
+                            {item.quantity} × {formatCurrency(item.unit_price, draft?.currency ?? currency)}
                           </Text>
                         </View>
                         <Text style={styles.itemTotal}>
-                          {formatCurrency(item.total_price, currency)}
+                          {formatCurrency(item.total_price, draft?.currency ?? currency)}
                         </Text>
                         <Pressable
                           onPress={() => openEditItem(item)}
@@ -418,7 +422,7 @@ export default function ManualEntryScreen() {
         <View style={styles.footer}>
           <View style={styles.totalRow}>
             <Text style={styles.kicker}>{t('tickets:manualTotal')}</Text>
-            <Text style={styles.totalValue}>{formatCurrency(total, currency)}</Text>
+            <Text style={styles.totalValue}>{formatCurrency(total, draft?.currency ?? currency)}</Text>
           </View>
           <Fab
             label={t('tickets:manualSave')}
