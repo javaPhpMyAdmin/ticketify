@@ -49,7 +49,7 @@ import {
   useReceiptDraftDraft,
   useScanTicket,
 } from '@/features/tickets';
-import { formatCurrency, todayLocalISO } from '@/lib/format';
+import { formatCurrency, SUPPORTED_CURRENCIES, todayLocalISO } from '@/lib/format';
 import {
   getSignedReceiptPhotoUrl,
   resolveReceiptPhotoPath,
@@ -97,6 +97,10 @@ export default function ReviewReceiptScreen() {
   // so a stale edit session can't hijack a new scan.
   const editingId = useReceiptsStore((s) => s.editingId);
   const editingMode = editingId !== null && editingId === params.id;
+  // Unit switcher write slice (money-integrity slice B): the review screen
+  // patches ONLY draft.currency through the generic merge — the same seam
+  // useScanTicket uses to seed the parsed draft.
+  const updateDraft = useReceiptsStore((s) => s.updateDraft);
   // The receipt is denominated in the user's currency setting (default
   // UYU), the same store Home/History read — never a hardcoded code.
   const currency = useSettingsStore((s) => s.currency);
@@ -620,6 +624,28 @@ export default function ReviewReceiptScreen() {
                     </View>
                   </View>
                 </View>
+                {/* Unit (money-integrity slice B): the receipt's own
+                    denomination, RELABEL-only — a chip press patches
+                    draft.currency and nothing else, so switching CLP → UYU
+                    never rewrites total/items (REQ-8 #5; convert-on-switch
+                    is FX, out of scope). No detected unit → no chip
+                    selected → the save omits p_currency and the row keeps
+                    NULL (viewer fallback, REQ-8 #2). */}
+                <View style={styles.currencyBlock}>
+                  <Text style={styles.kicker}>
+                    {t('tickets:reviewCurrencyKicker')}
+                  </Text>
+                  <View style={styles.currencyRow}>
+                    {SUPPORTED_CURRENCIES.map((code) => (
+                      <Chip
+                        key={code}
+                        label={code}
+                        selected={draft?.currency === code}
+                        onPress={() => updateDraft({ currency: code })}
+                      />
+                    ))}
+                  </View>
+                </View>
               </Card>
 
               {/* Items */}
@@ -862,6 +888,17 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   paymentRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  // Unit switcher (money-integrity slice B): wraps the 14 catalog codes
+  // like the payment chips — same pill rhythm, no horizontal scroll.
+  currencyBlock: {
+    marginTop: spacing.lg,
+    gap: spacing.xs,
+  },
+  currencyRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,

@@ -2845,6 +2845,54 @@ async function run() {
     assert.equal(junkParsed.card_type, null);
   });
 
+  await test('parseTicket maps the detected unit and drops out-of-catalog currency (REQ-8 #2)', async () => {
+    // Client-side wire gate (toClientReceipt -> normalizeCurrency): the edge
+    // catalog-checks too, but a tampered or stale payload must never seed a
+    // unit outside SUPPORTED_CURRENCIES — junk degrades to `undefined`,
+    // which the draft turns into an ABSENT p_currency (viewer fallback).
+    const invokeWithCurrency = async (currency) => {
+      resetAll();
+      expoFsMod.__setFileSource('file:///unit.jpg', {
+        size: 1024,
+        type: 'image/jpeg',
+        base64: 'aGk=',
+      });
+      stubMod.__setFunctionInvoke('parse-ticket', {
+        data: {
+          store_name: 'X',
+          purchase_date: '2026-08-02',
+          total: 4,
+          payment_method: 'cash',
+          ...(currency === undefined ? {} : { currency }),
+          items: [
+            { name: 'A', quantity: 1, unit_price: 4, total_price: 4, suggested_category_slug: null },
+          ],
+        },
+      });
+      return ticketsMod.parseTicket('file:///unit.jpg');
+    };
+
+    const clpParsed = await invokeWithCurrency('CLP');
+    assert.equal(clpParsed.currency, 'CLP', 'a catalog unit must reach the parsed receipt');
+
+    const normalized = await invokeWithCurrency(' usd ');
+    assert.equal(normalized.currency, 'USD', 'trim + uppercase, same rule as the edge');
+
+    const junkParsed = await invokeWithCurrency('XYZ');
+    assert.equal(
+      junkParsed.currency,
+      undefined,
+      'out-of-catalog currency must be dropped, never persisted as-is',
+    );
+
+    const oldPayload = await invokeWithCurrency(undefined);
+    assert.equal(
+      oldPayload.currency,
+      undefined,
+      'an old payload with no currency field stays unit-less',
+    );
+  });
+
   await test('parseTicket sends the file MIME type and a non-zero timeout', async () => {
     resetAll();
     expoFsMod.__setFileSource('file:///scan.png', {

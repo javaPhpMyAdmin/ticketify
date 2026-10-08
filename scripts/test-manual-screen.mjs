@@ -2119,6 +2119,45 @@ async function editorWiringTests() {
       'the review screen must supply the merged catalog for chip labels',
     );
   });
+
+  // ── Review unit switcher (money-integrity slice B, 2.5) ────────────────
+  // RN screen internals are unreachable from a node harness, so the
+  // switcher contract is pinned at the source level (design.md testing
+  // strategy, cell "Switcher render (source-pin)"):
+  //   * it renders the ONE catalog (SUPPORTED_CURRENCIES), not a hand list;
+  //   * a chip press writes draft.currency and NOTHING else — REQ-8 #5 is
+  //     relabel-only: switching CLP -> UYU must never touch total/items
+  //     (convert-on-switch is FX, out of scope by design).
+  await test('review: unit switcher renders the 14-code catalog', () => {
+    assert.ok(
+      /SUPPORTED_CURRENCIES\.map\(/.test(reviewSource),
+      'the switcher must map SUPPORTED_CURRENCIES (the one catalog), never a hardcoded list',
+    );
+    assert.ok(
+      reviewSource.includes('updateDraft({ currency: code })'),
+      'a chip press must write draft.currency through updateDraft',
+    );
+  });
+
+  await test('review: chip selected state reflects draft.currency (detected unit shown)', () => {
+    assert.ok(
+      /selected=\{\s*draft\?\.currency === code\s*\}/.test(reviewSource),
+      'the selected chip must come from draft.currency so the detected unit is visible',
+    );
+  });
+
+  await test('review: switcher is relabel-only — the patch carries currency and no other key (REQ-8 #5)', () => {
+    // Single-key patch object: if anyone ever widens this handler to also
+    // touch total / items (a silent FX conversion), the regex breaks.
+    assert.ok(
+      /updateDraft\(\{\s*currency:\s*code\s*\}\)/.test(reviewSource),
+      'the handler must patch ONLY { currency: code } — magnitudes stay untouched',
+    );
+    assert.ok(
+      !/updateDraft\(\{\s*currency:\s*code\s*,/.test(reviewSource),
+      'no second key may join the currency patch',
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------

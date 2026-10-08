@@ -17,7 +17,7 @@
  * `code === currency`; it can never observe which rows actually render as
  * selected, which is where the reported regression lived.
  *
- * The leaf-count pin (797) belongs to
+ * The leaf-count pin (798) belongs to
  * `scripts/test-i18n-catalog-parity.mjs`, and duplicating it here would create
  * a second place to update on the next catalog bump.
  *

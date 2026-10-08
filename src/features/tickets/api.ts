@@ -18,7 +18,12 @@
  */
 import { FunctionsHttpError, FunctionsFetchError } from '@supabase/supabase-js';
 
-import { tempId, todayLocalISO } from '@/lib/format';
+import {
+  SUPPORTED_CURRENCIES,
+  tempId,
+  todayLocalISO,
+  type SupportedCurrency,
+} from '@/lib/format';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys, utcYearMonth } from '@/lib/query-keys';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -108,6 +113,13 @@ export interface ParsedReceipt {
   card_brand: string | null;
   /** Card kind detected on the receipt; null when unknown/absent. */
   card_type: CardType | null;
+  /**
+   * ISO 4217 unit detected on the receipt (money-integrity REQ-8),
+   * catalog-validated against `SUPPORTED_CURRENCIES`. Absent = no unit
+   * found — the draft then omits `p_currency` and the row stores NULL, so
+   * the receipt renders with the viewer's profile currency.
+   */
+  currency?: SupportedCurrency;
   items: ReviewItem[];
 }
 
@@ -130,6 +142,13 @@ interface EdgeParsedReceipt {
   payment_method: string;
   card_brand: string | null;
   card_type: string | null;
+  /**
+   * ISO 4217 unit, when the edge detected one (REQ-LIST-2). The edge
+   * already catalog-checks it; this wire field stays `string | null` so an
+   * old edge build or a tampered payload cannot break the client —
+   * `toClientReceipt` re-validates before it becomes a `ParsedReceipt`.
+   */
+  currency?: string | null;
   items: EdgeParsedItem[];
 }
 
@@ -294,6 +313,23 @@ function normalizeCardType(value: unknown): CardType | null {
 }
 
 /**
+ * Catalog gate for the receipt's unit (money-integrity REQ-8 #2 — the
+ * client half; `save_receipt` re-checks server-side, the edge checks when
+ * parsing). Trims + uppercases, then keeps the code only if it is in
+ * `SUPPORTED_CURRENCIES`; anything else degrades to `undefined`, which the
+ * draft turns into an ABSENT `p_currency` (viewer fallback). Mirrors the
+ * edge's `normalizeCurrency` — the same pattern `normalizeCardBrand` /
+ * `normalizeCardType` above use for wire defense.
+ */
+function normalizeCurrency(value: unknown): SupportedCurrency | undefined {
+  if (typeof value !== 'string') return undefined;
+  const code = value.trim().toUpperCase();
+  return (SUPPORTED_CURRENCIES as readonly string[]).includes(code)
+    ? (code as SupportedCurrency)
+    : undefined;
+}
+
+/**
  * Maps the edge payload into the client `ParsedReceipt` shape, tolerating
  * missing or empty receipt metadata so list-mode drafts (empty store, today's
  * date) still render on the review screen for editing.
@@ -326,6 +362,9 @@ function toClientReceipt(data: unknown): ParsedReceipt {
     // payloads without the fields (or with junk values) on the same semantics.
     card_brand: normalizeCardBrand(edge.card_brand),
     card_type: normalizeCardType(edge.card_type),
+    // Unit (REQ-8): re-validated against the catalog on the wire. Absent /
+    // junk → undefined → the draft keeps NO currency → p_currency omitted.
+    currency: normalizeCurrency(edge.currency),
     items: edge.items.map((item) => ({
       temp_id: tempId(),
       name: item.name,
@@ -578,6 +617,17 @@ export interface SaveReceiptRpcArgs {
   /** Storage object path (or remote URL) — null when the draft has no photo. */
   p_image_url: string | null;
   /**
+   * Receipt denomination (migration 0042, money-integrity REQ-8) — the
+   * key is present ONLY when the draft carries a unit:
+   *   unit set   -> 8-key call -> 8-param `save_receipt` (catalog re-check)
+   *   no unit    -> 7-key call -> 7-param overload -> column default NULL
+   * Shape A: `p_currency` is required in SQL and precedes the defaulted
+   * `p_is_manual`, so the deployed 7-key payload keeps resolving without
+   * an ambiguity error (Postgres 42P03 / PostgREST PGRST203). Never
+   * emitted as an explicit `null` — that would still be an 8-key call.
+   */
+  p_currency?: string;
+  /**
    * Ticket origin (migration 0029): true = manual entry, false = scanned.
    * Derived from the draft (`draft.is_manual ?? false`) — the SAME seam
    * serves both flows, so origin travels in the draft body
@@ -691,10 +741,20 @@ export async function buildSaveReceiptArgs(
       p_total: draft.total,
       p_payment_method: draft.payment_method,
       p_image_url: imageUrl,
+      // Unit (migration 0042, shape A): emitted ONLY when the draft
+      // carries one, so a unit-less draft keeps the deployed 7-key payload
+      // (f7 -> purchases.currency default NULL) while a detected or
+      // review-corrected unit sends the 8-key payload (f8 -> catalog
+      // re-check -> purchases.currency). REQ-8 #2: out-of-catalog values
+      // never get this far (toClientReceipt / the switcher validate), and
+      // the RPC re-checks anyway.
+      ...(draft.currency ? { p_currency: draft.currency } : {}),
       // Origin (migration 0029): absent from the draft = scanned (false).
       // buildManualDraft (manual-receipt.ts) sets is_manual: true, so this
-      // single seam serves BOTH flows — the RPC is always called with 7
-      // params and the server persists origin at INSERT time only.
+      // single seam serves BOTH flows — the server persists origin at
+      // INSERT time only. With no unit the payload stays 7-key; with a
+      // unit it becomes 8-key (p_currency travels BEFORE p_is_manual, the
+      // SQL parameter order).
       p_is_manual: draft.is_manual ?? false,
       p_items: itemRows.map(({ purchase_id: _, ...rest }) => rest),
     },

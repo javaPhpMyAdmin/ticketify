@@ -316,6 +316,16 @@ function compile() {
     let _c = 0;
     export const tempId = () => 'test-' + (++_c);
     export const todayLocalISO = () => '2026-09-07';
+    // Catalog mirror (money-integrity): api.ts validates the edge's unit
+    // against SUPPORTED_CURRENCIES in toClientReceipt (REQ-8 #2). Values
+    // match src/lib/format.ts so a catalog drift would be visible here too.
+    export type SupportedCurrency =
+      | 'ARS' | 'BRL' | 'CLP' | 'COP' | 'MXN' | 'PEN' | 'PYG' | 'UYU'
+      | 'AUD' | 'CAD' | 'EUR' | 'GBP' | 'JPY' | 'USD';
+    export const SUPPORTED_CURRENCIES: readonly SupportedCurrency[] = [
+      'ARS', 'BRL', 'CLP', 'COP', 'MXN', 'PEN', 'PYG', 'UYU',
+      'AUD', 'CAD', 'EUR', 'GBP', 'JPY', 'USD',
+    ];
   `,
   );
 
@@ -410,7 +420,7 @@ function compile() {
     export type CardType = 'debit' | 'credit';
     export type PurchaseStatus = 'pending' | 'parsed' | 'confirmed' | 'failed';
     export interface Category { id: string; slug: string; name: string; kind: string; icon: string; color: string; sort_order: number; }
-    export interface ReceiptDraft { store_name: string; purchase_date: string; total: number; payment_method: PaymentMethod; is_manual?: boolean; image_url: string; card_brand?: string | null; card_type?: CardType | null; items: ReviewItem[]; }
+    export interface ReceiptDraft { store_name: string; purchase_date: string; total: number; payment_method: PaymentMethod; is_manual?: boolean; image_url: string; card_brand?: string | null; card_type?: CardType | null; currency?: string; items: ReviewItem[]; }
     export interface ReviewItem { temp_id: string; name: string; quantity: number; unit_price: number; total_price: number; category_id: string | null; is_impulse: boolean; ai_suggested_category_id: string | null; }
   `,
   );
@@ -738,6 +748,82 @@ async function run() {
     await test('origin true when the draft is flagged manual (seam D4)', async () => {
       const res = await buildSaveReceiptArgs('user-1', draft({ is_manual: true }));
       assert.equal(res.args.p_is_manual, true);
+    });
+
+    // ------------------------------------------------------------------
+    // D2. p_currency — receipt denomination (money-integrity slice B, 2.4)
+    //
+    // Shape A (design decision row `save_receipt`): p_currency is REQUIRED
+    // and sits BEFORE the defaulted p_is_manual, so the seam MUST emit the
+    // key only when the draft carries a unit —
+    //   currency set  -> 8 keys -> 8-param f8 (catalog re-check)
+    //   no currency   -> 7 keys -> 7-param f7 -> column default NULL
+    // Never emit `p_currency: null`: an explicit null is still an 8-key
+    // call and would route to f8, diverging from the deployed 7-key
+    // contract that has been live since 0029.
+    // ------------------------------------------------------------------
+
+    await test('D2.1: seam emits p_currency when the draft carries a unit (8-arg route)', async () => {
+      const res = await buildSaveReceiptArgs('user-1', draft({ currency: 'CLP' }));
+      assert.equal(
+        res.args.p_currency,
+        'CLP',
+        'a draft.currency must reach the RPC args as p_currency',
+      );
+    });
+
+    await test('D2.2: seam OMITS p_currency when the draft carries none (7-arg route, f7 -> NULL)', async () => {
+      const res = await buildSaveReceiptArgs('user-1', draft());
+      assert.ok(
+        !('p_currency' in res.args),
+        'no draft.currency -> the key must be ABSENT (not null) so the payload stays 7-key',
+      );
+      assert.equal(
+        Object.keys(res.args).length,
+        7,
+        'exactly 7 keys — the pre-0042 payload shape, untouched for unit-less drafts',
+      );
+    });
+
+    await test('D2.3: saveManualReceipt RPC payload carries p_currency end-to-end (data-access s1)', async () => {
+      globalThis.__rpcResult = {
+        data: { ok: true, purchase_id: 'purchase-clp', scans_used: 1, scans_limit: 15 },
+        error: null,
+      };
+      globalThis.__rpcCalls = [];
+      await saveManualReceipt('user-1', draft({ currency: 'CLP', is_manual: true }));
+      const saveCalls = globalThis.__rpcCalls.filter((c) => c.fn === 'save_receipt');
+      assert.equal(saveCalls.length, 1, 'exactly one save_receipt RPC call');
+      assert.equal(
+        saveCalls[0].args.p_currency,
+        'CLP',
+        'the wire payload must carry the unit (the row persists CLP)',
+      );
+      assert.equal(
+        saveCalls[0].args.p_is_manual,
+        true,
+        'origin flag keeps travelling alongside the new arg',
+      );
+    });
+
+    await test('D2.4: saveReceipt (scan path) keeps the 7-key payload when no unit was detected', async () => {
+      globalThis.__rpcResult = {
+        data: { ok: true, purchase_id: 'purchase-714', scans_used: 1, scans_limit: 15 },
+        error: null,
+      };
+      globalThis.__rpcCalls = [];
+      await saveReceipt('user-1', draft());
+      const saveCalls = globalThis.__rpcCalls.filter((c) => c.fn === 'save_receipt');
+      assert.equal(saveCalls.length, 1, 'exactly one save_receipt RPC call');
+      assert.ok(
+        !('p_currency' in saveCalls[0].args),
+        'a unit-less draft must NOT emit p_currency on the wire (f7 -> column default NULL)',
+      );
+      assert.equal(
+        Object.keys(saveCalls[0].args).length,
+        7,
+        'wire payload stays 7-key for unit-less drafts',
+      );
     });
 
     // ------------------------------------------------------------------

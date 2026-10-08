@@ -242,6 +242,16 @@ export interface ReceiptDraft {
   card_brand?: string | null;
   /** Card kind detected on the receipt. Null when unknown/absent. */
   card_type?: CardType | null;
+  /**
+   * ISO 4217 unit the amounts are denominated in (money-integrity REQ-8).
+   * Absent = no unit detected (or the review screen was never touched) —
+   * `buildSaveReceiptArgs` then OMITS `p_currency` and the row stores NULL,
+   * so the receipt renders with the viewer's profile currency (REQ-8 #2).
+   * Set only by the scan parse (catalog-validated) or the review switcher,
+   * which RELABELS only: switching CLP → UYU never rewrites `total` or
+   * `items` (convert-on-switch is FX, out of scope).
+   */
+  currency?: string;
   items: ReviewItem[];
 }
 
