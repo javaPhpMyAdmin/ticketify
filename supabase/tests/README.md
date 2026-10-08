@@ -34,38 +34,46 @@ database where the migrations have been applied — **not** with
 ## `household-totals.sql`
 
 A fail-closed smoke test for the household totals consistency change
-(migration 0031). Covers:
+(migration 0031) and the household-entry half of the grouped-aggregation
+migration (`0043 §entry`). Covers:
 
 1. **Catalog**: `monthly_category_totals(text, uuid)` exists, is
    `SECURITY DEFINER`, owned by `postgres`, and returns a fixed 7-column
    row — the count the 42P13-safe `create or replace` contract depends on
-   (`supabase/tests/household-totals.sql:118:42P13-safe`). EXECUTE is
+   (`supabase/tests/household-totals.sql:143:42P13-safe`). EXECUTE is
    revoked from anon and public and granted to `authenticated`. The
    legacy single-argument `monthly_category_totals(text)` overload must
    never become a definer: the file asserts that, whenever it is present,
    it stays `security invoker` (its absence would also pass that assert),
    so it additionally asserts RLS is enabled on `purchases`: a definer
    overload would read past RLS, the 0029 §4 anon trap
-   (`supabase/tests/household-totals.sql:90:anon-trap`). Which overload
+   (`supabase/tests/household-totals.sql:115:anon-trap`). Which overload
    PostgREST resolves a personal-mode call to is asserted nowhere: the
    client test pins only the client half — a call carrying `p_year_month`
    and no other argument (`scripts/test-features.mjs:474:p_year_month`) —
    while the SQL file records that the one-argument call would be
    ambiguous in raw SQL
-   (`supabase/tests/household-totals.sql:234:ambiguous`).
+   (`supabase/tests/household-totals.sql:259:ambiguous`).
 2. **Confirmed-only, net headline**: in a fixture month holding two
    confirmed receipts and a pending one, category rows and `item_count`
    exclude the pending receipt, `lacteos` sums to 240.00 of confirmed
    line items, `percent_of_total` is windowed over that confirmed-only
    set, and `monthly_purchases_total` returns 299.60 — the discounted
    receipt counted at what was actually paid (199.60), not its 200.00
-   gross line-item sum (`supabase/tests/household-totals.sql:230:299.60`).
+   gross line-item sum (`supabase/tests/household-totals.sql:255:299.60`).
 3. **Personal reconciles with Household**: the same definition called
    with a NULL household returns the identical headline for a
    single-contributor month, to the cent.
 4. **Membership and privilege gates**: a non-member gets zero category
    rows and a NULL headline rather than an error, and anon is denied
    EXECUTE (insufficient_privilege).
+5. **Household entry single-currency check** (money-integrity
+   `0043 §entry`): `create_household` seeds `households.currency` from
+   the creator's profile currency; `join_household` raises
+   `currency_mismatch` on a mismatched profile currency before any
+   membership row exists; a NULL household currency skips the check so
+   pre-0043 households keep working; and a profile-currency change after
+   a successful join revokes nothing — enforcement is entry-only.
 
 It seeds fixed-UUID fixtures idempotently, leaves them for the harness's
 `db reset`, and ends with a `raise notice` on success. Like the others it

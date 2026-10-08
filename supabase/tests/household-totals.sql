@@ -4,8 +4,9 @@
 -- A fail-closed schema + behavior smoke test for the household totals
 -- consistency change. It runs against a SCRATCH database (e.g. `supabase db
 -- reset` output or a CI-local Postgres) — never against production. It does
--- NOT apply migrations; it seeds a minimal fixture and runs the two RPCs the
--- app surfaces, asserting the confirmed-only + net-paid contract:
+-- NOT apply migrations; it seeds a minimal fixture and runs the RPCs the
+-- app surfaces, asserting the confirmed-only + net-paid contract plus the
+-- entry-time single-currency contract (0043 §entry):
 --
 --   1. Catalog: `monthly_category_totals(text, uuid)` exists with SECURITY
 --      DEFINER, owner postgres, a 7-column return, NO single-arg overload
@@ -17,7 +18,15 @@
 --      the cent for a single-contributor month; per-category rows stay gross
 --      line-item sums (discounts are not attributed per category — 0029 §3).
 --   3. Non-member: zero rows (not an error).
---   4. Anon: EXECUTE denied (insufficient_privilege).
+--   4. Household entry single-currency check (money-integrity 0043 §entry):
+--      create_household seeds households.currency from the creator's profile
+--      currency; join_household raises currency_mismatch on a mismatched
+--      profile currency and creates NO membership row; a NULL household
+--      currency skips the check (legacy households keep working); and a
+--      post-join profile-currency change revokes nothing — enforcement is
+--      entry-only (household-sharing "Household Entry Single-Currency
+--      Check" s1-s4).
+--   5. Anon: EXECUTE denied (insufficient_privilege).
 --
 -- Structure: the whole file is a SINGLE `DO` block (the same constraint as
 -- pro-subscription.sql — `supabase db query --local --file` prepares the
@@ -58,6 +67,22 @@ declare
   v_lacteos_pct   numeric;
   v_nonmember_rows int;
   v_nonmember_total numeric;
+
+  -- §4b entry-check fixture + scenario vars (money-integrity 0043 §entry).
+  -- Dedicated identities: none of these UUIDs appears in any other smoke file
+  -- or in section 2's fixture, so the entry scenarios can own their teardown.
+  v_e_creator    uuid    := 'ea000000-0000-0000-0000-000000000001';
+  v_e_match      uuid    := 'ea000000-0000-0000-0000-000000000002';
+  v_e_mismatch   uuid    := 'ea000000-0000-0000-0000-000000000003';
+  v_e_joiner     uuid    := 'ea000000-0000-0000-0000-000000000004';
+  v_e_legacy_hid uuid    := 'ea000000-0000-0000-0000-0000000000d1';
+  v_e_hid        uuid;   -- household created under test in s1
+  v_e_profile_cur text;
+  v_e_hh_cur      text;
+  v_e_members_before int;
+  v_e_members_after  int;
+  v_e_rows        int;
+  v_e_joined_hid  uuid;
 begin
   -- -------------------------------------------------------------------------
   -- 1. Catalog — migration 0031 contract
@@ -253,6 +278,178 @@ begin
   assert v_nonmember_total is null, 'non-member net total must be NULL (empty aggregate)';
 
   -- -------------------------------------------------------------------------
+  -- 4b. Household entry single-currency check — money-integrity 0043 §entry
+  --     (household-sharing "Household Entry Single-Currency Check" s1-s4 +
+  --     the requirement's NULL-household legacy skip).
+  --
+  --     Position: BEFORE the anon denial in section 5 — that section sets
+  --     role anon and the change persists for the rest of the transaction,
+  --     while both RPCs under test revoke EXECUTE from anon (least
+  --     privilege), so entry scenarios placed after it would fail on
+  --     privilege instead of on the contract.
+  --
+  --     These paths mutate state (household rows, consumed invite codes,
+  --     profiles.household_id), so the section tears its OWN fixture down
+  --     first and rebuilds it — that teardown is what makes it safe to
+  --     re-run. No row or identity from section 2 is touched.
+  -- -------------------------------------------------------------------------
+
+  -- Catalog gate: households.currency is the first thing 0043 §entry adds.
+  assert exists (
+    select 1
+      from information_schema.columns
+     where table_schema = 'public'
+       and table_name  = 'households'
+       and column_name = 'currency'
+  ), 'households.currency must exist (money-integrity 0043 §entry)';
+
+  -- Teardown-first fixture: wipe whatever a previous run of THIS section
+  -- left behind (household_members/invite_codes rows die with their
+  -- households via FK cascade), then clear the profiles that pointed at them.
+  delete from public.household_members
+   where user_id in (v_e_creator, v_e_match, v_e_mismatch, v_e_joiner)
+      or household_id in (select id from public.households where created_by = v_e_creator);
+  delete from public.households
+   where created_by = v_e_creator or id = v_e_legacy_hid;
+  update public.profiles set household_id = null
+   where id in (v_e_creator, v_e_match, v_e_mismatch, v_e_joiner);
+
+  insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+  values
+    ('00000000-0000-0000-0000-000000000000', v_e_creator,  'authenticated', 'authenticated', 'entry-creator@test.local',  '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
+    ('00000000-0000-0000-0000-000000000000', v_e_match,    'authenticated', 'authenticated', 'entry-match@test.local',    '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
+    ('00000000-0000-0000-0000-000000000000', v_e_mismatch, 'authenticated', 'authenticated', 'entry-mismatch@test.local', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
+    ('00000000-0000-0000-0000-000000000000', v_e_joiner,   'authenticated', 'authenticated', 'entry-joiner@test.local',   '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now())
+  on conflict (id) do nothing;
+
+  -- Creator is Pro (create_household's 0034 tier gate); the other three stay
+  -- free. Currencies are re-asserted by the UPDATE below: the do-nothing
+  -- insert cannot undo a currency that the s4 scenario flipped last run.
+  insert into public.profiles (id, full_name, monthly_budget, currency, tier, created_at)
+  values
+    (v_e_creator,  'Entry Creator',  0, 'UYU', 'pro',  now()),
+    (v_e_match,    'Entry Match',    0, 'UYU', 'free', now()),
+    (v_e_mismatch, 'Entry Mismatch', 0, 'ARS', 'free', now()),
+    (v_e_joiner,   'Entry Joiner',   0, 'CLP', 'free', now())
+  on conflict (id) do nothing;
+
+  update public.profiles
+     set currency = case id
+           when v_e_creator  then 'UYU'
+           when v_e_match    then 'UYU'
+           when v_e_mismatch then 'ARS'
+           when v_e_joiner   then 'CLP'
+         end
+   where id in (v_e_creator, v_e_match, v_e_mismatch, v_e_joiner);
+
+  -- s1 — the creator's profile currency becomes the household currency.
+  perform set_config('request.jwt.claims', '{"sub":"ea000000-0000-0000-0000-000000000001"}', true);
+
+  -- Setup sanity: UYU is NOT the profiles.currency default ('USD' since 0041),
+  -- so a seeded UYU can only have come from this creator's row.
+  select currency into v_e_profile_cur from public.profiles where id = v_e_creator;
+  assert v_e_profile_cur = 'UYU',
+    'fixture creator profile currency must be UYU, got: ' || coalesce(v_e_profile_cur, 'NULL');
+
+  select public.create_household('Entry UYU Household') into v_e_hid;
+  assert v_e_hid is not null, 'create_household must succeed for the Pro creator';
+
+  select currency into v_e_hh_cur from public.households where id = v_e_hid;
+  assert v_e_hh_cur = 'UYU',
+    'create_household must seed households.currency from the creator''s profile currency, got: '
+    || coalesce(v_e_hh_cur, 'NULL');
+
+  -- Legacy fixture: a pre-0043-shaped household row (currency never set →
+  -- NULL) plus this section's invite codes. Codes are lowercase on purpose —
+  -- generate_invite_code only ever emits uppercase, so a fixture code can
+  -- never collide with a generated one.
+  insert into public.households (id, name, created_by, currency, created_at)
+  values (v_e_legacy_hid, 'Legacy Null-Currency Household', v_e_creator, null, now())
+  on conflict (id) do nothing;
+
+  insert into public.invite_codes (household_id, code, created_by, expires_at)
+  values
+    (v_e_hid,        'entrym', v_e_creator, now() + interval '72 hours'),
+    (v_e_hid,        'entryx', v_e_creator, now() + interval '72 hours'),
+    (v_e_legacy_hid, 'entryl', v_e_creator, now() + interval '72 hours');
+
+  -- s2 — matching currency joins succeed: membership created and
+  --      profiles.household_id set.
+  perform set_config('request.jwt.claims', '{"sub":"ea000000-0000-0000-0000-000000000002"}', true);
+
+  select public.join_household('entrym') into v_e_joined_hid;
+  assert v_e_joined_hid = v_e_hid, 'matching-currency join must return the target household';
+
+  select count(*) into v_e_rows
+    from public.household_members
+   where household_id = v_e_hid and user_id = v_e_match and role = 'member';
+  assert v_e_rows = 1, 'matching join must create the membership row';
+
+  select household_id into v_e_joined_hid from public.profiles where id = v_e_match;
+  assert v_e_joined_hid = v_e_hid, 'matching join must set profiles.household_id';
+
+  -- s3 — mismatched currency is rejected at entry: currency_mismatch raised,
+  --      membership count unchanged, no row for the caller, household_id NULL.
+  select count(*) into v_e_members_before
+    from public.household_members where household_id = v_e_hid;
+
+  perform set_config('request.jwt.claims', '{"sub":"ea000000-0000-0000-0000-000000000003"}', true);
+
+  begin
+    perform public.join_household('entryx');
+    raise exception 'MISSING_EXPECTED_RAISE';
+  exception
+    when others then
+      if sqlerrm = 'MISSING_EXPECTED_RAISE' then
+        raise;
+      end if;
+      assert sqlerrm = 'currency_mismatch',
+        'mismatched join must raise currency_mismatch, got: ' || sqlerrm;
+  end;
+
+  select count(*) into v_e_members_after
+    from public.household_members where household_id = v_e_hid;
+  assert v_e_members_after = v_e_members_before,
+    'rejected join must leave the membership count unchanged';
+
+  select count(*) into v_e_rows
+    from public.household_members
+   where household_id = v_e_hid and user_id = v_e_mismatch;
+  assert v_e_rows = 0, 'rejected join must create no membership row for the caller';
+
+  select household_id into v_e_joined_hid from public.profiles where id = v_e_mismatch;
+  assert v_e_joined_hid is null, 'rejected join must leave profiles.household_id NULL';
+
+  -- s4 — enforced only at entry: flipping the member's profile currency
+  --      AFTER a successful join revokes nothing (nothing re-validates).
+  update public.profiles set currency = 'CLP' where id = v_e_match;
+
+  select count(*) into v_e_rows
+    from public.household_members
+   where household_id = v_e_hid and user_id = v_e_match;
+  assert v_e_rows = 1, 'post-join profile-currency change must not revoke membership';
+
+  select household_id into v_e_joined_hid from public.profiles where id = v_e_match;
+  assert v_e_joined_hid = v_e_hid,
+    'post-join profile-currency change must leave profiles.household_id set';
+
+  -- NULL household currency skips the check — legacy households keep working.
+  perform set_config('request.jwt.claims', '{"sub":"ea000000-0000-0000-0000-000000000004"}', true);
+
+  select public.join_household('entryl') into v_e_joined_hid;
+  assert v_e_joined_hid = v_e_legacy_hid,
+    'join into a NULL-currency (legacy) household must succeed';
+
+  select count(*) into v_e_rows
+    from public.household_members
+   where household_id = v_e_legacy_hid and user_id = v_e_joiner;
+  assert v_e_rows = 1, 'legacy NULL-currency join must create the membership row';
+
+  select household_id into v_e_joined_hid from public.profiles where id = v_e_joiner;
+  assert v_e_joined_hid = v_e_legacy_hid,
+    'legacy NULL-currency join must set profiles.household_id';
+
+  -- -------------------------------------------------------------------------
   -- 5. Anon denial (LAST: SET ROLE persists for the rest of the transaction).
   -- -------------------------------------------------------------------------
   perform set_config('role', 'anon', true);
@@ -267,5 +464,5 @@ begin
   -- -------------------------------------------------------------------------
   -- Summary — only reached if every assert above passed.
   -- -------------------------------------------------------------------------
-  raise notice 'household-totals.sql smoke: catalog + confirmed-only + net reconcile assertions passed';
+  raise notice 'household-totals.sql smoke: catalog + confirmed-only + net reconcile + entry single-currency assertions passed';
 end $$;
