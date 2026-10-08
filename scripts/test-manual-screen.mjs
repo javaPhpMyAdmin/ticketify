@@ -2211,9 +2211,22 @@ async function editorWiringTests() {
     // the previous pin that asserted the !editingMode gate — a deliberate
     // pin revision, not a weakening: the switcher stays present in both
     // modes and edit-mode relabels are persisted, never silently dropped.
+    //
+    // Structure, not substring: a bare `includes('currencyBlock')` matches
+    // the STYLESHEET key even if the JSX were deleted entirely. Anchor on
+    // the View element and its SUPPORTED_CURRENCIES map instead, then
+    // forbid the old scan-only gate inside the JSX block itself.
+    assert.match(
+      reviewSource,
+      /<View style=\{styles\.currencyBlock\}>[\s\S]{0,400}SUPPORTED_CURRENCIES\.map\(/,
+      'the switcher JSX must render the currencyBlock View and map SUPPORTED_CURRENCIES',
+    );
+    const jsxStart = reviewSource.indexOf('<View style={styles.currencyBlock}>');
+    assert.ok(jsxStart !== -1, 'currencyBlock JSX not found');
+    const block = reviewSource.slice(jsxStart).split('</View>')[0];
     assert.ok(
-      reviewSource.includes('currencyBlock'),
-      'the currency switcher block must stay present',
+      !block.includes('editingMode'),
+      'the switcher JSX itself must not be conditioned on editingMode',
     );
     assert.ok(
       !/{!editingMode \?\s*\(\s*<View style=\{styles\.currencyBlock\}>/.test(

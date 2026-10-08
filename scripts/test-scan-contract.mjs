@@ -196,22 +196,23 @@ function compile() {
   `,
   );
 
+  // Catalog source of truth (W1): compile the REAL src/lib/format.ts beside
+  // the stub and re-export the catalog from it — no hand-written mirror left
+  // to drift (a catalog change in format.ts lands here automatically). Only
+  // the clock and id counter stay stubbed (harness-local determinism, not
+  // catalog data).
+  copyFileSync(
+    join(root, 'src', 'lib', 'format.ts'),
+    join(workdir, 'lib-stubs', 'format-real.ts'),
+  );
   writeFileSync(
     join(workdir, 'lib-stubs/format.ts'),
     `
+    export { SUPPORTED_CURRENCIES } from './format-real';
+    export type { SupportedCurrency } from './format-real';
     let _c = 0;
     export const tempId = () => 'test-' + (++_c);
     export const todayLocalISO = () => new Date().toISOString().slice(0, 10);
-    // Catalog mirror (money-integrity): api.ts validates the edge's unit
-    // against SUPPORTED_CURRENCIES in toClientReceipt (REQ-8 #2). Values
-    // match src/lib/format.ts so a catalog drift would be visible here too.
-    export type SupportedCurrency =
-      | 'ARS' | 'BRL' | 'CLP' | 'COP' | 'MXN' | 'PEN' | 'PYG' | 'UYU'
-      | 'AUD' | 'CAD' | 'EUR' | 'GBP' | 'JPY' | 'USD';
-    export const SUPPORTED_CURRENCIES: readonly SupportedCurrency[] = [
-      'ARS', 'BRL', 'CLP', 'COP', 'MXN', 'PEN', 'PYG', 'UYU',
-      'AUD', 'CAD', 'EUR', 'GBP', 'JPY', 'USD',
-    ];
   `,
   );
 

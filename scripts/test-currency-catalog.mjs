@@ -274,6 +274,34 @@ async function run() {
     assert.deepEqual([...codes].sort(), SPEC_LIST);
   });
 
+  // ── 1a. the 0042 SQL re-check literal tracks the catalog ────────────────
+  // The migration's `v_currency not in (...)` gate is the server-side copy
+  // of this list (see the comment above it). It cannot import src/, so it
+  // is pinned here against the compiled source of truth — an edit to either
+  // side that makes them disagree fails this harness.
+
+  console.log('\n[tests] 0042 SQL catalog literal tracks SUPPORTED_CURRENCIES\n');
+
+  await test('0042 `v_currency not in (...)` literal === SUPPORTED_CURRENCIES', () => {
+    const sql = readFileSync(
+      join(root, 'supabase', 'migrations', '0042_receipt_currency.sql'),
+      'utf8',
+    );
+    const gate = /v_currency not in \(([\s\S]*?)\) then/.exec(sql);
+    assert.ok(gate, '0042 catalog re-check (v_currency not in (...)) not found');
+    const sqlCodes = [...gate[1].matchAll(/'([A-Z]{3})'/g)].map((m) => m[1]);
+    assert.deepEqual(
+      [...sqlCodes].sort(),
+      [...codes].sort(),
+      '0042 SQL catalog literal drifted from SUPPORTED_CURRENCIES (src/lib/format.ts)',
+    );
+    assert.equal(
+      new Set(sqlCodes).size,
+      sqlCodes.length,
+      '0042 SQL catalog literal has duplicate codes',
+    );
+  });
+
   // ── 1b. retirement ledger: a code may not leave the catalog unaccounted for
   // `ensureProfileCurrency` is INSERT-only, so a profile whose stored code left
   // the catalog is never repaired: the picker selects zero rows and only a

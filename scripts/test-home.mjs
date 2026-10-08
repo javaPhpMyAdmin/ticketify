@@ -109,6 +109,7 @@ function load(mod) {
 
 let homeMod;
 let catsMod;
+let fmtMod;
 
 async function run() {
   console.log('\n[tests] compiling home-feed modules…');
@@ -123,6 +124,9 @@ async function run() {
 
   homeMod = await load('src/features/home/hooks/useHomeFeed.js');
   catsMod = await load('src/features/home/categories.js');
+  // Real formatter (tsconfig.home-test.json includes src/lib/format.ts) for
+  // the end-to-end composition pin below.
+  fmtMod = await load('src/lib/format.js');
 
   console.log('\n[tests] normalizeItemName diacritic folding\n');
 
@@ -587,6 +591,20 @@ async function run() {
       withoutUnit.receipts[0].currency,
       null,
       'a legacy row reads null (viewer fallback), never undefined',
+    );
+  });
+
+  await test('a CLP row renders "$ 5.000" through formatCurrency (composition pin)', () => {
+    // End-to-end composition: the home row's amount binds the row unit into
+    // the formatter, so '$ 5.000' depends on BOTH hops — the unit carried by
+    // the mapper AND zero-decimal LATAM formatting — which neither the unit
+    // pin nor the formatter's own harness observes alone.
+    const feed = homeMod.mapPurchaseRowsToHomeFeed([unitRow], null, '2026-08');
+    const row = feed.receipts[0];
+    assert.equal(
+      fmtMod.formatCurrency(row.amount, row.currency),
+      '$ 5.000',
+      'the CLP summary row must render through the real formatter as $ 5.000',
     );
   });
 

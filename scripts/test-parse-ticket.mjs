@@ -405,7 +405,10 @@ async function run() {
   await test('list-mode builder forwards the validated unit into the ParsedReceipt (REQ-LIST-4 s1)', () => {
     const fn = /function listToReceipt\([\s\S]*?\n\}/.exec(indexSource);
     assert.ok(fn, 'listToReceipt not found in index.ts');
-    assert.match(fn[0], /currency/);
+    // Assignment, not token: a bare /currency/ also matches the surrounding
+    // comments and the `currency` property on adjacent objects — pin the
+    // forwarding line itself.
+    assert.match(fn[0], /receipt\.currency\s*=\s*list\.currency/);
   });
 
   await test('list-mode builder leaves the other members defaulted (REQ-LIST-4 s2)', () => {
