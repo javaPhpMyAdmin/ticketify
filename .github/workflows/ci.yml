@@ -191,3 +191,16 @@ jobs:
         # duplicate insert raises unique_violation (23505) leaving the
         # stored currency untouched (create-only, never a clobber).
         run: supabase db query --local --file supabase/tests/currency-default.sql
+
+      - name: Run receipt-currency SQL smoke test
+        # Pins the 0042 contract (money-integrity slice B, REQ-8):
+        # purchases.currency is text/nullable with NO default and NO CHECK
+        # (legacy rows stay unit-less — no backfill, catalog lives in code,
+        # NFR-1); the shape-A 8-param save_receipt keeps p_currency REQUIRED
+        # before the defaulted p_is_manual (42P03/PGRST203 — a re-default
+        # would break every live 7-key save); an in-catalog unit persists
+        # verbatim ('CLP', incl. ' clp ' normalization), an out-of-catalog
+        # code saves the receipt anyway with unit NULL (never raises,
+        # REQ-8 #2), the legacy 7-arg path stores NULL, and EXECUTE is
+        # authenticated-only.
+        run: supabase db query --local --file supabase/tests/receipt-currency.sql
