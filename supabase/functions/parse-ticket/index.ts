@@ -32,7 +32,7 @@ import {
   parseReceiptJson,
   ProviderOverloadedError,
   withProviderRetry,
-  type ParsedItem,
+  type ParsedListResult,
   type ParsedReceipt,
 } from './lib/parse.ts';
 
@@ -158,6 +158,7 @@ const PROMPT = `You are a receipt parser. Extract the purchase data from the rec
   "payment_method": "cash" | "card" | "apple_pay" | "google_pay" | "transfer" | "other",
   "card_brand": string | null,
   "card_type": "debit" | "credit" | null,
+  "currency": string | null,
   "items": [
     {
       "name": string,
@@ -179,6 +180,7 @@ Rules:
 - items: one entry per line item, skipping taxes, subtotals, discounts and total-only lines. quantity is how many units, unit_price is the price of one unit, total_price is the line total.
 - Multi-unit lines: receipts show the same product multiple times in different ways — a leading count column ("CANT 2"), a "2 x 47.00" notation, or two identical consecutive lines. When that happens, emit ONE item with quantity = the unit count, unit_price = the price of one unit, and total_price = the line total (quantity × unit_price). NEVER collapse a multi-unit line into quantity=1 with unit_price=total_price: a line "2 x 47.00" must become {"name": "...", "quantity": 2, "unit_price": 47, "total_price": 94}, never quantity=1 / unit_price=94.
 - suggested_category_slug: exactly one of bebidas, frutas-verduras, refrescos, panaderia, carnes, lacteos, limpieza, snacks, alimentos, higiene, farmacia, servicios, otros, or null when you are not confident.
+- currency: the ISO 4217 currency code the receipt's amounts are printed in — a three-letter alphabetic code such as "UYU", "CLP", "USD" or "BRL", uppercase, with NO currency symbol, NO thousands separators and NO amount attached. null when the receipt states no currency. Never guess or infer a currency from unrelated text.
 - All money values must be plain numbers without currency symbols or thousands separators.`;
 
 /**
@@ -190,6 +192,7 @@ Rules:
 const LIST_PROMPT = `You are a shopping-list parser. The image may be a handwritten list, a phone-note screenshot, or any informal list of products with prices. Extract the items and respond with ONLY strict JSON (no markdown fences, no commentary) matching exactly this schema:
 
 {
+  "currency": string | null,
   "items": [
     {
       "name": string,
@@ -208,6 +211,7 @@ Rules:
 - If a line only shows a total (e.g. "Leche 45"), set quantity to 1, unit_price to 45, and total_price to 45.
 - Multi-unit lines like "2 x 47.00" become {"quantity": 2, "unit_price": 47, "total_price": 94}.
 - suggested_category_slug: exactly one of bebidas, frutas-verduras, refrescos, panaderia, carnes, lacteos, limpieza, snacks, alimentos, higiene, farmacia, servicios, otros, or null when you are not confident.
+- currency: the ISO 4217 currency code the list's prices are written in — a three-letter alphabetic code such as "UYU", "CLP", "USD" or "BRL", uppercase, with NO currency symbol, NO thousands separators and NO amount attached. null when the list states no currency. Never guess or infer a currency from unrelated text.
 - All money values must be plain numbers without currency symbols or thousands separators.`;
 
 async function callGemini(
@@ -304,12 +308,12 @@ async function callGemini(
 /**
  * Second-pass Gemini call for informal lists. Reuses the same model, timeout,
  * and response-extraction logic as receipt mode but sends LIST_PROMPT and
- * validates only the items array.
+ * validates only the items array plus the optional catalog-checked unit.
  */
 async function callGeminiListMode(
   imageBase64: string,
   mimeType: string,
-): Promise<{ items: ParsedItem[]; total: number }> {
+): Promise<ParsedListResult> {
   if (!GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY is not configured');
   }
@@ -445,8 +449,8 @@ function currentYearMonth(): string {
  * safe defaults for the receipt metadata the list prompt intentionally does
  * not ask for.
  */
-function listToReceipt(list: { items: ParsedItem[]; total: number }): ParsedReceipt {
-  return {
+function listToReceipt(list: ParsedListResult): ParsedReceipt {
+  const receipt: ParsedReceipt = {
     store_name: '',
     purchase_date: currentDateYmd(),
     total: list.total,
@@ -455,6 +459,11 @@ function listToReceipt(list: { items: ParsedItem[]; total: number }): ParsedRece
     card_type: null,
     items: list.items,
   };
+  // Forward the catalog-validated unit verbatim — `parseListJson` already
+  // dropped anything outside SUPPORTED_CURRENCIES, so there is nothing left
+  // to re-check here. Absent stays absent (viewer-currency fallback).
+  if (list.currency !== undefined) receipt.currency = list.currency;
+  return receipt;
 }
 
 /**

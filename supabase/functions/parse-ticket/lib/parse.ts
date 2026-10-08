@@ -28,6 +28,13 @@ export interface ParsedReceipt {
   card_brand: string | null;
   /** Card kind printed on the receipt, null when unknown. */
   card_type: 'debit' | 'credit' | null;
+  /**
+   * ISO 4217 unit the receipt's amounts are printed in. Present only when
+   * the model emitted a code that passed the catalog check below; omitted
+   * when unknown or out-of-catalog so the client falls back to the viewer's
+   * profile currency (REQ-8 #2). Amounts are never converted (no FX).
+   */
+  currency?: SupportedCurrency;
   items: ParsedItem[];
 }
 
@@ -118,6 +125,62 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+/**
+ * Supported ISO 4217 units — a DUPLICATE of the app catalog in
+ * `src/lib/format.ts`. A Deno edge function cannot import from `src/` (the
+ * two runtimes have no shared module graph), so the list is restated here
+ * and `scripts/test-parse-ticket.mjs` pins parity against `format.ts`.
+ * Without that pin this copy drifts silently and the edge starts accepting
+ * (or rejecting) units the client does not — the exact split-brain the
+ * "edge duplicate + parity test" design row exists to prevent.
+ *
+ * Order matches `format.ts` (LATAM then INTL) so the two lists diff cleanly.
+ */
+export const SUPPORTED_CURRENCIES = [
+  // LATAM — thousands `.`, decimals `,`.
+  'ARS',
+  'BRL',
+  'CLP',
+  'COP',
+  'MXN',
+  'PEN',
+  'PYG',
+  'UYU',
+  // INTL — thousands `,`, decimals `.`.
+  'AUD',
+  'CAD',
+  'EUR',
+  'GBP',
+  'JPY',
+  'USD',
+] as const;
+
+export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
+
+const SUPPORTED_CURRENCY_SET: ReadonlySet<string> = new Set(
+  SUPPORTED_CURRENCIES,
+);
+
+/**
+ * Validates a model-emitted currency field: trims, upper-cases (the model
+ * may answer "clp") and checks against the catalog. Anything else — a
+ * non-string, a code outside `SUPPORTED_CURRENCIES` — returns `undefined`
+ * so the caller omits the member from the parsed shape. This NEVER throws:
+ * a guessed unit must not kill an otherwise good scan (design row
+ * "Gemini + catalog": strict ParseError would turn a typo into a lost photo).
+ * The RPC re-checks the catalog before persistence — this is the first of
+ * two gates, not the only one.
+ */
+export function normalizeCurrency(
+  value: unknown,
+): SupportedCurrency | undefined {
+  if (typeof value !== 'string') return undefined;
+  const code = value.trim().toUpperCase();
+  return SUPPORTED_CURRENCY_SET.has(code)
+    ? (code as SupportedCurrency)
+    : undefined;
+}
+
 export function requireNonEmptyString(value: unknown, field: string): string {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new ParseError(`${field} must be a non-empty string`);
@@ -200,6 +263,7 @@ export function parseReceiptJson(raw: unknown): ParsedReceipt {
   const payment_method = normalizePaymentMethod(raw.payment_method);
   const card_brand = normalizeCardBrand(raw.card_brand);
   const card_type = normalizeCardType(raw.card_type);
+  const currency = normalizeCurrency(raw.currency);
 
   if (!Array.isArray(raw.items)) {
     throw new ParseError('items must be an array');
@@ -212,7 +276,7 @@ export function parseReceiptJson(raw: unknown): ParsedReceipt {
     throw new ParseError('items must not be empty');
   }
 
-  return {
+  const receipt: ParsedReceipt = {
     store_name,
     purchase_date,
     total,
@@ -221,6 +285,11 @@ export function parseReceiptJson(raw: unknown): ParsedReceipt {
     card_type,
     items,
   };
+  // Omitted (not null) when unknown/out-of-catalog: the member's ABSENCE is
+  // what tells the client to fall back to the viewer's profile currency, so
+  // a `currency: null` would be a distinct, unhandled state.
+  if (currency !== undefined) receipt.currency = currency;
+  return receipt;
 }
 
 export function parseItem(entry: unknown, index: number): ParsedItem {
@@ -263,6 +332,8 @@ export function parseItem(entry: unknown, index: number): ParsedItem {
 export interface ParsedListResult {
   items: ParsedItem[];
   total: number;
+  /** Catalog-validated unit, omitted when unknown (REQ-LIST-4). */
+  currency?: SupportedCurrency;
 }
 
 /**
@@ -283,6 +354,9 @@ export function parseListJson(raw: unknown): ParsedListResult {
 
   const items = raw.items.map((entry, index) => parseItem(entry, index));
   const total = round2(items.reduce((sum, item) => sum + item.total_price, 0));
+  const currency = normalizeCurrency(raw.currency);
 
-  return { items, total };
+  const result: ParsedListResult = { items, total };
+  if (currency !== undefined) result.currency = currency;
+  return result;
 }
