@@ -2204,18 +2204,22 @@ async function editorWiringTests() {
     );
   });
 
-  await test('the unit switcher is scan-mode only — hidden while editing an existing receipt', () => {
-    // The edit path (updateReceipt) never writes purchases.currency and no
-    // artifact specifies edit-time correction, so showing the chips in
-    // edit mode would promise a relabel that silently never persists.
+  await test('the unit switcher renders in BOTH scan and edit mode (edit-path ruling, REQ-8 #6)', () => {
+    // Orchestrator ruling (edit path): an edit MAY correct the unit and the
+    // correction persists through updateReceipt (f8-parity catalog re-check
+    // client-side), so the switcher is no longer scan-only. This replaces
+    // the previous pin that asserted the !editingMode gate — a deliberate
+    // pin revision, not a weakening: the switcher stays present in both
+    // modes and edit-mode relabels are persisted, never silently dropped.
     assert.ok(
-      reviewSource.includes('!editingMode'),
-      'the currency block must be gated on !editingMode',
+      reviewSource.includes('currencyBlock'),
+      'the currency switcher block must stay present',
     );
-    assert.match(
-      reviewSource,
-      /\{!editingMode \?\s*\(\s*<View style=\{styles\.currencyBlock\}>/,
-      'the currency block must render only outside edit mode',
+    assert.ok(
+      !/{!editingMode \?\s*\(\s*<View style=\{styles\.currencyBlock\}>/.test(
+        reviewSource,
+      ),
+      'the currency block must NOT be gated on !editingMode — edit mode persists relabels too',
     );
   });
 

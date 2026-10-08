@@ -1646,6 +1646,7 @@ async function run() {
     payment_method: 'card',
     image_url: `${USER_ID}/p-1.jpg`,
     status: 'confirmed',
+    currency: 'CLP',
     stores: { name: 'Whole Foods Market' },
     purchase_items: [
       {
@@ -2055,6 +2056,69 @@ async function run() {
     );
   });
 
+  // ── money-integrity edit path (task 2.8, REQ-8 #6): the update payload
+  // carries the unit — f8 parity CLIENT-side (this path is a direct
+  // PostgREST PATCH: no update_receipt RPC exists, so there is no server
+  // re-check to lean on). Relabel only; magnitudes ride the draft. ──────
+  await test('updateReceipt persists an edit-mode unit relabel: normalized catalog code in the PATCH payload (REQ-8 #6)', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('purchases', [{ id: 'p-1' }]);
+    stubMod.__setTableRead('purchases', { rows: [PRE_EDIT_PURCHASE] });
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [] });
+    const draft = { ...DRAFT, currency: ' uyu ' };
+    const result = await ticketsMod.updateReceipt(USER_ID, 'p-1', draft);
+    assert.equal(result.id, 'p-1');
+    const updated = stubMod.__getUpdated('purchases');
+    assert.equal(
+      updated.currency,
+      'UYU',
+      'the payload must carry the unit normalized (trim + upper), f8 parity',
+    );
+    assert.equal(
+      updated.total,
+      42.18,
+      'a relabel never rewrites magnitudes — amounts ride the draft unchanged',
+    );
+  });
+
+  await test('updateReceipt stores no unit for an out-of-catalog edit value and never fails on it (f8 parity)', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('purchases', [{ id: 'p-1' }]);
+    stubMod.__setTableRead('purchases', { rows: [PRE_EDIT_PURCHASE] });
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [] });
+    const draft = { ...DRAFT, currency: 'XYZ' };
+    const result = await ticketsMod.updateReceipt(USER_ID, 'p-1', draft);
+    assert.equal(
+      result.id,
+      'p-1',
+      'an unknown code must not fail the edit (REQ-8 #6: never fails on the unit)',
+    );
+    const updated = stubMod.__getUpdated('purchases');
+    assert.equal(
+      updated.currency,
+      null,
+      'out-of-catalog → stored as no unit (viewer fallback), like the save path',
+    );
+  });
+
+  await test('updateReceipt omits the currency key for a unit-less draft (stored unit untouched)', async () => {
+    resetAll();
+    stubMod.__setDeleteRead('purchases', [{ id: 'p-1' }]);
+    stubMod.__setTableRead('purchases', { rows: [PRE_EDIT_PURCHASE] });
+    stubMod.__setTableRead('stores', { rows: [{ id: 'store-global-1' }] });
+    stubMod.__setTableRead('categories', { rows: [] });
+    const draft = { ...DRAFT };
+    await ticketsMod.updateReceipt(USER_ID, 'p-1', draft);
+    const updated = stubMod.__getUpdated('purchases');
+    assert.ok(
+      !('currency' in updated),
+      'a draft without a unit must leave the column out of the payload entirely — ' +
+        'writing null here would wipe a legitimately stored unit on every ordinary edit',
+    );
+  });
+
   await test('updateReceipt uploads a device-local photo and persists the storage path', async () => {
     resetAll();
     stubMod.__setDeleteRead('purchases', [{ id: 'p-1' }]);
@@ -2154,6 +2218,12 @@ async function run() {
     assert.equal(restored.payment_method, 'card');
     assert.equal(restored.image_url, `${USER_ID}/p-1.jpg`);
     assert.equal(restored.status, 'confirmed');
+    assert.equal(
+      restored.currency,
+      'CLP',
+      'the rollback restores the ORIGINAL unit too — a failed edit must not ' +
+        'leave a half-applied relabel behind while restoring every other field',
+    );
     assert.ok(
       !('is_manual' in restored),
       'the restore UPDATE never writes the origin flag either (D1, migration 0029)',

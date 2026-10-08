@@ -1149,6 +1149,9 @@ async function restorePurchase(
       payment_method: original.payment_method,
       image_url: original.image_url,
       status: original.status,
+      // REQ-8 #6: roll the unit back with everything else — a failed edit
+      // must not leave a half-applied relabel while restoring the fields.
+      currency: original.currency,
     })
     .eq('id', purchaseId)
     .eq('user_id', userId);
@@ -1241,6 +1244,15 @@ export async function updateReceipt(
   // `is_manual` is deliberately NOT in this update: origin is immutable
   // (migration 0029, D1) — an edit may replace the photo but never the
   // manual-or-scanned origin of the ticket.
+  //
+  // Unit (money-integrity REQ-8 #6, edit path — orchestrator ruling): this
+  // path is a direct PostgREST PATCH (no `update_receipt` RPC exists), so
+  // the f8 catalog re-check runs CLIENT-side via `normalizeCurrency`: a
+  // draft that carries a code sends it normalized (trim + upper; a code
+  // outside SUPPORTED_CURRENCIES stores `null`, never raises the edit); a
+  // unit-less draft OMITS the key so the stored unit stays untouched —
+  // writing `null` there would wipe a legitimate unit on every ordinary
+  // edit. Relabel only: magnitudes ride the draft unchanged.
   const { data: updatedRow, error: purchaseError } = (await supabase
     .from('purchases')
     .update({
@@ -1250,6 +1262,9 @@ export async function updateReceipt(
       payment_method: draft.payment_method,
       image_url: imageUrl,
       status: 'confirmed',
+      ...(draft.currency != null
+        ? { currency: normalizeCurrency(draft.currency) ?? null }
+        : {}),
     })
     .eq('id', purchaseId)
     .eq('user_id', userId)

@@ -628,18 +628,18 @@ export default function ReviewReceiptScreen() {
                     </View>
                   </View>
                 </View>
-                {/* Unit (money-integrity slice B): the receipt's own
-                    denomination, RELABEL-only — a chip press patches
-                    draft.currency and nothing else, so switching CLP → UYU
-                    never rewrites total/items (REQ-8 #5; convert-on-switch
-                    is FX, out of scope). No detected unit → no chip
-                    selected → the save omits p_currency and the row keeps
-                    NULL (viewer fallback, REQ-8 #2).
-                    Scan-mode only: the edit path (updateReceipt) never
-                    writes purchases.currency, so showing the chips while
-                    editing would promise a relabel that silently never
-                    persists — edit mode displays the seeded row unit. */}
-                {!editingMode ? (
+                {/* Unit (money-integrity slice B, REQ-8 #5 / edit path #6):
+                    the receipt's own denomination, RELABEL-only — a chip
+                    press patches draft.currency and nothing else, so
+                    switching CLP → UYU never rewrites total/items
+                    (convert-on-switch is FX, out of scope). No detected
+                    unit → no chip selected → the save omits p_currency (or,
+                    in edit mode, updateReceipt omits the key) and the row
+                    keeps NULL (viewer fallback, REQ-8 #2).
+                    Renders in BOTH scan and edit mode (orchestrator ruling):
+                    scan persists through save_receipt's p_currency, an edit
+                    persists through updateReceipt's conditional PATCH —
+                    same catalog rule, re-checked client-side (no RPC). */}
                 <View style={styles.currencyBlock}>
                   <Text style={styles.kicker}>
                     {t('tickets:reviewCurrencyKicker')}
@@ -655,7 +655,6 @@ export default function ReviewReceiptScreen() {
                     ))}
                   </View>
                 </View>
-                ) : null}
               </Card>
 
               {/* Items */}
