@@ -36,6 +36,13 @@ export interface FeedRowMeta {
    * surface can silently default an origin it does know.
    */
   is_manual: boolean;
+  /**
+   * The unit the row was recorded in (REQ-8, migration 0042), when the
+   * caller's source provides it. `null` on a legacy unit-less row; absent
+   * producers emit `undefined` here — consumers fall back to the viewer's
+   * profile currency either way.
+   */
+  currency?: string | null;
 }
 
 /**
@@ -87,7 +94,8 @@ export function buildFeedRow(
   // that omits the field entirely fails deep equality — include
   // `payment_method: undefined`. Same for `is_manual` (REQUIRED meta — every
   // caller always supplies it, so it is always present in the row): a
-  // fixture that omits it fails deep equality.
+  // fixture that omits it fails deep equality. `currency` follows the
+  // payment_method rule (emitted, undefined when the meta omits it).
   return {
     id: meta.id,
     store_name: meta.store_name,
@@ -98,6 +106,7 @@ export function buildFeedRow(
     status: meta.status,
     payment_method: meta.payment_method,
     is_manual: meta.is_manual,
+    currency: meta.currency,
     wants_snacks_total: items
       .filter((item) => item.is_impulse)
       .reduce((sum, item) => sum + item.amount, 0),

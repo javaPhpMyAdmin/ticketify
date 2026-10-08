@@ -89,6 +89,10 @@ function purchaseToFeedRow(p: PurchaseWithItems) {
     is_manual: p.is_manual,
     status: p.status,
     payment_method: p.payment_method,
+    // Row unit (REQ-8): carried from the detail read so every render on
+    // this screen labels with the receipt's own currency (null on legacy
+    // rows → the viewer profile fills in).
+    currency: p.currency ?? null,
     wants_snacks_total: items
       .filter((i) => i.is_impulse)
       .reduce((sum, i) => sum + i.amount, 0),
@@ -514,7 +518,7 @@ export default function ReceiptDetailScreen() {
             <View style={styles.metaCol}>
               <Text style={styles.kicker}>{t('receipts:totalKicker')}</Text>
               <Text style={styles.metaValue}>
-                {formatCurrency(receipt.total, currency)}
+                {formatCurrency(receipt.total, receipt.currency ?? currency)}
               </Text>
             </View>
           </View>
@@ -548,7 +552,7 @@ export default function ReceiptDetailScreen() {
                         {entry.def.label}
                       </Text>
                       <Text style={styles.catAmount}>
-                        {formatCurrency(entry.amount, currency)}
+                        {formatCurrency(entry.amount, receipt.currency ?? currency)}
                       </Text>
                     </View>
                   </Pressable>
@@ -577,7 +581,7 @@ export default function ReceiptDetailScreen() {
                       ) : null}
                     </View>
                     <Text style={styles.itemAmount}>
-                      {formatCurrency(item.amount, currency)}
+                      {formatCurrency(item.amount, receipt.currency ?? currency)}
                     </Text>
                   </View>
                   {idx < items.length - 1 ? <Divider /> : null}
@@ -687,7 +691,7 @@ export default function ReceiptDetailScreen() {
         categoryLabel={openCategoryLabel}
         total={openCategoryTotal}
         items={openCategoryItems}
-        currency={currency}
+        currency={receipt.currency ?? currency}
         onClose={() => setOpenCategory(null)}
       />
     </SafeAreaView>

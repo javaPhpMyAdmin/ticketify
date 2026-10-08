@@ -37,7 +37,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -311,6 +311,46 @@ async function run() {
     assert.equal(row.items[0].category, 'otros');
     assert.deepEqual(row.category_totals, { otros: 12 });
     assert.equal(row.wants_snacks_total, 0);
+  });
+
+  console.log('\n[tests] row unit — purchases.currency carried end-to-end (REQ-8 s4)\n');
+
+  await test('readPurchaseList surfaces the row currency; a unit-less row maps to null', async () => {
+    resetAll();
+    // P1 carries a unit (written after this change landed); P3 is a legacy
+    // row with NO currency field — it must read as null (the viewer-fallback
+    // signal), never as an absent key.
+    stubMod.__setTableRead('purchases', {
+      rows: [{ ...P1, currency: 'CLP' }, P3],
+    });
+    const result = await homeApiMod.readPurchaseList('u1');
+    assert.equal(result.status, 'ok');
+    assert.equal(result.data[0].currency, 'CLP', 'the row keeps its own unit');
+    assert.equal(
+      result.data[1].currency,
+      null,
+      'legacy NULL → null, the signal consumers use for the viewer fallback',
+    );
+  });
+
+  await test('both purchase feed selects ask the DB for the currency column (source pin)', () => {
+    // The stub resolves armed rows regardless of the select string, so the
+    // column request itself is pinned at the source: readPurchaseList and
+    // readPurchaseListByMonth share the joined-select prefix, and BOTH must
+    // ask for `currency` or the mapper above silently reads undefined.
+    const src = readFileSync(join(root, 'src/features/home/api.ts'), 'utf8');
+    const selects =
+      src.match(/`id, store_id, purchase_date, created_at[^`]*`/g) ?? [];
+    assert.ok(
+      selects.length >= 2,
+      `expected both purchase feed selects, found ${selects.length}`,
+    );
+    for (const [i, sel] of selects.entries()) {
+      assert.ok(
+        sel.includes('currency'),
+        `feed select #${i + 1} must request the currency column, got: ${sel.slice(0, 80)}…`,
+      );
+    }
   });
 
   await test('readPurchaseList filters user + confirmed and orders created_at desc server-side', async () => {

@@ -954,6 +954,11 @@ export interface PurchaseWithItems {
   is_manual: boolean;
   image_url: string | null;
   status: PurchaseStatus;
+  /**
+   * The unit this receipt was recorded in (REQ-8, migration 0042); `null`
+   * on a legacy unit-less row (the viewer profile fills in at render).
+   */
+  currency: string | null;
   items: PurchaseItemDetail[];
 }
 
@@ -1002,7 +1007,7 @@ export async function fetchPurchaseDetail(
   const { data: purchase, error } = await supabase
     .from('purchases')
     .select(
-      `id, store_id, total, purchase_date, payment_method, is_manual, image_url, status,
+      `id, store_id, currency, total, purchase_date, payment_method, is_manual, image_url, status,
        stores ( name ),
        purchase_items ( id, name, quantity, unit_price, total_price, category_id, is_impulse, sort_order, categories ( id, slug, name, kind, icon, color, sort_order ) )`,
     )
@@ -1027,6 +1032,8 @@ export async function fetchPurchaseDetail(
     is_manual: boolean;
     image_url: string | null;
     status: PurchaseStatus;
+    /** Row unit (REQ-8); absent/NULL on legacy rows. */
+    currency?: string | null;
     stores: { name: string | null } | { name: string | null }[] | null;
     purchase_items:
       | {
@@ -1068,6 +1075,9 @@ export async function fetchPurchaseDetail(
     is_manual: row.is_manual,
     image_url: row.image_url,
     status: row.status,
+    // REQ-8: absent/NULL (legacy row) maps to null — the edit draft then
+    // keeps no unit and the review screen renders with the viewer profile.
+    currency: row.currency ?? null,
     items,
   };
 }
@@ -1097,6 +1107,12 @@ export function purchaseToDraft(purchase: PurchaseWithItems): ReceiptDraft {
     total: purchase.total,
     payment_method: purchase.payment_method,
     image_url: purchase.image_url ?? '',
+    // The row's own unit (REQ-8): seeds the edit draft so every review
+    // render labels with the stored unit. `null` (legacy) → omitted → the
+    // viewer profile fills in. Deliberately NOT mapped into updateReceipt's
+    // payload: an edit never rewrites the unit (REQ-8 s4) and the switcher
+    // is scan-mode only, so the draft value can only mirror the row.
+    currency: purchase.currency ?? undefined,
     // Origin (is_manual) is deliberately NOT mapped (migration 0029, D1):
     // origin is immutable and the edit flow (updateReceipt) never writes
     // it, so carrying it in the round-trip draft would only suggest the

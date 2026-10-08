@@ -215,6 +215,15 @@ export interface HomeFeedReceiptRow {
   wants_snacks_total?: number;
   /** Per-category totals (slug -> amount), when the source provides them. */
   category_totals?: Record<string, number>;
+  /**
+   * The unit this receipt was recorded in (REQ-8, migration 0042), present
+   * when the read provides it (`features/home/api` surfaces it from
+   * `purchases.currency`); `null` on a legacy unit-less row. Producers that
+   * do not carry it (e.g. an optimistic row) can omit it. Consumers render
+   * `row.currency ?? viewer` — the profile only ever fills ABSENCE, a
+   * stored unit always wins (REQ-8 s4).
+   */
+  currency?: string | null;
   items?: HomeFeedItemRow[];
 }
 

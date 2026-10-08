@@ -176,7 +176,7 @@ export default function HomeScreen() {
             name={r.name}
             date={r.date}
             amount={r.amount}
-            currency={currency}
+            currency={r.currency ?? currency}
             imageUrl={r.imageUrl}
             isManual={r.isManual}
             onPress={() => router.push(`/receipts/${r.id}`)}

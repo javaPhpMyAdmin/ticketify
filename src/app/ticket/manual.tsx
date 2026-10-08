@@ -356,11 +356,11 @@ export default function ManualEntryScreen() {
                             {item.name}
                           </Text>
                           <Text style={styles.itemSub}>
-                            {item.quantity} × {formatCurrency(item.unit_price, currency)}
+                            {item.quantity} × {formatCurrency(item.unit_price, draft?.currency ?? currency)}
                           </Text>
                         </View>
                         <Text style={styles.itemTotal}>
-                          {formatCurrency(item.total_price, currency)}
+                          {formatCurrency(item.total_price, draft?.currency ?? currency)}
                         </Text>
                         <Pressable
                           onPress={() => openEditItem(item)}
@@ -418,7 +418,7 @@ export default function ManualEntryScreen() {
         <View style={styles.footer}>
           <View style={styles.totalRow}>
             <Text style={styles.kicker}>{t('tickets:manualTotal')}</Text>
-            <Text style={styles.totalValue}>{formatCurrency(total, currency)}</Text>
+            <Text style={styles.totalValue}>{formatCurrency(total, draft?.currency ?? currency)}</Text>
           </View>
           <Fab
             label={t('tickets:manualSave')}

@@ -404,6 +404,10 @@ export default function ReviewReceiptScreen() {
               // carries it (purchaseToDraft), so the optimistic row keeps
               // the store row's origin — a manual ticket stays manual.
               is_manual: existing?.is_manual ?? false,
+              // The edit draft's unit mirrors the row's (purchaseToDraft
+              // seeds it; nothing on this path rewrites it), so threading
+              // it keeps the optimistic row labeled until the refetch.
+              currency: draft.currency ?? null,
             },
             reviewItemsToFeedItems(draft.items),
           );
@@ -630,7 +634,12 @@ export default function ReviewReceiptScreen() {
                     never rewrites total/items (REQ-8 #5; convert-on-switch
                     is FX, out of scope). No detected unit → no chip
                     selected → the save omits p_currency and the row keeps
-                    NULL (viewer fallback, REQ-8 #2). */}
+                    NULL (viewer fallback, REQ-8 #2).
+                    Scan-mode only: the edit path (updateReceipt) never
+                    writes purchases.currency, so showing the chips while
+                    editing would promise a relabel that silently never
+                    persists — edit mode displays the seeded row unit. */}
+                {!editingMode ? (
                 <View style={styles.currencyBlock}>
                   <Text style={styles.kicker}>
                     {t('tickets:reviewCurrencyKicker')}
@@ -646,6 +655,7 @@ export default function ReviewReceiptScreen() {
                     ))}
                   </View>
                 </View>
+                ) : null}
               </Card>
 
               {/* Items */}
@@ -656,7 +666,7 @@ export default function ReviewReceiptScreen() {
                 {draft?.items ? (
                   <ReceiptItemsList
                     items={draft.items}
-                    currency={currency}
+                    currency={draft?.currency ?? currency}
                     catalog={catalog}
                     onPressCategory={(item) => setCategoryTarget(item)}
                     onToggleImpulse={(item, v) =>
@@ -678,7 +688,7 @@ export default function ReviewReceiptScreen() {
             <View style={styles.totalRow}>
               <Text style={styles.kicker}>{t('tickets:reviewTotalLabel')}</Text>
               <Text style={styles.totalValue}>
-                {formatCurrency(draft?.total ?? itemsTotal, currency)}
+                {formatCurrency(draft?.total ?? itemsTotal, draft?.currency ?? currency)}
               </Text>
             </View>
             {/* EDIT mode (soft hint, inline next to the total): the user is
@@ -711,12 +721,12 @@ export default function ReviewReceiptScreen() {
                 </Text>
                 {!matches ? (
                   <Text style={styles.matchesDetail}>
-                    {t('tickets:reviewDeclared')} {formatCurrency(draft.total, currency)}
+                    {t('tickets:reviewDeclared')} {formatCurrency(draft.total, draft?.currency ?? currency)}
                   </Text>
                 ) : itemsTotal > (draft?.total ?? 0) + 0.01 ? (
                   <Text style={styles.matchesDetail}>
                     {t('tickets:reviewDiscount')}{' '}
-                    {formatCurrency(itemsTotal - (draft?.total ?? 0), currency)}
+                    {formatCurrency(itemsTotal - (draft?.total ?? 0), draft?.currency ?? currency)}
                   </Text>
                 ) : null}
               </View>

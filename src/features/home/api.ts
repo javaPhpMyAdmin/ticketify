@@ -42,6 +42,8 @@ interface RawPurchaseRow {
   is_manual: boolean;
   image_url: string | null;
   status: string;
+  /** Row unit (REQ-8, migration 0042); absent/NULL on legacy rows. */
+  currency?: string | null;
   stores: { name: string } | { name: string }[] | null;
   purchase_items: RawItemRow[] | null;
 }
@@ -102,6 +104,9 @@ function mapPurchaseRow(row: RawPurchaseRow): HomeFeedReceiptRow {
       status: row.status as HomeFeedReceiptRow['status'],
       payment_method: row.payment_method as PaymentMethod,
       is_manual: row.is_manual,
+      // Row unit (REQ-8): legacy NULL / absent column → null, the
+      // consumer-side signal for the viewer-profile fallback.
+      currency: row.currency ?? null,
     },
     items,
   );
@@ -119,7 +124,7 @@ export async function readPurchaseList(
   const { data, error } = await supabase
     .from('purchases')
     .select(
-      `id, store_id, purchase_date, created_at, total, payment_method, is_manual, image_url, status,
+      `id, store_id, purchase_date, created_at, total, payment_method, is_manual, currency, image_url, status,
        stores ( name ),
        purchase_items ( id, name, quantity, unit_price, total_price, is_impulse, sort_order, categories ( slug ) )`,
     )
@@ -161,7 +166,7 @@ export async function readPurchaseListByMonth(
   const { data, error } = await supabase
     .from('purchases')
     .select(
-      `id, store_id, purchase_date, created_at, total, payment_method, is_manual, image_url, status,
+      `id, store_id, purchase_date, created_at, total, payment_method, is_manual, currency, image_url, status,
        stores ( name ),
        purchase_items ( id, name, quantity, unit_price, total_price, is_impulse, sort_order, categories ( slug ) )`,
     )

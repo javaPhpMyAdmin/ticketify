@@ -99,7 +99,7 @@ export default function StoreDetailScreen() {
                   accessibilityHint={t('analytics:itemReceiptHint')}
                   accessibilityLabel={t('analytics:storePurchaseA11y', {
                     date: formattedDate,
-                    amount: formatCurrency(purchase.amount, currency),
+                    amount: formatCurrency(purchase.amount, purchase.currency ?? currency),
                   })}
                 >
                   {idx > 0 ? <Divider /> : null}
@@ -115,7 +115,7 @@ export default function StoreDetailScreen() {
                       </Text>
                     </View>
                     <Text style={styles.purchaseAmount}>
-                      {formatCurrency(purchase.amount, currency)}
+                      {formatCurrency(purchase.amount, purchase.currency ?? currency)}
                     </Text>
                   </View>
                 </Pressable>

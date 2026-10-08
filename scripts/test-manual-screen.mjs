@@ -2158,6 +2158,78 @@ async function editorWiringTests() {
       'no second key may join the currency patch',
     );
   });
+
+  // ── money-integrity slice B (2.6): draft-based single-row renders bind
+  // the DRAFT unit with the profile currency as fallback (REQ-8 s4: rows
+  // and drafts keep their own unit; the profile only fills absence).
+  await test('manual entry item rows + total bind the draft unit (source pin)', () => {
+    const unitPrice = manualSource.match(
+      /formatCurrency\(item\.unit_price, draft\?\.currency \?\? currency\)/g,
+    );
+    assert.ok(
+      unitPrice && unitPrice.length === 1,
+      'the unit-price line must bind draft.currency with viewer fallback, got: ' +
+        (unitPrice?.length ?? 0),
+    );
+    const lineTotal = manualSource.match(
+      /formatCurrency\(item\.total_price, draft\?\.currency \?\? currency\)/g,
+    );
+    assert.ok(
+      lineTotal && lineTotal.length === 1,
+      'the line-total must bind draft.currency with viewer fallback, got: ' +
+        (lineTotal?.length ?? 0),
+    );
+    const grand = manualSource.match(
+      /formatCurrency\(total, draft\?\.currency \?\? currency\)/g,
+    );
+    assert.ok(
+      grand && grand.length === 1,
+      'the footer total must bind draft.currency with viewer fallback, got: ' +
+        (grand?.length ?? 0),
+    );
+  });
+
+  await test('review footer + item list bind the draft unit (source pin)', () => {
+    assert.ok(
+      reviewSource.includes('currency={draft?.currency ?? currency}'),
+      'ReceiptItemsList must receive the draft unit (ReviewItemRow renders through this prop)',
+    );
+    const sites = reviewSource.match(
+      /formatCurrency\([^,]+, draft\?\.currency \?\? currency\)/g,
+    );
+    assert.ok(
+      sites && sites.length === 3,
+      'footer total, declared total and mismatch detail must all bind draft.currency, got: ' +
+        (sites?.length ?? 0),
+    );
+  });
+
+  await test('the unit switcher is scan-mode only — hidden while editing an existing receipt', () => {
+    // The edit path (updateReceipt) never writes purchases.currency and no
+    // artifact specifies edit-time correction, so showing the chips in
+    // edit mode would promise a relabel that silently never persists.
+    assert.ok(
+      reviewSource.includes('!editingMode'),
+      'the currency block must be gated on !editingMode',
+    );
+    assert.match(
+      reviewSource,
+      /\{!editingMode \?\s*\(\s*<View style=\{styles\.currencyBlock\}>/,
+      'the currency block must render only outside edit mode',
+    );
+  });
+
+  await test('ReviewItemRow renders through its currency prop, never the profile store', () => {
+    assert.match(
+      rowSource,
+      /formatCurrency\(item\.total_price, currency\)/,
+      'the row must render with the currency it was given',
+    );
+    assert.ok(
+      !rowSource.includes('useSettingsStore'),
+      'the row must not read the profile currency itself — the caller binds the draft unit',
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------
