@@ -47,6 +47,14 @@
 -- `drop function public.save_receipt(uuid, date, numeric, text, text,
 -- public.purchase_item_input[], text, boolean);` — no data is lost beyond
 -- the units written since this migration ran.
+--
+-- Ordering constraint on any future rollback: the COLUMN must outlive every
+-- client build from this feature (their INSERT writes it — dropping the
+-- column first fails their saves), so roll the client back before dropping
+-- it. The 8-param signature may go earlier only once no deployed build sends
+-- p_currency any more: pre-0042 7-key clients then resolve to f7 and store
+-- NULL (the designed fallback), while f8-bearing clients would fail RPC
+-- routing — no matching overload.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -64,7 +72,7 @@ alter table public.purchases
   add column currency text;
 
 comment on column public.purchases.currency is
-  'ISO 4217 unit the receipt amounts were recorded in (e.g. UYU, CLP). NULL for rows saved before 0042 and for scans that detected no unit — consumers fall back to the viewer''s profile currency. Written ONLY by save_receipt from p_currency (catalog-checked); never updated afterwards (changing your profile currency does not rewrite stored rows). No CHECK constraint: the catalog lives in code (NFR-1).';
+  'ISO 4217 unit the receipt amounts were recorded in (e.g. UYU, CLP). NULL for rows saved before 0042, for scans that detected no unit, and for manual drafts that never carried one — consumers fall back to the viewer''s profile currency. Written by save_receipt from p_currency on create (catalog-checked) and by the edit-path updateReceipt PATCH (normalizeCurrency, catalog-checked client-side); changing your profile currency never rewrites stored rows. No CHECK constraint: the catalog lives in code (NFR-1).';
 
 -- ---------------------------------------------------------------------------
 -- §2. save_receipt() — 8-param overload with p_currency (shape A)
@@ -195,8 +203,12 @@ begin
   --
   -- The list mirrors SUPPORTED_CURRENCIES in src/lib/format.ts (client
   -- source of truth) and its duplicate in supabase/functions/parse-ticket/
-  -- lib/parse.ts. Keep the three in sync — there is no catalog table by
-  -- design (NFR-1: no CHECK constraint, catalog lives in code).
+  -- lib/parse.ts — three independent copies total (the test harness stubs
+  -- compile the real format.ts, so they are derived, not copies). Keep them
+  -- in sync; parity is pinned on both sides: the edge copy by
+  -- scripts/test-parse-ticket.mjs, this literal by
+  -- scripts/test-currency-catalog.mjs. No catalog table by design (NFR-1:
+  -- no CHECK constraint, catalog lives in code).
   if p_currency is not null then
     v_currency := upper(btrim(p_currency));
     if v_currency not in (
@@ -228,10 +240,11 @@ begin
   end loop;
 
   -- Insert the purchase row (status 'confirmed' as the client sets it).
-  -- `is_manual` is set HERE from p_is_manual — the ONLY writer of origin.
-  -- `currency` is set HERE from v_currency — the ONLY writer of the unit
-  -- (updateReceipt / restorePurchase never touch either column, so a ticket
-  -- keeps its origin and its recorded unit for life).
+  -- `is_manual` is set HERE from p_is_manual — the ORIGIN writer, once.
+  -- `currency` is set HERE from v_currency on create; afterwards only the
+  -- recorded unit can change (the edit-path updateReceipt PATCH writes it
+  -- via normalizeCurrency, restorePurchase puts the pre-edit value back) —
+  -- neither ever touches is_manual.
   insert into public.purchases (
     user_id, store_id, purchase_date, total, payment_method, image_url, status, is_manual, currency
   ) values (
