@@ -172,8 +172,14 @@ export async function readCategoryTotals(
   householdId?: string | null,
 ): Promise<FeatureReadResult<CategoryMonthlyTotal[]>> {
   if (!isSupabaseConfigured) return { status: 'unconfigured' };
-  const params: Record<string, string> = { p_year_month: yearMonth };
-  if (householdId) params.p_household_id = householdId;
+  // Always send `p_household_id` (null for personal): PostgREST selects
+  // overloads by ARGUMENT COUNT, so a 1-key call would resolve to the legacy
+  // pre-0044 `monthly_category_totals(text)` single-series overload instead of
+  // the grouped 2-arg one. An explicit null pins the grouped contract.
+  const params: Record<string, string | null> = {
+    p_year_month: yearMonth,
+    p_household_id: householdId ?? null,
+  };
   const { data, error } = await supabase.rpc('monthly_category_totals', params);
   if (error) {
     console.warn('[read] category totals failed:', error.code, error.message);
@@ -196,16 +202,22 @@ export async function readMonthlyPurchasesTotal(
   householdId?: string | null,
 ): Promise<FeatureReadResult<CurrencyTotal[]>> {
   if (!isSupabaseConfigured) return { status: 'unconfigured' };
-  const params: Record<string, string> = { p_year_month: yearMonth };
-  if (householdId) params.p_household_id = householdId;
+  // Always send `p_household_id` (null for personal): the 1-key call would
+  // resolve to the legacy pre-0044 `monthly_purchases_total(text)` overload
+  // (PostgREST selects by argument count), yielding a currency-less single
+  // row. The explicit null forces the grouped per-unit contract.
+  const params: Record<string, string | null> = {
+    p_year_month: yearMonth,
+    p_household_id: householdId ?? null,
+  };
   const { data, error } = await supabase.rpc('monthly_purchases_total', params);
   if (error) {
     console.warn('[read] monthly purchases total failed:', error.code, error.message);
     return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
-  // 0044: the 2-arg RPC returns one (currency, total) row per unit. The
-  // legacy 1-arg overload (personal mode) keeps its currency-less shape, so
-  // `currency` is optional on the rows.
+  // 0044: the 2-arg RPC returns one (currency, total) row per unit; the
+  // explicit `p_household_id: null` above keeps us off the legacy 1-arg
+  // currency-less overload.
   return { status: 'ok', data: (data ?? []) as CurrencyTotal[] };
 }
 
@@ -920,7 +932,7 @@ export async function syncSubscriptionStatus(
  * empty array on a cache miss (the hook triggers a recalc). Order is
  * deterministic so grouped renders are stable across refetches.
  */
-export async function readMonthlyCacheRow(
+export async function readMonthlyCacheRowsForMonth(
   userId: string,
   yearMonth: string,
 ): Promise<FeatureReadResult<MonthlyTotalsCacheRow[]>> {

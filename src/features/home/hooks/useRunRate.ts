@@ -83,6 +83,10 @@ export function useRunRate(monthKey: string): { data: RunRateResult | null } {
   // up the freshly upserted row (`recalculate_monthly_totals` always
   // upserts, migration 0015).
   const triggerMutation = useMutation({
+    // Shared key with `useMonthlyCache`: both surfaces auto-recalc the same
+    // (user, month). TanStack serializes same-key mutations, so mounting both
+    // does not fire duplicate RPCs.
+    mutationKey: ['recalc-monthly-totals'],
     mutationFn: () =>
       triggerMonthlyRecalc(userId!, monthKey).then(toQueryData),
     onSuccess: () => {

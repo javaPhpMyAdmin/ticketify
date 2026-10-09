@@ -3,12 +3,13 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { useSessionUser } from '@/features/auth';
 import { currentMonthKey } from '@/features/home/hooks/useHomeFeed';
+import { useSettingsStore } from '@/stores/use-settings-store';
 import { fetchMonthlyTotals } from '../api';
 import { mergeBudgetLimits } from '../category-budget-progress';
 import { queryKeys } from '@/lib/query-keys';
 import { useCategoryBudgets } from './useCategoryBudgets';
 import {
-  readMonthlyCacheRow,
+  readMonthlyCacheRowsForMonth,
   readMonthlyPurchasesTotal,
   triggerMonthlyRecalc,
 } from '@/lib/supabase/feature-access';
@@ -95,6 +96,10 @@ export function useMonthlyCache(
   refetch: () => Promise<unknown>;
 } {
   const { userId } = useSessionUser();
+  // Viewer unit: single-series surfaces (this hook's `monthTotal`, the
+  // overview change-%) bind to the VIEWER-currency cache row only — never a
+  // cross-unit sum (R1) and never re-denominated (decision 9 / pass-3 §3).
+  const currency = useSettingsStore((s) => s.currency);
 
   const isHousehold = !!householdId;
 
@@ -124,7 +129,7 @@ export function useMonthlyCache(
     queryKey: cacheKey,
     enabled: !!userId && !isHousehold,
     queryFn: () =>
-      readMonthlyCacheRow(userId!, yearMonth).then(toQueryData),
+      readMonthlyCacheRowsForMonth(userId!, yearMonth).then(toQueryData),
   });
 
   // Household mode: fall through to the category totals RPC directly.
@@ -147,7 +152,11 @@ export function useMonthlyCache(
   });
 
   // Cache miss (personal mode): trigger a one-time recalculation via RPC.
+  // Shared `mutationKey` with `useRunRate`: Hook-adjacent surfaces that both
+  // auto-recalc the same (user, month) serialize on one key instead of firing
+  // duplicate RPCs (TanStack runs same-key mutations in sequence).
   const triggerMutation = useMutation({
+    mutationKey: ['recalc-monthly-totals'],
     mutationFn: () =>
       triggerMonthlyRecalc(userId!, yearMonth).then(toQueryData),
     onSuccess: () => {
@@ -157,18 +166,22 @@ export function useMonthlyCache(
 
   // Auto-trigger recalc when the cache is empty and not already in flight.
   // `cacheQuery.data` is an array since 0044 (one row per unit); an empty
-  // array is the cache-miss signal.
+  // array is the cache-miss signal. Gate on a non-error read: a failed read
+  // also yields `[]`, but firing a recalc then would mask the read failure
+  // and could write a row for a month whose data we could not even load.
   const rows = cacheQuery.data ?? [];
   useEffect(() => {
     if (
       !isHousehold &&
+      !!userId &&
+      !cacheQuery.isError &&
       rows.length === 0 &&
       !cacheQuery.isLoading &&
       !triggerMutation.isPending
     ) {
       triggerMutation.mutate();
     }
-  }, [rows.length, cacheQuery.isLoading, isHousehold]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows.length, cacheQuery.isLoading, cacheQuery.isError, isHousehold, userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // AD-5: personal mode merges the month's budgets into the cache-backed
   // totals (post-step — the transform keeps its `budget_limit: null`
@@ -185,7 +198,8 @@ export function useMonthlyCache(
           ),
     [rows, budgets, yearMonth, isHousehold],
   );
-  const monthTotal = rows.reduce((sum, row) => sum + row.total, 0);
+  const monthTotal =
+    rows.find((row) => row.currency === currency)?.total ?? 0;
 
   if (isHousehold) {
     const hTotals = householdQuery.data ?? [];
@@ -198,7 +212,10 @@ export function useMonthlyCache(
     }));
     return {
       totals: hTotals,
-      monthTotal: hNetRows.reduce((sum, r) => sum + r.total, 0),
+      // Single-series binding: the viewer-currency net row only — never a
+      // cross-unit sum (R1). A month spent entirely in another unit reads 0
+      // here; the grouped headline still shows every unit via householdTotals.
+      monthTotal: hNetRows.find((r) => r.currency === currency)?.total ?? 0,
       householdTotals,
       isLoading: householdQuery.isLoading || netTotalQuery.isLoading,
       error: householdQuery.error
@@ -218,10 +235,19 @@ export function useMonthlyCache(
     monthTotal,
     householdTotals: [],
     isLoading: cacheQuery.isLoading || triggerMutation.isPending,
+    // Surface a failed recalc: the cache read succeeded (empty) but the
+    // recompute that was meant to fill it failed, so consumers must see the
+    // error instead of a false "no spend this month".
     error: cacheQuery.error
       ? toQueryErrorMessage(cacheQuery.error)
-      : null,
-    hasData: cacheQuery.data !== undefined,
+      : triggerMutation.error
+        ? toQueryErrorMessage(triggerMutation.error)
+        : null,
+    // A failed recalc over an empty read is NOT resolved data — otherwise the
+    // empty-array read would render as a verified zero month.
+    hasData:
+      cacheQuery.data !== undefined &&
+      !(rows.length === 0 && triggerMutation.isError),
     refetch: cacheQuery.refetch,
   };
 }

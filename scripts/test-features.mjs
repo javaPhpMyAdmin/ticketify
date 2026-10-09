@@ -15,8 +15,10 @@
  *     unconfigured, error → user-safe message),
  *   - authenticated scan usage reads hit `scan_usage` (missing month row is a
  *     normal ok/null),
- *   - analytics reads call `rpc('monthly_category_totals', { p_year_month })`
- *     and a not-deployed RPC fails safe,
+ *   - analytics reads call
+ *     `rpc('monthly_category_totals', { p_year_month, p_household_id: null })`
+ *     (the explicit null pins the grouped 2-arg overload) and a not-deployed
+ *     RPC fails safe,
  *   - budget spent: the `monthly_purchases_total` RPC seam
  *     (`readMonthlyPurchasesTotal`) — the SUM of `purchases.total`
  *     (post-discount, what the user was actually charged), asserted via
@@ -471,7 +473,7 @@ async function run() {
 
   console.log('\n[tests] authenticated analytics reads (ADR-7 RPC)\n');
 
-  await test('category totals call the RPC with p_year_month only (no user id)', async () => {
+  await test('category totals call the RPC with p_year_month and an explicit null p_household_id', async () => {
     resetAll();
     stubMod.__setRpcResult('monthly_category_totals', {
       rows: [
@@ -491,7 +493,7 @@ async function run() {
     assert.equal(result.data[0].category_name, 'Groceries');
     assert.deepEqual(stubMod.__lastRpcCall(), {
       fn: 'monthly_category_totals',
-      params: { p_year_month: '2026-08' },
+      params: { p_year_month: '2026-08', p_household_id: null },
     });
   });
 
@@ -508,7 +510,7 @@ async function run() {
     assert.equal(result.message, seamMod.READ_ERROR_MESSAGE());
   });
 
-  await test('readCategoryTotals reaches the RPC with p_year_month only and aggregates via sumCategoryTotals', async () => {
+  await test('readCategoryTotals reaches the RPC with p_year_month + null household and aggregates via sumCategoryTotals', async () => {
     resetAll();
     stubMod.__setRpcResult('monthly_category_totals', {
       rows: [
@@ -534,7 +536,7 @@ async function run() {
     assert.equal(result.status, 'ok');
     assert.deepEqual(stubMod.__lastRpcCall(), {
       fn: 'monthly_category_totals',
-      params: { p_year_month: '2026-08' },
+      params: { p_year_month: '2026-08', p_household_id: null },
     });
     assert.equal(budgetMod.sumCategoryTotals(result.data), 570);
   });
@@ -603,7 +605,7 @@ async function run() {
     assert.equal(result.message, seamMod.READ_ERROR_MESSAGE());
   });
 
-  await test('readMonthlyPurchasesTotal (budget spent seam) calls monthly_purchases_total with the month only', async () => {
+  await test('readMonthlyPurchasesTotal (budget spent seam) pins the grouped overload with an explicit null household', async () => {
     resetAll();
     stubMod.__setRpcResult('monthly_purchases_total', {
       rows: [{ total: 301.45 }],
@@ -612,7 +614,7 @@ async function run() {
     assert.equal(result.status, 'ok');
     assert.deepEqual(stubMod.__lastRpcCall(), {
       fn: 'monthly_purchases_total',
-      params: { p_year_month: '2026-08' },
+      params: { p_year_month: '2026-08', p_household_id: null },
     });
     assert.equal(result.data.length, 1);
     assert.equal(result.data[0].total, 301.45);

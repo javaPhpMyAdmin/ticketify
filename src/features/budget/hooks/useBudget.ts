@@ -72,16 +72,21 @@ export function useBudget(monthKey: string = currentMonthKey()): BudgetSnapshot 
     queryFn: () => fetchMonthlyBudget(userId!).then(toQueryData),
   });
 
+  // Resolve the budget (and its unit) BEFORE the spent query: `spent` binds to
+  // the VIEWER-currency group only — a budget is expressed in one unit, so a
+  // mixed-currency month must never be summed into it (R1). Falls back to the
+  // neutral unit while the budget read loads.
+  const budget = budgetQuery.data ?? NEUTRAL_BUDGET;
+
   const spentQuery = useQuery({
     queryKey: queryKeys.monthlyPurchasesTotal(userId!, monthKey),
     enabled: !!userId,
     queryFn: () =>
       readMonthlyPurchasesTotal(monthKey).then(toQueryData),
     select: (rows) =>
-      rows.reduce((acc, row) => acc + (Number.isFinite(row.total) ? row.total : 0), 0),
+      rows.find((row) => row.currency === budget.currency)?.total ?? 0,
   });
 
-  const budget = budgetQuery.data ?? NEUTRAL_BUDGET;
   const spent = spentQuery.data ?? 0;
   const percent = budget.amount > 0 ? Math.min(1, spent / budget.amount) : 0;
   return {

@@ -685,6 +685,23 @@ async function run() {
     assert.deepEqual(out, [{ currency: 'CLP', total: 2400 }]);
   });
 
+  await test('useHouseholdMonthTotal: resolved-but-empty month → one {viewer,0} group, never blank (source pin)', () => {
+    // The empty household month must render a real "0" for the viewer unit,
+    // not an empty group list (which the headline would drop). RN hook internals
+    // are unreachable from this node harness, so the fallback is pinned at the
+    // source; it gates on `data !== undefined` so the LOADING state stays [].
+    const src = readFileSync(
+      join(root, 'src/features/home/hooks/useHomeFeed.ts'),
+      'utf8',
+    );
+    const body = src.slice(src.indexOf('export function useHouseholdMonthTotal'));
+    assert.match(
+      body,
+      /householdTotalQuery\.data !== undefined && rows\.length === 0[\s\S]*?\[\{ currency, total: 0 \}\]/,
+      'the resolved-empty household month must yield one viewer-unit {total:0} group',
+    );
+  });
+
   await test('a row without the origin flag defaults to scanned (isManual false)', () => {
     // Producers that do not emit `is_manual` (the optimistic review row)
     // must read as scanned until proven manual — never undefined.

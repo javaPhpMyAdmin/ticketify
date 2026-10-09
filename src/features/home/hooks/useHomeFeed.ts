@@ -1032,10 +1032,18 @@ export function useHouseholdMonthTotal(
     householdId && householdTotalQuery.data
       ? (rows.find((r) => r.currency === currency)?.total ?? 0)
       : null;
-  const householdTotals = rows.map((r) => ({
-    currency: r.currency,
-    total: Number.isFinite(r.total) ? r.total : 0,
-  }));
+  // A resolved-but-empty household month renders a single {viewer-unit, 0}
+  // group, not a blank row: the grouped headline must show "0" for the viewer
+  // unit rather than disappearing (the caller folds a viewer-unit zero into
+  // the empty array anyway). Only after the read RESOLVES — while loading,
+  // `data` is undefined and we keep `[]`.
+  const householdTotals =
+    householdId && householdTotalQuery.data !== undefined && rows.length === 0
+      ? [{ currency, total: 0 }]
+      : rows.map((r) => ({
+          currency: r.currency,
+          total: Number.isFinite(r.total) ? r.total : 0,
+        }));
 
   return {
     householdTotal,

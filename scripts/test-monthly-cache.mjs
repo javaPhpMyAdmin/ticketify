@@ -140,13 +140,19 @@ async function run() {
   // Feature-access mock (controllable per test via __set* seams)
   const faMock = require_(join(__dirname, 'test-mocks', 'feature-access.js'));
 
+  // Real settings store (shared module instance with the hook's `@/` import).
+  // 0044 binds `monthTotal` to the VIEWER-currency row, so the fixtures below
+  // (UYU, except 5.2.3 which uses CLP) must set the store's viewer currency.
+  const settingsMod = await load('src/stores/use-settings-store.js');
+  const useSettingsStore = settingsMod.useSettingsStore;
+
   // Real React + react-query + react-dom for mounting hooks
   const React = require_('react');
   const { act } = React;
   const { createRoot } = require_('react-dom/client');
   const { QueryClient, QueryClientProvider } = require_('@tanstack/react-query');
 
-  // React 19 requires this flag for act() to work outside Jest/Vitest
+  //   React 19 requires this flag for act() to work outside Jest/Vitest
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
   // jsdom for a minimal DOM (react-dom/client needs a container element)
@@ -238,6 +244,15 @@ async function run() {
       waitFor,
     };
   }
+
+  // 0044: `monthTotal` binds to the viewer-currency row. Fixtures below record
+  // in UYU; the household test 5.2.3 overrides to CLP and restores after.
+  const setViewerCurrency = (next) => {
+    act(() => {
+      useSettingsStore.setState({ currency: next });
+    });
+  };
+  setViewerCurrency('UYU');
 
   // =========================================================================
   // 5.1 — transformCacheToCategoryTotals (pure function)
@@ -368,8 +383,8 @@ async function run() {
         food: makeCategoryEntry('food', 'Food', 1000, 5),
       },
     });
-    // `readMonthlyCacheRow` returns an ARRAY since 0044 (one row per unit).
-    faMock.__setReadMonthlyCacheRow(async () => ({
+    // `readMonthlyCacheRowsForMonth` returns an ARRAY since 0044 (one row per unit).
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => ({
       status: 'ok',
       data: [cacheRow],
     }));
@@ -413,7 +428,7 @@ async function run() {
 
     // Counter-based mock: 1st call = empty array (cache miss), 2nd+ = row
     let fetchCount = 0;
-    faMock.__setReadMonthlyCacheRow(async () => {
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => {
       fetchCount += 1;
       if (fetchCount === 1) return { status: 'ok', data: [] };
       return { status: 'ok', data: [refetchedRow] };
@@ -495,6 +510,9 @@ async function run() {
       return { status: 'ok', data: [{ total: 499.6, currency: 'CLP' }] };
     });
 
+    // Viewer unit CLP so the single-series `monthTotal` binds the CLP net row.
+    setViewerCurrency('CLP');
+
     const { ref, unmount, waitFor } = mountHook(
       () => useMonthlyCache('2026-08', 'hh-123'),
       makeQueryClient(),
@@ -518,6 +536,7 @@ async function run() {
       assert.equal(recalcCalled, false);
     } finally {
       unmount();
+      setViewerCurrency('UYU');
     }
   });
 
@@ -564,7 +583,7 @@ async function run() {
         mid: makeCategoryEntry('mid', 'Mid', 700, 2),
       },
     });
-    faMock.__setReadMonthlyCacheRow(async () => ({
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => ({
       status: 'ok',
       data: [cacheRow],
     }));
@@ -590,7 +609,7 @@ async function run() {
   await test('cache hit: no recalc triggered (real hook, verifies side-effect)', async () => {
     faMock.__reset();
     let recalcCalls = 0;
-    faMock.__setReadMonthlyCacheRow(async () => ({
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => ({
       status: 'ok',
       data: [makeCacheRow({ total: 100, currency: 'UYU' })],
     }));
@@ -618,7 +637,7 @@ async function run() {
   // --- 5.2.7 Cache-miss: after settling, not loading and totals empty ---
   await test('cache miss initial: not loading, totals empty (real hook)', async () => {
     faMock.__reset();
-    faMock.__setReadMonthlyCacheRow(async () => ({
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => ({
       status: 'ok',
       data: null,
     }));
@@ -656,7 +675,7 @@ async function run() {
         food: makeCategoryEntry('food', 'Food', 800, 4),
       },
     });
-    faMock.__setReadMonthlyCacheRow(async () => ({
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => ({
       status: 'ok',
       data: [cacheRow],
     }));
@@ -687,6 +706,35 @@ async function run() {
       assert.equal(ref.current.totals[0].category_slug, 'food');
       assert.equal(ref.current.totals[0].budget_limit, 50000);
       assert.equal(ref.current.totals[0].total, 800);
+    } finally {
+      unmount();
+    }
+  });
+
+  // --- 5.2.9 Cache miss whose recalc FAILS → error + hasData false ---
+  await test('cache miss + failed recalc → surfaces error, hasData false (real hook)', async () => {
+    faMock.__reset();
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => ({
+      status: 'ok',
+      data: [],
+    }));
+    faMock.__setTriggerMonthlyRecalc(async () => ({
+      status: 'error',
+      message: 'No se pudieron cargar los datos.',
+    }));
+
+    const { ref, unmount, waitFor } = mountHook(
+      () => useMonthlyCache('2026-08'),
+      makeQueryClient(),
+    );
+
+    try {
+      await waitFor((r) => !!r && r.error !== null);
+      // A failed recompute over an empty read is NOT a verified empty month:
+      // the hook must report the error and withhold `hasData`.
+      assert.equal(typeof ref.current.error, 'string');
+      assert.equal(ref.current.hasData, false);
+      assert.equal(ref.current.monthTotal, 0);
     } finally {
       unmount();
     }
