@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useSessionUser } from '@/features/auth';
@@ -177,6 +177,10 @@ export function useMonthlyCache(
   // even load. The `isMutating` guard is what prevents the duplicate RPC
   // storm the shared `mutationKey` alone cannot.
   const rows = cacheQuery.data ?? [];
+  // Tracks which month the last recalc attempt was FOR, so a failed recalc in
+  // month A can never surface as an error while viewing an empty month B that
+  // has its own (pending or missing) recalc.
+  const lastRecalcAttemptFor = useRef<string | null>(null);
   useEffect(() => {
     if (
       !isHousehold &&
@@ -187,9 +191,10 @@ export function useMonthlyCache(
       !triggerMutation.isPending &&
       queryClient.isMutating({ mutationKey: ['recalc-monthly-totals'] }) === 0
     ) {
+      lastRecalcAttemptFor.current = yearMonth;
       triggerMutation.mutate();
     }
-  }, [rows.length, cacheQuery.isLoading, cacheQuery.isError, isHousehold, userId, queryClient]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows.length, cacheQuery.isLoading, cacheQuery.isError, isHousehold, userId, yearMonth, queryClient]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // AD-5: personal mode merges the month's budgets into the cache-backed
   // totals (post-step — the transform keeps its `budget_limit: null`
@@ -212,10 +217,13 @@ export function useMonthlyCache(
   // The mutation observer survives renders when `yearMonth` changes (React
   // Query keeps the same `useMutation` instance), so a failed recalc in month
   // A leaves `triggerMutation.error` set into month B. Surface it ONLY when
-  // the CURRENT read is also empty — the same condition `hasData` uses — so a
-  // healthy month (cached rows present) never renders a stale recalc error.
+  // the CURRENT read is also empty AND the last attempt was for the current
+  // month — the same condition `hasData` uses — so a healthy month (cached
+  // rows present) or an unattempted month never renders a stale recalc error.
   const recalcFailedOverEmptyRead =
-    rows.length === 0 && triggerMutation.isError;
+    rows.length === 0 &&
+    triggerMutation.isError &&
+    lastRecalcAttemptFor.current === yearMonth;
 
   if (isHousehold) {
     const hTotals = householdQuery.data ?? [];
