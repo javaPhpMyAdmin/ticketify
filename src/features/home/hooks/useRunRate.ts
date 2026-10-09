@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { useSessionUser } from '@/features/auth';
+import { useSettingsStore } from '@/stores/use-settings-store';
 import {
   currentMonthKey,
   previousMonthKey,
@@ -122,9 +123,22 @@ export function useRunRate(monthKey: string): { data: RunRateResult | null } {
   // the memo so the dependency is the stable string value, not a function
   // call.
   const today = todayLocalISO();
+  // 0044 re-keyed the cache per unit: one row per (month, currency).
+  // Single-series binding (decision 9 / pass-3 §3): the run-rate reads the
+  // VIEWER-currency rows only — one series, never per-currency duplicates.
+  // A switch month has a viewer unit by construction (the viewer profile
+  // currency is the coalesce base for every unit-less row); a month whose
+  // spend sits entirely in another unit simply has no viewer row → the
+  // gates inside `aggregateRunRate` hide the card. Never re-denominated
+  // (accepted under-report s4).
+  const currency = useSettingsStore((s) => s.currency);
+  const viewerRows = useMemo(
+    () => (query.data ?? []).filter((row) => row.currency === currency),
+    [query.data, currency],
+  );
   const result = useMemo(
-    () => aggregateRunRate(query.data ?? [], today),
-    [query.data, today],
+    () => aggregateRunRate(viewerRows, today),
+    [viewerRows, today],
   );
 
   // REQ-6 error contract (last-good decision, R3 review): a failed read

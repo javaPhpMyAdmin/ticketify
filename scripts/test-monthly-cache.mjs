@@ -108,6 +108,8 @@ function makeCacheRow(overrides) {
     user_id: 'test-user-id',
     year_month: '2026-08',
     total: 0,
+    // 0044: the table is re-keyed per unit — one row per (month, currency).
+    currency: 'UYU',
     category_totals: {},
     store_totals: {},
     daily_totals: {},
@@ -361,13 +363,15 @@ async function run() {
     faMock.__reset();
     const cacheRow = makeCacheRow({
       total: 1000,
+      currency: 'UYU',
       category_totals: {
         food: makeCategoryEntry('food', 'Food', 1000, 5),
       },
     });
+    // `readMonthlyCacheRow` returns an ARRAY since 0044 (one row per unit).
     faMock.__setReadMonthlyCacheRow(async () => ({
       status: 'ok',
-      data: cacheRow,
+      data: [cacheRow],
     }));
     faMock.__setTriggerMonthlyRecalc(async () => ({
       status: 'ok',
@@ -390,6 +394,8 @@ async function run() {
       assert.equal(ref.current.isLoading, false);
       assert.equal(ref.current.hasData, true);
       assert.equal(ref.current.error, null);
+      // Personal mode surfaces no per-unit household groups.
+      assert.deepEqual(ref.current.householdTotals, []);
     } finally {
       unmount();
     }
@@ -405,12 +411,12 @@ async function run() {
       },
     });
 
-    // Counter-based mock: 1st call = null (cache miss), 2nd+ = the row
+    // Counter-based mock: 1st call = empty array (cache miss), 2nd+ = row
     let fetchCount = 0;
     faMock.__setReadMonthlyCacheRow(async () => {
       fetchCount += 1;
-      if (fetchCount === 1) return { status: 'ok', data: null };
-      return { status: 'ok', data: refetchedRow };
+      if (fetchCount === 1) return { status: 'ok', data: [] };
+      return { status: 'ok', data: [refetchedRow] };
     });
 
     let recalcCalled = false;
@@ -480,11 +486,13 @@ async function run() {
     // readMonthlyPurchasesTotal is the NEW headline source (D2): net + confirmed.
     // Gross category rows sum 500.00; the net RPC says 499.60 (a 0.40
     // end-of-receipt discount is not a line item — 0029 §3) — the headline
-    // MUST come from the net RPC, not the category reduce.
+    // MUST come from the net RPC, not the category reduce. 0044: the rows
+    // are per-unit {(currency, total)} — the hook surfaces them as
+    // `householdTotals` for grouped headline renders.
     faMock.__setReadMonthlyPurchasesTotal(async (yearMonth, householdId) => {
       assert.equal(!!householdId, true, 'net RPC must be household-scoped');
       assert.equal(yearMonth, '2026-08', 'net RPC must receive the year-month');
-      return { status: 'ok', data: [{ total: 499.6 }] };
+      return { status: 'ok', data: [{ total: 499.6, currency: 'CLP' }] };
     });
 
     const { ref, unmount, waitFor } = mountHook(
@@ -501,6 +509,10 @@ async function run() {
       // Category rows stay item-level line-item sums (D3) — NOT the total.
       assert.equal(ref.current.totals[0].category_slug, 'groceries');
       assert.equal(ref.current.totals[0].total, 480);
+      // 0044: per-unit net groups surface for the grouped headline.
+      assert.deepEqual(ref.current.householdTotals, [
+        { total: 499.6, currency: 'CLP' },
+      ]);
       assert.equal(ref.current.hasData, true);
       // Household mode should NOT trigger recalc
       assert.equal(recalcCalled, false);
@@ -534,6 +546,8 @@ async function run() {
       );
       assert.equal(ref.current.monthTotal, 0);
       assert.equal(ref.current.hasData, true);
+      // Resolved-but-empty: no per-unit groups either.
+      assert.deepEqual(ref.current.householdTotals, []);
     } finally {
       unmount();
     }
@@ -552,7 +566,7 @@ async function run() {
     });
     faMock.__setReadMonthlyCacheRow(async () => ({
       status: 'ok',
-      data: cacheRow,
+      data: [cacheRow],
     }));
 
     const { ref, unmount, waitFor } = mountHook(
@@ -578,7 +592,7 @@ async function run() {
     let recalcCalls = 0;
     faMock.__setReadMonthlyCacheRow(async () => ({
       status: 'ok',
-      data: makeCacheRow({ total: 100 }),
+      data: [makeCacheRow({ total: 100, currency: 'UYU' })],
     }));
     faMock.__setTriggerMonthlyRecalc(async () => {
       recalcCalls += 1;
@@ -637,13 +651,14 @@ async function run() {
     faMock.__reset();
     const cacheRow = makeCacheRow({
       total: 1000,
+      currency: 'UYU',
       category_totals: {
         food: makeCategoryEntry('food', 'Food', 800, 4),
       },
     });
     faMock.__setReadMonthlyCacheRow(async () => ({
       status: 'ok',
-      data: cacheRow,
+      data: [cacheRow],
     }));
     faMock.__setReadCategoryBudgets(async () => ({
       status: 'ok',

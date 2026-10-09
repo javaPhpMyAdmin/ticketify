@@ -9,7 +9,9 @@ import type { FormatDateLocale } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters';
 import { useHouseholdStore } from '@/stores/use-household-store';
+import { useSettingsStore } from '@/stores/use-settings-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
+import type { CurrencyTotal } from '@/types';
 import type { HomeFeedReceiptRow } from '@/types';
 import type { CategoryCatalog } from '@/features/categories/catalog';
 import { readPurchaseListByMonth, readPurchaseMonthKeys, searchPurchaseItems } from '../api';
@@ -433,27 +435,51 @@ export function aggregateItemsByCategory(
 
 /**
  * Pure aggregation: household RPC rows for a single category, grouped by
- * normalized name and sorted by amount desc — the household counterpart
- * to `aggregateItemsByCategory`. Takes raw `HouseholdCategoryItem[]` rows
- * (from `readHouseholdCategoryItems`) and collapses them by normalized name
- * so the same product from different household members merges into one row.
+ * normalized name AND UNIT and sorted by amount desc — the household
+ * counterpart to `aggregateItemsByCategory`. Takes raw
+ * `HouseholdCategoryItem[]` rows (from `readHouseholdCategoryItems`) and
+ * collapses them by normalized name so the same product from different
+ * household members merges into one row.
+ *
+ * 0044 (decision 9, client-side grouping): rows are grouped per
+ * `(normalized name, currency ?? null)` — a mixed-unit month renders the
+ * same product as separate rows (one per unit, each with its own amount
+ * and unit), never a cross-currency sum (R1). Unit-less legacy rows stay
+ * unit-less (`currency: null`) so the row renders under the viewer unit.
+ * The RPC itself is on the denylist and stays untouched: this grouping is
+ * the sanctioned client-side counterpart.
  *
  * Deliberately keeps `normalizeItemName` client-side: the NFD/regex is not
  * worth replicating in SQL (see 0028 header comment).
  */
 export function aggregateHouseholdCategoryItems(
-  rows: { name: string; amount: number; quantity?: number }[],
+  rows: { name: string; amount: number; quantity?: number; currency?: string | null }[],
 ): CategoryItemSummary[] {
-  const totalsByItem = new Map<string, { amount: number; quantity: number }>();
+  const totalsByItem = new Map<
+    string,
+    { name: string; amount: number; quantity: number; currency: string | null }
+  >();
   for (const row of rows) {
-    const key = normalizeItemName(row.name);
-    const current = totalsByItem.get(key) ?? { amount: 0, quantity: 0 };
+    const normalized = normalizeItemName(row.name);
+    const unit = row.currency ?? null;
+    const key = `${normalized}::${unit ?? '\u2205'}`;
+    const current = totalsByItem.get(key) ?? {
+      name: normalized,
+      amount: 0,
+      quantity: 0,
+      currency: unit,
+    };
     current.amount += row.amount;
     current.quantity += row.quantity ?? 1;
     totalsByItem.set(key, current);
   }
-  return [...totalsByItem.entries()]
-    .map(([name, { amount, quantity }]) => ({ name, amount, quantity }))
+  return [...totalsByItem.values()]
+    .map(({ name, amount, quantity, currency }) => ({
+      name,
+      amount,
+      quantity,
+      currency,
+    }))
     .sort((a, b) => b.amount - a.amount);
 }
 
@@ -599,6 +625,7 @@ export function useCategoryDetail(
   const list = useReceiptsStore((s) => s.list);
   const { userId } = useSessionUser();
   const householdId = useHouseholdStore((s) => s.household?.id);
+  const currency = useSettingsStore((s) => s.currency);
 
   // Household path: RPC-backed raw items for the category.
   // `householdId ?? ''` keeps the key a plain string even before the
@@ -630,6 +657,26 @@ export function useCategoryDetail(
     ? aggregateHouseholdCategoryItems(householdQuery.data ?? [])
     : aggregateItemsByCategory(monthList, categoryKey, monthKey);
   const total = items.reduce((sum, item) => sum + item.amount, 0);
+  // Grouped month total, one figure per recorded unit (task 3.7). Household
+  // items already carry the recorder's unit; the personal path re-derives
+  // from the raw receipts per receipt-unit so a mixed month splits instead of
+  // collapsing (the item rows themselves carry a single `null` label when
+  // mixed — see `aggregateItemsByCategory`).
+  const totals = groupTotalsByUnit(
+    household
+      ? items
+      : monthList.flatMap((receipt) =>
+          getMonthKey(receipt.purchase_date) !== monthKey
+            ? []
+            : (receipt.items ?? [])
+                .filter((item) => item.category === categoryKey)
+                .map((item) => ({
+                  amount: item.amount,
+                  currency: receipt.currency ?? null,
+                })),
+        ),
+    currency,
+  );
 
   // Household tri-state: `isPending` alone is NOT "loading" — a disabled
   // query (no householdId yet) is pending with fetchStatus idle, so gate on
@@ -656,6 +703,7 @@ export function useCategoryDetail(
   return {
     category,
     total,
+    totals,
     items,
     isLoading,
     isError,
@@ -751,6 +799,31 @@ export function useItemSearch(
 }
 
 /**
+ * Pure grouping: collapse `{ amount, currency }` rows into one figure PER
+ * recorded unit (REQ-8 / R1 — amounts in different units are never summed).
+ * A row with no unit falls back to the viewer (REQ-8 s4 — a legacy row and
+ * the viewer's own unit are equivalent). Sorted by total desc for stable
+ * renders. Powers the drill-down detail totals (task 3.7): the household
+ * path feeds it already-unit-carrying rows, the personal paths re-derive
+ * from the raw receipts so a mixed month splits per unit (the collapsed
+ * `aggregateItemsByCategory` rows deliberately carry a single `null` label
+ * when mixed and cannot drive a per-unit split).
+ */
+export function groupTotalsByUnit(
+  rows: readonly { amount: number; currency?: string | null }[],
+  viewer: string,
+): CurrencyTotal[] {
+  const byUnit = new Map<string, number>();
+  for (const row of rows) {
+    const unit = row.currency ?? viewer;
+    byUnit.set(unit, (byUnit.get(unit) ?? 0) + row.amount);
+  }
+  return [...byUnit.entries()]
+    .map(([currency, total]) => ({ currency, total }))
+    .sort((a, b) => b.total - a.total);
+}
+
+/**
  * Item drill-down: the individual purchases behind one normalized
  * item in one month, with the month total — the answer to "cuánto gasté en
  * menú del día este mes", wherever it was bought. `total` is the sum of the
@@ -759,6 +832,7 @@ export function useItemSearch(
 export function useItemDetail(itemName: string, monthKey = currentMonthKey()) {
   const list = useReceiptsStore((s) => s.list);
   const { userId } = useSessionUser();
+  const currency = useSettingsStore((s) => s.currency);
   const monthQuery = useQuery({
     queryKey: queryKeys.monthReceipts(userId!, monthKey),
     enabled: !!userId,
@@ -782,7 +856,7 @@ export function useItemDetail(itemName: string, monthKey = currentMonthKey()) {
       });
     }
   }
-  return { total, purchases };
+  return { total, totals: groupTotalsByUnit(purchases, currency), purchases };
 }
 
 /**
@@ -793,6 +867,7 @@ export function useItemDetail(itemName: string, monthKey = currentMonthKey()) {
 export function useStoreDetail(storeName: string, monthKey?: string) {
   const list = useReceiptsStore((s) => s.list);
   const { userId } = useSessionUser();
+  const currency = useSettingsStore((s) => s.currency);
   const month = monthKey ?? currentMonthKey();
   const monthQuery = useQuery({
     queryKey: queryKeys.monthReceipts(userId!, month),
@@ -842,6 +917,7 @@ export function useStoreDetail(storeName: string, monthKey?: string) {
   );
   return {
     total,
+    totals: groupTotalsByUnit(purchases, currency),
     purchases: purchases as unknown as ItemPurchaseSummary[],
   };
 }
@@ -910,25 +986,38 @@ export function mapPurchaseRowsToHomeFeed(
 }
 
 /**
- * Household total for a selected month. The only part the Home screen needs
- * from the old `useHomeFeed` for the household card. A server-side RPC
- * scoped to `monthKey`, so Home browsing ANY month (current or past) gets
- * the correct total without firing the redundant month-agnostic
+ * Household total(s) for a selected month. The only part the Home screen
+ * needs from the old `useHomeFeed` for the household card. A server-side
+ * RPC scoped to `monthKey`, so Home browsing ANY month (current or past)
+ * gets the correct total(s) without firing the redundant month-agnostic
  * infinite-scroll feed or writing the receipts store.
  *
  * `isLoading` reflects the household-total read (what the household card
  * needs). The snacks total is derived from the full-month rows
  * (`mapPurchaseRowsToHomeFeed`) so the separate impulse RPC is no longer
  * fetched here (it was a no-op consumer in Home).
+ *
+ * 0044 (decision 9): the RPC returns one NET row PER UNIT, so the hook
+ * surfaces the grouped rows as `householdTotals` (the Household card
+ * renders one labeled figure per currency). `householdTotal` remains the
+ * VIEWER-currency figure for any single-value consumer — a mixed month has
+ * one of them; a month with spend only in another unit is NOT re-denominated
+ * (R1: the figure is that unit's total, selected by viewer preference only
+ * when the unit exists).
  */
 export function useHouseholdMonthTotal(
   monthKey: string = currentMonthKey(),
-): { householdTotal: number | null; isLoading: boolean } {
+): {
+  householdTotal: number | null;
+  householdTotals: CurrencyTotal[];
+  isLoading: boolean;
+} {
   const { userId } = useSessionUser();
   const householdId = useHouseholdStore((s) => s.household?.id);
+  const currency = useSettingsStore((s) => s.currency);
 
   // ── Household total (selected month, when household is active) ────────
-  const householdTotalQuery = useQuery<{ total: number }[]>({
+  const householdTotalQuery = useQuery<CurrencyTotal[]>({
     queryKey: householdId
       ? queryKeys.householdMonthlyPurchasesTotal(householdId, monthKey)
       : ['household-purchases-total', 'disabled'],
@@ -938,13 +1027,19 @@ export function useHouseholdMonthTotal(
       return toQueryData(result);
     },
   });
+  const rows = householdTotalQuery.data ?? [];
   const householdTotal =
     householdId && householdTotalQuery.data
-      ? (householdTotalQuery.data[0]?.total ?? 0)
+      ? (rows.find((r) => r.currency === currency)?.total ?? 0)
       : null;
+  const householdTotals = rows.map((r) => ({
+    currency: r.currency,
+    total: Number.isFinite(r.total) ? r.total : 0,
+  }));
 
   return {
     householdTotal,
+    householdTotals,
     isLoading: householdTotalQuery.isLoading,
   };
 }
