@@ -53,6 +53,7 @@ import {
   CapsuleBarChart,
   DayDetailModal,
   StoreBars,
+  bindViewerRows,
   aggregateDayItems,
   aggregateDayTotal,
   aggregateSpendTrend,
@@ -72,6 +73,7 @@ import {
   aggregateCategoriesByMonth,
   currentMonthKey,
   getMonthKey,
+  groupTotalsByUnit,
   monthKeyToLabel,
   monthKeyToMonthName,
   previousMonthKey,
@@ -230,6 +232,16 @@ function ChartsBody() {
   });
   // Use full month data for detail views; fall back to store list.
   const monthList = monthReceiptsQuery.data ?? list;
+  // Single-series binding (decision 9 / pass-3 §3): the trend, weekly/daily
+  // bars, store bars, day-detail, donut and top-category each render ONE
+  // figure, so they consume the VIEWER-unit rows only. A row with no recorded
+  // unit falls back to the viewer (REQ-8 s4). ACCEPTED under-report (Read
+  // Contract s4): on a switch month the other unit's rows are excluded, not
+  // re-denominated. Grouped surfaces keep `monthList`.
+  const viewerList = useMemo(
+    () => bindViewerRows(monthList, currency),
+    [monthList, currency],
+  );
 
   const monthKeys = useAvailableMonthKeys(userId);
 
@@ -243,7 +255,7 @@ function ChartsBody() {
 
   const {
     totals,
-    monthTotal: householdMonthTotal,
+    householdTotals,
     isLoading: totalsLoading,
     error,
     hasData: totalsHasData,
@@ -268,7 +280,10 @@ function ChartsBody() {
   const spendTrend = useMemo(() => {
     if (trendQuery.data) {
       const byMonth = new Map<string, MonthlyTotalsCacheRow>();
-      for (const row of trendQuery.data) byMonth.set(row.year_month, row);
+      // Single-series binding: viewer-currency cache row only (decision 9).
+      for (const row of bindViewerRows(trendQuery.data, currency)) {
+        byMonth.set(row.year_month, row);
+      }
       return monthKeys6.map((m) => ({
         month: m,
         total: byMonth.get(m)?.total ?? 0,
@@ -276,7 +291,7 @@ function ChartsBody() {
     }
     // Household mode or cache not loaded: fall back to list aggregation.
     const totalsByMonth = new Map<string, number>();
-    for (const receipt of monthList) {
+    for (const receipt of viewerList) {
       const key = getMonthKey(receipt.purchase_date);
       totalsByMonth.set(key, (totalsByMonth.get(key) ?? 0) + (receipt.total ?? 0));
     }
@@ -284,7 +299,7 @@ function ChartsBody() {
       month: m,
       total: totalsByMonth.get(m) ?? 0,
     }));
-  }, [trendQuery.data, monthList, monthKeys6]);
+  }, [trendQuery.data, viewerList, monthKeys6, currency]);
 
   // 3-year spend from the materialized cache (personal mode). The store
   // list only holds optimistic scan-flow rows and is empty in practice,
@@ -322,7 +337,7 @@ function ChartsBody() {
     const [year, month] = monthKey.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
     const totalsByDay = new Map<number, number>();
-    for (const receipt of monthList) {
+    for (const receipt of viewerList) {
       if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
       const day = Number(receipt.purchase_date.slice(8, 10));
       totalsByDay.set(day, (totalsByDay.get(day) ?? 0) + (receipt.total ?? 0));
@@ -331,7 +346,7 @@ function ChartsBody() {
       day: i + 1,
       total: totalsByDay.get(i + 1) ?? 0,
     }));
-  }, [cacheRow, monthList, monthKey]);
+  }, [cacheRow, viewerList, monthKey]);
 
   // Per-store totals from cache (`store_totals` jsonb) or list aggregation.
   const stores = useMemo(() => {
@@ -347,7 +362,7 @@ function ChartsBody() {
         .sort((a, b) => b.total - a.total);
     }
     const totalsByStore = new Map<string, { storeName: string; total: number }>();
-    for (const receipt of monthList) {
+    for (const receipt of viewerList) {
       if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
       const rawName = receipt.store_name ?? '';
       const displayName = rawName.trim() || 'Sin tienda';
@@ -365,7 +380,7 @@ function ChartsBody() {
         if (b.total !== a.total) return b.total - a.total;
         return a.storeName.localeCompare(b.storeName);
       });
-  }, [cacheRow, monthList, monthKey]);
+  }, [cacheRow, viewerList, monthKey]);
 
   // Daily average from list aggregation or cache fallback: the month's
   // services-excluded total divided by the number of DISTINCT days actually
@@ -382,7 +397,7 @@ function ChartsBody() {
     const excluded = new Set(['servicios']);
     let total = 0;
     const spendDays = new Set<number>();
-    for (const receipt of monthList) {
+    for (const receipt of viewerList) {
       if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
       let excludedAmount = 0;
       for (const slug of excluded) {
@@ -398,13 +413,13 @@ function ChartsBody() {
     // month. A month whose spend is entirely servicios legitimately yields 0
     // (still the correct list-derived value), so presence of receipts — not a
     // positive result — decides whether the list is authoritative.
-    const monthHasReceipts = monthList.some(
+    const monthHasReceipts = viewerList.some(
       (receipt) => getMonthKey(receipt.purchase_date) === monthKey,
     );
     if (monthHasReceipts) {
       return spendDays.size > 0 ? total / spendDays.size : 0;
     }
-    // Fallback path: no raw receipt for this month in `monthList` yet (the
+    // Fallback path: no raw viewer-unit receipt for this month in `viewerList` yet (the
     // monthly query is still loading and the store is empty, or a cache-only
     // imported month without raw receipts). Best effort from the cache.
     if (cacheRow) {
@@ -430,7 +445,7 @@ function ChartsBody() {
       return spendDayCount > 0 ? (cacheRow.total - serviciosTotal) / spendDayCount : 0;
     }
     return 0;
-  }, [cacheRow, monthList, monthKey]);
+  }, [cacheRow, viewerList, monthKey]);
 
   // Top category from cache `category_totals` or list aggregation.
   const topCategory = useMemo(() => {
@@ -447,9 +462,9 @@ function ChartsBody() {
         icon: cat.icon,
       };
     }
-    const categories = aggregateCategoriesByMonth(monthList, monthKey, catalog);
+    const categories = aggregateCategoriesByMonth(viewerList, monthKey, catalog);
     return categories[0] ?? null;
-  }, [cacheRow, monthList, monthKey, catalog]);
+  }, [cacheRow, viewerList, monthKey, catalog]);
 
   // Check if any budgets are configured for the selected month
   const hasAnyBudgets = useMemo(
@@ -462,8 +477,8 @@ function ChartsBody() {
     if (!tappedDay) return [];
     // Hero includes servicios; weekly excludes them.
     const exclude = tappedFromHero ? [] : ['servicios'];
-    return aggregateDayItems(monthList, tappedDay, exclude);
-  }, [monthList, tappedDay, tappedFromHero]);
+    return aggregateDayItems(viewerList, tappedDay, exclude);
+  }, [viewerList, tappedDay, tappedFromHero]);
   // Headline total for the open day-detail sheet — the EXACT number the
   // weekly bar showed for that day (`aggregateDayTotal`: receipt totals
   // minus servicios, clamped at 0). The item list alone can't reproduce
@@ -472,8 +487,8 @@ function ChartsBody() {
   const tappedDayTotal = useMemo(() => {
     if (!tappedDay) return 0;
     const exclude = tappedFromHero ? [] : ['servicios'];
-    return aggregateDayTotal(monthList, tappedDay, exclude);
-  }, [monthList, tappedDay, tappedFromHero]);
+    return aggregateDayTotal(viewerList, tappedDay, exclude);
+  }, [viewerList, tappedDay, tappedFromHero]);
 
   // ── Annual trend card ──────────────────────────────────────────────
   const currentYear = String(new Date().getFullYear());
@@ -506,14 +521,17 @@ function ChartsBody() {
   const annualTrend = useMemo(() => {
     if (yearQuery.data) {
       const byMonth = new Map<string, MonthlyTotalsCacheRow>();
-      for (const row of yearQuery.data) byMonth.set(row.year_month, row);
+      // Single-series binding: viewer-currency cache row only (decision 9).
+      for (const row of bindViewerRows(yearQuery.data, currency)) {
+        byMonth.set(row.year_month, row);
+      }
       return monthsOfYear.map((m) => ({
         month: m,
         total: byMonth.get(m)?.total ?? 0,
       }));
     }
-    return aggregateSpendTrend(monthList, monthsOfYear);
-  }, [yearQuery.data, monthList, monthsOfYear]);
+    return aggregateSpendTrend(viewerList, monthsOfYear);
+  }, [yearQuery.data, viewerList, monthsOfYear, currency]);
   const hasAnnualData = annualTrend.some((p) => p.total > 0);
   const currentMonthIdx = new Date().getMonth(); // 0–11
   const highlightIdx = selectedYear === currentYear ? currentMonthIdx : -1;
@@ -539,7 +557,7 @@ function ChartsBody() {
       // week start comes from `weekStartISO` (local-derived, shared with
       // the tap→day mapping), so bars and the detail sheet stay aligned.
       const weekPoints = aggregateWeeklySpend(
-        monthList,
+        viewerList,
         weekStartISO,
         ['servicios'],
         locale,
@@ -575,9 +593,10 @@ function ChartsBody() {
     // `ReceiptSpendRecord`-shaped points (first-of-month dates) so the
     // same aggregator feeds both sources. Falls back to the store list,
     // which only holds optimistic scan-flow rows and is empty in practice.
+    // Single-series binding (decision 9): viewer-currency rows only.
     const yearlyPoints = yearlyQuery.data
-      ? yearlyPointsFromCache(yearlyQuery.data)
-      : list;
+      ? yearlyPointsFromCache(bindViewerRows(yearlyQuery.data, currency))
+      : bindViewerRows(list, currency);
     return {
       title: t('pro:periodByYear'),
       items: aggregateYearlySpend(yearlyPoints).map((point) => ({
@@ -586,7 +605,7 @@ function ChartsBody() {
         highlight: point.year === currentYear,
       })),
     };
-  }, [monthList, period, spendTrend, weekStartISO, yearlyQuery.data, list, locale, t]);
+  }, [period, spendTrend, weekStartISO, yearlyQuery.data, list, locale, t, viewerList, currency]);
 
   // `monthKeys` is newest-first. The selected month may not be in it (e.g.
   // the current month with no receipts yet): `useMonthNavigation` synthesizes
@@ -603,14 +622,37 @@ function ChartsBody() {
   );
 
   // Hero headline decision shared with the analytics overview card: in
-  // household mode the hero total is the household RPC total (not the
-  // personal cache row), the change-% badge is dropped (it has no
-  // household baseline), and while the RPC has not resolved (loading) or
-  // errored the headline is null → the card renders a neutral placeholder
-  // instead of a false "$0.00" (pinned by test:analytics-headline).
+  // household mode the hero total is the household RPC total (one figure
+  // per unit since 0044, decision 9), the change-% badge is dropped (it
+  // has no household baseline), and while the RPC has not resolved
+  // (loading) or errored the headline is null → the card renders a neutral
+  // placeholder instead of a false "$0.00" (pinned by test:analytics-headline).
+  // Personal mode: per-unit groups from the selected month's rows — the
+  // cache `currentTotal` can lag a recalc, so the hero states the true
+  // month sum grouped by unit.
+  const householdHeadlineTotals = useMemo(() => {
+    const groups =
+      householdTotals.length > 0
+        ? householdTotals.map((g) => ({
+            currency: g.currency ?? currency,
+            total: g.total,
+          }))
+        : [{ currency, total: 0 }];
+    return viewMode === 'household' ? groups : [];
+  }, [householdTotals, currency, viewMode]);
+  const overviewTotals = useMemo(() => {
+    if (viewMode === 'household') return [];
+    const totals = groupTotalsByUnit(
+      monthList
+        .filter((r) => r.purchase_date.slice(0, 7) === monthKey)
+        .map((r) => ({ amount: r.total ?? 0, currency: r.currency })),
+      currency,
+    );
+    return totals.length > 0 ? totals : [{ currency, total: 0 }];
+  }, [monthList, monthKey, currency, viewMode]);
   const headline = buildOverviewHeadline(viewMode, {
-    householdMonthTotal,
-    overviewTotal: overview.currentTotal,
+    householdTotals: householdHeadlineTotals,
+    overviewTotals,
     personalChangePct: overview.changePct,
     hasHouseholdData: totalsHasData,
   });
@@ -685,8 +727,7 @@ function ChartsBody() {
       <InsightHeroCard
         monthLabel={monthKeyToLabel(locale, monthKey)}
         monthKey={monthKey}
-        total={headline.headlineTotal ?? 0}
-        placeholder={headline.headlineTotal === null}
+        totals={headline.headlineTotals}
         deltaPct={headline.headlineChangePct}
         previousMonthName={previousMonthName}
         dailyData={dailySpend}
@@ -760,13 +801,16 @@ function ChartsBody() {
           value={topCategory?.name ?? t('pro:topCategoryDash')}
           subtext={
             topCategory
-              ? formatCurrency(topCategory.amount, currency)
+              ? // Single-series binding (decision 9) — see the `viewerList`
+                // comment above for the full rationale.
+                formatCurrency(topCategory.amount, currency)
               : t('pro:noSpending')
           }
           icon="chart.pie.fill"
         />
         <MetricSummaryCard
           label={t('pro:dailyAverage')}
+          // Single-series binding (decision 9); see `viewerList` above.
           value={formatCurrency(dailyAverage, currency)}
           subtext={t('pro:dailyAverageSubtext')}
           icon="calendar"
@@ -899,7 +943,7 @@ function ChartsBody() {
                         backgroundColor={visual.background}
                         foregroundColor={visual.foreground}
                         limit={t.budget_limit ?? undefined}
-                        currency={currency}
+                        currency={t.currency ?? currency}
                         // Drill into the existing category detail screen
                         // (same History pattern via `categoryDetailHref`):
                         // current month omits the month param, any other

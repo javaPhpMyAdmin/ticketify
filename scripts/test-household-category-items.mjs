@@ -194,6 +194,14 @@ const ROWS = [
   },
 ];
 
+// Mixed-unit household rows: the same product recorded by two members in two
+// units → the detail hook must expose one collapsed row PER UNIT and one
+// detail total PER UNIT (task 3.7), never a cross-currency sum.
+const MIXED_ROWS = [
+  { ...ROWS[0], id: 'm1', amount: 1200, currency: 'CLP' },
+  { ...ROWS[1], id: 'm2', amount: 40, currency: 'USD' },
+];
+
 const READ_ERROR_MESSAGE = 'No se pudieron cargar los datos. Inténtalo de nuevo.';
 
 let captured = null;
@@ -295,7 +303,9 @@ async function run() {
       { name: '  Menu  ', amount: 25, quantity: 1 },
     ];
     const out = homeMod.aggregateHouseholdCategoryItems(rows);
-    assert.deepEqual(out, [{ name: 'menu', amount: 175, quantity: 4 }]);
+    assert.deepEqual(out, [
+      { name: 'menu', amount: 175, quantity: 4, currency: null },
+    ]);
   });
 
   await test('sums amounts and quantities across members (case + trim fold)', () => {
@@ -305,7 +315,9 @@ async function run() {
       { name: 'YERBA   1kg', amount: 500, quantity: 1 },
     ];
     const out = homeMod.aggregateHouseholdCategoryItems(rows);
-    assert.deepEqual(out, [{ name: 'yerba', amount: 2900, quantity: 4 }]);
+    assert.deepEqual(out, [
+      { name: 'yerba', amount: 2900, quantity: 4, currency: null },
+    ]);
   });
 
   await test('sorts by amount desc', () => {
@@ -328,7 +340,9 @@ async function run() {
   await test('missing quantity counts as 1 per row (quantity ?? 1 fallback)', () => {
     const rows = [{ name: 'Pan', amount: 30 }, { name: 'pan', amount: 20 }];
     const out = homeMod.aggregateHouseholdCategoryItems(rows);
-    assert.deepEqual(out, [{ name: 'pan', amount: 50, quantity: 2 }]);
+    assert.deepEqual(out, [
+      { name: 'pan', amount: 50, quantity: 2, currency: null },
+    ]);
   });
 
   await test('empty rows → []', () => {
@@ -340,13 +354,17 @@ async function run() {
     const out = homeMod.aggregateHouseholdCategoryItems([
       { name: 'Agua', amount: 40, quantity: 6 },
     ]);
-    assert.deepEqual(out, [{ name: 'agua', amount: 40, quantity: 6 }]);
+    assert.deepEqual(out, [
+      { name: 'agua', amount: 40, quantity: 6, currency: null },
+    ]);
   });
 
   await test('preserves fractional quantities (2.5 kg does not truncate)', () => {
     const rows = [{ name: 'Yerba', amount: 2500, quantity: 2.5 }];
     const out = homeMod.aggregateHouseholdCategoryItems(rows);
-    assert.deepEqual(out, [{ name: 'yerba', amount: 2500, quantity: 2.5 }]);
+    assert.deepEqual(out, [
+      { name: 'yerba', amount: 2500, quantity: 2.5, currency: null },
+    ]);
   });
 
   await test('sums fractional quantities across rows (2.5 + 0.5 = 3)', () => {
@@ -355,7 +373,31 @@ async function run() {
       { name: 'pan', amount: 50, quantity: 0.5 },
     ];
     const out = homeMod.aggregateHouseholdCategoryItems(rows);
-    assert.deepEqual(out, [{ name: 'pan', amount: 150, quantity: 3 }]);
+    assert.deepEqual(out, [
+      { name: 'pan', amount: 150, quantity: 3, currency: null },
+    ]);
+  });
+
+  // 0044 (decision 9): the RAW aggregation groups per (normalized name, unit)
+  // and preserves units verbatim — including a `null` unit as its own group,
+  // with NO fabricated rate. The viewer-unit FOLD happens one layer above, in
+  // the hook via `groupTotalsByUnit` (pinned by the ready-case totals below
+  // and by test-home.mjs §groupTotalsByUnit). Same name in two currencies →
+  // separate rows, one per unit with its own amount (an R1 cross-currency sum
+  // never happens).
+  await test('per-unit grouping: same name in two currencies stays separate rows', () => {
+    const rows = [
+      { name: 'Yerba 1kg', amount: 1000, quantity: 1, currency: 'UYU' },
+      { name: 'yerba 1kg', amount: 900, quantity: 1, currency: 'CLP' },
+      { name: 'Yerba   1kg', amount: 400, quantity: 1, currency: 'UYU' },
+      { name: 'yerba 1kg', amount: 300, quantity: 1 }, // unit-less → its own group
+    ];
+    const out = homeMod.aggregateHouseholdCategoryItems(rows);
+    assert.deepEqual(out, [
+      { name: 'yerba', amount: 1400, quantity: 2, currency: 'UYU' },
+      { name: 'yerba', amount: 900, quantity: 1, currency: 'CLP' },
+      { name: 'yerba', amount: 300, quantity: 1, currency: null },
+    ]);
   });
 
   console.log('\n[tests] readHouseholdCategoryItems\n');
@@ -624,8 +666,13 @@ async function run() {
       assert.equal(captured.isLoading, false);
       assert.equal(captured.isError, false);
       assert.equal(captured.errorMessage, '');
-      assert.deepEqual(captured.items, [{ name: 'menu', amount: 180, quantity: 3 }]);
+      assert.deepEqual(captured.items, [{ name: 'menu', amount: 180, quantity: 3, currency: null }]);
       assert.equal(captured.total, 180);
+      // PRODUCTION behavior (task 3.7): the hook folds every unit-less row
+      // into a SINGLE viewer-unit bucket (UYU) — one figure, no cross-unit
+      // sum and no fabricated exchange rate. The raw aggregation above keeps
+      // `null` verbatim; this is the layer that resolves it to the viewer.
+      assert.deepEqual(captured.totals, [{ currency: 'UYU', total: 180 }]);
       assert.equal(typeof captured.retry, 'function');
       // Display-convergence pin (REQ-008): the hook's category visual comes
       // from the static taxonomy for canonical keys — byte-identical to the
@@ -652,6 +699,31 @@ async function run() {
         p_year_month: '2026-08',
         p_category_slug: 'carnes',
       });
+    } finally {
+      await unmountProbe(renderer);
+    }
+  });
+
+  await test('ready: mixed units → one detail total per unit (never summed)', async () => {
+    resetAll();
+    signIn();
+    setHousehold('h1');
+    stubMod.__setRpcResult('get_household_category_items', { rows: MIXED_ROWS });
+    const renderer = await mountProbe();
+    try {
+      await settleUntil(
+        () => captured.totals.length === 2,
+        'mixed household totals grouped per unit',
+      );
+      assert.deepEqual(captured.totals, [
+        { currency: 'CLP', total: 1200 },
+        { currency: 'USD', total: 40 },
+      ]);
+      // The item list splits per unit too (each collapsed row keeps its unit).
+      assert.deepEqual(
+        captured.items.map((i) => i.currency).sort(),
+        ['CLP', 'USD'],
+      );
     } finally {
       await unmountProbe(renderer);
     }
@@ -692,7 +764,7 @@ async function run() {
       );
       assert.equal(captured.isError, false);
       assert.deepEqual(captured.items, [
-        { name: 'menu', amount: 180, quantity: 3 },
+        { name: 'menu', amount: 180, quantity: 3, currency: null },
       ]);
     } finally {
       await unmountProbe(renderer);
@@ -723,7 +795,7 @@ async function run() {
         () => captured.isError === false && captured.items.length === 1,
         'retry recovers to ready',
       );
-      assert.deepEqual(captured.items, [{ name: 'menu', amount: 180, quantity: 3 }]);
+      assert.deepEqual(captured.items, [{ name: 'menu', amount: 180, quantity: 3, currency: null }]);
     } finally {
       await unmountProbe(renderer);
     }

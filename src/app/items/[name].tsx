@@ -46,7 +46,7 @@ export default function ItemDetailScreen() {
   // `changeLanguage` fires), so month labels re-render on locale swaps.
   const activeLocale = useLocaleStore((s) => s.activeLocale);
   const itemName = name ?? '';
-  const { total, purchases } = useItemDetail(itemName, month);
+  const { total, totals, purchases } = useItemDetail(itemName, month);
 
   const {
     mutate: renameItem,
@@ -118,9 +118,13 @@ export default function ItemDetailScreen() {
           <Text style={styles.totalLabel}>
             {t('analytics:itemTotalKicker')}
           </Text>
-          <Text style={styles.totalAmount}>
-            {formatCurrency(total, currency)}
-          </Text>
+          <View style={styles.totalAmounts}>
+            {(totals.length > 0 ? totals : [{ currency, total }]).map((group) => (
+              <Text key={group.currency ?? 'viewer'} style={styles.totalAmount}>
+                {formatCurrency(group.total, group.currency ?? currency)}
+              </Text>
+            ))}
+          </View>
         </View>
 
         <View style={styles.purchasesCard}>
@@ -238,6 +242,13 @@ const styles = StyleSheet.create({
   totalAmount: {
     ...typography.displayCurrency,
     color: colors.textPrimary,
+  },
+  totalAmounts: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'baseline',
+    gap: spacing.sm,
   },
   purchasesCard: {
     backgroundColor: colors.surface,

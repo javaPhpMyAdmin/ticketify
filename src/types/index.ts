@@ -306,6 +306,23 @@ export interface CategoryMonthlyTotal {
   percent_of_total: number;
   /** Per-category budget limit for the month; null when no budget is set. */
   budget_limit: number | null;
+  /**
+   * Effective ISO 4217 unit the row was aggregated in (0044 grouped
+   * aggregation). Present on `monthly_category_totals` 2-arg RPC rows;
+   * absent on legacy single-arg rows (pre-0044 shape) — renderers fall
+   * back to the viewer currency.
+   */
+  currency?: string;
+}
+
+/**
+ * A per-unit money figure: `total` denominated in `currency`. `currency`
+ * is optional only for legacy single-arg RPC rows that predate 0044; every
+ * grouped source (2-arg RPC, cache rows) always carries it.
+ */
+export interface CurrencyTotal {
+  total: number;
+  currency?: string;
 }
 
 /**
@@ -375,12 +392,15 @@ export interface InviteCode {
 
 /**
  * Materialized monthly spend totals maintained by a Postgres trigger on
- * `purchases`. Client reads a single row per (user, month) for all
- * month-scoped analytics.
+ * `purchases`. Since 0044 the table is keyed per unit: a month holds one
+ * row per effective currency (user_id, year_month, currency). Client reads
+ * row-per-group for all month-scoped analytics.
  */
 export interface MonthlyTotalsCacheRow {
   user_id: string;
   year_month: string;
+  /** Effective unit of this row — NOT NULL since 0044 (relabeled, never rewritten). */
+  currency: string;
   total: number;
   category_totals: Record<string, { total: number; count: number; name: string }>;
   store_totals: Record<string, { total: number; count: number }>;

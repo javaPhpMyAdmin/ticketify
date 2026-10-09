@@ -14,6 +14,7 @@ import {
   buildVisibleDailySeries,
   weekdayInitialsForMonth,
 } from '../aggregate';
+import type { CurrencyTotal } from '@/types';
 
 /**
  * Horizontal space allotted to each day of the month, in dp. The chart is a
@@ -30,15 +31,16 @@ export interface InsightHeroCardProps {
   monthLabel: string;
   /** `YYYY-MM` of the selected month; drives the weekday initials row. */
   monthKey: string;
-  /** Total spent in the selected month. */
-  total: number;
   /**
-   * When true, renders a neutral placeholder ("—") instead of the numeric
-   * total. Used when the headline scope's data has not resolved yet (e.g.
-   * the household RPC still loading), so the card never states a false
-   * "$0.00" — mirrors `MonthlyOverviewCard`'s placeholder contract.
+   * Total spent in the selected month, one figure PER UNIT (decision 9) —
+   * a mixed month renders one labeled amount per currency, never a
+   * cross-currency sum (R1). `null` renders the neutral placeholder ("—")
+   * instead of the numeric total: used when the headline scope's data has
+   * not resolved yet (e.g. the household RPC still loading), so the card
+   * never states a false "$0.00" — mirrors `MonthlyOverviewCard`'s
+   * placeholder contract.
    */
-  placeholder?: boolean;
+  totals: CurrencyTotal[] | null;
   /** Month-over-month percentage change; null hides the delta chip. */
   deltaPct: number | null;
   /** Name of the comparison month, e.g. "Julio" — shown in the chip. */
@@ -48,7 +50,15 @@ export interface InsightHeroCardProps {
    * by `aggregateDailySpend`) — the hero bars' x-axis.
    */
   dailyData: DailySpendPoint[];
-  /** Currency code used for the total and chip. */
+  /**
+   * Viewer currency fallback: renders unit-less legacy groups and the
+   * single-series insight line (highest-spend day). The insight stays a
+   * SINGLE figure under the viewer unit — the daily bars and the insight
+   * line are single-series surfaces and read the viewer-currency series
+   * only (decision 9 / pass-3 §3). ACCEPTED under-report (s4): in a switch
+   * month the viewer-currency series alone mildly under-reports the month;
+   * re-denominating would fabricate a rate, so it is not done.
+   */
   currency?: string;
   /** Pixel height of the chart canvas. */
   chartHeight?: number;
@@ -86,8 +96,7 @@ export interface InsightHeroCardProps {
 export function InsightHeroCard({
   monthLabel,
   monthKey,
-  total,
-  placeholder = false,
+  totals,
   deltaPct,
   previousMonthName,
   dailyData,
@@ -180,9 +189,15 @@ export function InsightHeroCard({
         <View>
           <Text style={styles.kicker}>{t('analytics:heroKicker')}</Text>
           <Text style={styles.month}>{monthLabel}</Text>
-          <Text style={styles.total}>
-            {placeholder ? '—' : formatCurrency(total, currency)}
-          </Text>
+          {totals === null ? (
+            <Text style={styles.total}>—</Text>
+          ) : (
+            totals.map((group) => (
+              <Text key={group.currency ?? 'viewer'} style={styles.total}>
+                {formatCurrency(group.total, group.currency ?? currency)}
+              </Text>
+            ))
+          )}
         </View>
         {hasChange ? (
           <View

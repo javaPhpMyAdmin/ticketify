@@ -4,20 +4,23 @@ import { StyleSheet } from 'react-native';
 import { Card, Icon, Text, View, type IconName } from '@/components';
 import { formatCurrency } from '@/lib/format';
 import { colors, radii, spacing } from '@/theme';
-import type { MonthOverview } from '../monthly-overview';
+import type { CurrencyTotal } from '@/types';
 
 export interface MonthlyOverviewCardProps {
-  overview: MonthOverview;
-  currency: string;
+  /**
+   * Per-unit headline figures (decision 9). A mixed month renders ONE
+   * labeled figure per currency; a single-currency month renders today's
+   * single figure (client-state s1). `null` renders the neutral placeholder
+   * ("—") — the headline scope has not resolved yet, so the card never
+   * states a false "$0.00".
+   */
+  totals: CurrencyTotal[] | null;
+  /** Signed change-% badge value; null omits the badge. */
+  changePct: number | null;
   /** Name of the comparison month, e.g. "Julio" — shown in the badge. */
   previousMonthName: string;
-  /**
-   * When true, renders a neutral placeholder ("—") instead of the numeric
-   * total. Used when the headline scope's data has not resolved yet (e.g.
-   * the household RPC still loading/errored), so the card never states a
-   * false "$0.00".
-   */
-  placeholder?: boolean;
+  /** Viewer currency fallback for groups without a unit (legacy rows). */
+  currency: string;
 }
 
 /**
@@ -28,24 +31,30 @@ export interface MonthlyOverviewCardProps {
  * omitted — a missing comparison reads cleaner than a fabricated one.
  */
 export function MonthlyOverviewCard({
-  overview,
-  currency,
+  totals,
+  changePct,
   previousMonthName,
-  placeholder = false,
+  currency: viewerCurrency,
 }: MonthlyOverviewCardProps) {
   const { t } = useTranslation('analytics');
-  const { currentTotal, changePct } = overview;
   const hasChange = changePct !== null;
   const up = hasChange && changePct >= 0;
   const trendIcon: IconName = up ? 'arrow.up.right' : 'arrow.down.right';
+  const groups = totals ?? [];
 
   return (
     <Card>
       <View style={[styles.content, hasChange && styles.contentWithBadge]}>
         <Text style={styles.kicker}>{t('overviewKicker')}</Text>
-        <Text style={styles.total}>
-          {placeholder ? '—' : formatCurrency(currentTotal, currency)}
-        </Text>
+        {totals === null ? (
+          <Text style={styles.total}>—</Text>
+        ) : (
+          groups.map((group) => (
+            <Text key={group.currency ?? 'viewer'} style={styles.total}>
+              {formatCurrency(group.total, group.currency ?? viewerCurrency)}
+            </Text>
+          ))
+        )}
       </View>
       {hasChange ? (
         <View

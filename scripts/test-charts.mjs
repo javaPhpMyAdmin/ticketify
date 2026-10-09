@@ -194,6 +194,7 @@ async function run() {
     pathToFileURL(join(outDir, 'src/features/home/hooks/useHomeFeed.js')).href
   );
   const {
+    bindViewerRows,
     aggregateSpendTrend,
     aggregateStoresByMonth,
     aggregateMonthlyDelta,
@@ -288,6 +289,55 @@ async function run() {
       { month: '2026-07', total: 0 },
       { month: '2026-06', total: 7 },
     ]);
+  });
+
+  console.log('\n[tests] bindViewerRows (single-series binding — decision 9)\n');
+
+  await test('keeps the viewer-unit rows, drops the others (never sums across units)', () => {
+    const out = bindViewerRows(
+      [
+        { total: 100, currency: 'USD' },
+        { total: 5000, currency: 'CLP' },
+        { total: 800, currency: 'USD' },
+      ],
+      'USD',
+    );
+    assert.deepEqual(out, [
+      { total: 100, currency: 'USD' },
+      { total: 800, currency: 'USD' },
+    ]);
+  });
+
+  await test('a row with no recorded unit falls back to the viewer (REQ-8 s4)', () => {
+    const out = bindViewerRows(
+      [
+        { total: 10, currency: null },
+        { total: 20 }, // absent currency
+        { total: 30, currency: 'CLP' },
+      ],
+      'USD',
+    );
+    assert.deepEqual(out, [{ total: 10, currency: null }, { total: 20 }]);
+  });
+
+  await test('viewer switched to the other unit binds those rows instead', () => {
+    const rows = [
+      { total: 100, currency: 'USD' },
+      { total: 5000, currency: 'CLP' },
+    ];
+    assert.deepEqual(bindViewerRows(rows, 'CLP'), [{ total: 5000, currency: 'CLP' }]);
+  });
+
+  await test('mixed month never hides when the viewer row exists (one figure)', () => {
+    const out = bindViewerRows(
+      [
+        { total: 0, currency: 'USD' },
+        { total: 5000, currency: 'CLP' },
+      ],
+      'USD',
+    );
+    assert.equal(out.length, 1);
+    assert.equal(out[0].total, 0);
   });
 
   console.log('\n[tests] aggregateStoresByMonth\n');

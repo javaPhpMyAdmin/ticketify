@@ -43,7 +43,7 @@ export default function StoreDetailScreen() {
   // `changeLanguage` fires), so month labels re-render on locale swaps.
   const activeLocale = useLocaleStore((s) => s.activeLocale);
   const storeName = name ?? '';
-  const { total, purchases } = useStoreDetail(storeName, month);
+  const { total, totals, purchases } = useStoreDetail(storeName, month);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -78,9 +78,13 @@ export default function StoreDetailScreen() {
             <Icon name="cart.fill" size={24} color={colors.primary} />
           </View>
           <Text style={styles.totalLabel}>{t('analytics:storeTotalKicker')}</Text>
-          <Text style={styles.totalAmount}>
-            {formatCurrency(total, currency)}
-          </Text>
+          <View style={styles.totalAmounts}>
+            {(totals.length > 0 ? totals : [{ currency, total }]).map((group) => (
+              <Text key={group.currency ?? 'viewer'} style={styles.totalAmount}>
+                {formatCurrency(group.total, group.currency ?? currency)}
+              </Text>
+            ))}
+          </View>
         </View>
 
         <View style={styles.purchasesCard}>
@@ -181,6 +185,13 @@ const styles = StyleSheet.create({
   totalAmount: {
     ...typography.displayCurrency,
     color: colors.textPrimary,
+  },
+  totalAmounts: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'baseline',
+    gap: spacing.sm,
   },
   purchasesCard: {
     backgroundColor: colors.surface,

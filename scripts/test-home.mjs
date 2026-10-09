@@ -647,6 +647,61 @@ async function run() {
     );
   });
 
+  await test('groupTotalsByUnit splits per unit (never sums across units), sorts desc', () => {
+    const out = homeMod.groupTotalsByUnit(
+      [
+        { amount: 100, currency: 'USD' },
+        { amount: 5000, currency: 'CLP' },
+        { amount: 800, currency: 'USD' },
+      ],
+      'USD',
+    );
+    assert.deepEqual(out, [
+      { currency: 'CLP', total: 5000 },
+      { currency: 'USD', total: 900 },
+    ]);
+  });
+
+  await test('groupTotalsByUnit folds unit-less rows into the viewer unit', () => {
+    const out = homeMod.groupTotalsByUnit(
+      [
+        { amount: 10, currency: null },
+        { amount: 20 },
+        { amount: 5, currency: 'USD' },
+      ],
+      'USD',
+    );
+    assert.deepEqual(out, [{ currency: 'USD', total: 35 }]);
+  });
+
+  await test('groupTotalsByUnit single unit → one figure equal to the total', () => {
+    const out = homeMod.groupTotalsByUnit(
+      [
+        { amount: 1100, currency: 'CLP' },
+        { amount: 1300, currency: 'CLP' },
+      ],
+      'USD',
+    );
+    assert.deepEqual(out, [{ currency: 'CLP', total: 2400 }]);
+  });
+
+  await test('useHouseholdMonthTotal: resolved-but-empty month → one {viewer,0} group, never blank (source pin)', () => {
+    // The empty household month must render a real "0" for the viewer unit,
+    // not an empty group list (which the headline would drop). RN hook internals
+    // are unreachable from this node harness, so the fallback is pinned at the
+    // source; it gates on `data !== undefined` so the LOADING state stays [].
+    const src = readFileSync(
+      join(root, 'src/features/home/hooks/useHomeFeed.ts'),
+      'utf8',
+    );
+    const body = src.slice(src.indexOf('export function useHouseholdMonthTotal'));
+    assert.match(
+      body,
+      /householdTotalQuery\.data !== undefined && rows\.length === 0[\s\S]*?\[\{ currency, total: 0 \}\]/,
+      'the resolved-empty household month must yield one viewer-unit {total:0} group',
+    );
+  });
+
   await test('a row without the origin flag defaults to scanned (isManual false)', () => {
     // Producers that do not emit `is_manual` (the optimistic review row)
     // must read as scanned until proven manual — never undefined.

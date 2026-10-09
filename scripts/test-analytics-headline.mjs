@@ -4,15 +4,17 @@
  * (`src/features/analytics/analytics-headline.ts`).
  *
  * Compiles the single dependency-free module into a temp directory with an
- * isolated tsconfig, then asserts the headline contract:
+ * isolated tsconfig, then asserts the headline contract (since 0044 the
+ * totals are GROUPED per unit, decision 9):
  *
- *   - personal mode → caller's own receipts total + personal change badge
- *     (byte-identical regression guard for the original behavior),
- *   - household mode with resolved data → the real household total + NO
- *     personal change badge (scope mix would mislead),
+ *   - personal mode → the caller's own per-unit totals + personal change
+ *     badge (regression guard for the original behavior),
+ *   - household mode with resolved data → the real household per-unit
+ *     totals + NO personal change badge (scope mix would mislead),
  *   - household mode WITHOUT resolved data (loading/error) → a placeholder
- *     (null total), NEVER a false "$0.00" from an unresolved RPC,
- *   - zero/empty household totals stay numbers: 0, never NaN.
+ *     (null totals), NEVER a false "$0.00" from an unresolved RPC,
+ *   - zero/empty household totals stay groups with numeric 0 (never NaN),
+ *   - a NaN aggregate is coerced to 0 per group (never prints NaN).
  *
  * Deterministic: the function takes primitives only, no clock, no hooks.
  *
@@ -75,89 +77,131 @@ async function run() {
   console.log('\n[tests] personal mode\n');
 
   await test(
-    'personal mode returns overviewTotal + personal changePct (regression guard)',
+    'personal mode returns overviewTotals + personal changePct (regression guard)',
     () => {
       const result = build('personal', {
-        householdMonthTotal: 999999,
-        overviewTotal: 12345,
+        householdTotals: [{ total: 999999, currency: 'CLP' }],
+        overviewTotals: [
+          { total: 12345, currency: 'UYU' },
+          { total: 678, currency: 'CLP' },
+        ],
         personalChangePct: 12.5,
         hasHouseholdData: false,
       });
       assert.deepEqual(result, {
-        headlineTotal: 12345,
+        headlineTotals: [
+          { total: 12345, currency: 'UYU' },
+          { total: 678, currency: 'CLP' },
+        ],
         headlineChangePct: 12.5,
       });
     },
   );
 
   await test('personal mode keeps a null personal changePct (no badge)', () => {
-const result = build('personal', {
-        householdMonthTotal: 999999,
-        overviewTotal: 0,
-        personalChangePct: null,
-        hasHouseholdData: false,
-      });
-    assert.deepEqual(result, { headlineTotal: 0, headlineChangePct: null });
+    const result = build('personal', {
+      householdTotals: [],
+      overviewTotals: [{ total: 0, currency: 'UYU' }],
+      personalChangePct: null,
+      hasHouseholdData: false,
+    });
+    assert.deepEqual(result, {
+      headlineTotals: [{ total: 0, currency: 'UYU' }],
+      headlineChangePct: null,
+    });
   });
 
   console.log('\n[tests] household mode\n');
 
   await test(
-    'household mode returns householdMonthTotal + changePct null (no scope mix)',
+    'household mode returns householdTotals per unit + changePct null (no scope mix)',
     () => {
       const result = build('household', {
-        householdMonthTotal: 54321,
-        overviewTotal: 999999,
+        householdTotals: [
+          { total: 54321, currency: 'UYU' },
+          { total: 900, currency: 'CLP' },
+        ],
+        overviewTotals: [{ total: 999999, currency: 'UYU' }],
         personalChangePct: 12.5,
         hasHouseholdData: true,
       });
       assert.deepEqual(result, {
-        headlineTotal: 54321,
+        headlineTotals: [
+          { total: 54321, currency: 'UYU' },
+          { total: 900, currency: 'CLP' },
+        ],
         headlineChangePct: null,
       });
     },
   );
 
   await test(
-    'household mode: empty household total stays numeric 0 (never NaN)',
+    'household mode: a unit-less group keeps its null unit (row fallback is caller-side)',
     () => {
       const result = build('household', {
-        householdMonthTotal: 0,
-        overviewTotal: 999999,
+        householdTotals: [{ total: 42, currency: undefined }],
+        overviewTotals: [],
         personalChangePct: 12.5,
         hasHouseholdData: true,
       });
-      assert.equal(result.headlineTotal, 0);
-      assert.equal(Number.isNaN(result.headlineTotal), false);
+      assert.deepEqual(result, {
+        headlineTotals: [{ total: 42, currency: undefined }],
+        headlineChangePct: null,
+      });
     },
   );
 
   await test(
-    'household mode: a NaN aggregate is coerced to 0, never prints NaN',
+    'household mode: empty household totals stay a numeric 0 group (never NaN, never placeholder)',
     () => {
       const result = build('household', {
-        householdMonthTotal: NaN,
-        overviewTotal: 999999,
+        householdTotals: [],
+        overviewTotals: [{ total: 999999, currency: 'UYU' }],
         personalChangePct: 12.5,
         hasHouseholdData: true,
       });
-      assert.equal(result.headlineTotal, 0);
+      assert.deepEqual(result, {
+        headlineTotals: [{ total: 0 }],
+        headlineChangePct: null,
+      });
+    },
+  );
+
+  await test(
+    'household mode: a NaN aggregate is coerced to 0 per group, never prints NaN',
+    () => {
+      const result = build('household', {
+        householdTotals: [
+          { total: NaN, currency: 'UYU' },
+          { total: 50, currency: 'UYU' },
+        ],
+        overviewTotals: [{ total: 999999, currency: 'UYU' }],
+        personalChangePct: 12.5,
+        hasHouseholdData: true,
+      });
+      assert.deepEqual(result, {
+        headlineTotals: [
+          { total: 0, currency: 'UYU' },
+          { total: 50, currency: 'UYU' },
+        ],
+        headlineChangePct: null,
+      });
     },
   );
 
   console.log('\n[tests] household mode without resolved data\n');
 
   await test(
-    'household mode WITHOUT data returns placeholder (null total), never $0',
+    'household mode WITHOUT data returns placeholder (null totals), never $0',
     () => {
       const result = build('household', {
-        householdMonthTotal: 0,
-        overviewTotal: 999999,
+        householdTotals: [],
+        overviewTotals: [{ total: 999999, currency: 'UYU' }],
         personalChangePct: 12.5,
         hasHouseholdData: false,
       });
       assert.deepEqual(result, {
-        headlineTotal: null,
+        headlineTotals: null,
         headlineChangePct: null,
       });
     },
@@ -166,15 +210,15 @@ const result = build('personal', {
   await test(
     'household mode while loading (data not yet resolved) → placeholder',
     () => {
-      // During the RPC flight `monthTotal` is already 0 (derived from an
+      // During the RPC flight the totals are already [] (derived from an
       // empty `data ?? []`); hasHouseholdData false must gate it to null.
       const result = build('household', {
-        householdMonthTotal: 0,
-        overviewTotal: 777,
+        householdTotals: [],
+        overviewTotals: [{ total: 777, currency: 'UYU' }],
         personalChangePct: -5,
         hasHouseholdData: false,
       });
-      assert.deepEqual(result, { headlineTotal: null, headlineChangePct: null });
+      assert.deepEqual(result, { headlineTotals: null, headlineChangePct: null });
     },
   );
 
@@ -183,12 +227,12 @@ const result = build('personal', {
     () => {
       // On RPC error the data never resolves: same gate, no $0.00.
       const result = build('household', {
-        householdMonthTotal: 0,
-        overviewTotal: 777,
+        householdTotals: [],
+        overviewTotals: [{ total: 777, currency: 'UYU' }],
         personalChangePct: null,
         hasHouseholdData: false,
       });
-      assert.deepEqual(result, { headlineTotal: null, headlineChangePct: null });
+      assert.deepEqual(result, { headlineTotals: null, headlineChangePct: null });
     },
   );
 

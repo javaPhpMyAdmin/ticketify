@@ -115,11 +115,16 @@ function load(mod) {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-/** One `monthly_user_totals` cache row (migration 0015 shape). */
+/** One `monthly_user_totals` cache row (0044 shape — keyed per unit). */
 function makeCacheRow(overrides) {
   return {
     user_id: 'test-user-id',
     year_month: '2026-09',
+    // 0044 re-keyed the cache per unit; the settings-store default viewer is
+    // USD, and the run-rate is a single-series surface bound to the
+    // viewer-currency row only (decision 9). Unit-less fixtures would be
+    // filtered out and hide the card.
+    currency: 'USD',
     total: 0,
     category_totals: {},
     store_totals: {},
@@ -171,6 +176,15 @@ const aug6000 = makeCacheRow({
     '2026-08-07': 900,
     '2026-08-08': 600,
   },
+});
+// Mixed-currency fixture: the SAME month carries a UYU row beside the USD
+// one. A single-series surface must read the VIEWER-currency row only, so
+// this row must never contribute to the run-rate (decision 9 / s4).
+const sepUyu = makeCacheRow({
+  year_month: '2026-09',
+  currency: 'UYU',
+  total: 79992,
+  daily_totals: dailyRange('2026-09', 8, 9999),
 });
 // Fallback fixtures: May/Jun/Jul completed rows, no Aug — design AD-1
 // example (baseline = 24000 × 8/30 = 6400, deltaPct 12.5, source fallback).
@@ -525,6 +539,44 @@ async function run() {
         deltaPct: 12.5,
         projection: 27000,
         source: 'fallback',
+      });
+      assert.equal(recalcCalls, 0);
+    } finally {
+      unmount();
+    }
+  });
+
+  await test('current month: binds the VIEWER-currency row only (mixed, decision 9)', async () => {
+    faMock.__reset();
+    authStub.__setUserId('test-user-id');
+    // Mixed month: a UYU row for the SAME month precedes the USD row. The
+    // run-rate is single-series — it must read the viewer (USD) row ONLY,
+    // never sum the two units (R1) and never split into per-currency series.
+    faMock.__setReadMonthlyCacheRows(async () => ({
+      status: 'ok',
+      data: [sepUyu, sep7200, aug6000],
+    }));
+    let recalcCalls = 0;
+    faMock.__setTriggerMonthlyRecalc(async () => {
+      recalcCalls += 1;
+      return { status: 'ok', data: undefined };
+    });
+
+    const { ref, unmount, waitFor } = mountHook(
+      () => useRunRate('2026-09'),
+      makeQueryClient(),
+    );
+
+    try {
+      await waitFor((r) => !!r && r.data !== null && r.data.mtd === 7200);
+      // mtd is the USD row's 7200; the UYU row (8×9999 = 79992) is ignored
+      // and never merged into the figure.
+      assert.deepEqual(ref.current.data, {
+        mtd: 7200,
+        baseline: 6000,
+        deltaPct: 20,
+        projection: 27000,
+        source: 'mom',
       });
       assert.equal(recalcCalls, 0);
     } finally {

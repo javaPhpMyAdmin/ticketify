@@ -1,7 +1,7 @@
 /**
  * Controllable mock for @/lib/supabase/feature-access.
  *
- * The monthly-cache hook test needs to control readMonthlyCacheRow,
+ * The monthly-cache hook test needs to control readMonthlyCacheRowsForMonth,
  * triggerMonthlyRecalc, readCategoryTotals, and readMonthlyPurchasesTotal
  * per scenario. This mock replaces the real feature-access module at
  * require time via the require-hook redirect.
@@ -10,9 +10,9 @@
  * per scenario via __set* seam functions.
  */
 
-let _readMonthlyCacheRow = async (userId, yearMonth) => ({
+let _readMonthlyCacheRowsForMonth = async (userId, yearMonth) => ({
   status: 'ok',
-  data: null,
+  data: [],
 });
 
 let _readMonthlyCacheRows = async (userId, yearMonths) => ({
@@ -57,8 +57,8 @@ let _markCategoryBudgetRolloverCallCount = 0;
 
 // --- Seam functions (harness API) ---
 
-exports.__setReadMonthlyCacheRow = function (fn) {
-  _readMonthlyCacheRow = fn;
+exports.__setReadMonthlyCacheRowsForMonth = function (fn) {
+  _readMonthlyCacheRowsForMonth = fn;
 };
 
 exports.__setReadMonthlyCacheRows = function (fn) {
@@ -123,7 +123,7 @@ exports.__getMarkCategoryBudgetRolloverCallCount = function () {
 };
 
 exports.__reset = function () {
-  _readMonthlyCacheRow = async () => ({ status: 'ok', data: null });
+  _readMonthlyCacheRowsForMonth = async () => ({ status: 'ok', data: [] });
   _readMonthlyCacheRows = async () => ({ status: 'ok', data: [] });
   _triggerMonthlyRecalc = async () => ({ status: 'ok', data: undefined });
   _readCategoryTotals = async () => ({ status: 'ok', data: [] });
@@ -139,11 +139,11 @@ exports.__reset = function () {
 
 // --- Exported functions (same signatures as the real feature-access) ---
 
-exports.readMonthlyCacheRow = async function readMonthlyCacheRow(
+exports.readMonthlyCacheRowsForMonth = async function readMonthlyCacheRowsForMonth(
   userId,
   yearMonth,
 ) {
-  return _readMonthlyCacheRow(userId, yearMonth);
+  return _readMonthlyCacheRowsForMonth(userId, yearMonth);
 };
 
 exports.readMonthlyCacheRows = async function readMonthlyCacheRows(

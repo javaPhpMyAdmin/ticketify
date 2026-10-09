@@ -108,6 +108,8 @@ function makeCacheRow(overrides) {
     user_id: 'test-user-id',
     year_month: '2026-08',
     total: 0,
+    // 0044: the table is re-keyed per unit — one row per (month, currency).
+    currency: 'UYU',
     category_totals: {},
     store_totals: {},
     daily_totals: {},
@@ -138,13 +140,19 @@ async function run() {
   // Feature-access mock (controllable per test via __set* seams)
   const faMock = require_(join(__dirname, 'test-mocks', 'feature-access.js'));
 
+  // Real settings store (shared module instance with the hook's `@/` import).
+  // 0044 binds `monthTotal` to the VIEWER-currency row, so the fixtures below
+  // (UYU, except 5.2.3 which uses CLP) must set the store's viewer currency.
+  const settingsMod = await load('src/stores/use-settings-store.js');
+  const useSettingsStore = settingsMod.useSettingsStore;
+
   // Real React + react-query + react-dom for mounting hooks
   const React = require_('react');
   const { act } = React;
   const { createRoot } = require_('react-dom/client');
   const { QueryClient, QueryClientProvider } = require_('@tanstack/react-query');
 
-  // React 19 requires this flag for act() to work outside Jest/Vitest
+  //   React 19 requires this flag for act() to work outside Jest/Vitest
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
   // jsdom for a minimal DOM (react-dom/client needs a container element)
@@ -236,6 +244,15 @@ async function run() {
       waitFor,
     };
   }
+
+  // 0044: `monthTotal` binds to the viewer-currency row. Fixtures below record
+  // in UYU; the household test 5.2.3 overrides to CLP and restores after.
+  const setViewerCurrency = (next) => {
+    act(() => {
+      useSettingsStore.setState({ currency: next });
+    });
+  };
+  setViewerCurrency('UYU');
 
   // =========================================================================
   // 5.1 — transformCacheToCategoryTotals (pure function)
@@ -361,13 +378,15 @@ async function run() {
     faMock.__reset();
     const cacheRow = makeCacheRow({
       total: 1000,
+      currency: 'UYU',
       category_totals: {
         food: makeCategoryEntry('food', 'Food', 1000, 5),
       },
     });
-    faMock.__setReadMonthlyCacheRow(async () => ({
+    // `readMonthlyCacheRowsForMonth` returns an ARRAY since 0044 (one row per unit).
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => ({
       status: 'ok',
-      data: cacheRow,
+      data: [cacheRow],
     }));
     faMock.__setTriggerMonthlyRecalc(async () => ({
       status: 'ok',
@@ -390,6 +409,8 @@ async function run() {
       assert.equal(ref.current.isLoading, false);
       assert.equal(ref.current.hasData, true);
       assert.equal(ref.current.error, null);
+      // Personal mode surfaces no per-unit household groups.
+      assert.deepEqual(ref.current.householdTotals, []);
     } finally {
       unmount();
     }
@@ -405,12 +426,12 @@ async function run() {
       },
     });
 
-    // Counter-based mock: 1st call = null (cache miss), 2nd+ = the row
+    // Counter-based mock: 1st call = empty array (cache miss), 2nd+ = row
     let fetchCount = 0;
-    faMock.__setReadMonthlyCacheRow(async () => {
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => {
       fetchCount += 1;
-      if (fetchCount === 1) return { status: 'ok', data: null };
-      return { status: 'ok', data: refetchedRow };
+      if (fetchCount === 1) return { status: 'ok', data: [] };
+      return { status: 'ok', data: [refetchedRow] };
     });
 
     let recalcCalled = false;
@@ -480,12 +501,17 @@ async function run() {
     // readMonthlyPurchasesTotal is the NEW headline source (D2): net + confirmed.
     // Gross category rows sum 500.00; the net RPC says 499.60 (a 0.40
     // end-of-receipt discount is not a line item — 0029 §3) — the headline
-    // MUST come from the net RPC, not the category reduce.
+    // MUST come from the net RPC, not the category reduce. 0044: the rows
+    // are per-unit {(currency, total)} — the hook surfaces them as
+    // `householdTotals` for grouped headline renders.
     faMock.__setReadMonthlyPurchasesTotal(async (yearMonth, householdId) => {
       assert.equal(!!householdId, true, 'net RPC must be household-scoped');
       assert.equal(yearMonth, '2026-08', 'net RPC must receive the year-month');
-      return { status: 'ok', data: [{ total: 499.6 }] };
+      return { status: 'ok', data: [{ total: 499.6, currency: 'CLP' }] };
     });
+
+    // Viewer unit CLP so the single-series `monthTotal` binds the CLP net row.
+    setViewerCurrency('CLP');
 
     const { ref, unmount, waitFor } = mountHook(
       () => useMonthlyCache('2026-08', 'hh-123'),
@@ -501,11 +527,16 @@ async function run() {
       // Category rows stay item-level line-item sums (D3) — NOT the total.
       assert.equal(ref.current.totals[0].category_slug, 'groceries');
       assert.equal(ref.current.totals[0].total, 480);
+      // 0044: per-unit net groups surface for the grouped headline.
+      assert.deepEqual(ref.current.householdTotals, [
+        { total: 499.6, currency: 'CLP' },
+      ]);
       assert.equal(ref.current.hasData, true);
       // Household mode should NOT trigger recalc
       assert.equal(recalcCalled, false);
     } finally {
       unmount();
+      setViewerCurrency('UYU');
     }
   });
 
@@ -534,6 +565,8 @@ async function run() {
       );
       assert.equal(ref.current.monthTotal, 0);
       assert.equal(ref.current.hasData, true);
+      // Resolved-but-empty: no per-unit groups either.
+      assert.deepEqual(ref.current.householdTotals, []);
     } finally {
       unmount();
     }
@@ -550,9 +583,9 @@ async function run() {
         mid: makeCategoryEntry('mid', 'Mid', 700, 2),
       },
     });
-    faMock.__setReadMonthlyCacheRow(async () => ({
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => ({
       status: 'ok',
-      data: cacheRow,
+      data: [cacheRow],
     }));
 
     const { ref, unmount, waitFor } = mountHook(
@@ -576,9 +609,9 @@ async function run() {
   await test('cache hit: no recalc triggered (real hook, verifies side-effect)', async () => {
     faMock.__reset();
     let recalcCalls = 0;
-    faMock.__setReadMonthlyCacheRow(async () => ({
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => ({
       status: 'ok',
-      data: makeCacheRow({ total: 100 }),
+      data: [makeCacheRow({ total: 100, currency: 'UYU' })],
     }));
     faMock.__setTriggerMonthlyRecalc(async () => {
       recalcCalls += 1;
@@ -604,7 +637,7 @@ async function run() {
   // --- 5.2.7 Cache-miss: after settling, not loading and totals empty ---
   await test('cache miss initial: not loading, totals empty (real hook)', async () => {
     faMock.__reset();
-    faMock.__setReadMonthlyCacheRow(async () => ({
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => ({
       status: 'ok',
       data: null,
     }));
@@ -637,13 +670,14 @@ async function run() {
     faMock.__reset();
     const cacheRow = makeCacheRow({
       total: 1000,
+      currency: 'UYU',
       category_totals: {
         food: makeCategoryEntry('food', 'Food', 800, 4),
       },
     });
-    faMock.__setReadMonthlyCacheRow(async () => ({
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => ({
       status: 'ok',
-      data: cacheRow,
+      data: [cacheRow],
     }));
     faMock.__setReadCategoryBudgets(async () => ({
       status: 'ok',
@@ -674,6 +708,100 @@ async function run() {
       assert.equal(ref.current.totals[0].total, 800);
     } finally {
       unmount();
+    }
+  });
+
+  // --- 5.2.9 Cache miss whose recalc FAILS → error + hasData false ---
+  await test('cache miss + failed recalc → surfaces error, hasData false (real hook)', async () => {
+    faMock.__reset();
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => ({
+      status: 'ok',
+      data: [],
+    }));
+    faMock.__setTriggerMonthlyRecalc(async () => ({
+      status: 'error',
+      message: 'No se pudieron cargar los datos.',
+    }));
+
+    const { ref, unmount, waitFor } = mountHook(
+      () => useMonthlyCache('2026-08'),
+      makeQueryClient(),
+    );
+
+    try {
+      await waitFor((r) => !!r && r.error !== null);
+      // A failed recompute over an empty read is NOT a verified empty month:
+      // the hook must report the error and withhold `hasData`.
+      assert.equal(typeof ref.current.error, 'string');
+      assert.equal(ref.current.hasData, false);
+      assert.equal(ref.current.monthTotal, 0);
+    } finally {
+      unmount();
+    }
+  });
+
+  // --- 5.2.10 Personal mixed-currency month → viewer-unit row only (R1) ---
+  // Discriminating fixture: two rows with DIFFERENT totals. The old
+  // cross-unit reduce would return 600; the viewer-currency binding must
+  // return exactly 100 (the UYU row), proving a regression back to the
+  // reduce fails here (every earlier monthTotal fixture had one currency
+  // row, so reduce and find were numerically identical).
+  await test('mixed personal currency: monthTotal binds viewer unit only, never sums (real hook)', async () => {
+    faMock.__reset();
+    setViewerCurrency('UYU');
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => ({
+      status: 'ok',
+      data: [
+        makeCacheRow({ total: 100, currency: 'UYU' }),
+        makeCacheRow({ total: 500, currency: 'CLP' }),
+      ],
+    }));
+
+    const { ref, unmount, waitFor } = mountHook(
+      () => useMonthlyCache('2026-08'),
+      makeQueryClient(),
+    );
+
+    try {
+      await waitFor((r) => !!r && r.hasData === true);
+      assert.equal(ref.current.monthTotal, 100, 'monthTotal must bind the UYU row');
+      assert.notEqual(ref.current.monthTotal, 600, 'never sum across units (R1)');
+    } finally {
+      unmount();
+    }
+  });
+
+  // --- 5.2.11 Household mixed-currency net → viewer-unit row only (R1) ---
+  // CLP 70 + USD 5: the viewer CLP binding must total 70, never 75.
+  await test('mixed household currency: monthTotal binds viewer unit only, never sums (real hook)', async () => {
+    faMock.__reset();
+    faMock.__setReadCategoryTotals(async () => ({ status: 'ok', data: [] }));
+    faMock.__setReadMonthlyPurchasesTotal(async () => ({
+      status: 'ok',
+      data: [
+        { total: 70, currency: 'CLP' },
+        { total: 5, currency: 'USD' },
+      ],
+    }));
+
+    setViewerCurrency('CLP');
+    const { ref, unmount, waitFor } = mountHook(
+      () => useMonthlyCache('2026-08', 'hh-123'),
+      makeQueryClient(),
+    );
+
+    try {
+      await waitFor((r) => !!r && r.hasData === true && r.householdTotals.length === 2);
+      assert.equal(ref.current.monthTotal, 70, 'monthTotal must bind the CLP net row');
+      assert.notEqual(ref.current.monthTotal, 75, 'never sum across units (R1)');
+      // Both units still surface for the grouped headline.
+      assert.deepEqual(ref.current.householdTotals, [
+        { total: 70, currency: 'CLP' },
+        { total: 5, currency: 'USD' },
+      ]);
+    } finally {
+      unmount();
+      setViewerCurrency('UYU');
     }
   });
 

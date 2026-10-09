@@ -173,9 +173,11 @@ begin
   on conflict (user_id, year_month) do nothing;
 
   -- monthly_user_totals (0015) has its own cache table — seed a row.
-  insert into public.monthly_user_totals (user_id, year_month, total, items_count, updated_at)
-  values (v_user_cascade, to_char(now(), 'YYYY-MM'), 12.34, 1, now())
-  on conflict (user_id, year_month) do nothing;
+  -- 0044 re-keyed the cache by (user_id, year_month, currency): the fixture
+  -- supplies the unit explicitly (NOT NULL column).
+  insert into public.monthly_user_totals (user_id, year_month, currency, total, items_count, updated_at)
+  values (v_user_cascade, to_char(now(), 'YYYY-MM'), 'USD', 12.34, 1, now())
+  on conflict (user_id, year_month, currency) do nothing;
 
   -- category_budgets (0013)
   insert into public.category_budgets (user_id, category_slug, month, amount)

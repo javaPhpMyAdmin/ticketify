@@ -67,6 +67,7 @@ export default function CategoryDetailScreen() {
   const canonicalHeader = isCanonicalCategoryKey(key ?? 'otros');
   const {
     total,
+    totals,
     items,
     isLoading,
     isError,
@@ -129,9 +130,17 @@ export default function CategoryDetailScreen() {
             />
           </View>
           <Text style={styles.totalLabel}>{t('analytics:totalKicker')}</Text>
-          <Text style={styles.totalAmount}>
-            {totalPlaceholder ? '—' : formatCurrency(total, currency)}
-          </Text>
+          <View style={styles.totalAmounts}>
+            {totalPlaceholder ? (
+              <Text style={styles.totalAmount}>—</Text>
+            ) : (
+              (totals.length > 0 ? totals : [{ currency, total }]).map((group) => (
+                <Text key={group.currency ?? 'viewer'} style={styles.totalAmount}>
+                  {formatCurrency(group.total, group.currency ?? currency)}
+                </Text>
+              ))
+            )}
+          </View>
         </View>
 
         <View style={styles.itemsCard}>
@@ -226,6 +235,13 @@ const styles = StyleSheet.create({
   totalAmount: {
     ...typography.displayCurrency,
     color: colors.textPrimary,
+  },
+  totalAmounts: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'baseline',
+    gap: spacing.sm,
   },
   itemsCard: {
     backgroundColor: colors.surface,
