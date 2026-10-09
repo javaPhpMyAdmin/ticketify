@@ -22,10 +22,12 @@
 --
 --   §2  §cache — `monthly_user_totals` is re-keyed:
 --         PK (user_id, year_month) → (user_id, year_month, currency)
---       with `currency` text NOT NULL. EXISTING rows are relabeled under the
---       current profile currency (derived data — no `purchases` row is
---       rewritten: relabel-not-rewrite, Recalculate RPC s5). `total` keeps
---       its name (§5).
+--       with `currency` text NOT NULL. Existing rows are relabeled under the
+--       current profile currency to satisfy the NOT NULL swap, then TRUNCATED
+--       (stale-data guard, 4R fix pass): their totals predate the per-unit
+--       key and may have summed across units, so they are dropped and lazily
+--       recomputed. No `purchases` row is rewritten (relabel-not-rewrite,
+--       Recalculate RPC s5). `total` keeps its name (§5).
 --
 --   §3  §cache — `recalculate_monthly_totals` is rewritten (0015 body):
 --       grouped upsert per effective unit present in the month; units with
@@ -235,6 +237,15 @@ alter table public.monthly_user_totals
 alter table public.monthly_user_totals
   add constraint monthly_user_totals_pkey primary key (user_id, year_month, currency);
 
+-- Stale-data guard (4R fix pass): the relabel above only satisfies the NOT
+-- NULL swap; every retained row was computed under the OLD single-row
+-- (pre-grouped) contract and may have SUMMED across units. Those rows are no
+-- longer trustworthy once the key is per unit, and merging them per unit is
+-- impossible (units are not exchangeable). Drop them all: the lazy recalc —
+-- the client's cache-miss one-shot and the purchases trigger — repopulates
+-- one row per recorded unit on the next read, from `purchases` truth.
+truncate table public.monthly_user_totals;
+
 -- ---------------------------------------------------------------------------
 -- §3. §cache — recalculate_monthly_totals: grouped upsert + prune
 -- ---------------------------------------------------------------------------
@@ -260,6 +271,17 @@ declare
   v_daily        jsonb;
   v_items_count  integer;
 begin
+  -- Identity gate (4R fix pass, security): a caller may only recalculate
+  -- their OWN personal row. `auth.uid()` is null for service-role and
+  -- trigger/seed contexts (allowed); a non-null caller must match p_user_id,
+  -- so the definer RPC cannot be used to recompute (or probe) another user's
+  -- cache. The trigger path always passes NEW/OLD.user_id, which equals the
+  -- inserting user under RLS, so it is unaffected.
+  if auth.uid() is not null and p_user_id is distinct from auth.uid() then
+    raise exception 'caller_can_only_recalculate_own'
+      using errcode = 'P0001';
+  end if;
+
   -- Caller's profile unit is the empty-month fallback (pass-3 §1) and the
   -- re-key anchor for pre-0044 rows.
   select coalesce(nullif(upper(btrim(currency)), ''), 'USD')
@@ -387,7 +409,10 @@ comment on function public.recalculate_monthly_totals(uuid, text, uuid) is
 --
 -- The DROP in §1 wiped the owner and grants of both aggregation RPCs.
 -- Re-pin owner to postgres and restrict EXECUTE to authenticated so the
--- recreated definer RPCs cannot be used as unauthenticated oracles.
+-- recreated definer RPCs cannot be used as unauthenticated oracles. The
+-- rewritten recalc RPC is pinned to the same floor (4R fix pass): though
+-- create-or-replace preserves its ACL, the revoke/grant makes the
+-- least-privilege contract explicit and drift-proof.
 -- ---------------------------------------------------------------------------
 
 alter function public.monthly_category_totals(text, uuid) owner to postgres;
@@ -396,6 +421,13 @@ alter function public.recalculate_monthly_totals(uuid, text, uuid) owner to post
 
 revoke all on function public.monthly_category_totals(text, uuid) from public, anon;
 revoke all on function public.monthly_purchases_total(text, uuid) from public, anon;
+-- The recalc RPC is rewritten above; a create-or-replace preserves the ACL,
+-- but this file also DROPs/recreates the two aggregation RPCs. Pin recalc's
+-- least privilege explicitly so a fresh-chain grant drift cannot open the
+-- definer as an unauthenticated write oracle (it now also carries the
+-- caller-identity gate, but EXECUTE is the outer boundary).
+revoke all on function public.recalculate_monthly_totals(uuid, text, uuid) from public, anon;
 
 grant execute on function public.monthly_category_totals(text, uuid) to authenticated;
 grant execute on function public.monthly_purchases_total(text, uuid) to authenticated;
+grant execute on function public.recalculate_monthly_totals(uuid, text, uuid) to authenticated;

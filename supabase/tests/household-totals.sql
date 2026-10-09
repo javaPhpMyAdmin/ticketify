@@ -207,6 +207,17 @@ begin
   assert has_function_privilege('authenticated', 'public.monthly_category_totals(text, uuid)', 'EXECUTE'),
     'authenticated must be able to execute monthly_category_totals';
 
+  -- 4R fix pass: the rewritten recalc RPC is pinned to the same least-privilege
+  -- floor (anon/public denied, authenticated allowed) so the definer cannot be
+  -- used as an unauthenticated write oracle. Its caller-identity gate is
+  -- behavioral and pinned in §4c.
+  assert not has_function_privilege('anon', 'public.recalculate_monthly_totals(uuid, text, uuid)', 'EXECUTE'),
+    'anon must NOT be able to execute recalculate_monthly_totals (least privilege)';
+  assert not has_function_privilege('public', 'public.recalculate_monthly_totals(uuid, text, uuid)', 'EXECUTE'),
+    'public must NOT be able to execute recalculate_monthly_totals (least privilege)';
+  assert has_function_privilege('authenticated', 'public.recalculate_monthly_totals(uuid, text, uuid)', 'EXECUTE'),
+    'authenticated must be able to execute recalculate_monthly_totals';
+
   -- -------------------------------------------------------------------------
   -- 2. Fixture — 2-member household; A: 2 confirmed receipts (one with a
   --    payment-method discount) + 1 pending receipt; B: no purchases.
@@ -664,6 +675,12 @@ begin
   values (v_ag_store, v_ag_a, 'Agg Store')
   on conflict (id) do nothing;
 
+  -- Seed the purchases below with NO JWT: the 0044 recalc identity gate lets
+  -- a null auth.uid() (trigger/seed context) recalculate any user's row, while
+  -- a non-null caller may only recalc their own. §4b left a JWT in place, so
+  -- clear it here; the trigger materializes A's and B's rows cross-user.
+  perform set_config('request.jwt.claims', '{}', true);
+
   -- A: UYU 100 (lacteos) + legacy NULL 50 (panaderia → A profile UYU)
   --    + CLP 70 (lacteos).
   insert into public.purchases (id, user_id, store_id, purchase_date, total, currency, payment_method, status, created_at)
@@ -771,6 +788,46 @@ begin
   assert v_ag_clp_total = 70.00,
     'a personal month spanning a currency switch must subtotal per unit (CLP 70)';
 
+  -- (f2) Personal NET total groups per unit too: the client's personal
+  -- headline (budget/overview single-series binding) reads the viewer-currency
+  -- row from this shape. Mixed month → one row per unit, never a cross-unit
+  -- sum (UYU 150 = 100 + 50 legacy, CLP 70).
+  select count(*) into v_ag_rows
+    from public.monthly_purchases_total(
+      p_year_month := '2026-08', p_household_id := null::uuid
+    );
+  assert v_ag_rows = 2,
+    'personal monthly_purchases_total must return one row per unit (UYU, CLP)';
+
+  select coalesce(sum(x.total), 0) into v_ag_uyu_total
+    from public.monthly_purchases_total(
+      p_year_month := '2026-08', p_household_id := null::uuid
+    ) x
+   where x.currency = 'UYU';
+  assert v_ag_uyu_total = 150.00, 'personal net UYU total must be 150.00';
+
+  select coalesce(sum(x.total), 0) into v_ag_clp_total
+    from public.monthly_purchases_total(
+      p_year_month := '2026-08', p_household_id := null::uuid
+    ) x
+   where x.currency = 'CLP';
+  assert v_ag_clp_total = 70.00, 'personal net CLP total must be 70.00';
+
+  -- (f3) Empty month → ZERO rows, never a fabricated zero. A resolved empty
+  -- month is the client's "no data" signal (unlike the cache, which leaves one
+  -- zero row). Applies to personal and household scope alike.
+  select count(*) into v_ag_rows
+    from public.monthly_purchases_total(
+      p_year_month := '2025-01', p_household_id := null::uuid
+    );
+  assert v_ag_rows = 0,
+    'an empty personal month must yield ZERO net rows (no fabricated zero)';
+
+  select count(*) into v_ag_rows
+    from public.monthly_purchases_total('2025-01', v_ag_hid);
+  assert v_ag_rows = 0,
+    'an empty household month must yield ZERO net rows (no fabricated zero)';
+
   -- (g) Recalculate — empty month leaves exactly one profile-unit row.
   perform public.recalculate_monthly_totals(v_ag_a, '2025-01');
 
@@ -835,6 +892,25 @@ begin
    where id = 'a9000000-0000-0000-0000-000000000003';
   assert v_ag_null_cur is null,
     'grouping must relabel the cache, never backfill purchases.currency';
+
+  -- (l) Trigger path auto-materializes per unit WITHOUT an explicit recalc
+  --     call. A plain purchase INSERT fires the 0015 trigger, which now runs
+  --     the grouped recalc; the cache row appears on its own, keyed by the
+  --     recorded unit. Uses a dedicated month so no earlier assert changes.
+  insert into public.purchases (id, user_id, store_id, purchase_date, total, currency, payment_method, status, created_at)
+  values ('a9000000-0000-0000-0000-0000000000f1', v_ag_a, v_ag_store, date '2026-10-04', 42.00, 'EUR', 'card', 'confirmed', now())
+  on conflict (id) do nothing;
+
+  select count(*), min(currency), coalesce(sum(total), 0)
+    into v_ag_cache_rows, v_ag_empty_cur, v_ag_empty_total
+    from public.monthly_user_totals
+   where user_id = v_ag_a and year_month = '2026-10';
+  assert v_ag_cache_rows = 1,
+    'the purchases trigger must auto-materialize one cache row for the new month';
+  assert v_ag_empty_cur = 'EUR',
+    'the trigger-derived row must be keyed by the recorded unit (EUR)';
+  assert v_ag_empty_total = 42.00,
+    'the trigger-derived row must carry the purchase total (42.00)';
 
   -- -------------------------------------------------------------------------
   -- 5. Anon denial (LAST: SET ROLE persists for the rest of the transaction).

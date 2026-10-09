@@ -51,17 +51,19 @@ migration (`0043 §entry`). Covers:
    (`supabase/tests/household-totals.sql:144:anon-trap`). Which overload
    PostgREST resolves a personal-mode call to is asserted nowhere: the
    client test pins only the client half — a call carrying `p_year_month`
-   and no other argument (`scripts/test-features.mjs:474:p_year_month`) —
+   and an explicit `p_household_id: null` so PostgREST picks the grouped
+   two-argument overload
+   (`scripts/test-features.mjs:476:p_year_month`) —
    while the SQL file records that the one-argument call would be
    ambiguous in raw SQL
-   (`supabase/tests/household-totals.sql:315:ambiguous`).
+   (`supabase/tests/household-totals.sql:326:ambiguous`).
 2. **Confirmed-only, net headline**: in a fixture month holding two
    confirmed receipts and a pending one, category rows and `item_count`
    exclude the pending receipt, `lacteos` sums to 240.00 of confirmed
    line items, `percent_of_total` is windowed over that confirmed-only
    set, and `monthly_purchases_total` returns 299.60 — the discounted
    receipt counted at what was actually paid (199.60), not its 200.00
-   gross line-item sum (`supabase/tests/household-totals.sql:311:299.60`).
+   gross line-item sum (`supabase/tests/household-totals.sql:322:299.60`).
 3. **Personal reconciles with Household**: the same definition called
    with a NULL household returns the identical headline for a
    single-contributor month, to the cent.
