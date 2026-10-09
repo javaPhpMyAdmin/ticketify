@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useSessionUser } from '@/features/auth';
 import { currentMonthKey } from '@/features/home/hooks/useHomeFeed';
@@ -96,6 +96,7 @@ export function useMonthlyCache(
   refetch: () => Promise<unknown>;
 } {
   const { userId } = useSessionUser();
+  const queryClient = useQueryClient();
   // Viewer unit: single-series surfaces (this hook's `monthTotal`, the
   // overview change-%) bind to the VIEWER-currency cache row only — never a
   // cross-unit sum (R1) and never re-denominated (decision 9 / pass-3 §3).
@@ -152,9 +153,13 @@ export function useMonthlyCache(
   });
 
   // Cache miss (personal mode): trigger a one-time recalculation via RPC.
-  // Shared `mutationKey` with `useRunRate`: Hook-adjacent surfaces that both
-  // auto-recalc the same (user, month) serialize on one key instead of firing
-  // duplicate RPCs (TanStack runs same-key mutations in sequence).
+  // A shared `mutationKey` does NOT dedupe or serialize mutations by itself in
+  // @tanstack/react-query v5 (serialization keys on `scope.id`; the
+  // MutationCache stores every `mutate()` call unconditionally). The dedupe is
+  // enforced by the effect below: it skips while a recalc mutation with this
+  // key is already in flight (`queryClient.isMutating`), so two mounted
+  // instances (Analytics mounts this hook for current + previous month) do
+  // not fire duplicate heavy RPCs on a cold cache.
   const triggerMutation = useMutation({
     mutationKey: ['recalc-monthly-totals'],
     mutationFn: () =>
@@ -164,11 +169,13 @@ export function useMonthlyCache(
     },
   });
 
-  // Auto-trigger recalc when the cache is empty and not already in flight.
-  // `cacheQuery.data` is an array since 0044 (one row per unit); an empty
-  // array is the cache-miss signal. Gate on a non-error read: a failed read
-  // also yields `[]`, but firing a recalc then would mask the read failure
-  // and could write a row for a month whose data we could not even load.
+  // Auto-trigger recalc when the cache is empty and no recalc of this key is
+  // already in flight. `cacheQuery.data` is an array since 0044 (one row per
+  // unit); an empty array is the cache-miss signal. Gate on a non-error read:
+  // a failed read also yields `[]`, but firing a recalc then would mask the
+  // read failure and could write a row for a month whose data we could not
+  // even load. The `isMutating` guard is what prevents the duplicate RPC
+  // storm the shared `mutationKey` alone cannot.
   const rows = cacheQuery.data ?? [];
   useEffect(() => {
     if (
@@ -177,11 +184,12 @@ export function useMonthlyCache(
       !cacheQuery.isError &&
       rows.length === 0 &&
       !cacheQuery.isLoading &&
-      !triggerMutation.isPending
+      !triggerMutation.isPending &&
+      queryClient.isMutating({ mutationKey: ['recalc-monthly-totals'] }) === 0
     ) {
       triggerMutation.mutate();
     }
-  }, [rows.length, cacheQuery.isLoading, cacheQuery.isError, isHousehold, userId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows.length, cacheQuery.isLoading, cacheQuery.isError, isHousehold, userId, queryClient]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // AD-5: personal mode merges the month's budgets into the cache-backed
   // totals (post-step — the transform keeps its `budget_limit: null`
@@ -200,6 +208,14 @@ export function useMonthlyCache(
   );
   const monthTotal =
     rows.find((row) => row.currency === currency)?.total ?? 0;
+
+  // The mutation observer survives renders when `yearMonth` changes (React
+  // Query keeps the same `useMutation` instance), so a failed recalc in month
+  // A leaves `triggerMutation.error` set into month B. Surface it ONLY when
+  // the CURRENT read is also empty — the same condition `hasData` uses — so a
+  // healthy month (cached rows present) never renders a stale recalc error.
+  const recalcFailedOverEmptyRead =
+    rows.length === 0 && triggerMutation.isError;
 
   if (isHousehold) {
     const hTotals = householdQuery.data ?? [];
@@ -237,17 +253,16 @@ export function useMonthlyCache(
     isLoading: cacheQuery.isLoading || triggerMutation.isPending,
     // Surface a failed recalc: the cache read succeeded (empty) but the
     // recompute that was meant to fill it failed, so consumers must see the
-    // error instead of a false "no spend this month".
+    // error instead of a false "no spend this month". Scoped to the current
+    // empty read — a stale error from another month is never surfaced.
     error: cacheQuery.error
       ? toQueryErrorMessage(cacheQuery.error)
-      : triggerMutation.error
+      : recalcFailedOverEmptyRead && triggerMutation.error
         ? toQueryErrorMessage(triggerMutation.error)
         : null,
     // A failed recalc over an empty read is NOT resolved data — otherwise the
     // empty-array read would render as a verified zero month.
-    hasData:
-      cacheQuery.data !== undefined &&
-      !(rows.length === 0 && triggerMutation.isError),
+    hasData: cacheQuery.data !== undefined && !recalcFailedOverEmptyRead,
     refetch: cacheQuery.refetch,
   };
 }

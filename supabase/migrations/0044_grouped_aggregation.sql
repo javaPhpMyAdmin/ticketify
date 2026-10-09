@@ -212,7 +212,7 @@ alter table public.monthly_user_totals
   add column currency text;
 
 comment on column public.monthly_user_totals.currency is
-  'Effective ISO 4217 unit of the cache row: coalesce of the purchases unit and the RECORDER profile unit (coalesce(purchases.currency, profiles.currency, ''USD'')). Re-keyed by 0044: one row per (user, year_month, unit). Existing rows were relabeled under the current profile currency — purchases rows were NOT rewritten (relabel-not-rewrite, Recalculate RPC s5): switching your profile currency never rewrites stored rows.';
+  'Effective ISO 4217 unit of the cache row: coalesce of the purchases unit and the RECORDER profile unit (coalesce(purchases.currency, profiles.currency, ''USD'')). Re-keyed by 0044: one row per (user, year_month, unit). Pre-0044 rows were DROPPED, not relabeled: they were computed under the old single-row contract and may have summed across units, so no stale cross-unit sum survives the reshape. They are lazily recomputed one row per recorded unit on the next read (client cache-miss one-shot and purchases trigger), from purchases truth. No purchases row is ever rewritten (relabel-not-rewrite, Recalculate RPC s5).';
 
 -- Relabel existing cache rows under the CURRENT profile currency (derived
 -- data). Profiles.currency is NOT NULL with default 'USD' (0040/0041), but

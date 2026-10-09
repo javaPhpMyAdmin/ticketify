@@ -112,6 +112,14 @@ declare
   v_ag_empty_rows int;
   v_ag_empty_cur text;
   v_ag_empty_total numeric;
+
+  -- §4c identity-gate NEGATIVE path (4R fix pass): cross-user recalc must
+  -- raise P0001 and leave the target's cache untouched.
+  v_ag_gate_sqlstate text;
+  v_ag_gate_rows     int;
+  v_ag_gate_rows_after int;
+  v_ag_gate_before   text;
+  v_ag_gate_after    text;
 begin
   -- -------------------------------------------------------------------------
   -- 1. Catalog — migration 0031 contract
@@ -911,6 +919,44 @@ begin
     'the trigger-derived row must be keyed by the recorded unit (EUR)';
   assert v_ag_empty_total = 42.00,
     'the trigger-derived row must carry the purchase total (42.00)';
+
+  -- (m) Identity gate NEGATIVE path (4R fix pass): the recalc RPC lets a null
+  --     auth.uid() (trigger/seed context) and a matching caller through, but a
+  --     non-null caller recalculating ANOTHER user's row must raise P0001 and
+  --     touch nothing. Acting as B against A's month pins the deny branch:
+  --     deleting or inverting the gate would flip this assert (the permit
+  --     branches above would still pass).
+  select count(*), coalesce(string_agg(currency || ':' || total, ',' order by currency), '')
+    into v_ag_gate_rows, v_ag_gate_before
+    from public.monthly_user_totals
+   where user_id = v_ag_a and year_month = '2026-08';
+
+  perform set_config('request.jwt.claims', '{"sub":"a9000000-0000-0000-0000-000000000002"}', true);
+
+  begin
+    perform public.recalculate_monthly_totals(v_ag_a, '2026-08');
+    raise exception 'MISSING_EXPECTED_RAISE';
+  exception
+    when others then
+      if sqlerrm = 'MISSING_EXPECTED_RAISE' then
+        raise;
+      end if;
+      get stacked diagnostics v_ag_gate_sqlstate = returned_sqlstate;
+      assert v_ag_gate_sqlstate = 'P0001',
+        'cross-user recalc must raise P0001, got: ' || v_ag_gate_sqlstate;
+      assert sqlerrm = 'caller_can_only_recalculate_own',
+        'cross-user recalc must raise caller_can_only_recalculate_own, got: ' || sqlerrm;
+  end;
+
+  select count(*), coalesce(string_agg(currency || ':' || total, ',' order by currency), '')
+    into v_ag_gate_rows_after, v_ag_gate_after
+    from public.monthly_user_totals
+   where user_id = v_ag_a and year_month = '2026-08';
+
+  assert v_ag_gate_rows_after = v_ag_gate_rows,
+    'a rejected cross-user recalc must not change the target cache row count';
+  assert v_ag_gate_after = v_ag_gate_before,
+    'a rejected cross-user recalc must leave the target cache rows unchanged (same currency rows)';
 
   -- -------------------------------------------------------------------------
   -- 5. Anon denial (LAST: SET ROLE persists for the rest of the transaction).

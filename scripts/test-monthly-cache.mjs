@@ -740,6 +740,71 @@ async function run() {
     }
   });
 
+  // --- 5.2.10 Personal mixed-currency month → viewer-unit row only (R1) ---
+  // Discriminating fixture: two rows with DIFFERENT totals. The old
+  // cross-unit reduce would return 600; the viewer-currency binding must
+  // return exactly 100 (the UYU row), proving a regression back to the
+  // reduce fails here (every earlier monthTotal fixture had one currency
+  // row, so reduce and find were numerically identical).
+  await test('mixed personal currency: monthTotal binds viewer unit only, never sums (real hook)', async () => {
+    faMock.__reset();
+    setViewerCurrency('UYU');
+    faMock.__setReadMonthlyCacheRowsForMonth(async () => ({
+      status: 'ok',
+      data: [
+        makeCacheRow({ total: 100, currency: 'UYU' }),
+        makeCacheRow({ total: 500, currency: 'CLP' }),
+      ],
+    }));
+
+    const { ref, unmount, waitFor } = mountHook(
+      () => useMonthlyCache('2026-08'),
+      makeQueryClient(),
+    );
+
+    try {
+      await waitFor((r) => !!r && r.hasData === true);
+      assert.equal(ref.current.monthTotal, 100, 'monthTotal must bind the UYU row');
+      assert.notEqual(ref.current.monthTotal, 600, 'never sum across units (R1)');
+    } finally {
+      unmount();
+    }
+  });
+
+  // --- 5.2.11 Household mixed-currency net → viewer-unit row only (R1) ---
+  // CLP 70 + USD 5: the viewer CLP binding must total 70, never 75.
+  await test('mixed household currency: monthTotal binds viewer unit only, never sums (real hook)', async () => {
+    faMock.__reset();
+    faMock.__setReadCategoryTotals(async () => ({ status: 'ok', data: [] }));
+    faMock.__setReadMonthlyPurchasesTotal(async () => ({
+      status: 'ok',
+      data: [
+        { total: 70, currency: 'CLP' },
+        { total: 5, currency: 'USD' },
+      ],
+    }));
+
+    setViewerCurrency('CLP');
+    const { ref, unmount, waitFor } = mountHook(
+      () => useMonthlyCache('2026-08', 'hh-123'),
+      makeQueryClient(),
+    );
+
+    try {
+      await waitFor((r) => !!r && r.hasData === true && r.householdTotals.length === 2);
+      assert.equal(ref.current.monthTotal, 70, 'monthTotal must bind the CLP net row');
+      assert.notEqual(ref.current.monthTotal, 75, 'never sum across units (R1)');
+      // Both units still surface for the grouped headline.
+      assert.deepEqual(ref.current.householdTotals, [
+        { total: 70, currency: 'CLP' },
+        { total: 5, currency: 'USD' },
+      ]);
+    } finally {
+      unmount();
+      setViewerCurrency('UYU');
+    }
+  });
+
   // =========================================================================
   // Summary
   // =========================================================================

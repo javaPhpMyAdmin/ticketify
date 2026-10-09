@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useSessionUser } from '@/features/auth';
 import { useSettingsStore } from '@/stores/use-settings-store';
@@ -58,6 +58,7 @@ function trailingMonthKeys(monthKey: string): string[] {
  */
 export function useRunRate(monthKey: string): { data: RunRateResult | null } {
   const { userId } = useSessionUser();
+  const queryClient = useQueryClient();
   const isCurrent = monthKey === currentMonthKey();
 
   // AD-4: the key lives under the shared `monthlyCachePrefix` so the
@@ -79,13 +80,14 @@ export function useRunRate(monthKey: string): { data: RunRateResult | null } {
   });
 
   // Cache-miss (REQ-6): recalc via RPC when the batch resolved WITHOUT the
-  // current-month row and no recalc is in flight; the success refetch picks
-  // up the freshly upserted row (`recalculate_monthly_totals` always
-  // upserts, migration 0015).
+  // current-month row and no recalc of this key is already in flight; the
+  // success refetch picks up the freshly upserted row
+  // (`recalculate_monthly_totals` always upserts, migration 0015). A shared
+  // `mutationKey` with `useMonthlyCache` does NOT dedupe or serialize
+  // mutations by itself in v5 (serialization keys on `scope.id`; the
+  // MutationCache stores every `mutate()` call) — the effect below enforces
+  // the dedupe via `queryClient.isMutating`.
   const triggerMutation = useMutation({
-    // Shared key with `useMonthlyCache`: both surfaces auto-recalc the same
-    // (user, month). TanStack serializes same-key mutations, so mounting both
-    // does not fire duplicate RPCs.
     mutationKey: ['recalc-monthly-totals'],
     mutationFn: () =>
       triggerMonthlyRecalc(userId!, monthKey).then(toQueryData),
@@ -95,8 +97,12 @@ export function useRunRate(monthKey: string): { data: RunRateResult | null } {
   });
 
   // Auto-trigger recalc when the batch resolved without the current-month
-  // row and no recalc is in flight. `query.data !== undefined` keeps the
-  // effect inert while the query is disabled (past month / no user).
+  // row and no recalc is in flight. `!query.isError` (the sibling
+  // `useMonthlyCache` guard) keeps the effect inert on a failed read: a
+  // read failure yields `data === undefined` but must NOT trigger a recalc
+  // that would mask it. `query.data ?? []` keeps the row check safe when the
+  // query is disabled (past month / no user) — `isCurrent && !!userId` and
+  // `!query.isLoading` already gate that case out.
   //
   // HONEST DEPENDENCY NOTE — this is NOT a strict one-shot:
   // `query.data` is an array identity that changes on EVERY refetch, so if
@@ -110,17 +116,19 @@ export function useRunRate(monthKey: string): { data: RunRateResult | null } {
   // the same committed render; accepted — the RPC is idempotent and this
   // is dev-only, the harness pins recalc-once under the production path.
   useEffect(() => {
+    const batchRows = query.data ?? [];
     if (
       isCurrent &&
       !!userId &&
-      query.data !== undefined &&
-      !query.data.some((row) => row.year_month === monthKey) &&
+      !query.isError &&
+      !batchRows.some((row) => row.year_month === monthKey) &&
       !query.isLoading &&
-      !triggerMutation.isPending
+      !triggerMutation.isPending &&
+      queryClient.isMutating({ mutationKey: ['recalc-monthly-totals'] }) === 0
     ) {
       triggerMutation.mutate();
     }
-  }, [isCurrent, userId, monthKey, query.data, query.isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isCurrent, userId, monthKey, query.data, query.isLoading, query.isError, queryClient]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // NFR-2: the day token re-derives on the local-day flip so a month
   // boundary mid-session never serves yesterday's math. Computed OUTSIDE
