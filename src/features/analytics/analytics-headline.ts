@@ -11,27 +11,32 @@
  * reads the personal `monthly_user_totals` cache), so it is dropped in
  * household mode.
  *
- * When household data has NOT resolved (still loading) or errored, the
- * headline must never state a false "$0.00" — that would assert no household
- * spend when we simply don't know yet. In that case this returns
- * `headlineTotal: null`, which the caller renders as a neutral placeholder
- * (the body already shows the loading/error state).
+ * Since 0044 both totals are GROUPED PER UNIT (decision 9): the headline
+ * renders one labeled figure per currency — never a cross-currency sum.
+ * `headlineTotals` is null ONLY while the household data has not resolved
+ * (loading) or errored — the caller renders a neutral placeholder instead
+ * of a false "$0.00" (the body already shows the loading/error state).
  *
  * Deterministic: takes primitives only, so the node harness can pin it
  * without a component tree.
  */
 
+import type { CurrencyTotal } from '@/types';
+
 export type OverviewViewMode = 'personal' | 'household';
 
 export interface OverviewHeadlineInput {
   /**
-   * Net final paid for the household month — Σ `purchases.total` of
-   * confirmed receipts via `monthly_purchases_total` (same base as
-   * personal; NOT the sum of the gross category rows).
+   * Net final paid for the household month, one entry PER UNIT — Σ
+   * `purchases.total` of confirmed receipts via `monthly_purchases_total`
+   * (same base as personal; NOT the sum of the gross category rows).
+   * Empty array means an empty-but-resolved month: the caller folds it
+   * into a single `[{ currency: viewer, total: 0 }]` group so the card
+   * still states a real zero instead of a placeholder.
    */
-  householdMonthTotal: number;
-  /** Sum of the caller's own receipts for the month (personal mode). */
-  overviewTotal: number;
+  householdTotals: CurrencyTotal[];
+  /** Caller's own per-unit totals for the month (personal mode). */
+  overviewTotals: CurrencyTotal[];
   /** Personal month-over-month change % (personal cache); null = no badge. */
   personalChangePct: number | null;
   /** Whether the household queries have resolved (false while loading/errored). */
@@ -39,8 +44,11 @@ export interface OverviewHeadlineInput {
 }
 
 export interface OverviewHeadline {
-  /** Number to render as "TOTAL GASTADO"; null = show a placeholder. */
-  headlineTotal: number | null;
+  /**
+   * Per-unit figures to render as "TOTAL GASTADO", one labeled figure per
+   * currency; null = show a placeholder (household unresolved).
+   */
+  headlineTotals: CurrencyTotal[] | null;
   /** Change-% badge value; null = omit the badge entirely. */
   headlineChangePct: number | null;
 }
@@ -48,26 +56,41 @@ export interface OverviewHeadline {
 export function buildOverviewHeadline(
   viewMode: OverviewViewMode,
   {
-    householdMonthTotal,
-    overviewTotal,
+    householdTotals,
+    overviewTotals,
     personalChangePct,
     hasHouseholdData,
   }: OverviewHeadlineInput,
 ): OverviewHeadline {
   if (viewMode !== 'household') {
-    // Personal view: the caller's own receipts + personal change badge.
-    return { headlineTotal: overviewTotal, headlineChangePct: personalChangePct };
+    // Personal view: the caller's own per-unit totals + personal badge. The
+    // caller normalizes an empty month to a single viewer-currency zero, so
+    // the card always has at least one figure to render.
+    return {
+      headlineTotals: overviewTotals,
+      headlineChangePct: personalChangePct,
+    };
   }
 
   if (!hasHouseholdData) {
     // Loading or error: never state a false "$0.00" — render a placeholder
     // instead (the body already shows the loading/error state).
-    return { headlineTotal: null, headlineChangePct: null };
+    return { headlineTotals: null, headlineChangePct: null };
   }
 
-  // Household data resolved: the headline is the real household total. The
-  // finite guard defensively turns a NaN aggregate into a numeric 0 so the
-  // headline never prints "NaN" (an empty-but-resolved household is 0).
-  const safeTotal = Number.isFinite(householdMonthTotal) ? householdMonthTotal : 0;
-  return { headlineTotal: safeTotal, headlineChangePct: null };
+  // Household data resolved. The finite guard defensively turns a NaN
+  // aggregate into 0 so the headline never prints "NaN" (an empty-but-
+  // resolved household is a single viewer-currency zero, folded by the
+  // caller). Each group keeps its own unit label.
+  const safeTotals = householdTotals.map((t) => ({
+    currency: t.currency,
+    total: Number.isFinite(t.total) ? t.total : 0,
+  }));
+  return {
+    headlineTotals:
+      safeTotals.length > 0
+        ? safeTotals.map((t) => ({ total: t.total, currency: t.currency }))
+        : [{ total: 0 }],
+    headlineChangePct: null,
+  };
 }

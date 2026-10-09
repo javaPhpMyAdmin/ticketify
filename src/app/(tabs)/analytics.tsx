@@ -87,7 +87,7 @@ export default function AnalyticsScreen() {
   // (sum of the totals) — the headline value for household mode.
   const {
     totals: monthTotals,
-    monthTotal: householdMonthTotal,
+    householdTotals,
     isLoading: monthTotalsLoading,
     error: monthTotalsError,
     hasData: monthTotalsHasData,
@@ -109,13 +109,24 @@ export default function AnalyticsScreen() {
   // the real month total the moment the full-month rows resolve. This keeps
   // the overview's badge (change %) cache-backed while the headline total is
   // always the true sum of the month's receipts.
-  const overviewTotal = useMemo(
-    () =>
-      fullMonthList
-        .filter((r) => r.purchase_date.slice(0, 7) === monthKey)
-        .reduce((sum, r) => sum + (r.total ?? 0), 0),
-    [fullMonthList, monthKey],
-  );
+  // 0044 (decision 9): grouped per unit — one figure per currency, each
+  // receipt counting under its OWN unit (`r.currency ?? viewer`, the same
+  // row-unit fallback as the RPC, never a cross-unit sum).
+  const overviewTotals = useMemo(() => {
+    const byUnit = new Map<string, number>();
+    for (const r of fullMonthList) {
+      if (r.purchase_date.slice(0, 7) !== monthKey) continue;
+      const unit = r.currency ?? currency;
+      byUnit.set(unit, (byUnit.get(unit) ?? 0) + (r.total ?? 0));
+    }
+    const totals = [...byUnit.entries()].map(([unit, total]) => ({
+      currency: unit,
+      total,
+    }));
+    // Empty-but-resolved month: still a real zero in the viewer unit —
+    // never a placeholder for a month that genuinely has no spend.
+    return totals.length > 0 ? totals : [{ currency, total: 0 }];
+  }, [fullMonthList, monthKey, currency]);
   const { session } = useSessionStore();
   const fullName =
     session?.user?.user_metadata?.full_name ??
@@ -129,16 +140,27 @@ export default function AnalyticsScreen() {
   const avatarUrl = session?.user?.user_metadata?.avatar_url;
 
   // Headline scope follows the view toggle. In household mode "TOTAL GASTADO"
-  // is the HOUSEHOLD total (sum of the RPC category totals), not the caller's
-  // personal receipt sum — a personal figure next to the household category
-  // list below would contradict it. The change-% badge is personal-scoped
-  // (useMonthlyOverview reads the personal `monthly_user_totals` cache), so it
-  // is dropped in household mode. When the household RPC has not resolved
-  // (loading/error) the headline is a neutral placeholder — never a false
-  // "$0.00" — mirroring the body's loading/error branch.
+  // is the HOUSEHOLD total (per-unit groups from the net-paid RPC), not the
+  // caller's personal receipt sum — a personal figure next to the household
+  // category list below would contradict it. The change-% badge is
+  // personal-scoped (useMonthlyOverview reads the personal
+  // `monthly_user_totals` cache), so it is dropped in household mode. When
+  // the household RPC has not resolved (loading/error) the headline is a
+  // neutral placeholder — never a false "$0.00" — mirroring the body's
+  // loading/error branch.
+  const householdHeadlineTotals = useMemo(
+    () =>
+      householdTotals.length > 0
+        ? householdTotals.map((g) => ({
+            currency: g.currency ?? currency,
+            total: g.total,
+          }))
+        : [{ currency, total: 0 }],
+    [householdTotals, currency],
+  );
   const headline = buildOverviewHeadline(viewMode, {
-    householdMonthTotal,
-    overviewTotal,
+    householdTotals: householdHeadlineTotals,
+    overviewTotals,
     personalChangePct: overview.changePct,
     hasHouseholdData: monthTotalsHasData,
   });
@@ -269,12 +291,8 @@ export default function AnalyticsScreen() {
         ]}
       >
         <MonthlyOverviewCard
-          overview={{
-            ...overview,
-            currentTotal: headline.headlineTotal ?? 0,
-            changePct: headline.headlineChangePct,
-          }}
-          placeholder={headline.headlineTotal === null}
+          totals={headline.headlineTotals}
+          changePct={headline.headlineChangePct}
           currency={currency}
           previousMonthName={previousMonthName}
         />
@@ -326,7 +344,7 @@ export default function AnalyticsScreen() {
                       backgroundColor={visual.background}
                       foregroundColor={visual.foreground}
                       limit={t.budget_limit ?? undefined}
-                      currency={currency}
+                      currency={t.currency ?? currency}
                       onPress={() =>
                         router.push(
                           categoryDetailHref(
@@ -403,7 +421,7 @@ export default function AnalyticsScreen() {
                             backgroundColor={visual.background}
                             foregroundColor={visual.foreground}
                             limit={t.budget_limit ?? undefined}
-                            currency={currency}
+                            currency={t.currency ?? currency}
                             onPress={() =>
                               router.push(
                                 categoryDetailHref(

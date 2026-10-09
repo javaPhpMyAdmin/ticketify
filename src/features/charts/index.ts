@@ -9,6 +9,7 @@
  * (single source of truth between the donut and the analytics strip).
  */
 export {
+  bindViewerRows,
   aggregateSpendTrend,
   aggregateStoresByMonth,
   aggregateCategoriesByMonth,

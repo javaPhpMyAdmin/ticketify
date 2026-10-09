@@ -78,7 +78,7 @@ export default function HomeScreen() {
   // Kept only for the household card + its loading flag. The receipts list,
   // categories and snacks total come from `useMonthReceipts` below so every
   // month renders the SAME unified structure off the full-month rows.
-  const { householdTotal, isLoading: feedLoading } =
+  const { householdTotal, householdTotals, isLoading: feedLoading } =
     useHouseholdMonthTotal(monthKey);
   // Full-month receipts for whichever month is selected. Powers the
   // receipts list, category strip and snacks total for ANY month, and never
@@ -301,7 +301,7 @@ export default function HomeScreen() {
                 <HouseholdCardSkeleton />
               ) : (
                 <HouseholdCard
-                  householdTotal={householdTotal}
+                  householdTotals={householdTotals}
                   isLoading={feedLoading}
                 />
               )

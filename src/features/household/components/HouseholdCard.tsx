@@ -19,8 +19,13 @@ import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing } from '@/theme';
 
 interface HouseholdCardProps {
-  /** Total household spend for the current month, or null when loading. */
-  householdTotal: number | null;
+  /**
+   * Household spend for the current month, one figure PER UNIT (decision 9):
+   * a mixed month renders one labeled figure per currency, never a
+   * cross-currency sum (R1). Empty array = resolved-but-empty month (the
+   * caller folds a viewer-unit zero so the card still states a real "0").
+   */
+  householdTotals: { total: number; currency?: string }[];
   /** True while the household total query is loading. */
   isLoading: boolean;
 }
@@ -129,7 +134,7 @@ function AvatarCircle({
 }
 
 export function HouseholdCard({
-  householdTotal,
+  householdTotals,
   isLoading,
 }: HouseholdCardProps) {
   const { t } = useTranslation(['household']);
@@ -198,9 +203,11 @@ export function HouseholdCard({
           {isLoading ? (
             <Text style={styles.amount}>…</Text>
           ) : (
-            <Text style={styles.amount}>
-              {formatCurrency(householdTotal ?? 0, currency)}
-            </Text>
+            householdTotals.map((group, idx) => (
+              <Text key={idx} style={styles.amount}>
+                {formatCurrency(group.total, group.currency ?? currency)}
+              </Text>
+            ))
           )}
         </View>
       </Card>

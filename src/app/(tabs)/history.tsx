@@ -500,7 +500,7 @@ export default function HistoryScreen() {
                     name={t.category_name}
                     amount={t.total}
                     percent={t.percent_of_total}
-                    currency={currency}
+                    currency={t.currency ?? currency}
                     icon={visual.icon}
                     backgroundColor={visual.background}
                     foregroundColor={visual.foreground}
