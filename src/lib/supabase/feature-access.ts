@@ -32,6 +32,7 @@ import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import type {
   CategoryBudget,
   CategoryMonthlyTotal,
+  CurrencyTotal,
   Household,
   HouseholdFeedItem,
   HouseholdMember,
@@ -55,6 +56,14 @@ export interface HouseholdCategoryItem {
   purchase_date: string;
   store_name: string | null;
   member_name: string | null;
+  /**
+   * Optional per design ruling (money-integrity): the denylisted
+   * `get_household_category_items` RPC body is untouched (still
+   * currency-less), so production rows never carry a unit here. Grouping
+   * uses `currency ?? null` and therefore collapses to today's behavior;
+   * harness pins inject a unit to pin the grouped contract.
+   */
+  currency?: string;
 }
 
 /**
@@ -185,7 +194,7 @@ export async function readCategoryTotals(
 export async function readMonthlyPurchasesTotal(
   yearMonth: string,
   householdId?: string | null,
-): Promise<FeatureReadResult<{ total: number }[]>> {
+): Promise<FeatureReadResult<CurrencyTotal[]>> {
   if (!isSupabaseConfigured) return { status: 'unconfigured' };
   const params: Record<string, string> = { p_year_month: yearMonth };
   if (householdId) params.p_household_id = householdId;
@@ -194,7 +203,10 @@ export async function readMonthlyPurchasesTotal(
     console.warn('[read] monthly purchases total failed:', error.code, error.message);
     return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
-  return { status: 'ok', data: (data ?? []) as { total: number }[] };
+  // 0044: the 2-arg RPC returns one (currency, total) row per unit. The
+  // legacy 1-arg overload (personal mode) keeps its currency-less shape, so
+  // `currency` is optional on the rows.
+  return { status: 'ok', data: (data ?? []) as CurrencyTotal[] };
 }
 
 /**
@@ -901,25 +913,29 @@ export async function syncSubscriptionStatus(
 // ---------------------------------------------------------------------------
 
 /**
- * Read the materialized monthly cache row for a user and month. Returns
- * null when no row exists yet (cache miss — the hook triggers a recalc).
+ * Read the materialized monthly cache rows for a user and month. Since
+ * 0044 the cache is keyed per unit — `(user_id, year_month, currency)` —
+ * so a month holds one row PER GROUP instead of a single row (the old
+ * `maybeSingle` contract breaks the moment the SQL lands). Returns an
+ * empty array on a cache miss (the hook triggers a recalc). Order is
+ * deterministic so grouped renders are stable across refetches.
  */
 export async function readMonthlyCacheRow(
   userId: string,
   yearMonth: string,
-): Promise<FeatureReadResult<MonthlyTotalsCacheRow | null>> {
+): Promise<FeatureReadResult<MonthlyTotalsCacheRow[]>> {
   if (!isSupabaseConfigured) return { status: 'unconfigured' };
   const { data, error } = await supabase
     .from('monthly_user_totals')
     .select('*')
     .eq('user_id', userId)
     .eq('year_month', yearMonth)
-    .maybeSingle();
+    .order('currency');
   if (error) {
     console.warn('[read] monthly cache failed:', error.code, error.message);
     return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
-  return { status: 'ok', data: (data as MonthlyTotalsCacheRow | null) ?? null };
+  return { status: 'ok', data: (data ?? []) as MonthlyTotalsCacheRow[] };
 }
 
 /**
@@ -937,7 +953,9 @@ export async function readMonthlyCacheRows(
     .from('monthly_user_totals')
     .select('*')
     .eq('user_id', userId)
-    .in('year_month', yearMonths);
+    .in('year_month', yearMonths)
+    .order('year_month')
+    .order('currency');
   if (error) {
     console.warn('[read] monthly cache batch failed:', error.code, error.message);
     return { status: 'error', message: READ_ERROR_MESSAGE() };
