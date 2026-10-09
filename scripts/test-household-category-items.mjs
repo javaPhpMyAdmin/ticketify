@@ -378,9 +378,13 @@ async function run() {
     ]);
   });
 
-  // 0044 (decision 9): rows group per (normalized name, unit) — the same
-  // product recorded in two currencies splits into SEPARATE rows, one per
-  // unit with its own amount; a cross-currency sum (R1) never happens.
+  // 0044 (decision 9): the RAW aggregation groups per (normalized name, unit)
+  // and preserves units verbatim — including a `null` unit as its own group,
+  // with NO fabricated rate. The viewer-unit FOLD happens one layer above, in
+  // the hook via `groupTotalsByUnit` (pinned by the ready-case totals below
+  // and by test-home.mjs §groupTotalsByUnit). Same name in two currencies →
+  // separate rows, one per unit with its own amount (an R1 cross-currency sum
+  // never happens).
   await test('per-unit grouping: same name in two currencies stays separate rows', () => {
     const rows = [
       { name: 'Yerba 1kg', amount: 1000, quantity: 1, currency: 'UYU' },
@@ -664,8 +668,10 @@ async function run() {
       assert.equal(captured.errorMessage, '');
       assert.deepEqual(captured.items, [{ name: 'menu', amount: 180, quantity: 3, currency: null }]);
       assert.equal(captured.total, 180);
-      // Grouped detail total (task 3.7): unit-less household rows fold into
-      // the viewer unit — one figure for this all-unit-less month.
+      // PRODUCTION behavior (task 3.7): the hook folds every unit-less row
+      // into a SINGLE viewer-unit bucket (UYU) — one figure, no cross-unit
+      // sum and no fabricated exchange rate. The raw aggregation above keeps
+      // `null` verbatim; this is the layer that resolves it to the viewer.
       assert.deepEqual(captured.totals, [{ currency: 'UYU', total: 180 }]);
       assert.equal(typeof captured.retry, 'function');
       // Display-convergence pin (REQ-008): the hook's category visual comes

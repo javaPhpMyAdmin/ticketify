@@ -192,8 +192,8 @@ export function InsightHeroCard({
           {totals === null ? (
             <Text style={styles.total}>—</Text>
           ) : (
-            totals.map((group, idx) => (
-              <Text key={idx} style={styles.total}>
+            totals.map((group) => (
+              <Text key={group.currency ?? 'viewer'} style={styles.total}>
                 {formatCurrency(group.total, group.currency ?? currency)}
               </Text>
             ))

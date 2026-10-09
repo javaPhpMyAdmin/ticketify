@@ -49,8 +49,8 @@ export function MonthlyOverviewCard({
         {totals === null ? (
           <Text style={styles.total}>—</Text>
         ) : (
-          groups.map((group, idx) => (
-            <Text key={idx} style={styles.total}>
+          groups.map((group) => (
+            <Text key={group.currency ?? 'viewer'} style={styles.total}>
               {formatCurrency(group.total, group.currency ?? viewerCurrency)}
             </Text>
           ))

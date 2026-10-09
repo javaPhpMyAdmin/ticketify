@@ -73,6 +73,7 @@ import {
   aggregateCategoriesByMonth,
   currentMonthKey,
   getMonthKey,
+  groupTotalsByUnit,
   monthKeyToLabel,
   monthKeyToMonthName,
   previousMonthKey,
@@ -641,16 +642,12 @@ function ChartsBody() {
   }, [householdTotals, currency, viewMode]);
   const overviewTotals = useMemo(() => {
     if (viewMode === 'household') return [];
-    const byUnit = new Map<string, number>();
-    for (const r of monthList) {
-      if (r.purchase_date.slice(0, 7) !== monthKey) continue;
-      const unit = r.currency ?? currency;
-      byUnit.set(unit, (byUnit.get(unit) ?? 0) + (r.total ?? 0));
-    }
-    const totals = [...byUnit.entries()].map(([unit, total]) => ({
-      currency: unit,
-      total,
-    }));
+    const totals = groupTotalsByUnit(
+      monthList
+        .filter((r) => r.purchase_date.slice(0, 7) === monthKey)
+        .map((r) => ({ amount: r.total ?? 0, currency: r.currency })),
+      currency,
+    );
     return totals.length > 0 ? totals : [{ currency, total: 0 }];
   }, [monthList, monthKey, currency, viewMode]);
   const headline = buildOverviewHeadline(viewMode, {
@@ -804,10 +801,8 @@ function ChartsBody() {
           value={topCategory?.name ?? t('pro:topCategoryDash')}
           subtext={
             topCategory
-              ? // Single-series binding (decision 9 / pass-3 §3): the top
-                // category is ONE figure under the VIEWER unit only —
-                // never a per-currency split (R1), never a re-denomination
-                // (accepted under-report s4 on switch months).
+              ? // Single-series binding (decision 9) — see the `viewerList`
+                // comment above for the full rationale.
                 formatCurrency(topCategory.amount, currency)
               : t('pro:noSpending')
           }
@@ -815,9 +810,7 @@ function ChartsBody() {
         />
         <MetricSummaryCard
           label={t('pro:dailyAverage')}
-          // Single-series binding (decision 9 / pass-3 §3): the daily
-          // average is one VIEWER-currency figure (same accepted
-          // under-report s4 as the top category).
+          // Single-series binding (decision 9); see `viewerList` above.
           value={formatCurrency(dailyAverage, currency)}
           subtext={t('pro:dailyAverageSubtext')}
           icon="calendar"

@@ -93,4 +93,5 @@ export function buildOverviewHeadline(
         : [{ total: 0 }],
     headlineChangePct: null,
   };
+
 }

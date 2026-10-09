@@ -29,6 +29,7 @@ import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatal
 import {
   aggregateItemsByMonth,
   currentMonthKey,
+  groupTotalsByUnit,
   monthKeyToLabel,
   monthKeyToMonthName,
   previousMonthKey,
@@ -104,25 +105,18 @@ export default function AnalyticsScreen() {
   const alerts = usePriceAlerts(monthKey);
   const overview = useMonthlyOverview(monthKey);
   // "TOTAL GASTADO" derives from the FULL month's receipts already loaded
-  // here (same as Home), not from the monthly cache — on a cache miss the
-  // cache-backed `overview.currentTotal` can read 0, so we override it with
-  // the real month total the moment the full-month rows resolve. This keeps
-  // the overview's badge (change %) cache-backed while the headline total is
-  // always the true sum of the month's receipts.
-  // 0044 (decision 9): grouped per unit — one figure per currency, each
-  // receipt counting under its OWN unit (`r.currency ?? viewer`, the same
-  // row-unit fallback as the RPC, never a cross-unit sum).
+  // here (same source as Home), not from the monthly cache: on a cache miss
+  // the cache-backed `overview` headline can read 0, so this overrides it with
+  // the true month figures the moment the full-month rows resolve. Grouped per
+  // unit (decision 9): one figure per recorded currency, each receipt counting
+  // under its OWN unit — never fused into one number (R1).
   const overviewTotals = useMemo(() => {
-    const byUnit = new Map<string, number>();
-    for (const r of fullMonthList) {
-      if (r.purchase_date.slice(0, 7) !== monthKey) continue;
-      const unit = r.currency ?? currency;
-      byUnit.set(unit, (byUnit.get(unit) ?? 0) + (r.total ?? 0));
-    }
-    const totals = [...byUnit.entries()].map(([unit, total]) => ({
-      currency: unit,
-      total,
-    }));
+    const totals = groupTotalsByUnit(
+      fullMonthList
+        .filter((r) => r.purchase_date.slice(0, 7) === monthKey)
+        .map((r) => ({ amount: r.total ?? 0, currency: r.currency })),
+      currency,
+    );
     // Empty-but-resolved month: still a real zero in the viewer unit —
     // never a placeholder for a month that genuinely has no spend.
     return totals.length > 0 ? totals : [{ currency, total: 0 }];
