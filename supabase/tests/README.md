@@ -38,29 +38,30 @@ A fail-closed smoke test for the household totals consistency change
 migration (`0043 §entry`). Covers:
 
 1. **Catalog**: `monthly_category_totals(text, uuid)` exists, is
-   `SECURITY DEFINER`, owned by `postgres`, and returns a fixed 7-column
-   row — the count the 42P13-safe `create or replace` contract depends on
-   (`supabase/tests/household-totals.sql:150:42P13-safe`). EXECUTE is
+   `SECURITY DEFINER`, owned by `postgres`, and returns a fixed 8-column
+   row (7 + `currency`, since 0044 groups per unit) — the count the
+   42P13-safe `create or replace` contract depends on
+   (`supabase/tests/household-totals.sql:176:42P13-safe`). EXECUTE is
    revoked from anon and public and granted to `authenticated`. The
    legacy single-argument `monthly_category_totals(text)` overload must
    never become a definer: the file asserts that, whenever it is present,
    it stays `security invoker` (its absence would also pass that assert),
    so it additionally asserts RLS is enabled on `purchases`: a definer
    overload would read past RLS, the 0029 §4 anon trap
-   (`supabase/tests/household-totals.sql:122:anon-trap`). Which overload
+   (`supabase/tests/household-totals.sql:144:anon-trap`). Which overload
    PostgREST resolves a personal-mode call to is asserted nowhere: the
    client test pins only the client half — a call carrying `p_year_month`
    and no other argument (`scripts/test-features.mjs:474:p_year_month`) —
    while the SQL file records that the one-argument call would be
    ambiguous in raw SQL
-   (`supabase/tests/household-totals.sql:266:ambiguous`).
+   (`supabase/tests/household-totals.sql:315:ambiguous`).
 2. **Confirmed-only, net headline**: in a fixture month holding two
    confirmed receipts and a pending one, category rows and `item_count`
    exclude the pending receipt, `lacteos` sums to 240.00 of confirmed
    line items, `percent_of_total` is windowed over that confirmed-only
    set, and `monthly_purchases_total` returns 299.60 — the discounted
    receipt counted at what was actually paid (199.60), not its 200.00
-   gross line-item sum (`supabase/tests/household-totals.sql:262:299.60`).
+   gross line-item sum (`supabase/tests/household-totals.sql:311:299.60`).
 3. **Personal reconciles with Household**: the same definition called
    with a NULL household returns the identical headline for a
    single-contributor month, to the cent.
@@ -204,7 +205,7 @@ A fail-closed smoke test for the account-deletion primitive (migrations
    rows, each table asserted empty afterwards. `webhook_events` is the
    deliberate exception: 0037 dropped its FK to `profiles`, so the row
    survives as the audit signal and the file asserts that it does
-   (`supabase/tests/delete-account.sql:285:webhook_events`).
+   (`supabase/tests/delete-account.sql:287:webhook_events`).
 3. **Storage sweep**: the seeded `storage.objects` row under the user's
    folder in the `receipts` bucket is removed — that bucket has no
    cascade from `auth.users`, so without the sweep the photo would
@@ -216,12 +217,12 @@ A fail-closed smoke test for the account-deletion primitive (migrations
    household and membership rows cascade away; an owner with another
    active member is rejected with SQLSTATE `P0001` and the exact message
    `owner_must_disband_first`
-   (`supabase/tests/delete-account.sql:423:owner_must_disband_first`),
+   (`supabase/tests/delete-account.sql:425:owner_must_disband_first`),
    nothing is mutated, and a repeat call on that still-present owner
    raises again instead of degrading into a silent no-op.
 6. **Idempotency**: a second call after a successful delete returns
    `'already_deleted'` and exits without an exception
-   (`supabase/tests/delete-account.sql:369:already_deleted`).
+   (`supabase/tests/delete-account.sql:371:already_deleted`).
 7. **Re-signup**: after the delete, a fresh `auth.users` row can be
    inserted with the same email.
 

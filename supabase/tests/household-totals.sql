@@ -90,6 +90,28 @@ declare
   v_e_sqlstate    text;  -- captured via get stacked diagnostics (CU001 pin)
   v_e_jh_secdef   boolean;
   v_e_jh_owner    text;
+
+  -- §4c grouped aggregation + cache reshape (money-integrity 0044).
+  -- Dedicated identities, disjoint from §2 and §4b, owned teardown.
+  v_ag_a         uuid := 'a9000000-0000-0000-0000-000000000001'; -- profile UYU
+  v_ag_b         uuid := 'a9000000-0000-0000-0000-000000000002'; -- profile CLP
+  v_ag_hid       uuid := 'a9000000-0000-0000-0000-0000000000d9';
+  v_ag_store     uuid := 'c9000000-0000-0000-0000-0000000000aa';
+  v_ag_secdef    boolean;
+  v_ag_owner     text;
+  v_ag_purch_cols int;
+  v_ag_rows      int;
+  v_ag_uyu_total numeric;
+  v_ag_clp_total numeric;
+  v_ag_lacteos_uyu numeric;
+  v_ag_pct_uyu   numeric;
+  v_ag_pct_clp   numeric;
+  v_ag_null_cur  text;
+  v_ag_rec_rows  int;
+  v_ag_cache_rows int;
+  v_ag_empty_rows int;
+  v_ag_empty_cur text;
+  v_ag_empty_total numeric;
 begin
   -- -------------------------------------------------------------------------
   -- 1. Catalog — migration 0031 contract
@@ -137,7 +159,11 @@ begin
   assert v_secdef, 'monthly_category_totals must be SECURITY DEFINER (0026 + 0031)';
   assert v_owner = 'postgres', 'monthly_category_totals must be owned by postgres';
 
-  -- 7-column return: count the OUT/TABLE columns (proargmodes 'o'/'t').
+  -- 8-column return: count the OUT/TABLE columns (proargmodes 'o'/'t').
+  -- 0044 (money-integrity) adds the per-row `currency` label so grouped
+  -- aggregation can subtotal per recorded unit. This is a legitimate shape
+  -- change (drop + recreate), not a pin weakening: the 42P13-safe replace
+  -- contract still holds — the column set just grew from 7 to 8.
   select count(*) into v_cols
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
@@ -147,7 +173,30 @@ begin
      and p.pronargs = 2
      and m.mode in ('o', 't');
 
-  assert v_cols = 7, 'monthly_category_totals must return exactly 7 columns (42P13-safe replace contract)';
+  assert v_cols = 8, 'monthly_category_totals must return exactly 8 columns (7 + currency, 42P13-safe replace contract)';
+
+  -- 0044 keeps the definer + owner contract after the DROP/CREATE cycle.
+  select p.prosecdef, pg_get_userbyid(p.proowner)
+    into v_ag_secdef, v_ag_owner
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname = 'monthly_category_totals'
+     and p.pronargs = 2;
+  assert v_ag_secdef, 'monthly_category_totals must stay SECURITY DEFINER after 0044';
+  assert v_ag_owner = 'postgres', 'monthly_category_totals must stay owned by postgres after 0044';
+
+  -- monthly_purchases_total gains a `currency` label too (grouped return).
+  -- The legacy 1-arg overload (0010) coexists, so pin the 2-arg shape only.
+  select count(*) into v_ag_purch_cols
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    left join lateral unnest(p.proargmodes) as m(mode) on true
+   where n.nspname = 'public'
+     and p.proname = 'monthly_purchases_total'
+     and p.pronargs = 2
+     and m.mode in ('o', 't');
+  assert v_ag_purch_cols = 2, 'monthly_purchases_total must return (currency, total) = 2 columns after 0044';
 
   -- Least privilege: anon/public no EXECUTE, authenticated yes (0026 §5,
   -- re-applied by 0031 §3 because create-or-replace resets EXECUTE).
@@ -567,6 +616,225 @@ begin
   select household_id into v_e_joined_hid from public.profiles where id = v_e_usd_joiner;
   assert v_e_joined_hid = v_e_usd_hid,
     'normalization-edge join must set profiles.household_id';
+
+  -- -------------------------------------------------------------------------
+  -- 4c. Grouped aggregation + cache re-key — money-integrity 0044.
+  --
+  --     Requirement (household-sharing "Aggregation RPCs" s2/s3/s4/s5,
+  --     monthly-totals-cache "Recalculate RPC" s1/s5):
+  --       • category totals carry a `currency` label and subtotal PER UNIT;
+  --       • percent_of_total is windowed WITHIN each unit;
+  --       • the effective unit is coalesce(row.currency, RECORDER profile),
+  --         then 'USD' — never the viewer's, never households.currency;
+  --       • month total returns one row per unit;
+  --       • recalculate re-keys monthly_user_totals by unit, prunes units
+  --         with no remaining spend, and leaves exactly one profile-unit
+  --         row for an empty month;
+  --       • cache rows are relabeled, purchases are NEVER rewritten.
+  --
+  --     The section owns its fixture (dedicated identities, disjoint from
+  --     §2/§4b) and cleans the cache rows it asserts on. Placed BEFORE §5
+  --     (which sets `role anon` and persists): both RPCs revoke EXECUTE
+  --     from anon.
+  -- -------------------------------------------------------------------------
+
+  insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+  values
+    ('00000000-0000-0000-0000-000000000000', v_ag_a, 'authenticated', 'authenticated', 'ag-a@test.local', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
+    ('00000000-0000-0000-0000-000000000000', v_ag_b, 'authenticated', 'authenticated', 'ag-b@test.local', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now())
+  on conflict (id) do nothing;
+
+  insert into public.profiles (id, full_name, monthly_budget, currency, created_at)
+  values
+    (v_ag_a, 'Agg A (UYU)', 0, 'UYU', now()),
+    (v_ag_b, 'Agg B (CLP)', 0, 'CLP', now())
+  on conflict (id) do nothing;
+
+  insert into public.households (id, name, created_by, created_at)
+  values (v_ag_hid, 'Grouped Aggregation Household', v_ag_a, now())
+  on conflict (id) do nothing;
+
+  insert into public.household_members (household_id, user_id, role, joined_at)
+  values
+    (v_ag_hid, v_ag_a, 'member', now()),
+    (v_ag_hid, v_ag_b, 'member', now())
+  on conflict (household_id, user_id) do nothing;
+
+  insert into public.stores (id, user_id, name)
+  values (v_ag_store, v_ag_a, 'Agg Store')
+  on conflict (id) do nothing;
+
+  -- A: UYU 100 (lacteos) + legacy NULL 50 (panaderia → A profile UYU)
+  --    + CLP 70 (lacteos).
+  insert into public.purchases (id, user_id, store_id, purchase_date, total, currency, payment_method, status, created_at)
+  values
+    ('a9000000-0000-0000-0000-000000000001', v_ag_a, v_ag_store, date '2026-08-05', 100.00, 'UYU', 'card', 'confirmed', now()),
+    ('a9000000-0000-0000-0000-000000000003', v_ag_a, v_ag_store, date '2026-08-07',  50.00, null,  'card', 'confirmed', now()),
+    ('a9000000-0000-0000-0000-000000000004', v_ag_a, v_ag_store, date '2026-08-08',  70.00, 'CLP', 'card', 'confirmed', now()),
+    ('a9000000-0000-0000-0000-000000000005', v_ag_a, v_ag_store, date '2026-09-01', 500.00, 'CLP', 'card', 'confirmed', now())
+  on conflict (id) do nothing;
+
+  -- B: CLP 200 (lacteos).
+  insert into public.purchases (id, user_id, store_id, purchase_date, total, currency, payment_method, status, created_at)
+  values ('a9000000-0000-0000-0000-000000000002', v_ag_b, v_ag_store, date '2026-08-06', 200.00, 'CLP', 'card', 'confirmed', now())
+  on conflict (id) do nothing;
+
+  insert into public.purchase_items (id, purchase_id, name, quantity, unit_price, total_price, category_id, is_impulse, sort_order)
+  values
+    ('b9000000-0000-0000-0000-000000000001', 'a9000000-0000-0000-0000-000000000001', 'Leche', 1, 100.00, 100.00, v_cat_lacteos,   false, 0),
+    ('b9000000-0000-0000-0000-000000000003', 'a9000000-0000-0000-0000-000000000003', 'Pan',   1,  50.00,  50.00, v_cat_panaderia, false, 0),
+    ('b9000000-0000-0000-0000-000000000004', 'a9000000-0000-0000-0000-000000000004', 'Leche', 1,  70.00,  70.00, v_cat_lacteos,   false, 0),
+    ('b9000000-0000-0000-0000-000000000005', 'a9000000-0000-0000-0000-000000000005', 'Leche', 1, 500.00, 500.00, v_cat_lacteos,   false, 0),
+    ('b9000000-0000-0000-0000-000000000002', 'a9000000-0000-0000-0000-000000000002', 'Leche', 1, 200.00, 200.00, v_cat_lacteos,   false, 0)
+  on conflict (id) do nothing;
+
+  -- Squeeze the trigger-derived cache so the recalc asserts are deterministic.
+  delete from public.monthly_user_totals where user_id in (v_ag_a, v_ag_b);
+
+  -- Act as member A (household membership + personal scope).
+  perform set_config('request.jwt.claims', '{"sub":"a9000000-0000-0000-0000-000000000001"}', true);
+
+  -- (a) Household category totals: one row per (category, unit).
+  select count(*) into v_ag_rows
+    from public.monthly_category_totals('2026-08', v_ag_hid);
+  assert v_ag_rows = 3,
+    'mixed household must yield one row per (category, unit): lacteos/UYU, panaderia/UYU, lacteos/CLP';
+
+  select coalesce(sum(x.total), 0) into v_ag_uyu_total
+    from public.monthly_category_totals('2026-08', v_ag_hid) x
+   where x.currency = 'UYU';
+  assert v_ag_uyu_total = 150.00,
+    'UYU subtotal must be 150.00 (A 100 lacteos + A 50 legacy NULL→UYU)';
+
+  select coalesce(sum(x.total), 0) into v_ag_clp_total
+    from public.monthly_category_totals('2026-08', v_ag_hid) x
+   where x.currency = 'CLP';
+  assert v_ag_clp_total = 270.00,
+    'CLP subtotal must be 270.00 (B 200 + A 70, bucketed by the row unit)';
+
+  -- (b) The legacy NULL row is labeled with the RECORDER profile unit (UYU),
+  --     not the viewer's currency and not households.currency.
+  select coalesce(sum(x.total), 0) into v_ag_lacteos_uyu
+    from public.monthly_category_totals('2026-08', v_ag_hid) x
+   where x.currency = 'UYU' and x.category_slug = 'panaderia';
+  assert v_ag_lacteos_uyu = 50.00,
+    'a NULL-currency purchase must be labeled with the RECORDER profile unit (A=UYU)';
+
+  -- (c) percent_of_total is windowed per unit, not across units.
+  select max(x.percent_of_total) into v_ag_pct_uyu
+    from public.monthly_category_totals('2026-08', v_ag_hid) x
+   where x.currency = 'UYU';
+  assert v_ag_pct_uyu = 66.7,
+    'UYU percent must be windowed within the unit (lacteos 100/150 = 66.7)';
+
+  select max(x.percent_of_total) into v_ag_pct_clp
+    from public.monthly_category_totals('2026-08', v_ag_hid) x
+   where x.currency = 'CLP';
+  assert v_ag_pct_clp = 100.0,
+    'CLP percent must be windowed within the unit (single category = 100.0)';
+
+  -- (d) budget_limit is personal-only: never present in household mode.
+  select count(*) into v_ag_rows
+    from public.monthly_category_totals('2026-08', v_ag_hid) x
+   where x.budget_limit is not null;
+  assert v_ag_rows = 0, 'household category rows must never carry budget_limit';
+
+  -- (e) Month total: one row per unit.
+  select count(*) into v_ag_rows
+    from public.monthly_purchases_total('2026-08', v_ag_hid);
+  assert v_ag_rows = 2,
+    'monthly_purchases_total must return one row per unit (UYU, CLP)';
+
+  select coalesce(sum(x.total), 0) into v_ag_uyu_total
+    from public.monthly_purchases_total('2026-08', v_ag_hid) x
+   where x.currency = 'UYU';
+  assert v_ag_uyu_total = 150.00, 'household net UYU total must be 150.00';
+
+  select coalesce(sum(x.total), 0) into v_ag_clp_total
+    from public.monthly_purchases_total('2026-08', v_ag_hid) x
+   where x.currency = 'CLP';
+  assert v_ag_clp_total = 270.00, 'household net CLP total must be 270.00';
+
+  -- (f) Personal mode groups per unit too (currency switch mid-month).
+  select coalesce(sum(x.total), 0) into v_ag_uyu_total
+    from public.monthly_category_totals(
+      p_year_month := '2026-08', p_household_id := null::uuid
+    ) x
+   where x.currency = 'UYU';
+  assert v_ag_uyu_total = 150.00, 'personal UYU subtotal must be 150.00';
+
+  select coalesce(sum(x.total), 0) into v_ag_clp_total
+    from public.monthly_category_totals(
+      p_year_month := '2026-08', p_household_id := null::uuid
+    ) x
+   where x.currency = 'CLP';
+  assert v_ag_clp_total = 70.00,
+    'a personal month spanning a currency switch must subtotal per unit (CLP 70)';
+
+  -- (g) Recalculate — empty month leaves exactly one profile-unit row.
+  perform public.recalculate_monthly_totals(v_ag_a, '2025-01');
+
+  select count(*), min(currency), coalesce(sum(total), 0)
+    into v_ag_empty_rows, v_ag_empty_cur, v_ag_empty_total
+    from public.monthly_user_totals
+   where user_id = v_ag_a and year_month = '2025-01';
+  assert v_ag_empty_rows = 1,
+    'an empty month must still leave exactly one cache row';
+  assert v_ag_empty_cur = 'UYU',
+    'the empty-month cache row must be keyed by the profile unit';
+  assert v_ag_empty_total = 0, 'the empty-month cache total must be 0';
+
+  -- (h) Recalculate — mixed personal month yields one row per unit.
+  perform public.recalculate_monthly_totals(v_ag_a, '2026-08');
+
+  select count(*) into v_ag_cache_rows
+    from public.monthly_user_totals
+   where user_id = v_ag_a and year_month = '2026-08';
+  assert v_ag_cache_rows = 2,
+    'a mixed personal month must produce one cache row per unit';
+
+  select coalesce(sum(total), 0) into v_ag_uyu_total
+    from public.monthly_user_totals
+   where user_id = v_ag_a and year_month = '2026-08' and currency = 'UYU';
+  assert v_ag_uyu_total = 150.00, 'personal cache UYU row must total 150.00';
+
+  select coalesce(sum(total), 0) into v_ag_clp_total
+    from public.monthly_user_totals
+   where user_id = v_ag_a and year_month = '2026-08' and currency = 'CLP';
+  assert v_ag_clp_total = 70.00, 'personal cache CLP row must total 70.00';
+
+  -- (i) Recalculate — household scope buckets the caller's row per unit.
+  perform public.recalculate_monthly_totals(v_ag_a, '2026-08', v_ag_hid);
+
+  select coalesce(sum(total), 0) into v_ag_clp_total
+    from public.monthly_user_totals
+   where user_id = v_ag_a and year_month = '2026-08' and currency = 'CLP';
+  assert v_ag_clp_total = 270.00,
+    'household recalc must bucket A''s CLP cache row with B''s CLP spend (270)';
+
+  -- (j) Orphan prune — a unit with no remaining spend is deleted.
+  delete from public.purchases where id = 'a9000000-0000-0000-0000-000000000004';
+  perform public.recalculate_monthly_totals(v_ag_a, '2026-08');
+
+  select count(*) into v_ag_cache_rows
+    from public.monthly_user_totals
+   where user_id = v_ag_a and year_month = '2026-08';
+  assert v_ag_cache_rows = 1,
+    'a unit with no remaining spend must be pruned from the cache (orphan prune)';
+
+  select currency into v_ag_empty_cur
+    from public.monthly_user_totals
+   where user_id = v_ag_a and year_month = '2026-08';
+  assert v_ag_empty_cur = 'UYU',
+    'after pruning, only the surviving unit row must remain';
+
+  -- (k) Relabel, never rewrite: the cache re-keys, but purchases.currency is
+  --     never backfilled by the reshape.
+  select currency into v_ag_null_cur
+    from public.purchases
+   where id = 'a9000000-0000-0000-0000-000000000003';
+  assert v_ag_null_cur is null,
+    'grouping must relabel the cache, never backfill purchases.currency';
 
   -- -------------------------------------------------------------------------
   -- 5. Anon denial (LAST: SET ROLE persists for the rest of the transaction).
