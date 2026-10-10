@@ -18,7 +18,7 @@ import {
   useMonthlyTotals,
   usePriceAlerts,
 } from '@/features/analytics';
-import { bindViewerRows, categoryDetailHref } from '@/features/charts';
+import { categoryDetailHref } from '@/features/charts';
 import {
   useAvailableMonthKeys,
   useMonthNavigation,
@@ -36,6 +36,7 @@ import {
 } from '@/features/home/hooks/useHomeFeed';
 import { useProEntitlement } from '@/features/pro';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
+import { bindViewerRows } from '@/lib/money';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';

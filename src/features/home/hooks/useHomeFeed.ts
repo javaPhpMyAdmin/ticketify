@@ -6,6 +6,7 @@ import { useSessionUser } from '@/features/auth';
 import { readHouseholdCategoryItems, readMonthlyPurchasesTotal } from '@/lib/supabase/feature-access';
 import { formatYearMonth, fullMonthForLocale } from '@/lib/format';
 import type { FormatDateLocale } from '@/lib/format';
+import { bindViewerRows } from '@/lib/money';
 import { queryKeys } from '@/lib/query-keys';
 import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters';
 import { useHouseholdStore } from '@/stores/use-household-store';
@@ -14,7 +15,6 @@ import { useReceiptsStore } from '@/stores/use-receipts-store';
 import type { CurrencyTotal } from '@/types';
 import type { HomeFeedReceiptRow } from '@/types';
 import type { CategoryCatalog } from '@/features/categories/catalog';
-import { bindViewerRows } from '@/features/charts/aggregate';
 import { readPurchaseListByMonth, readPurchaseMonthKeys, searchPurchaseItems } from '../api';
 import { getExpenseCategory, resolveCategoryDisplay } from '../categories';
 

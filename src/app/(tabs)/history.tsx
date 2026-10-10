@@ -30,7 +30,7 @@ import {
 } from '@/features/analytics';
 import { useSessionStore, useSessionUser } from '@/features/auth';
 import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
-import { bindViewerRows, categoryDetailHref } from '@/features/charts';
+import { categoryDetailHref } from '@/features/charts';
 import {
   aggregateCategoriesByMonth,
   aggregateCategoryItemCounts,
@@ -49,6 +49,7 @@ import {
 } from '@/features/home/categories';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrency } from '@/lib/format';
+import { bindViewerRows } from '@/lib/money';
 import { queryKeys } from '@/lib/query-keys';
 import { toQueryData } from '@/lib/supabase/query-adapters';
 import { useHouseholdStore } from '@/stores/use-household-store';
