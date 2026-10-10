@@ -374,6 +374,15 @@ A fail-closed smoke test for the money-integrity cross-unit follow-up
 4. **Empty month**: zero rows. **Anon**: EXECUTE denied
    (`insufficient_privilege`,
    `supabase/tests/impulse-items-per-unit.sql:236:insufficient_privilege`).
+5. **Why the 0044 stale-data `truncate` is pinned here, not in a fixture**: the
+   migration's stale-data guard clears every retained `monthly_user_totals`
+   row because the pre-grouped contract may have SUMMED across units
+   (`supabase/migrations/0044_grouped_aggregation.sql:247:truncate table public.monthly_user_totals`).
+   No fixture can observe it — `db reset` applies all migrations to an empty
+   database before any smoke file seeds its rows, so there is never a
+   retained set for the guard to clear. The line is cited here instead: if
+   it moves or is weakened, the doc-citation guard fails rather than the
+   invariant drifting silently.
 
 It seeds fixed-UUID fixtures disjoint from every other smoke file, idempotently,
 and ends with a `raise notice` on success. Like the others it is a single

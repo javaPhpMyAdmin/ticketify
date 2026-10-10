@@ -233,15 +233,55 @@ async function run() {
       join(root, 'src/features/budget/components/SnacksBreakdownModal.tsx'),
       'utf8',
     );
-    // Bind the two branches in ONE scan: while the RPC is pending the total
-    // slot must render the snacksModalLoading dash; only the resolved branch
-    // may render formatCurrency(total, currency). A reverted shape (total
-    // while pending, dash after resolve) fails this scan — a plain ordering
-    // regex green-lit that exact regression.
+    // Bind the two branches in ONE scan: while the RPC is pending OR failed
+    // the total slot must render the snacksModalLoading dash; only the
+    // resolved branch may render formatCurrency(total, currency). A reverted
+    // shape (total while pending, dash after resolve) fails this scan — a
+    // plain ordering regex green-lit that exact regression.
     assert.match(
       src,
-      /\{itemsQuery\.isPending \? \([\s\S]*?totalPlaceholder[\s\S]*?t\('snacksModalLoading'\)[\s\S]*?\)\s*:\s*\([\s\S]*?totalAmount[\s\S]*?formatCurrency\(\s*total\s*,\s*currency\s*\)/,
-      'the pending branch must render the dash and the resolved branch the total (never a $0 flash)',
+      /\{itemsQuery\.isPending \|\| itemsQuery\.isError \? \([\s\S]*?totalPlaceholder[\s\S]*?t\('snacksModalLoading'\)[\s\S]*?\)\s*:\s*\([\s\S]*?totalAmount[\s\S]*?formatCurrency\(\s*total\s*,\s*currency\s*\)/,
+      'the pending/error branch must render the dash and the resolved branch the total (never a $0 flash)',
+    );
+  });
+
+  await test('source pin: an RPC failure shows an error branch with Retry, never a false empty state', () => {
+    const src = readFileSync(
+      join(root, 'src/features/budget/components/SnacksBreakdownModal.tsx'),
+      'utf8',
+    );
+    // The error branch must come BEFORE the empty branch and bind Retry's
+    // onPress to refetch INSIDE it: error text → refetch → retry label →
+    // empty branch. Reordering the empty branch first, or dropping the
+    // Retry button / its refetch wiring, fails this scan.
+    assert.match(
+      src,
+      /\) : itemsQuery\.isError \? \([\s\S]*?t\('snacksModalError'\)[\s\S]*?itemsQuery\.refetch\(\)[\s\S]*?t\('snacksModalRetry'\)[\s\S]*?\) : rows\.length === 0 \? \(/,
+      'the error branch (before the empty branch) must render the message and bind Retry to refetch',
+    );
+  });
+
+  await test('source pin: the loading dash carries the a11y label; the spinner stays silent', () => {
+    const src = readFileSync(
+      join(root, 'src/features/budget/components/SnacksBreakdownModal.tsx'),
+      'utf8',
+    );
+    assert.match(
+      src,
+      /accessibilityLabel=\{[\s\S]*?t\('snacksModalLoadingA11y'\)\s*\}/,
+      'the dash must carry the a11y label (loading, or the error message on failure)',
+    );
+    // On error the dash announces the visible error message instead of
+    // "Loading…"; only one element may announce loading at a time.
+    assert.match(
+      src,
+      /itemsQuery\.isError[\s\S]{0,20}\?\s*t\('snacksModalError'\)[\s\S]{0,20}:\s*t\('snacksModalLoadingA11y'\)/,
+      'on error the dash must announce the error message, never "Loading…"',
+    );
+    assert.doesNotMatch(
+      src,
+      /<Spinner[^>]*accessibilityLabel/,
+      'the spinner must not double-announce loading',
     );
   });
 
