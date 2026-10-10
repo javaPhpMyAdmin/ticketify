@@ -81,6 +81,7 @@
   "snacksModalTitle": "Desglose del mes",
   "snacksModalBackdropA11y": "Cerrar desglose",
   "snacksModalTotal": "Total del mes",
+  "snacksModalLoading": "—",
   "snacksModalEmptyTitle": "Sin antojos este mes.",
   "snacksModalEmptyBody": "Marca un item como impulso al escanear un ticket para verlo aquí.",
   "deleteAccount": "Eliminar cuenta",

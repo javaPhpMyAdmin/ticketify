@@ -228,6 +228,23 @@ async function run() {
     );
   });
 
+  await test('source pin: the grand total shows a loading dash, never a $0 flash', () => {
+    const src = readFileSync(
+      join(root, 'src/features/budget/components/SnacksBreakdownModal.tsx'),
+      'utf8',
+    );
+    // Bind the two branches in ONE scan: while the RPC is pending the total
+    // slot must render the snacksModalLoading dash; only the resolved branch
+    // may render formatCurrency(total, currency). A reverted shape (total
+    // while pending, dash after resolve) fails this scan — a plain ordering
+    // regex green-lit that exact regression.
+    assert.match(
+      src,
+      /\{itemsQuery\.isPending \? \([\s\S]*?totalPlaceholder[\s\S]*?t\('snacksModalLoading'\)[\s\S]*?\)\s*:\s*\([\s\S]*?totalAmount[\s\S]*?formatCurrency\(\s*total\s*,\s*currency\s*\)/,
+      'the pending branch must render the dash and the resolved branch the total (never a $0 flash)',
+    );
+  });
+
   await test('source pin: readMonthlyImpulseItems returns a per-row currency label', () => {
     const src = readFileSync(
       join(root, 'src/lib/supabase/feature-access.ts'),

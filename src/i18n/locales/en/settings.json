@@ -79,6 +79,7 @@
   "snacksModalTitle": "Month breakdown",
   "snacksModalBackdropA11y": "Close breakdown",
   "snacksModalTotal": "Month total",
+  "snacksModalLoading": "—",
   "snacksModalEmptyTitle": "No wants this month.",
   "snacksModalEmptyBody": "Mark an item as an impulse purchase when scanning a receipt to see it here.",
   "deleteAccount": "Delete account",
