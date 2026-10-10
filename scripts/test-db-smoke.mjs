@@ -193,4 +193,7 @@ run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'currency-def
 console.log('\n== Running receipt-currency SQL smoke test ==\n');
 run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'receipt-currency.sql')]);
 
+console.log('\n== Running impulse-items-per-unit SQL smoke test ==\n');
+run(['db', 'query', '--local', '--file', join('supabase', 'tests', 'impulse-items-per-unit.sql')]);
+
 console.log('\n[ticketify test:sql] SQL smoke tests passed.\n');
