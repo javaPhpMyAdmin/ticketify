@@ -233,19 +233,15 @@ async function run() {
       join(root, 'src/features/budget/components/SnacksBreakdownModal.tsx'),
       'utf8',
     );
-    // While the RPC is pending the total slot renders a neutral dash, NOT
-    // formatCurrency(total=0). The old code printed the total BEFORE the
-    // isPending branch; the fix moved it inside the non-pending branch, so
-    // this scan only matches the fixed order.
+    // Bind the two branches in ONE scan: while the RPC is pending the total
+    // slot must render the snacksModalLoading dash; only the resolved branch
+    // may render formatCurrency(total, currency). A reverted shape (total
+    // while pending, dash after resolve) fails this scan — a plain ordering
+    // regex green-lit that exact regression.
     assert.match(
       src,
-      /itemsQuery\.isPending \? \([\s\S]*?formatCurrency\(\s*total\s*,\s*currency\s*\)/,
-      "formatCurrency(total, currency) must render only in the non-pending branch (no $0 flash)",
-    );
-    assert.match(
-      src,
-      /snacksModalLoading/,
-      'the loading placeholder must come from the settings i18n namespace',
+      /\{itemsQuery\.isPending \? \([\s\S]*?totalPlaceholder[\s\S]*?t\('snacksModalLoading'\)[\s\S]*?\)\s*:\s*\([\s\S]*?totalAmount[\s\S]*?formatCurrency\(\s*total\s*,\s*currency\s*\)/,
+      'the pending branch must render the dash and the resolved branch the total (never a $0 flash)',
     );
   });
 
