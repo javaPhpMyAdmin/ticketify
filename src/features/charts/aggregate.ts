@@ -616,20 +616,6 @@ export function aggregateDayTotal(
 }
 
 /**
- * Top spending category for a month, or `null` when the month has no
- * categorized spending. Returns the same `HomeCategory` shape produced by
- * `aggregateCategoriesByMonth` so callers can reuse label/icon/color
- * helpers.
- */
-export function getTopCategory(
-  records: ReceiptSpendRecord[],
-  monthKey: string,
-): HomeCategory | null {
-  const categories = aggregateCategoriesByMonth(records, monthKey);
-  return categories[0] ?? null;
-}
-
-/**
  * Index of the highest-spend bucket in a chart series, or `-1` when every
  * value is $0. First maximum wins on ties. Pure and testable — the weekly
  * bar chart uses it to decide which bar gets the rose highlight (the day
