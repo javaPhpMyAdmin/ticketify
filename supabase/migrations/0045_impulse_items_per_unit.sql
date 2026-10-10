@@ -81,7 +81,7 @@ as $$
          ir.unit as currency
   from item_rows ir
   group by ir.name, ir.unit
-  order by amount desc
+  order by amount desc, ir.name asc, ir.unit asc
 $$;
 
 comment on function public.monthly_impulse_items(text) is
