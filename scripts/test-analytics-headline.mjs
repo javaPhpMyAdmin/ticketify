@@ -16,14 +16,22 @@
  *   - zero/empty household totals stay groups with numeric 0 (never NaN),
  *   - a NaN aggregate is coerced to 0 per group (never prints NaN).
  *
- * Deterministic: the function takes primitives only, no clock, no hooks.
+ * Also pins the Analytics "Top Artículos" single-series binding (money
+ * integrity, decision 9): the item pipeline that feeds the top-items list and
+ * its `topItemsTotal` denominator must reduce ONLY viewer-unit rows — the
+ * exact `aggregateItemsByMonth(bindViewerRows(rows, viewer), …)` composition
+ * the screen runs after the query. Mixed USD/CLP/legacy fixtures prove a
+ * cross-unit sum never reaches the single viewer-currency figure.
+ *
+ * Deterministic: the headline function takes primitives only, no clock, no
+ * hooks; the item pipeline is pure over fixed fixtures.
  *
  * Usage: pnpm test:analytics-headline
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import Module, { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -62,6 +70,30 @@ async function compile() {
   );
 }
 
+/**
+ * Mirrors the harness tsconfig's `paths` at runtime: tsc type-checks against
+ * the remapped files but emits the ORIGINAL specifier, so plain node cannot
+ * resolve `@/…` (or the native-bound modules) in the compiled CommonJS
+ * output. Same hook as the charts/home harnesses.
+ */
+function installRequireHook() {
+  const originalResolve = Module._resolveFilename;
+  Module._resolveFilename = function rewrittenResolve(request, ...rest) {
+    if (request === '@/lib/supabase') {
+      request = join(outDir, 'scripts', 'test-stubs', 'supabase.js');
+    } else if (request === '@/lib/supabase/storage-adapter') {
+      request = join(outDir, 'scripts', 'test-stubs', 'storage-adapter.js');
+    } else if (request === 'expo-localization') {
+      request = join(outDir, 'scripts', 'test-stubs', 'expo-localization.js');
+    } else if (request === 'react-native') {
+      request = join(outDir, 'scripts', 'test-stubs', 'react-native.js');
+    } else if (request.startsWith('@/')) {
+      request = join(outDir, 'src', request.slice(2));
+    }
+    return originalResolve.call(this, request, ...rest);
+  };
+}
+
 function load(mod) {
   return import(pathToFileURL(join(outDir, mod)).href);
 }
@@ -69,10 +101,18 @@ function load(mod) {
 async function run() {
   console.log('\n[tests] compiling analytics-headline modules…');
   await compile();
+  globalThis.__DEV__ = false;
+  installRequireHook();
   console.log('[tests] loading compiled modules…');
 
   const mod = await load('src/features/analytics/analytics-headline.js');
   const build = (viewMode, opts) => mod.buildOverviewHeadline(viewMode, opts);
+  // The Analytics "Top Artículos" pipeline: `bindViewerRows` (charts) feeds
+  // `aggregateItemsByMonth` (home feed) — same two functions the screen composes.
+  const chartsMod = await load('src/features/charts/aggregate.js');
+  const homeFeedMod = await load('src/features/home/hooks/useHomeFeed.js');
+  const { bindViewerRows } = chartsMod;
+  const { aggregateItemsByMonth } = homeFeedMod;
 
   console.log('\n[tests] personal mode\n');
 
@@ -235,6 +275,80 @@ async function run() {
       assert.deepEqual(result, { headlineTotals: null, headlineChangePct: null });
     },
   );
+
+  console.log('\n[tests] top-items single-series binding (decision 9)\n');
+
+  // Mirrors the Analytics screen's composition
+  // `aggregateItemsByMonth(bindViewerRows(fullMonthList, currency), monthKey,
+  // ['servicios'])`: the top-items list and its `topItemsTotal` denominator
+  // render under ONE viewer-currency label, so only viewer-unit rows may flow
+  // in. Unit-less legacy rows count as the viewer (REQ-8 s4); utility bills
+  // (servicios) stay excluded regardless of unit.
+  const item = (name, amount, category = 'almacen') => ({
+    id: `${name}-${amount}`,
+    name,
+    amount,
+    category,
+  });
+  const monthRow = (id, currency, items) => ({
+    id,
+    store_name: 'Mercado',
+    purchase_date: '2026-08-05',
+    total: items.reduce((sum, i) => sum + i.amount, 0),
+    category_totals: {},
+    items,
+    ...(currency === undefined ? {} : { currency }),
+  });
+  const mixedItems = [
+    monthRow('r-usd-1', 'USD', [item('Leche 1kg', 4)]),
+    monthRow('r-usd-2', 'USD', [item('Leche 500g', 6)]),
+    monthRow('r-legacy', undefined, [item('Arroz', 2)]),
+    monthRow('r-clp', 'CLP', [item('Pan', 500)]),
+    monthRow('r-usd-serv', 'USD', [item('Luz', 900, 'servicios')]),
+  ];
+  const pipeline = (rows, viewer) =>
+    aggregateItemsByMonth(bindViewerRows(rows, viewer), '2026-08', ['servicios']);
+
+  await test('a USD viewer reduces ONLY USD rows (+ legacy), never the CLP row', () => {
+    const items = pipeline(mixedItems, 'USD');
+    assert.deepEqual(
+      items,
+      [
+        { name: 'leche', amount: 10 },
+        { name: 'arroz', amount: 2 },
+      ],
+      'the two USD rows merge (unit-stripped names), the legacy row counts, the CLP row is bound out',
+    );
+    assert.equal(
+      items.reduce((sum, i) => sum + i.amount, 0),
+      12,
+      'the CLP row (500) and the servicios row (900) never reach the USD total',
+    );
+  });
+
+  await test('a CLP viewer reduces ONLY CLP rows (+ legacy), never the USD rows', () => {
+    const items = pipeline(mixedItems, 'CLP');
+    assert.deepEqual(items, [
+      { name: 'pan', amount: 500 },
+      { name: 'arroz', amount: 2 },
+    ]);
+    assert.equal(
+      items.reduce((sum, i) => sum + i.amount, 0),
+      502,
+      'the USD rows and the servicios row never reach the CLP total',
+    );
+  });
+
+  await test('a mixed month under-reports instead of re-denominating (no cross-unit sum)', () => {
+    // The single figure must never be the raw all-rows sum (4 + 6 + 2 + 500
+    // + 900 = 1412) — that cross-unit number would render under the USD label.
+    const usdTotal = pipeline(mixedItems, 'USD').reduce(
+      (sum, i) => sum + i.amount,
+      0,
+    );
+    assert.notEqual(usdTotal, 1412, 'the viewer figure is never the cross-unit sum');
+    assert.equal(usdTotal, 12);
+  });
 
   console.log(`\n[tests] ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
