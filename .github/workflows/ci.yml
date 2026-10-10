@@ -204,3 +204,13 @@ jobs:
         # REQ-8 #2), the legacy 7-arg path stores NULL, and EXECUTE is
         # authenticated-only.
         run: supabase db query --local --file supabase/tests/receipt-currency.sql
+
+      - name: Run impulse-items-per-unit SQL smoke test
+        # Pins the 0045 contract (money-integrity cross-unit follow-up,
+        # issue #166/PR2): monthly_impulse_items is re-keyed per recorded unit
+        # (return shape name/amount/currency, SECURITY INVOKER, owner
+        # postgres, authenticated-only EXECUTE) so the same product recorded
+        # in UYU and CLP stays two rows and is never summed; a legacy
+        # unit-less receipt falls back to the recorder profile currency; and
+        # a month with no impulse purchases yields zero rows.
+        run: supabase db query --local --file supabase/tests/impulse-items-per-unit.sql

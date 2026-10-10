@@ -11,17 +11,18 @@ import { readMonthlyImpulseItems } from '@/lib/supabase/feature-access';
 import { toQueryData } from '@/lib/supabase/query-adapters';
 import { useSessionUser } from '@/features/auth';
 import { queryKeys } from '@/lib/query-keys';
+import {
+  groupImpulseItemsByUnit,
+  viewerImpulseTotal,
+  type ImpulseItem,
+  type ImpulseItemRow,
+} from '@/features/budget/snacks-breakdown';
 
 export interface SnacksBreakdownModalProps {
   visible: boolean;
   onClose: () => void;
   /** The `YYYY-MM` month whose impulse items this modal breaks down. */
   monthKey: string;
-}
-
-interface ImpulseItem {
-  name: string;
-  amount: number;
 }
 
 /**
@@ -50,13 +51,21 @@ export function SnacksBreakdownModal({
     },
   });
 
-  const rows = itemsQuery.data ?? [];
+  // Group per (name, unit): a product bought in two units stays two rows, each
+  // rendered with ITS own unit. Never folded into one cross-unit figure.
+  const rows = useMemo(
+    () => groupImpulseItemsByUnit(itemsQuery.data ?? [], currency),
+    [itemsQuery.data, currency],
+  );
+  // Single grand total under the viewer label: reduce ONLY the viewer-currency
+  // rows (accepted under-report on a mixed month — never re-denominate a
+  // foreign amount under the viewer label).
   const total = useMemo(
-    () => rows.reduce((sum, row) => sum + row.amount, 0),
-    [rows],
+    () => viewerImpulseTotal(itemsQuery.data ?? [], currency),
+    [itemsQuery.data, currency],
   );
 
-  const renderItem: ListRenderItem<ImpulseItem> = ({ item, index }) => (
+  const renderItem: ListRenderItem<ImpulseItemRow> = ({ item, index }) => (
     <View>
       {index > 0 ? <Divider /> : null}
       <View style={styles.row}>
@@ -64,7 +73,7 @@ export function SnacksBreakdownModal({
           {capitalize(item.name)}
         </Text>
         <Text style={styles.rowAmount}>
-          {formatCurrency(item.amount, currency)}
+          {formatCurrency(item.amount, item.currency)}
         </Text>
       </View>
     </View>
@@ -102,7 +111,7 @@ export function SnacksBreakdownModal({
       ) : (
         <FlatList
           data={rows}
-          keyExtractor={(item) => item.name}
+          keyExtractor={(item) => `${item.name}|${item.currency}`}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}

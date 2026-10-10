@@ -229,15 +229,19 @@ export async function readMonthlyPurchasesTotal(
  * not page-by-page via infinite scroll.
  * An empty result is a valid month (no impulse purchases), resolving to
  * `ok` with an empty array.
+ *
+ * The RPC is a PERSONAL, single-argument function: it declares only
+ * `p_year_month` (0019). A previous optional `householdId` argument was never
+ * accepted by the RPC — passing it produced a PGRST202 (function not found) —
+ * so it has been removed rather than left as a latent call mismatch.
  */
 export async function readMonthlyImpulseTotal(
   yearMonth: string,
-  householdId?: string | null,
 ): Promise<FeatureReadResult<{ total: number }[]>> {
   if (!isSupabaseConfigured) return { status: 'unconfigured' };
-  const params: Record<string, string> = { p_year_month: yearMonth };
-  if (householdId) params.p_household_id = householdId;
-  const { data, error } = await supabase.rpc('monthly_impulse_total', params);
+  const { data, error } = await supabase.rpc('monthly_impulse_total', {
+    p_year_month: yearMonth,
+  });
   if (error) {
     console.warn('[read] monthly impulse total failed:', error.code, error.message);
     return { status: 'error', message: READ_ERROR_MESSAGE() };
@@ -247,13 +251,16 @@ export async function readMonthlyImpulseTotal(
 
 /**
  * Per-item impulse breakdown for a month via the
- * `monthly_impulse_items(p_year_month)` RPC — grouped by normalized name,
- * sorted by amount desc. Server-side so the snacks breakdown modal loads
- * all items instantly, not just those loaded via infinite scroll.
+ * `monthly_impulse_items(p_year_month)` RPC — grouped by normalized name and
+ * recorded unit (0045), sorted by amount desc, each row carrying its own
+ * `currency` label. Server-side so the snacks breakdown modal loads all items
+ * instantly, not just those loaded via infinite scroll. `currency` is
+ * `string | null` only for defensive legacy tolerance: 0045 always coalesces
+ * to a concrete unit.
  */
 export async function readMonthlyImpulseItems(
   yearMonth: string,
-): Promise<FeatureReadResult<{ name: string; amount: number }[]>> {
+): Promise<FeatureReadResult<{ name: string; amount: number; currency: string | null }[]>> {
   if (!isSupabaseConfigured) return { status: 'unconfigured' };
   const { data, error } = await supabase.rpc('monthly_impulse_items', {
     p_year_month: yearMonth,
@@ -262,7 +269,10 @@ export async function readMonthlyImpulseItems(
     console.warn('[read] monthly impulse items failed:', error.code, error.message);
     return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
-  return { status: 'ok', data: (data ?? []) as { name: string; amount: number }[] };
+  return {
+    status: 'ok',
+    data: (data ?? []) as { name: string; amount: number; currency: string | null }[],
+  };
 }
 
 /**

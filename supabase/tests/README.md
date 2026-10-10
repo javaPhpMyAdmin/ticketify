@@ -355,6 +355,33 @@ Like the others it ends with a `raise notice` on success, is a single
 `DO`/`assert` block, and runs via `pnpm test:sql` (its step is registered in
 `scripts/test-db-smoke.mjs`) and via the CI `db-smoke` job.
 
+## `impulse-items-per-unit.sql`
+
+A fail-closed smoke test for the money-integrity cross-unit follow-up
+(issue #166, migration 0045). Covers:
+
+1. **Catalog**: `monthly_impulse_items(text)` exists, is `SECURITY INVOKER`
+   (personal scope, unchanged from 0019), owned by `postgres`, returns exactly
+   3 columns (`name`, `amount`, `currency`) after the 42P13-safe drop/recreate,
+   and EXECUTE is authenticated-only (anon/public revoked).
+2. **Per-unit split**: on a mixed month the same product recorded in `UYU` and
+   in `CLP` stays TWO rows, each labelled with its own unit — the rows sum to
+   170.00 across units instead of collapsing into one cross-unit figure
+   (`supabase/tests/impulse-items-per-unit.sql:186:170.00`).
+3. **Recorder fallback**: a legacy unit-less receipt resolves to the RECORDER
+   profile currency (`UYU`), never a hardcoded `USD`; non-impulse items,
+   pending receipts and other months are all excluded.
+4. **Empty month**: zero rows. **Anon**: EXECUTE denied
+   (`insufficient_privilege`,
+   `supabase/tests/impulse-items-per-unit.sql:236:insufficient_privilege`).
+
+It seeds fixed-UUID fixtures disjoint from every other smoke file, idempotently,
+and ends with a `raise notice` on success. Like the others it is a single
+`DO`/`assert` block and runs via `pnpm test:sql` (its step is registered in
+`scripts/test-db-smoke.mjs`) and via the CI `db-smoke` job; what it pins — a
+function signature, an ACL posture and RPC results under a simulated JWT
+identity — is none of which the Docker-free Node tier can observe.
+
 > **Runner coverage.** Both runners execute **every** `.sql` file in this
 > directory; there is no partial runner left to reconcile. No count is written
 > here on purpose — a tenth file would falsify any numeral below without
