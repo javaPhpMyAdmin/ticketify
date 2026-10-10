@@ -728,6 +728,51 @@ async function run() {
     assert.equal(feed.receipts[0].isManual, false);
   });
 
+  await test('wantsSnacksTotal binds the viewer unit; a mixed month never sums across units', () => {
+    // Invariants (money-integrity): the snacks total is ONE figure rendered
+    // under the budget card's single viewer-currency label, so it must reduce
+    // only viewer-unit rows — a CLP row never joins a USD sum. Unit-less rows
+    // count as the viewer (REQ-8 s4).
+    const snack = (id, currency, snacks) => ({
+      id,
+      store_name: 'Kiosco',
+      purchase_date: '2026-08-05',
+      scanned_at: null,
+      total: 10,
+      image_url: null,
+      status: 'confirmed',
+      payment_method: 'cash',
+      is_manual: false,
+      wants_snacks_total: snacks,
+      category_totals: {},
+      items: [],
+      ...(currency === undefined ? {} : { currency }),
+    });
+    const rows = [
+      snack('r-usd-1', 'USD', 4),
+      snack('r-clp', 'CLP', 500),
+      snack('r-usd-2', 'USD', 6),
+      snack('r-legacy', undefined, 2),
+    ];
+
+    const usd = homeMod.mapPurchaseRowsToHomeFeed(rows, null, '2026-08', null, 'USD');
+    assert.equal(
+      usd.wantsSnacksTotal,
+      12,
+      'a USD viewer counts the two USD rows + the unit-less row, never the CLP row',
+    );
+
+    const clp = homeMod.mapPurchaseRowsToHomeFeed(rows, null, '2026-08', null, 'CLP');
+    assert.equal(
+      clp.wantsSnacksTotal,
+      502,
+      'a CLP viewer counts the CLP row + the unit-less row, never the USD rows',
+    );
+
+    const noViewer = homeMod.mapPurchaseRowsToHomeFeed(rows, null, '2026-08');
+    assert.equal(noViewer.wantsSnacksTotal, 512, 'no viewer unit supplied → legacy all-rows sum');
+  });
+
   console.log('\n[tests] catalog-aware display resolution (6.1/6.2, REQ-008)\n');
 
   // Stub merged catalog: canonical rows whose DB visuals DIFFER from the
@@ -933,8 +978,8 @@ async function run() {
       'the feed derivation must forward the catalog',
     );
     assert.ok(
-      /\[monthList,\s*householdTotal,\s*monthKey,\s*catalog\]/.test(src),
-      'the feed memo must depend on the catalog',
+      /\[monthList,\s*householdTotal,\s*monthKey,\s*catalog,\s*currency\]/.test(src),
+      'the feed memo must depend on the catalog AND the viewer unit (the snacks total binds it)',
     );
   });
 

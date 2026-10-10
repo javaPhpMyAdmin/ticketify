@@ -14,6 +14,7 @@ import { useReceiptsStore } from '@/stores/use-receipts-store';
 import type { CurrencyTotal } from '@/types';
 import type { HomeFeedReceiptRow } from '@/types';
 import type { CategoryCatalog } from '@/features/categories/catalog';
+import { bindViewerRows } from '@/features/charts/aggregate';
 import { readPurchaseListByMonth, readPurchaseMonthKeys, searchPurchaseItems } from '../api';
 import { getExpenseCategory, resolveCategoryDisplay } from '../categories';
 
@@ -950,16 +951,26 @@ export function compareReceiptsByScan(
  * aggregate the per-item totals through the expense-category registry (so
  * the strip answers "en qué se me va el dinero" by item type, not by
  * store), and the snacks total sums the impulse totals (0 when none).
+ *
+ * `viewerCurrency` (Invariants · never sum across currencies): the snacks
+ * total is a SINGLE figure rendered under the one viewer-unit label on the
+ * budget card, so only rows recorded in that unit are summed — legacy
+ * unit-less rows count (`currency ?? viewer`). Mixed-unit months therefore
+ * count only the viewer-unit slice (accepted under-report, s4: never
+ * re-denominated). Omitted → all month rows count (non-app callers/tests
+ * with no viewer profile in scope).
  */
 export function mapPurchaseRowsToHomeFeed(
   rows: HomeFeedReceiptRow[],
   householdTotal?: number | null,
   monthKey: string = currentMonthKey(),
   catalog?: CategoryCatalog | null,
+  viewerCurrency?: string | null,
 ): HomeFeed {
 
-  const receipts: ReceiptSummary[] = rows
-    .filter((item) => getMonthKey(item.purchase_date) === monthKey)
+  const monthRows = rows.filter((item) => getMonthKey(item.purchase_date) === monthKey);
+
+  const receipts: ReceiptSummary[] = [...monthRows]
     .sort(compareReceiptsByScan)
     .map((item) => ({
       id: item.id,
@@ -978,9 +989,9 @@ export function mapPurchaseRowsToHomeFeed(
 
   const categories = aggregateCategoriesByMonth(rows, monthKey, catalog);
 
-  const wantsSnacksTotal = rows
-    .filter((item) => getMonthKey(item.purchase_date) === monthKey)
-    .reduce((sum, item) => sum + (item.wants_snacks_total ?? 0), 0);
+  const wantsSnacksTotal = (
+    viewerCurrency != null ? bindViewerRows(monthRows, viewerCurrency) : monthRows
+  ).reduce((sum, item) => sum + (item.wants_snacks_total ?? 0), 0);
 
   return { categories, receipts, wantsSnacksTotal, householdTotal: householdTotal ?? null };
 }
