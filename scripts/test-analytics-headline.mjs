@@ -340,13 +340,16 @@ async function run() {
   });
 
   await test('a mixed month under-reports instead of re-denominating (no cross-unit sum)', () => {
-    // The single figure must never be the raw all-rows sum (4 + 6 + 2 + 500
-    // + 900 = 1412) — that cross-unit number would render under the USD label.
+    // The single figure must never be the raw viewer-UNBOUND sum after the
+    // servicios filter (4 + 6 + 2 + 500 = 512) — that cross-unit number would
+    // render under the USD label. (1412 is unreachable here: the servicios row
+    // at 900 is dropped by the pipeline before any sum, so an unbound
+    // regression lands on 512, not 1412.)
     const usdTotal = pipeline(mixedItems, 'USD').reduce(
       (sum, i) => sum + i.amount,
       0,
     );
-    assert.notEqual(usdTotal, 1412, 'the viewer figure is never the cross-unit sum');
+    assert.notEqual(usdTotal, 512, 'the viewer figure is never the cross-unit sum');
     assert.equal(usdTotal, 12);
   });
 
