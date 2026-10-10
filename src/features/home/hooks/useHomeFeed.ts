@@ -763,10 +763,10 @@ export function useItemSearch(
   // Single-series binding (Invariants): `aggregateItemsByMonth` returns a
   // unit-less `{name, amount}` collapsed row that the History search rows
   // render under ONE viewer-currency label — so only viewer-unit receipts may
-  // enter the collapse (accepted under-report, s4: never re-denominated).
-  // Otherwise a CLP receipt would be summed into a figure the user reads as
-  // USD. Derived AFTER the query so the binding follows `currency` without a
-  // refetch.
+  // enter the collapse. Client-Side Read Contract s4: accepted under-report,
+  // never re-denominated. Otherwise a CLP receipt would be summed into a
+  // figure the user reads as USD. Derived AFTER the query so the binding
+  // follows `currency` without a refetch.
   const results = useMemo(
     () =>
       aggregateItemsByMonth(
@@ -937,22 +937,21 @@ export function compareReceiptsByScan(
  * the strip answers "en qué se me va el dinero" by item type, not by
  * store), and the snacks total sums the impulse totals (0 when none).
  *
- * `viewerCurrency` (Invariants · never sum across currencies): the snacks
- * total is a SINGLE figure rendered under the one viewer-unit label on the
- * budget card, so only rows recorded in that unit are summed — legacy
+ * `viewerCurrency` (REQUIRED · Invariants · never sum across currencies): the
+ * snacks total is a SINGLE figure rendered under the one viewer-unit label on
+ * the budget card, so only rows recorded in that unit are summed — legacy
  * unit-less rows count (`currency ?? viewer`). Mixed-unit months therefore
- * count only the viewer-unit slice (accepted under-report, s4: never
- * re-denominated). Omitted → all month rows count (non-app callers/tests
- * with no viewer profile in scope).
+ * count only the viewer-unit slice. Client-Side Read Contract s4: accepted
+ * under-report, never re-denominated. The parameter is required because the
+ * cross-unit all-rows sum was removed: every caller must name the viewer unit.
  */
 export function mapPurchaseRowsToHomeFeed(
   rows: HomeFeedReceiptRow[],
-  householdTotal?: number | null,
+  householdTotal: number | null = null,
   monthKey: string = currentMonthKey(),
-  catalog?: CategoryCatalog | null,
-  viewerCurrency?: string | null,
+  catalog: CategoryCatalog | null = null,
+  viewerCurrency: string,
 ): HomeFeed {
-
   const monthRows = rows.filter((item) => getMonthKey(item.purchase_date) === monthKey);
 
   const receipts: ReceiptSummary[] = [...monthRows]
@@ -972,11 +971,14 @@ export function mapPurchaseRowsToHomeFeed(
       currency: item.currency ?? null,
     }));
 
+  // Intentionally the FULL mixed-unit list (do NOT bind): the Home category
+  // strip is not a single-viewer-unit figure, so it keeps every row.
   const categories = aggregateCategoriesByMonth(rows, monthKey, catalog);
 
-  const wantsSnacksTotal = (
-    viewerCurrency != null ? bindViewerRows(monthRows, viewerCurrency) : monthRows
-  ).reduce((sum, item) => sum + (item.wants_snacks_total ?? 0), 0);
+  const wantsSnacksTotal = bindViewerRows(monthRows, viewerCurrency).reduce(
+    (sum, item) => sum + (item.wants_snacks_total ?? 0),
+    0,
+  );
 
   return { categories, receipts, wantsSnacksTotal, householdTotal: householdTotal ?? null };
 }

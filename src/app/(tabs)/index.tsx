@@ -134,7 +134,8 @@ export default function HomeScreen() {
   // tabs: custom slugs render their own visuals, canonical stays static.
   // `currency` binds the snacks total to the viewer unit only — it renders
   // under the budget card's single viewer-currency label, so a mixed month
-  // must never be summed across units (Invariants).
+  // must never be summed across units (Invariants). Client-Side Read Contract
+  // s4: accepted under-report, never re-denominated.
   const monthFeed = useMemo(
     () => mapPurchaseRowsToHomeFeed(monthList, householdTotal, monthKey, catalog, currency),
     [monthList, householdTotal, monthKey, catalog, currency],

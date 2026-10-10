@@ -102,9 +102,9 @@ export default function HistoryScreen() {
   // Single-series binding (Invariants): everything derived below — the
   // category strip, its `monthTotal` percent base, and the per-category item
   // counts — renders under ONE viewer-currency label, so only viewer-unit
-  // receipts may feed it (legacy unit-less rows count; a mixed month
-  // under-reports instead of being re-denominated).
-  const fullList = useMemo(
+  // receipts may feed it (legacy unit-less rows count). Client-Side Read
+  // Contract s4: accepted under-report, never re-denominated.
+  const viewerList = useMemo(
     () => bindViewerRows(fullMonthList, currency),
     [fullMonthList, currency],
   );
@@ -177,8 +177,8 @@ export default function HistoryScreen() {
 
   const monthKeys = useAvailableMonthKeys(userId);
   const categories = useMemo(
-    () => aggregateCategoriesByMonth(fullList, monthKey, catalog),
-    [fullList, monthKey, catalog],
+    () => aggregateCategoriesByMonth(viewerList, monthKey, catalog),
+    [viewerList, monthKey, catalog],
   );
   // Custom rows carry their own palette color from the merged catalog —
   // the segmented bar must paint those segments with the resolved color,
@@ -194,8 +194,8 @@ export default function HistoryScreen() {
     return bySlug;
   }, [categories, catalog]);
   const categoryItemCounts = useMemo(
-    () => aggregateCategoryItemCounts(fullList, monthKey),
-    [fullList, monthKey],
+    () => aggregateCategoryItemCounts(viewerList, monthKey),
+    [viewerList, monthKey],
   );
   // Percent base for the category cards: what the month actually spent on
   // categorized items (the bar + cards only cover the categories that

@@ -72,6 +72,10 @@ function lineToTableRow(line: ExportLine): string {
  * the viewer's own currency are equivalent. The footer must never sum across
  * currencies (Invariants). With no rows the group list is EMPTY — the caller
  * renders the viewer-zero instead of a blank line.
+ *
+ * Intentional copy of `groupTotalsByUnit` (`features/home/hooks/useHomeFeed`):
+ * this module stays PURE (no React/hook imports) so the export document can be
+ * rendered outside a component tree — keep the two in sync by hand.
  */
 function groupSummaryByUnit(
   rows: ExportReceiptRow[],
@@ -92,9 +96,10 @@ function groupSummaryByUnit(
  * generation date, one table row per line item (same normalization as the
  * CSV — including the blank-column row for item-less receipts), and a
  * summary footer with the receipt count and ONE total PER currency (rows
- * unit-less fall back to `viewerCurrency`; never summed across units).
- * An empty `rows` list renders the empty-state message instead of the table
- * and a viewer-only zero in the footer.
+ * unit-less fall back to `viewerCurrency`; never summed across units: a
+ * multi-currency export prints one labelled total per currency, NOT a single
+ * cross-unit figure). An empty `rows` list renders the empty-state message
+ * instead of the table and a viewer-only zero in the footer.
  */
 export function buildExportHtml(
   rows: ExportReceiptRow[],

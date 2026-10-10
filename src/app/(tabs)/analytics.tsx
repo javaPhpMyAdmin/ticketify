@@ -168,8 +168,8 @@ export default function AnalyticsScreen() {
   // Single-series binding (Invariants): the top-items list and its
   // `topItemsTotal` denominator render under ONE viewer-currency label, so
   // only viewer-unit receipts may feed them (a unit-less legacy row counts as
-  // the viewer; a mixed month under-reports instead of being re-denominated).
-  // single-series: accepted under-report (Read Contract s4).
+  // the viewer). Client-Side Read Contract s4: accepted under-report, never
+  // re-denominated.
   const allItems = useMemo(
     () =>
       aggregateItemsByMonth(
