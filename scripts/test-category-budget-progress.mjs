@@ -5,9 +5,9 @@
  * `category-budgets` — acceptance gates 1–2).
  *
  * Compiles the pure module plus the domain types into a temp directory with
- * an isolated tsconfig (mirror of `tsconfig.monthly-overview-test.json`,
- * pared down to this module's graph), then asserts the design.md AD-4/AD-5
- * contract:
+ * an isolated tsconfig (same shape as the other standalone harness
+ * configs, pared down to this module's graph), then asserts the design.md
+ * AD-4/AD-5 contract:
  *
  *   - merge: matched slug + month + amount > 0 → budget_limit = amount;
  *     unmatched / amount <= 0 / foreign-month budget → budget_limit = null

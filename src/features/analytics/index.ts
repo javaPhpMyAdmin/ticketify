@@ -33,8 +33,6 @@ export type { CategoryBudgetRowProps } from './components/CategoryBudgetRow';
 export { fetchMonthlyTotals, fetchCategoryBreakdown } from './api';
 export { computePriceAlerts } from './price-alerts';
 export type { PriceAlert } from './price-alerts';
-export { computeMonthOverview } from './monthly-overview';
-export type { MonthOverview } from './monthly-overview';
 export { buildOverviewHeadline } from './analytics-headline';
 export type {
   OverviewHeadline,
