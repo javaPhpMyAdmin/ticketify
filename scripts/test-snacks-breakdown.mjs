@@ -250,27 +250,38 @@ async function run() {
       join(root, 'src/features/budget/components/SnacksBreakdownModal.tsx'),
       'utf8',
     );
+    // The error branch must come BEFORE the empty branch and bind Retry's
+    // onPress to refetch INSIDE it: error text → onPress refetch → retry
+    // label → empty branch. Reordering the empty branch first, or dropping
+    // the Retry button while refetch survives elsewhere, fails this scan.
     assert.match(
       src,
-      /\) : itemsQuery\.isError \? \([\s\S]*?snacksModalError[\s\S]*?itemsQuery\.refetch\(\)/,
-      'the error branch must render the error message and wire Retry to refetch',
-    );
-    assert.match(
-      src,
-      /snacksModalRetry/,
-      'the retry control must come from the settings i18n namespace',
+      /\) : itemsQuery\.isError \? \([\s\S]*?t\('snacksModalError'\)[\s\S]*?onPress=\{\(\) => itemsQuery\.refetch\(\)\)[\s\S]*?t\('snacksModalRetry'\)[\s\S]*?\) : rows\.length === 0 \? \(/,
+      'the error branch (before the empty branch) must render the message and bind Retry to refetch',
     );
   });
 
-  await test('source pin: the loading dash and spinner carry an a11y label', () => {
+  await test('source pin: the loading dash carries the a11y label; the spinner stays silent', () => {
     const src = readFileSync(
       join(root, 'src/features/budget/components/SnacksBreakdownModal.tsx'),
       'utf8',
     );
-    const labelUses = (src.match(/snacksModalLoadingA11y/g) ?? []).length;
-    assert.ok(
-      labelUses >= 2,
-      'snacksModalLoadingA11y must label both the total dash and the spinner',
+    assert.match(
+      src,
+      /accessibilityLabel=\{t\('snacksModalLoadingA11y'\)\}/,
+      'the dash must carry the loading a11y label',
+    );
+    // On error the dash announces the visible error message instead of
+    // "Loading…"; only one element may announce loading at a time.
+    assert.match(
+      src,
+      /itemsQuery\.isError[\s\S]{0,20}\?\s*t\('snacksModalError'\)[\s\S]{0,20}:\s*t\('snacksModalLoadingA11y'\)/,
+      'on error the dash must announce the error message, never "Loading…"',
+    );
+    assert.doesNotMatch(
+      src,
+      /<Spinner[^>]*accessibilityLabel/,
+      'the spinner must not double-announce loading',
     );
   });
 

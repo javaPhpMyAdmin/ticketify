@@ -92,9 +92,15 @@ export function SnacksBreakdownModal({
         {itemsQuery.isPending || itemsQuery.isError ? (
           // RPC in flight OR failed: a dash placeholder instead of a false
           // $0 while viewerImpulseTotal has no truthful data to reduce.
+          // The dash carries the a11y label (the spinner below stays silent);
+          // on error it announces the visible error message instead.
           <Text
             style={styles.totalPlaceholder}
-            accessibilityLabel={t('snacksModalLoadingA11y')}
+            accessibilityLabel={
+              itemsQuery.isError
+                ? t('snacksModalError')
+                : t('snacksModalLoadingA11y')
+            }
           >
             {t('snacksModalLoading')}
           </Text>
@@ -107,8 +113,9 @@ export function SnacksBreakdownModal({
       <Divider />
       {itemsQuery.isPending ? (
         // RPC in flight: spinner instead of a false "Sin antojos" empty state.
+        // No a11y label here — the dash above carries the loading announcement.
         <View style={styles.loadingWrap}>
-          <Spinner accessibilityLabel={t('snacksModalLoadingA11y')} />
+          <Spinner />
         </View>
       ) : itemsQuery.isError ? (
         <View style={styles.errorWrap}>
