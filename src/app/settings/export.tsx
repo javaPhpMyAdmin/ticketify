@@ -14,6 +14,7 @@ import {
   pluralize,
   useExportRows,
 } from '@/features/export';
+import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 
 /** The two supported export formats; CSV is the default selection. */
@@ -43,6 +44,9 @@ export default function ExportScreen() {
   const [format, setFormat] = useState<ExportFormat>('csv');
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  // The PDF footer prints ONE total per currency; unit-less rows fold into
+  // this viewer unit (REQ-8 s4), so a mixed month never sums across units.
+  const currency = useSettingsStore((s) => s.currency);
 
   const itemCount = rows.reduce((sum, row) => sum + (row.items?.length ?? 0), 0);
 
@@ -69,7 +73,9 @@ export default function ExportScreen() {
           dialogTitle: 'Exportar tickets',
         });
       } else {
-        const uri = await buildExportPdf(buildExportHtml(rows));
+        // `undefined` keeps the generatedAt default (`now`); only the viewer
+        // unit is passed through for the per-currency footer.
+        const uri = await buildExportPdf(buildExportHtml(rows, undefined, currency));
         await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
       }
     } catch (err) {
