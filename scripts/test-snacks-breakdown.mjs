@@ -228,6 +228,27 @@ async function run() {
     );
   });
 
+  await test('source pin: the grand total shows a loading dash, never a $0 flash', () => {
+    const src = readFileSync(
+      join(root, 'src/features/budget/components/SnacksBreakdownModal.tsx'),
+      'utf8',
+    );
+    // While the RPC is pending the total slot renders a neutral dash, NOT
+    // formatCurrency(total=0). The old code printed the total BEFORE the
+    // isPending branch; the fix moved it inside the non-pending branch, so
+    // this scan only matches the fixed order.
+    assert.match(
+      src,
+      /itemsQuery\.isPending \? \([\s\S]*?formatCurrency\(\s*total\s*,\s*currency\s*\)/,
+      "formatCurrency(total, currency) must render only in the non-pending branch (no $0 flash)",
+    );
+    assert.match(
+      src,
+      /snacksModalLoading/,
+      'the loading placeholder must come from the settings i18n namespace',
+    );
+  });
+
   await test('source pin: readMonthlyImpulseItems returns a per-row currency label', () => {
     const src = readFileSync(
       join(root, 'src/lib/supabase/feature-access.ts'),

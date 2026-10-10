@@ -89,14 +89,19 @@ export function SnacksBreakdownModal({
     >
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>{t('snacksModalTotal')}</Text>
-        <Text style={styles.totalAmount}>
-          {formatCurrency(total, currency)}
-        </Text>
+        {itemsQuery.isPending ? (
+          // RPC in flight: a dash placeholder instead of a false $0 while
+          // viewerImpulseTotal has nothing to reduce yet.
+          <Text style={styles.totalPlaceholder}>{t('snacksModalLoading')}</Text>
+        ) : (
+          <Text style={styles.totalAmount}>
+            {formatCurrency(total, currency)}
+          </Text>
+        )}
       </View>
       <Divider />
       {itemsQuery.isPending ? (
-        // RPC in flight: spinner instead of a false "Sin antojos" empty
-        // state + $0 flash. The total row above stays $0 while loading.
+        // RPC in flight: spinner instead of a false "Sin antojos" empty state.
         <View style={styles.loadingWrap}>
           <Spinner />
         </View>
@@ -143,6 +148,10 @@ const styles = StyleSheet.create({
   totalAmount: {
     ...typography.headlineMd,
     color: colors.primary,
+  },
+  totalPlaceholder: {
+    ...typography.headlineMd,
+    color: colors.textSecondary,
   },
   listContent: {
     paddingHorizontal: spacing.xl,
