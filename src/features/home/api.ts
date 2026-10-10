@@ -276,6 +276,9 @@ function mapSearchItemRow(row: RawSearchItemRow): HomeFeedReceiptRow {
       // covers a defensive null purchase (the query filters on it, so the
       // method is normally always present).
       payment_method: purchase?.payment_method as PaymentMethod | undefined,
+      // Row unit (REQ-8): carried so the search aggregate can bind the
+      // viewer unit before it collapses amounts (never a cross-unit sum).
+      currency: purchase?.currency ?? null,
       // Origin from the owning purchase (required meta — the query filters
       // on the purchase, so it is always present; the fallback is defensive).
       is_manual: purchase?.is_manual ?? false,
@@ -328,7 +331,7 @@ export async function searchPurchaseItems(
     .select(
       `id, name, quantity, unit_price, total_price, is_impulse, sort_order,
        categories ( slug ),
-       purchases ( id, purchase_date, created_at, total, payment_method, is_manual, image_url, status, stores ( name ) )`,
+       purchases ( id, purchase_date, created_at, total, payment_method, is_manual, currency, image_url, status, stores ( name ) )`,
     )
     .eq('purchases.user_id', userId)
     // User-typed wildcards are escaped so `%`, `_` and `\` match literally;

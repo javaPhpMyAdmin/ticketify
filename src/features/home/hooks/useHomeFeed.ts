@@ -773,26 +773,37 @@ export function useItemSearch(
   monthKey = currentMonthKey(),
 ): ItemSearchResult {
   const { userId } = useSessionUser();
+  const currency = useSettingsStore((s) => s.currency);
   const normalizedQuery = normalizeItemName(query);
 
-  const searchQuery = useQuery<CategoryItemSummary[]>({
+  // The read stays currency-agnostic (keyed by user + month + query) so a
+  // viewer-unit switch re-binds from the SAME cached rows instead of
+  // refetching — mirroring useMonthlyCache/useCategoryDetail.
+  const searchQuery = useQuery<HomeFeedReceiptRow[]>({
     queryKey: queryKeys.itemSearch(userId!, monthKey, normalizedQuery),
     enabled: !!userId && normalizedQuery.length > 0,
-    queryFn: async () => {
-      const result = await searchPurchaseItems(
-        userId!,
-        monthKey,
-        normalizedQuery,
-      );
-      const rows = toQueryData(result);
-      return aggregateItemsByMonth(rows, monthKey).filter((item) =>
-        item.name.includes(normalizedQuery),
-      );
-    },
+    queryFn: () =>
+      searchPurchaseItems(userId!, monthKey, normalizedQuery).then(toQueryData),
   });
 
+  // Single-series binding (Invariants): `aggregateItemsByMonth` returns a
+  // unit-less `{name, amount}` collapsed row that the History search rows
+  // render under ONE viewer-currency label — so only viewer-unit receipts may
+  // enter the collapse (accepted under-report, s4: never re-denominated).
+  // Otherwise a CLP receipt would be summed into a figure the user reads as
+  // USD. Derived AFTER the query so the binding follows `currency` without a
+  // refetch.
+  const results = useMemo(
+    () =>
+      aggregateItemsByMonth(
+        bindViewerRows(searchQuery.data ?? [], currency),
+        monthKey,
+      ).filter((item) => item.name.includes(normalizedQuery)),
+    [searchQuery.data, currency, monthKey, normalizedQuery],
+  );
+
   return {
-    results: searchQuery.data ?? [],
+    results,
     isLoading: searchQuery.isLoading,
     error: searchQuery.error ? toQueryErrorMessage(searchQuery.error) : null,
     hasData: searchQuery.data !== undefined,

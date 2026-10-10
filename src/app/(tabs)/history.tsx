@@ -30,7 +30,7 @@ import {
 } from '@/features/analytics';
 import { useSessionStore, useSessionUser } from '@/features/auth';
 import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
-import { categoryDetailHref } from '@/features/charts';
+import { bindViewerRows, categoryDetailHref } from '@/features/charts';
 import {
   aggregateCategoriesByMonth,
   aggregateCategoryItemCounts,
@@ -97,7 +97,16 @@ export default function HistoryScreen() {
     queryFn: () => readPurchaseListByMonth(userId!, monthKey).then(toQueryData),
   });
   // Use the full month list when available, fall back to paginated list.
-  const fullList = monthList ?? list;
+  const fullMonthList = monthList ?? list;
+  // Single-series binding (Invariants): everything derived below — the
+  // category strip, its `monthTotal` percent base, and the per-category item
+  // counts — renders under ONE viewer-currency label, so only viewer-unit
+  // receipts may feed it (legacy unit-less rows count; a mixed month
+  // under-reports instead of being re-denominated).
+  const fullList = useMemo(
+    () => bindViewerRows(fullMonthList, currency),
+    [fullMonthList, currency],
+  );
   // Item search: empty query shows the category list; typing switches the
   // scroll area to product-level results (cross-category, month-scoped).
   const [query, setQuery] = useState('');
