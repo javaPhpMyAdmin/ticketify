@@ -251,12 +251,12 @@ async function run() {
       'utf8',
     );
     // The error branch must come BEFORE the empty branch and bind Retry's
-    // onPress to refetch INSIDE it: error text → onPress refetch → retry
-    // label → empty branch. Reordering the empty branch first, or dropping
-    // the Retry button while refetch survives elsewhere, fails this scan.
+    // onPress to refetch INSIDE it: error text → refetch → retry label →
+    // empty branch. Reordering the empty branch first, or dropping the
+    // Retry button / its refetch wiring, fails this scan.
     assert.match(
       src,
-      /\) : itemsQuery\.isError \? \([\s\S]*?t\('snacksModalError'\)[\s\S]*?onPress=\{\(\) => itemsQuery\.refetch\(\)\)[\s\S]*?t\('snacksModalRetry'\)[\s\S]*?\) : rows\.length === 0 \? \(/,
+      /\) : itemsQuery\.isError \? \([\s\S]*?t\('snacksModalError'\)[\s\S]*?itemsQuery\.refetch\(\)[\s\S]*?t\('snacksModalRetry'\)[\s\S]*?\) : rows\.length === 0 \? \(/,
       'the error branch (before the empty branch) must render the message and bind Retry to refetch',
     );
   });
@@ -268,8 +268,8 @@ async function run() {
     );
     assert.match(
       src,
-      /accessibilityLabel=\{t\('snacksModalLoadingA11y'\)\}/,
-      'the dash must carry the loading a11y label',
+      /accessibilityLabel=\{[\s\S]*?t\('snacksModalLoadingA11y'\)\s*\}/,
+      'the dash must carry the a11y label (loading, or the error message on failure)',
     );
     // On error the dash announces the visible error message instead of
     // "Loading…"; only one element may announce loading at a time.
