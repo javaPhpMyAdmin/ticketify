@@ -233,15 +233,44 @@ async function run() {
       join(root, 'src/features/budget/components/SnacksBreakdownModal.tsx'),
       'utf8',
     );
-    // Bind the two branches in ONE scan: while the RPC is pending the total
-    // slot must render the snacksModalLoading dash; only the resolved branch
-    // may render formatCurrency(total, currency). A reverted shape (total
-    // while pending, dash after resolve) fails this scan — a plain ordering
-    // regex green-lit that exact regression.
+    // Bind the two branches in ONE scan: while the RPC is pending OR failed
+    // the total slot must render the snacksModalLoading dash; only the
+    // resolved branch may render formatCurrency(total, currency). A reverted
+    // shape (total while pending, dash after resolve) fails this scan — a
+    // plain ordering regex green-lit that exact regression.
     assert.match(
       src,
-      /\{itemsQuery\.isPending \? \([\s\S]*?totalPlaceholder[\s\S]*?t\('snacksModalLoading'\)[\s\S]*?\)\s*:\s*\([\s\S]*?totalAmount[\s\S]*?formatCurrency\(\s*total\s*,\s*currency\s*\)/,
-      'the pending branch must render the dash and the resolved branch the total (never a $0 flash)',
+      /\{itemsQuery\.isPending \|\| itemsQuery\.isError \? \([\s\S]*?totalPlaceholder[\s\S]*?t\('snacksModalLoading'\)[\s\S]*?\)\s*:\s*\([\s\S]*?totalAmount[\s\S]*?formatCurrency\(\s*total\s*,\s*currency\s*\)/,
+      'the pending/error branch must render the dash and the resolved branch the total (never a $0 flash)',
+    );
+  });
+
+  await test('source pin: an RPC failure shows an error branch with Retry, never a false empty state', () => {
+    const src = readFileSync(
+      join(root, 'src/features/budget/components/SnacksBreakdownModal.tsx'),
+      'utf8',
+    );
+    assert.match(
+      src,
+      /\) : itemsQuery\.isError \? \([\s\S]*?snacksModalError[\s\S]*?itemsQuery\.refetch\(\)/,
+      'the error branch must render the error message and wire Retry to refetch',
+    );
+    assert.match(
+      src,
+      /snacksModalRetry/,
+      'the retry control must come from the settings i18n namespace',
+    );
+  });
+
+  await test('source pin: the loading dash and spinner carry an a11y label', () => {
+    const src = readFileSync(
+      join(root, 'src/features/budget/components/SnacksBreakdownModal.tsx'),
+      'utf8',
+    );
+    const labelUses = (src.match(/snacksModalLoadingA11y/g) ?? []).length;
+    assert.ok(
+      labelUses >= 2,
+      'snacksModalLoadingA11y must label both the total dash and the spinner',
     );
   });
 

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { FlatList, StyleSheet, View, type ListRenderItem } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 
@@ -89,10 +89,15 @@ export function SnacksBreakdownModal({
     >
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>{t('snacksModalTotal')}</Text>
-        {itemsQuery.isPending ? (
-          // RPC in flight: a dash placeholder instead of a false $0 while
-          // viewerImpulseTotal has nothing to reduce yet.
-          <Text style={styles.totalPlaceholder}>{t('snacksModalLoading')}</Text>
+        {itemsQuery.isPending || itemsQuery.isError ? (
+          // RPC in flight OR failed: a dash placeholder instead of a false
+          // $0 while viewerImpulseTotal has no truthful data to reduce.
+          <Text
+            style={styles.totalPlaceholder}
+            accessibilityLabel={t('snacksModalLoadingA11y')}
+          >
+            {t('snacksModalLoading')}
+          </Text>
         ) : (
           <Text style={styles.totalAmount}>
             {formatCurrency(total, currency)}
@@ -103,7 +108,18 @@ export function SnacksBreakdownModal({
       {itemsQuery.isPending ? (
         // RPC in flight: spinner instead of a false "Sin antojos" empty state.
         <View style={styles.loadingWrap}>
-          <Spinner />
+          <Spinner accessibilityLabel={t('snacksModalLoadingA11y')} />
+        </View>
+      ) : itemsQuery.isError ? (
+        <View style={styles.errorWrap}>
+          <Text style={styles.errorText}>{t('snacksModalError')}</Text>
+          <Pressable
+            onPress={() => itemsQuery.refetch()}
+            accessibilityRole="button"
+            style={styles.retryButton}
+          >
+            <Text style={styles.retryLabel}>{t('snacksModalRetry')}</Text>
+          </Pressable>
         </View>
       ) : rows.length === 0 ? (
         <View style={styles.emptyWrap}>
@@ -182,5 +198,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: spacing.xxl,
+  },
+  errorWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xxl,
+    gap: spacing.md,
+  },
+  errorText: {
+    ...typography.bodyMd,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  retryButton: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  retryLabel: {
+    ...typography.bodyMd,
+    color: colors.primary,
+    fontWeight: '600',
   },
 });
