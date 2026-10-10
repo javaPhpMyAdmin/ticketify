@@ -22,10 +22,9 @@
  *   - budget spent: the `monthly_purchases_total` RPC seam
  *     (`readMonthlyPurchasesTotal`) — the SUM of `purchases.total`
  *     (post-discount, what the user was actually charged), asserted via
- *     `__lastRpcCall` and the PGRST202 fails-safe path, plus the pure
- *     `sumCategoryTotals` helper (fixture sum, empty month → 0, malformed
- *     rows skipped) that still aggregates the category-rows shape the
- *     analytics breakdown reads. (The hook itself is out of scope here: it
+ *     `__lastRpcCall` and the PGRST202 fails-safe path, plus the
+ *     `readCategoryTotals` rows the analytics breakdown reads. (The hook
+ *     itself is out of scope here: it
  *     imports react, so the harness cannot compile it; its cache-collision
  *     behavior is proven by a standalone TanStack probe.)
  *   - `saveReceipt` persists a confirmed draft via the single `save_receipt`
@@ -435,42 +434,6 @@ async function run() {
     assert.equal(result.status, 'missing-profile');
   });
 
-  await test('sumCategoryTotals sums the category rows into the spent amount', async () => {
-    assert.equal(
-      budgetMod.sumCategoryTotals([
-        {
-          category_id: '1',
-          category_name: 'Groceries',
-          category_slug: 'groceries',
-          total: 1200,
-          item_count: 20,
-          percent_of_total: 0.22,
-        },
-        {
-          category_id: '2',
-          category_name: 'Snacks',
-          category_slug: 'snacks',
-          total: 3500,
-          item_count: 40,
-          percent_of_total: 0.64,
-        },
-        {
-          category_id: '3',
-          category_name: 'Transport',
-          category_slug: 'transport',
-          total: 800,
-          item_count: 10,
-          percent_of_total: 0.14,
-        },
-      ]),
-      5500,
-    );
-  });
-
-  await test('sumCategoryTotals of an empty month is 0', async () => {
-    assert.equal(budgetMod.sumCategoryTotals([]), 0);
-  });
-
   console.log('\n[tests] authenticated analytics reads (ADR-7 RPC)\n');
 
   await test('category totals call the RPC with p_year_month and an explicit null p_household_id', async () => {
@@ -510,7 +473,7 @@ async function run() {
     assert.equal(result.message, seamMod.READ_ERROR_MESSAGE());
   });
 
-  await test('readCategoryTotals reaches the RPC with p_year_month + null household and aggregates via sumCategoryTotals', async () => {
+  await test('readCategoryTotals reaches the RPC with p_year_month + null household and its rows sum to the month total', async () => {
     resetAll();
     stubMod.__setRpcResult('monthly_category_totals', {
       rows: [
@@ -538,10 +501,13 @@ async function run() {
       fn: 'monthly_category_totals',
       params: { p_year_month: '2026-08', p_household_id: null },
     });
-    assert.equal(budgetMod.sumCategoryTotals(result.data), 570);
+    assert.equal(
+      result.data.reduce((acc, row) => acc + row.total, 0),
+      570,
+    );
   });
 
-  await test('sumCategoryTotals includes the NULL-category money: total covers every item and lands in the otros bucket (0009 regression)', async () => {
+  await test('readCategoryTotals includes the NULL-category money: total covers every item and lands in the otros bucket (0009 regression)', async () => {
     resetAll();
     // Regression pin for the NULL category_id fix (0009): the hardened RPC
     // LEFT JOINs categories and COALESCEs `category_id IS NULL` items onto
@@ -585,7 +551,10 @@ async function run() {
     const result = await seamMod.readCategoryTotals('2026-08');
     assert.equal(result.status, 'ok');
     // 3500 + 1200 + 800: N + M — the 'otros' money is never dropped.
-    assert.equal(budgetMod.sumCategoryTotals(result.data), 5500);
+    assert.equal(
+      result.data.reduce((acc, row) => acc + row.total, 0),
+      5500,
+    );
     const otros = result.data.find((row) => row.category_slug === 'otros');
     assert.ok(otros, 'NULL-category items land under the otros bucket');
     assert.equal(otros.total, 800, 'the M NULL items money sits in otros');
@@ -639,47 +608,6 @@ async function run() {
     const result = await seamMod.readMonthlyPurchasesTotal('2026-08');
     assert.equal(result.status, 'error');
     assert.equal(result.message, seamMod.READ_ERROR_MESSAGE());
-  });
-
-  await test('sumCategoryTotals skips malformed rows (missing/null total) and sums the valid ones only', async () => {
-    assert.equal(
-      budgetMod.sumCategoryTotals([
-        {
-          category_id: '1',
-          category_name: 'Groceries',
-          category_slug: 'groceries',
-          total: 1200,
-          item_count: 24,
-          percent_of_total: 0.26,
-        },
-        {
-          category_id: '2',
-          category_name: 'Snacks',
-          category_slug: 'snacks',
-          total: null,
-          item_count: 6,
-          percent_of_total: 0.12,
-        },
-        {
-          // The `total` key itself is missing entirely — also skipped.
-          category_id: '3',
-          category_name: 'Otros',
-          category_slug: 'otros',
-          item_count: 1,
-        },
-        {
-          category_id: '4',
-          category_name: 'Lácteos',
-          category_slug: 'lacteos',
-          total: 3500,
-          item_count: 12,
-          percent_of_total: 0.75,
-        },
-      ]),
-      4700,
-      // 1200 + 3500: a null total is NOT coerced into a fake 0, so the
-      // malformed rows can never fabricate spend.
-    );
   });
 
   console.log('\n[tests] household invite codes (read-first reuse + RPC error mapping)\n');
