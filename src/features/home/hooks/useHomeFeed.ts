@@ -518,32 +518,6 @@ export function aggregateItemsByMonth(
 }
 
 /**
- * Pure aggregation: impulse (`is_impulse === true`) line items within one
- * month, grouped by normalized name and sorted by amount desc. Drives the
- * Home "Antojos / Snacks" breakdown modal — "en qué se me fue la plata en
- * impulsos este mes". Items without `is_impulse` (older receipts that did
- * not persist the flag) are excluded: the modal's contract is "things the
- * user marked as impulse", not "things the user might have marked".
- */
-export function aggregateImpulseItemsByMonth(
-  list: ReceiptSpendRecord[],
-  monthKey: string,
-): CategoryItemSummary[] {
-  const totalsByItem = new Map<string, number>();
-  for (const receipt of list) {
-    if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
-    for (const item of receipt.items ?? []) {
-      if (!item.is_impulse) continue;
-      const key = normalizeItemName(item.name);
-      totalsByItem.set(key, (totalsByItem.get(key) ?? 0) + item.amount);
-    }
-  }
-  return [...totalsByItem.entries()]
-    .map(([name, amount]) => ({ name, amount }))
-    .sort((a, b) => b.amount - a.amount);
-}
-
-/**
  * Shared month-scoped receipts query. Reads the FULL month via
  * `readPurchaseListByMonth` (not paginated) so month-scoped aggregations
  * (analytics top items, category detail, item detail, store detail) are
