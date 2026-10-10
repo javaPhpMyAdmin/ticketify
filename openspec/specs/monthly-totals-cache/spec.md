@@ -175,7 +175,7 @@ query or dedicated hook. The `useMonthlyTotals` hook SHALL read
 `monthly_category_totals` RPC. The `useMonthlyOverview` hook SHALL read
 `total` from the cache row instead of calling `readMonthlyPurchasesTotal`.
 Charts aggregations (`aggregateSpendTrend`, `aggregateDailySpend`,
-`aggregateStoresByMonth`, `aggregateDailyAverage`, `getTopCategory`) SHALL
+`aggregateStoresByMonth`, `aggregateDailyAverage`) SHALL
 read from the cache's jsonb columns instead of deriving from
 `useReceiptsStore`.
 
