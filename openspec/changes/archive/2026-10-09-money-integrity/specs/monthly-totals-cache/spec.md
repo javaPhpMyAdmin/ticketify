@@ -1,10 +1,20 @@
-# Monthly Totals Cache Specification
+# Delta — monthly-totals-cache
 
-## Purpose
+> Change: `money-integrity`. The cache table gains `currency` in its key so
+> recalculation upserts one row per effective unit; the client read contract
+> groups headline surfaces and binds single-series surfaces (run-rate,
+> 6-month trend, daily/store charts) to the viewer-currency group only —
+> product decision 9. Open item owned by `sdd-design`, not pinned here:
+> `percent_of_total` across two currencies.
+>
+> Reconciled at archive (2026-10-09): the reshape prose and the s5 scenario now
+> match merged 0044 reality — legacy rows are relabeled under the profile
+> currency only long enough to satisfy the NOT NULL key swap, then TRUNCATED
+> (stale cross-unit sums dropped) and lazily recomputed per recorded unit on
+> the next read. The no-rewrite invariant (no `purchases` row gains a currency
+> from the migration) is pinned by the household-totals smoke fixture (k).
 
-Replace client-side aggregation from paginated `useReceiptsStore` with a server-side materialized cache table. Every analytics screen reads from `monthly_user_totals` to guarantee complete totals regardless of how much the user has scrolled through the infinite feed.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Cache Table Schema
 
@@ -27,7 +37,8 @@ read (client cache-miss one-shot recalc or the purchases trigger). No
 `purchases` row is ever rewritten (relabel-not-rewrite; pinned by the
 household-totals smoke fixture (k)).
 
-> Source: change `money-integrity` (archived 2026-10-09). Merged from delta `openspec/changes/archive/2026-10-09-money-integrity/specs/monthly-totals-cache/spec.md`. Previously: primary key `(user_id, year_month)` — one row per user/month whose unit-less `total` merged every currency the month contained.
+(Previously: primary key `(user_id, year_month)` — one row per user/month
+whose unit-less `total` merged every currency the month contained.)
 
 #### Scenario: New month receipt inserted
 
@@ -74,25 +85,6 @@ household-totals smoke fixture (k)).
   (client cache-miss one-shot recalc or the purchases trigger)
 - AND no `purchases` row gains a currency from the migration
 
-### Requirement: Trigger on Purchases Table
-
-The system SHALL create a PostgreSQL AFTER trigger on `public.purchases` for INSERT, UPDATE, and DELETE events. The trigger SHALL extract `user_id` and `year_month` from the affected row and call `recalculate_monthly_totals`.
-
-For UPDATE events, the trigger SHALL also recalculate the previous month if `year_month` changed (e.g., receipt date corrected).
-
-#### Scenario: Trigger fires on insert
-
-- GIVEN the trigger is installed on `purchases`
-- WHEN a new purchase row is inserted
-- THEN `recalculate_monthly_totals` is called with the purchase's `user_id` and `year_month`
-- AND the cache row for that user/month is upserted
-
-#### Scenario: Trigger handles month change on update
-
-- GIVEN a purchase exists with `year_month = '2026-07'`
-- WHEN the purchase is updated to `year_month = '2026-08'`
-- THEN the trigger recalculates BOTH `2026-07` and `2026-08`
-
 ### Requirement: Recalculate RPC
 
 The system SHALL expose a PostgreSQL function
@@ -105,7 +97,9 @@ function SHALL aggregate across all household members
 (`profiles.household_id = p_household_id`). The function SHALL upsert into
 `monthly_user_totals`.
 
-> Source: change `money-integrity` (archived 2026-10-09). Merged from delta `openspec/changes/archive/2026-10-09-money-integrity/specs/monthly-totals-cache/spec.md`. Previously: aggregation summed unit-less amounts, so a mid-month profile currency switch or a mixed-currency household produced one arithmetically wrong number.
+(Previously: aggregation summed unit-less amounts, so a mid-month profile
+currency switch or a mixed-currency household produced one arithmetically
+wrong number.)
 
 #### Scenario: Personal recalculation
 
@@ -151,22 +145,6 @@ function SHALL aggregate across all household members
   `items_count = 0`
 - AND no other currency row exists for that month
 
-### Requirement: Row-Level Security
-
-The system SHALL enforce RLS on `monthly_user_totals` with a SELECT policy that allows users to read only their own rows (`auth.uid() = user_id`).
-
-#### Scenario: User reads own cache
-
-- GIVEN user `abc` has a cache row for `2026-08`
-- WHEN user `abc` queries `monthly_user_totals` filtered by their `user_id`
-- THEN the row is returned
-
-#### Scenario: User cannot read other user's cache
-
-- GIVEN user `def` has a cache row for `2026-08`
-- WHEN user `abc` queries `monthly_user_totals` filtered by `def`'s `user_id`
-- THEN zero rows are returned
-
 ### Requirement: Client-Side Read Contract
 
 Client hooks SHALL read from `monthly_user_totals` via a lightweight Supabase
@@ -193,7 +171,8 @@ viewer-currency group's amounts: the under-report is an accepted product
 limitation, not a defect. Single-currency months keep the single-figure
 behavior on every surface.
 
-> Source: change `money-integrity` (archived 2026-10-09). Merged from delta `openspec/changes/archive/2026-10-09-money-integrity/specs/monthly-totals-cache/spec.md`. Previously: hooks always read one `total`, so a mixed-currency month rendered one figure labeled as if it were a single currency.
+(Previously: hooks always read one `total`, so a mixed-currency month rendered
+one figure labeled as if it were a single currency.)
 
 #### Scenario: Charts display correct totals
 
@@ -233,13 +212,3 @@ behavior on every surface.
 - WHEN the client reads the cache
 - THEN the hook SHALL trigger a one-time `recalculate_monthly_totals` call
 - AND show a loading state until the cache row is populated
-
-### Requirement: Migration Naming
-
-The migration file SHALL follow the existing `NNNN_name.sql` pattern. The next available number is `0015`.
-
-#### Scenario: Migration is idempotent-safe
-
-- GIVEN migration `0015_monthly_totals_cache.sql` is applied
-- WHEN it runs on a fresh database
-- THEN the table, trigger, RPC, and RLS policy are created without error
