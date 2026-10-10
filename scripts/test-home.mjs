@@ -526,6 +526,8 @@ async function run() {
       ],
       null,
       '2026-08',
+      null,
+      'USD',
     );
     // Recent receipts order by scan (newer first), so the scanned row leads
     // the manual one; each summary carries the origin of its raw row.
@@ -580,7 +582,7 @@ async function run() {
   };
 
   await test('mapPurchaseRowsToHomeFeed surfaces the row unit; unit-less rows read null', () => {
-    const withUnit = homeMod.mapPurchaseRowsToHomeFeed([unitRow], null, '2026-08');
+    const withUnit = homeMod.mapPurchaseRowsToHomeFeed([unitRow], null, '2026-08', null, 'USD');
     assert.equal(
       withUnit.receipts[0].currency,
       'CLP',
@@ -590,6 +592,8 @@ async function run() {
       [{ ...unitRow, currency: undefined }],
       null,
       '2026-08',
+      null,
+      'USD',
     );
     assert.equal(
       withoutUnit.receipts[0].currency,
@@ -603,7 +607,7 @@ async function run() {
     // the formatter, so '$ 5.000' depends on BOTH hops — the unit carried by
     // the mapper AND zero-decimal LATAM formatting — which neither the unit
     // pin nor the formatter's own harness observes alone.
-    const feed = homeMod.mapPurchaseRowsToHomeFeed([unitRow], null, '2026-08');
+    const feed = homeMod.mapPurchaseRowsToHomeFeed([unitRow], null, '2026-08', null, 'USD');
     const row = feed.receipts[0];
     assert.equal(
       fmtMod.formatCurrency(row.amount, row.currency),
@@ -727,6 +731,8 @@ async function run() {
       ],
       null,
       '2026-08',
+      null,
+      'USD',
     );
     assert.equal(feed.receipts.length, 1);
     assert.equal(feed.receipts[0].isManual, false);
@@ -1013,6 +1019,7 @@ async function run() {
       null,
       '2026-08',
       stubCatalog,
+      'USD',
     );
     assert.equal(feed.categories.length, 1);
     assert.equal(feed.categories[0].name, 'Delivery');
