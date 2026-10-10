@@ -49,6 +49,7 @@ import {
 } from '@/features/home/categories';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrency } from '@/lib/format';
+import { bindViewerRows } from '@/lib/money';
 import { queryKeys } from '@/lib/query-keys';
 import { toQueryData } from '@/lib/supabase/query-adapters';
 import { useHouseholdStore } from '@/stores/use-household-store';
@@ -97,7 +98,16 @@ export default function HistoryScreen() {
     queryFn: () => readPurchaseListByMonth(userId!, monthKey).then(toQueryData),
   });
   // Use the full month list when available, fall back to paginated list.
-  const fullList = monthList ?? list;
+  const fullMonthList = monthList ?? list;
+  // Single-series binding (Invariants): everything derived below — the
+  // category strip, its `monthTotal` percent base, and the per-category item
+  // counts — renders under ONE viewer-currency label, so only viewer-unit
+  // receipts may feed it (legacy unit-less rows count). Client-Side Read
+  // Contract s4: accepted under-report, never re-denominated.
+  const viewerList = useMemo(
+    () => bindViewerRows(fullMonthList, currency),
+    [fullMonthList, currency],
+  );
   // Item search: empty query shows the category list; typing switches the
   // scroll area to product-level results (cross-category, month-scoped).
   const [query, setQuery] = useState('');
@@ -167,8 +177,8 @@ export default function HistoryScreen() {
 
   const monthKeys = useAvailableMonthKeys(userId);
   const categories = useMemo(
-    () => aggregateCategoriesByMonth(fullList, monthKey, catalog),
-    [fullList, monthKey, catalog],
+    () => aggregateCategoriesByMonth(viewerList, monthKey, catalog),
+    [viewerList, monthKey, catalog],
   );
   // Custom rows carry their own palette color from the merged catalog —
   // the segmented bar must paint those segments with the resolved color,
@@ -184,8 +194,8 @@ export default function HistoryScreen() {
     return bySlug;
   }, [categories, catalog]);
   const categoryItemCounts = useMemo(
-    () => aggregateCategoryItemCounts(fullList, monthKey),
-    [fullList, monthKey],
+    () => aggregateCategoryItemCounts(viewerList, monthKey),
+    [viewerList, monthKey],
   );
   // Percent base for the category cards: what the month actually spent on
   // categorized items (the bar + cards only cover the categories that

@@ -132,9 +132,13 @@ export default function HomeScreen() {
   // for the current and past months, and never writes the receipts store.
   // The merged catalog (W-2) converges the category rows with the other
   // tabs: custom slugs render their own visuals, canonical stays static.
+  // `currency` binds the snacks total to the viewer unit only — it renders
+  // under the budget card's single viewer-currency label, so a mixed month
+  // must never be summed across units (Invariants). Client-Side Read Contract
+  // s4: accepted under-report, never re-denominated.
   const monthFeed = useMemo(
-    () => mapPurchaseRowsToHomeFeed(monthList, householdTotal, monthKey, catalog),
-    [monthList, householdTotal, monthKey, catalog],
+    () => mapPurchaseRowsToHomeFeed(monthList, householdTotal, monthKey, catalog, currency),
+    [monthList, householdTotal, monthKey, catalog, currency],
   );
 
   // Section-title counter with the origin breakdown (migration 0029):

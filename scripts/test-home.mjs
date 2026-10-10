@@ -110,6 +110,7 @@ function load(mod) {
 let homeMod;
 let catsMod;
 let fmtMod;
+let moneyMod;
 
 async function run() {
   console.log('\n[tests] compiling home-feed modules…');
@@ -127,6 +128,9 @@ async function run() {
   // Real formatter (tsconfig.home-test.json includes src/lib/format.ts) for
   // the end-to-end composition pin below.
   fmtMod = await load('src/lib/format.js');
+  // Dependency-free money helper (moved out of `features/charts/aggregate`):
+  // the search-pipeline regression below composes it the way `useItemSearch` does.
+  moneyMod = await load('src/lib/money.js');
 
   console.log('\n[tests] normalizeItemName diacritic folding\n');
 
@@ -522,6 +526,8 @@ async function run() {
       ],
       null,
       '2026-08',
+      null,
+      'USD',
     );
     // Recent receipts order by scan (newer first), so the scanned row leads
     // the manual one; each summary carries the origin of its raw row.
@@ -576,7 +582,7 @@ async function run() {
   };
 
   await test('mapPurchaseRowsToHomeFeed surfaces the row unit; unit-less rows read null', () => {
-    const withUnit = homeMod.mapPurchaseRowsToHomeFeed([unitRow], null, '2026-08');
+    const withUnit = homeMod.mapPurchaseRowsToHomeFeed([unitRow], null, '2026-08', null, 'USD');
     assert.equal(
       withUnit.receipts[0].currency,
       'CLP',
@@ -586,6 +592,8 @@ async function run() {
       [{ ...unitRow, currency: undefined }],
       null,
       '2026-08',
+      null,
+      'USD',
     );
     assert.equal(
       withoutUnit.receipts[0].currency,
@@ -599,7 +607,7 @@ async function run() {
     // the formatter, so '$ 5.000' depends on BOTH hops — the unit carried by
     // the mapper AND zero-decimal LATAM formatting — which neither the unit
     // pin nor the formatter's own harness observes alone.
-    const feed = homeMod.mapPurchaseRowsToHomeFeed([unitRow], null, '2026-08');
+    const feed = homeMod.mapPurchaseRowsToHomeFeed([unitRow], null, '2026-08', null, 'USD');
     const row = feed.receipts[0];
     assert.equal(
       fmtMod.formatCurrency(row.amount, row.currency),
@@ -723,9 +731,109 @@ async function run() {
       ],
       null,
       '2026-08',
+      null,
+      'USD',
     );
     assert.equal(feed.receipts.length, 1);
     assert.equal(feed.receipts[0].isManual, false);
+  });
+
+  await test('wantsSnacksTotal binds the viewer unit; a mixed month never sums across units', () => {
+    // Invariants (money-integrity): the snacks total is ONE figure rendered
+    // under the budget card's single viewer-currency label, so it must reduce
+    // only viewer-unit rows — a CLP row never joins a USD sum. Unit-less rows
+    // count as the viewer (REQ-8 s4).
+    const snack = (id, currency, snacks) => ({
+      id,
+      store_name: 'Kiosco',
+      purchase_date: '2026-08-05',
+      scanned_at: null,
+      total: 10,
+      image_url: null,
+      status: 'confirmed',
+      payment_method: 'cash',
+      is_manual: false,
+      wants_snacks_total: snacks,
+      category_totals: {},
+      items: [],
+      ...(currency === undefined ? {} : { currency }),
+    });
+    const rows = [
+      snack('r-usd-1', 'USD', 4),
+      snack('r-clp', 'CLP', 500),
+      snack('r-usd-2', 'USD', 6),
+      snack('r-legacy', undefined, 2),
+    ];
+
+    const usd = homeMod.mapPurchaseRowsToHomeFeed(rows, null, '2026-08', null, 'USD');
+    assert.equal(
+      usd.wantsSnacksTotal,
+      12,
+      'a USD viewer counts the two USD rows + the unit-less row, never the CLP row',
+    );
+
+    const clp = homeMod.mapPurchaseRowsToHomeFeed(rows, null, '2026-08', null, 'CLP');
+    assert.equal(
+      clp.wantsSnacksTotal,
+      502,
+      'a CLP viewer counts the CLP row + the unit-less row, never the USD rows',
+    );
+  });
+
+  await test('search pipeline binds the viewer unit (mixed USD/CLP/legacy)', () => {
+    // Mirrors `useItemSearch`: `aggregateItemsByMonth(bindViewerRows(rows,
+    // viewer), monthKey)`. A CLP receipt must never be collapsed into the USD
+    // search figure (Invariants); a legacy unit-less row counts as the viewer
+    // (REQ-8 s4). This is the PURE half of the History search binding — the
+    // screen-level call order is pinned separately below.
+    const searchRows = [
+      {
+        id: 'r-usd-1',
+        purchase_date: '2026-08-05',
+        currency: 'USD',
+        items: [{ name: 'Leche 1kg', amount: 4, category: 'lacteos' }],
+      },
+      {
+        id: 'r-usd-2',
+        purchase_date: '2026-08-06',
+        currency: 'USD',
+        items: [{ name: 'Leche 500g', amount: 6, category: 'lacteos' }],
+      },
+      {
+        id: 'r-legacy',
+        purchase_date: '2026-08-07',
+        items: [{ name: 'Arroz', amount: 2, category: 'alimentos' }],
+      },
+      {
+        id: 'r-clp',
+        purchase_date: '2026-08-08',
+        currency: 'CLP',
+        items: [{ name: 'Pan', amount: 500, category: 'alimentos' }],
+      },
+    ];
+
+    const usd = homeMod.aggregateItemsByMonth(
+      moneyMod.bindViewerRows(searchRows, 'USD'),
+      '2026-08',
+    );
+    assert.deepEqual(usd, [
+      { name: 'leche', amount: 10 },
+      { name: 'arroz', amount: 2 },
+    ]);
+    assert.equal(
+      usd.reduce((sum, i) => sum + i.amount, 0),
+      12,
+      'the CLP row (500) never joins the USD search total',
+    );
+
+    const clp = homeMod.aggregateItemsByMonth(
+      moneyMod.bindViewerRows(searchRows, 'CLP'),
+      '2026-08',
+    );
+    assert.deepEqual(clp, [
+      { name: 'pan', amount: 500 },
+      { name: 'arroz', amount: 2 },
+    ]);
   });
 
   console.log('\n[tests] catalog-aware display resolution (6.1/6.2, REQ-008)\n');
@@ -911,6 +1019,7 @@ async function run() {
       null,
       '2026-08',
       stubCatalog,
+      'USD',
     );
     assert.equal(feed.categories.length, 1);
     assert.equal(feed.categories[0].name, 'Delivery');
@@ -933,8 +1042,34 @@ async function run() {
       'the feed derivation must forward the catalog',
     );
     assert.ok(
-      /\[monthList,\s*householdTotal,\s*monthKey,\s*catalog\]/.test(src),
-      'the feed memo must depend on the catalog',
+      /\[monthList,\s*householdTotal,\s*monthKey,\s*catalog,\s*currency\]/.test(src),
+      'the feed memo must depend on the catalog AND the viewer unit (the snacks total binds it)',
+    );
+    assert.match(
+      src,
+      /mapPurchaseRowsToHomeFeed\(\s*monthList,\s*householdTotal,\s*monthKey,\s*catalog,\s*currency\s*\)/,
+      'the feed derivation must pass the viewer unit as the 5th argument (required param)',
+    );
+  });
+
+  // ── History binds the viewer unit BEFORE aggregating (money-integrity).
+  // `useHomeFeed.mapPurchaseRowsToHomeFeed` requires the viewer unit; the
+  // History screen derives its category strip + item counts through the same
+  // binding. RN screen internals are unreachable from a node harness, so the
+  // ORDER is pinned at the source: `bindViewerRows(fullMonthList, currency)`
+  // must run and feed the aggregators — a regression that aggregates the raw
+  // month list would re-introduce the cross-unit sum.
+  await test('History binds the viewer unit before aggregating (source pin)', () => {
+    const src = readFileSync(join(root, 'src/app/(tabs)/history.tsx'), 'utf8');
+    assert.match(
+      src,
+      /bindViewerRows\(fullMonthList, currency\)[\s\S]*?aggregateCategoriesByMonth\(viewerList/,
+      'the category strip must aggregate the viewer-bound list, not the raw month list',
+    );
+    assert.match(
+      src,
+      /bindViewerRows\(fullMonthList, currency\)[\s\S]*?aggregateCategoryItemCounts\(viewerList/,
+      'the per-category item counts must aggregate the viewer-bound list',
     );
   });
 

@@ -66,18 +66,47 @@ function lineToTableRow(line: ExportLine): string {
 }
 
 /**
+ * Per-unit summary figures for the footer: ONE figure per currency, sorted
+ * descending (same ordering contract as the grouped surfaces). A row with no
+ * recorded unit falls back to the viewer unit (REQ-8 s4) — unit-less rows and
+ * the viewer's own currency are equivalent. The footer must never sum across
+ * currencies (Invariants). With no rows the group list is EMPTY — the caller
+ * renders the viewer-zero instead of a blank line.
+ *
+ * Intentional copy of `groupTotalsByUnit` (`features/home/hooks/useHomeFeed`):
+ * this module stays PURE (no React/hook imports) so the export document can be
+ * rendered outside a component tree — keep the two in sync by hand.
+ */
+function groupSummaryByUnit(
+  rows: ExportReceiptRow[],
+  viewer: string | null,
+): { currency: string | null; total: number }[] {
+  const totals = new Map<string | null, number>();
+  for (const row of rows) {
+    const currency = row.currency ?? viewer;
+    totals.set(currency, (totals.get(currency) ?? 0) + row.total);
+  }
+  return [...totals.entries()]
+    .map(([currency, total]) => ({ currency, total }))
+    .sort((a, b) => b.total - a.total);
+}
+
+/**
  * Builds the self-contained HTML document for the receipt export: title,
  * generation date, one table row per line item (same normalization as the
  * CSV — including the blank-column row for item-less receipts), and a
- * summary footer with the receipt count and the sum of all receipt totals.
- * An empty `rows` list renders the empty-state message instead of the table.
+ * summary footer with the receipt count and ONE total PER currency (rows
+ * unit-less fall back to `viewerCurrency`; never summed across units: a
+ * multi-currency export prints one labelled total per currency, NOT a single
+ * cross-unit figure). An empty `rows` list renders the empty-state message
+ * instead of the table and a viewer-only zero in the footer.
  */
 export function buildExportHtml(
   rows: ExportReceiptRow[],
   generatedAt: Date = new Date(),
+  viewerCurrency: string | null = null,
 ): string {
   const lines = normalizeExportRows(rows);
-  const totalSum = rows.reduce((sum, row) => sum + row.total, 0);
   // The export PDF labels read from i18next — same module-level t()
   // pattern the other non-React helpers use (AD-2 / REQ-10). When
   // i18next is not yet initialized the helper falls through to the
@@ -118,6 +147,14 @@ export function buildExportHtml(
     'analytics:exportSummaryTotalLabel',
     'Total',
   );
+
+  const summaryGroups = groupSummaryByUnit(rows, viewerCurrency);
+  const summaryLine =
+    summaryGroups.length === 0
+      ? `${summaryTotalLabel} ${formatTwoDecimals(0)}${viewerCurrency ? ` ${viewerCurrency}` : ''}`
+      : `${summaryTotalLabel} ${summaryGroups
+          .map((g) => `${formatTwoDecimals(g.total)}${g.currency ? ` ${g.currency}` : ''}`)
+          .join(' · ')}`;
 
   const tableRows =
     lines.length === 0
@@ -163,7 +200,7 @@ export function buildExportHtml(
 ${tableRows}
 </tbody>
 </table>
-<p class="summary">${rows.length} ${pluralize(rows.length, 'ticket', 'tickets')} · ${summaryTotalLabel} ${formatTwoDecimals(totalSum)}</p>
+<p class="summary">${rows.length} ${pluralize(rows.length, 'ticket', 'tickets')} · ${summaryLine}</p>
 </body>
 </html>`;
 }

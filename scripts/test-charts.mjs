@@ -207,7 +207,6 @@ async function run() {
     aggregateYearlySpend,
     yearlyPointsFromCache,
     availableYearsFromCache,
-    getTopCategory,
     pickMaxSpendIndex,
     buildVisibleDailySeries,
     weekdayInitialsForMonth,
@@ -1147,53 +1146,6 @@ async function run() {
   await test('no receipts on the day → 0', () => {
     const out = aggregateDayTotal([], '2026-08-10');
     assert.equal(out, 0);
-  });
-
-  console.log('\n[tests] getTopCategory\n');
-
-  await test('top category is the highest-spend category in the month', () => {
-    const out = getTopCategory(
-      [
-        receipt({
-          id: 'r1',
-          purchase_date: '2026-08-05',
-          category_totals: cats({ lacteos: 50, panaderia: 30 }),
-        }),
-        receipt({
-          id: 'r2',
-          purchase_date: '2026-08-12',
-          category_totals: cats({ lacteos: 20, limpieza: 15 }),
-        }),
-      ],
-      '2026-08',
-    );
-    assert.equal(out?.key, 'lacteos');
-    assert.equal(out?.amount, 70);
-  });
-
-  await test('other months are excluded when computing the top category', () => {
-    const out = getTopCategory(
-      [
-        receipt({
-          id: 'r1',
-          purchase_date: '2026-07-05',
-          category_totals: cats({ lacteos: 999 }),
-        }),
-        receipt({
-          id: 'r2',
-          purchase_date: '2026-08-05',
-          category_totals: cats({ panaderia: 10 }),
-        }),
-      ],
-      '2026-08',
-    );
-    assert.equal(out?.key, 'panaderia');
-    assert.equal(out?.amount, 10);
-  });
-
-  await test('empty month → top category is null', () => {
-    const out = getTopCategory([], '2026-08');
-    assert.equal(out, null);
   });
 
   console.log('\n[tests] aggregateCategoriesByMonth re-export parity\n');

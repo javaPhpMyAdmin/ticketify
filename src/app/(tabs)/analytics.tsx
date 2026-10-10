@@ -36,6 +36,7 @@ import {
 } from '@/features/home/hooks/useHomeFeed';
 import { useProEntitlement } from '@/features/pro';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
+import { bindViewerRows } from '@/lib/money';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
@@ -163,9 +164,20 @@ export default function AnalyticsScreen() {
   // month, not of the top-N slice); only the top 5 rows render. Utility
   // bills (servicios) are excluded: they would own the ranking as receipt
   // line items, but they are not consumption.
+  //
+  // Single-series binding (Invariants): the top-items list and its
+  // `topItemsTotal` denominator render under ONE viewer-currency label, so
+  // only viewer-unit receipts may feed them (a unit-less legacy row counts as
+  // the viewer). Client-Side Read Contract s4: accepted under-report, never
+  // re-denominated.
   const allItems = useMemo(
-    () => aggregateItemsByMonth(fullMonthList, monthKey, ['servicios']),
-    [fullMonthList, monthKey],
+    () =>
+      aggregateItemsByMonth(
+        bindViewerRows(fullMonthList, currency),
+        monthKey,
+        ['servicios'],
+      ),
+    [fullMonthList, monthKey, currency],
   );
   const topItems = allItems.slice(0, 5);
   // `topItemsTotal` feeds the bar denominator — percent of the WHOLE month

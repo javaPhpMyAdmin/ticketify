@@ -23,7 +23,6 @@ export {
   availableYearsFromCache,
   yearlyPointsFromCache,
   getMondayOfWeek,
-  getTopCategory,
   pickMaxSpendIndex,
   buildVisibleDailySeries,
   buildDailyInsight,

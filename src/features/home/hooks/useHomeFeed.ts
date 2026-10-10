@@ -6,6 +6,7 @@ import { useSessionUser } from '@/features/auth';
 import { readHouseholdCategoryItems, readMonthlyPurchasesTotal } from '@/lib/supabase/feature-access';
 import { formatYearMonth, fullMonthForLocale } from '@/lib/format';
 import type { FormatDateLocale } from '@/lib/format';
+import { bindViewerRows } from '@/lib/money';
 import { queryKeys } from '@/lib/query-keys';
 import { toQueryData, toQueryErrorMessage } from '@/lib/supabase/query-adapters';
 import { useHouseholdStore } from '@/stores/use-household-store';
@@ -517,32 +518,6 @@ export function aggregateItemsByMonth(
 }
 
 /**
- * Pure aggregation: impulse (`is_impulse === true`) line items within one
- * month, grouped by normalized name and sorted by amount desc. Drives the
- * Home "Antojos / Snacks" breakdown modal — "en qué se me fue la plata en
- * impulsos este mes". Items without `is_impulse` (older receipts that did
- * not persist the flag) are excluded: the modal's contract is "things the
- * user marked as impulse", not "things the user might have marked".
- */
-export function aggregateImpulseItemsByMonth(
-  list: ReceiptSpendRecord[],
-  monthKey: string,
-): CategoryItemSummary[] {
-  const totalsByItem = new Map<string, number>();
-  for (const receipt of list) {
-    if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
-    for (const item of receipt.items ?? []) {
-      if (!item.is_impulse) continue;
-      const key = normalizeItemName(item.name);
-      totalsByItem.set(key, (totalsByItem.get(key) ?? 0) + item.amount);
-    }
-  }
-  return [...totalsByItem.entries()]
-    .map(([name, amount]) => ({ name, amount }))
-    .sort((a, b) => b.amount - a.amount);
-}
-
-/**
  * Shared month-scoped receipts query. Reads the FULL month via
  * `readPurchaseListByMonth` (not paginated) so month-scoped aggregations
  * (analytics top items, category detail, item detail, store detail) are
@@ -772,26 +747,37 @@ export function useItemSearch(
   monthKey = currentMonthKey(),
 ): ItemSearchResult {
   const { userId } = useSessionUser();
+  const currency = useSettingsStore((s) => s.currency);
   const normalizedQuery = normalizeItemName(query);
 
-  const searchQuery = useQuery<CategoryItemSummary[]>({
+  // The read stays currency-agnostic (keyed by user + month + query) so a
+  // viewer-unit switch re-binds from the SAME cached rows instead of
+  // refetching — mirroring useMonthlyCache/useCategoryDetail.
+  const searchQuery = useQuery<HomeFeedReceiptRow[]>({
     queryKey: queryKeys.itemSearch(userId!, monthKey, normalizedQuery),
     enabled: !!userId && normalizedQuery.length > 0,
-    queryFn: async () => {
-      const result = await searchPurchaseItems(
-        userId!,
-        monthKey,
-        normalizedQuery,
-      );
-      const rows = toQueryData(result);
-      return aggregateItemsByMonth(rows, monthKey).filter((item) =>
-        item.name.includes(normalizedQuery),
-      );
-    },
+    queryFn: () =>
+      searchPurchaseItems(userId!, monthKey, normalizedQuery).then(toQueryData),
   });
 
+  // Single-series binding (Invariants): `aggregateItemsByMonth` returns a
+  // unit-less `{name, amount}` collapsed row that the History search rows
+  // render under ONE viewer-currency label — so only viewer-unit receipts may
+  // enter the collapse. Client-Side Read Contract s4: accepted under-report,
+  // never re-denominated. Otherwise a CLP receipt would be summed into a
+  // figure the user reads as USD. Derived AFTER the query so the binding
+  // follows `currency` without a refetch.
+  const results = useMemo(
+    () =>
+      aggregateItemsByMonth(
+        bindViewerRows(searchQuery.data ?? [], currency),
+        monthKey,
+      ).filter((item) => item.name.includes(normalizedQuery)),
+    [searchQuery.data, currency, monthKey, normalizedQuery],
+  );
+
   return {
-    results: searchQuery.data ?? [],
+    results,
     isLoading: searchQuery.isLoading,
     error: searchQuery.error ? toQueryErrorMessage(searchQuery.error) : null,
     hasData: searchQuery.data !== undefined,
@@ -950,16 +936,25 @@ export function compareReceiptsByScan(
  * aggregate the per-item totals through the expense-category registry (so
  * the strip answers "en qué se me va el dinero" by item type, not by
  * store), and the snacks total sums the impulse totals (0 when none).
+ *
+ * `viewerCurrency` (REQUIRED · Invariants · never sum across currencies): the
+ * snacks total is a SINGLE figure rendered under the one viewer-unit label on
+ * the budget card, so only rows recorded in that unit are summed — legacy
+ * unit-less rows count (`currency ?? viewer`). Mixed-unit months therefore
+ * count only the viewer-unit slice. Client-Side Read Contract s4: accepted
+ * under-report, never re-denominated. The parameter is required because the
+ * cross-unit all-rows sum was removed: every caller must name the viewer unit.
  */
 export function mapPurchaseRowsToHomeFeed(
   rows: HomeFeedReceiptRow[],
-  householdTotal?: number | null,
+  householdTotal: number | null = null,
   monthKey: string = currentMonthKey(),
-  catalog?: CategoryCatalog | null,
+  catalog: CategoryCatalog | null = null,
+  viewerCurrency: string,
 ): HomeFeed {
+  const monthRows = rows.filter((item) => getMonthKey(item.purchase_date) === monthKey);
 
-  const receipts: ReceiptSummary[] = rows
-    .filter((item) => getMonthKey(item.purchase_date) === monthKey)
+  const receipts: ReceiptSummary[] = [...monthRows]
     .sort(compareReceiptsByScan)
     .map((item) => ({
       id: item.id,
@@ -976,11 +971,14 @@ export function mapPurchaseRowsToHomeFeed(
       currency: item.currency ?? null,
     }));
 
+  // Intentionally the FULL mixed-unit list (do NOT bind): the Home category
+  // strip is not a single-viewer-unit figure, so it keeps every row.
   const categories = aggregateCategoriesByMonth(rows, monthKey, catalog);
 
-  const wantsSnacksTotal = rows
-    .filter((item) => getMonthKey(item.purchase_date) === monthKey)
-    .reduce((sum, item) => sum + (item.wants_snacks_total ?? 0), 0);
+  const wantsSnacksTotal = bindViewerRows(monthRows, viewerCurrency).reduce(
+    (sum, item) => sum + (item.wants_snacks_total ?? 0),
+    0,
+  );
 
   return { categories, receipts, wantsSnacksTotal, householdTotal: householdTotal ?? null };
 }

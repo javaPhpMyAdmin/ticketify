@@ -19,8 +19,8 @@
  *
  *   HTML — self-contained table with the 10 Spanish column headers,
  *   HTML-escaped dynamic values (`&` → `&amp;`), the summary footer (receipt
- *   count + total sum), the empty-state message, and the injectable
- *   generation date.
+ *   count + ONE total per currency, never a cross-currency sum), the
+ *   empty-state message, and the injectable generation date.
  *
  * Deterministic: fixed fixture inputs, fixed generation date, no Intl.
  *
@@ -435,21 +435,41 @@ async function run() {
     assert.ok(html.includes('<td>2026-08-05</td><td>Coto</td><td>99.00</td><td>Efectivo</td><td></td><td></td><td></td><td></td><td></td><td></td>'));
   });
 
-  await test('summary shows the receipt count and the total sum', () => {
+  await test('summary shows the receipt count and ONE total per currency', () => {
+    // Unit-less rows fold into the viewer unit (REQ-8 s4); the footer prints
+    // the unit on every figure — a mixed month would print one per currency.
     const html = buildExportHtml(
       [
         receipt({ total: 20, items: [item()] }),
         receipt({ id: 'p2', total: 25, items: [item({ name: 'Queso', amount: 25, quantity: 1, unit_price: 25 })] }),
       ],
       new Date('2026-08-11T00:00:00Z'),
+      'USD',
     );
-    assert.ok(html.includes('2 tickets · Total 45.00'));
+    assert.ok(html.includes('2 tickets · Total 45.00 USD'));
+  });
+
+  await test('mixed-unit footer prints one figure per currency, sorted desc', () => {
+    const html = buildExportHtml(
+      [
+        receipt({ total: 20, items: [item()], currency: 'USD' }),
+        receipt({ id: 'p2', total: 25, items: [item({ name: 'Queso', amount: 25, quantity: 1, unit_price: 25 })], currency: 'USD' }),
+        receipt({ id: 'p3', total: 5000, items: [], currency: 'CLP' }),
+      ],
+      new Date('2026-08-11T00:00:00Z'),
+      'USD',
+    );
+    assert.ok(
+      html.includes('3 tickets · Total 5000.00 CLP · 45.00 USD'),
+      'the footer must group per unit and never sum 45.00 USD with 5000 CLP',
+    );
+    assert.ok(!html.includes('Total 5045.00'), 'no cross-currency figure may ever render');
   });
 
   await test('empty rows render the empty-state message', () => {
-    const html = buildExportHtml([], new Date('2026-08-11T00:00:00Z'));
+    const html = buildExportHtml([], new Date('2026-08-11T00:00:00Z'), 'USD');
     assert.ok(html.includes('No hay tickets para exportar.'));
-    assert.ok(html.includes('0 tickets · Total 0.00'));
+    assert.ok(html.includes('0 tickets · Total 0.00 USD'));
   });
 
   await test('generation date is injectable and deterministic', () => {

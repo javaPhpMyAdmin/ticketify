@@ -207,6 +207,7 @@ const SEARCH_ROW = {
     created_at: '2026-08-05T14:30:00.000Z',
     total: 42.18,
     payment_method: 'card',
+    currency: 'CLP',
     image_url: null,
     status: 'confirmed',
     is_manual: false,
@@ -463,6 +464,10 @@ async function run() {
     assert.equal(row.scanned_at, '2026-08-05T14:30:00.000Z');
     assert.equal(row.status, 'confirmed');
     assert.equal(row.is_manual, false, 'search picks the flag from the owning purchase');
+    // Row unit (REQ-8): the search rows feed a single-series aggregate the
+    // History screen binds to the viewer unit, so the mapper must carry the
+    // owning purchase's currency — without it the binding reads `undefined`.
+    assert.equal(row.currency, 'CLP', 'search carries the owning purchase unit');
     // One item per row so the pure month aggregators re-use the shape.
     assert.deepEqual(row.items, [
       {
@@ -477,6 +482,20 @@ async function run() {
     ]);
     assert.deepEqual(row.category_totals, { lacteos: 3.5 });
     assert.equal(row.wants_snacks_total, 0);
+  });
+
+  await test('search select asks the DB for the owning purchase currency (source pin)', () => {
+    // The stub resolves armed rows regardless of the select string, so the
+    // column request is pinned at the source: the search select must join the
+    // purchase's `currency` or the mapper above reads undefined and the
+    // History search binding cannot split a mixed-unit month.
+    const src = readFileSync(join(root, 'src/features/home/api.ts'), 'utf8');
+    const searchSelect = src.match(/`id, name, quantity[^`]*`/);
+    assert.ok(searchSelect, 'expected the search select template literal');
+    assert.ok(
+      searchSelect[0].includes('currency'),
+      `search select must request the currency column, got: ${searchSelect[0].slice(0, 80)}…`,
+    );
   });
 
   await test('searchPurchaseItems applies user, ilike, month bounds and limit', async () => {
