@@ -79,10 +79,10 @@ const API_REWRITES = [
   [/from ['"]@\/lib\/supabase\/receipt-photo['"]/g, "from '../lib-stubs/receipt-photo'"],
   [/from ['"]@\/types['"]/g, "from '../lib-stubs/types'"],
   [/from ['"]@\/stores\/use-household-store['"]/g, "from '../lib-stubs/use-household-store'"],
-  // readLocalImage dynamic-imports expo-file-system at runtime; point it at a
+  // readLocalImage requires expo-file-system at runtime; point it at a
   // lib stub so a LOCAL photo draft can exercise the upload seam (needed for
   // the save-failure orphan-cleanup contract, section E).
-  [/await import\('expo-file-system'\)/g, "await import('../lib-stubs/expo-file-system')"],
+  [/require\('expo-file-system'\)/g, "require('../lib-stubs/expo-file-system')"],
 ];
 
 const MANUAL_REWRITES = [
