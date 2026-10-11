@@ -16,8 +16,12 @@ export interface ProfileHeaderProps {
   avatarUrl?: string | null;
   /** Optional line under the name, e.g. the auth email address. */
   subtitle?: string;
-  /** Access tier. Drives the localized chip label. */
-  tier: 'free' | 'pro';
+  /**
+   * Access tier. Drives the localized chip label. Omit it to render no chip
+   * at all — the profile screen omits it while the RevenueCat entitlement is
+   * still resolving, so a Pro user never sees a momentary "free" chip.
+   */
+  tier?: 'free' | 'pro';
 }
 
 /**
@@ -69,10 +73,14 @@ export function ProfileHeader({
           <Text style={styles.name}>{name}</Text>
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
           {/* Post-cutover (0039) there is no `frozen` state — the gate is
-              binary, so the two keys below are the whole chip vocabulary. */}
-          <Chip
-            label={t(tier === 'free' ? 'settings:proPlan' : 'settings:proActive')}
-          />
+              binary, so the two keys below are the whole chip vocabulary.
+              The chip is omitted entirely when `tier` is undefined (the
+              profile screen hides it until the entitlement resolves). */}
+          {tier ? (
+            <Chip
+              label={t(tier === 'free' ? 'settings:proPlan' : 'settings:proActive')}
+            />
+          ) : null}
         </View>
       </View>
     </Card>

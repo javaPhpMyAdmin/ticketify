@@ -322,6 +322,71 @@ async function run() {
     );
   });
 
+  // ---------------------------------------------------------------------
+  // 4. Profile header chip and subscription row agree on ONE entitlement.
+  // ---------------------------------------------------------------------
+  // The reported bug: the chip and the subscription row are two halves of a
+  // single screen, and they contradicted each other. The row reads
+  // `useProEntitlement().isPro`; the chip read `user.tier` — the
+  // webhook-painted DB column. A server tier that lags the live entitlement
+  // (granted but never revoked: the webhook painted 'pro', the SDK says free)
+  // let the chip say "Suscripción active" above a row that said "free". The
+  // chip now tiers from the SAME entitlement, so the halves cannot disagree,
+  // and it is OMITTED while the entitlement resolves (the store seeds
+  // `isLoading: true`) so a Pro user never flashes "free".
+  console.log('\n[tests] profile — header chip and subscription row agree\n');
+
+  const profileSource = readFileSync(
+    join(root, 'src', 'app', '(tabs)', 'profile.tsx'),
+    'utf8',
+  );
+  const profileHeaderSource = readFileSync(
+    join(root, 'src', 'components', 'organisms', 'ProfileHeader', 'ProfileHeader.tsx'),
+    'utf8',
+  );
+
+  await test('the header chip tiers from the entitlement, never from the DB user.tier', () => {
+    // Negative: the DB-tier source — including the optional-chained form a
+    // future fixer might reach for — must never come back. The DB tier lags
+    // the live entitlement and is what let the two halves contradict.
+    assert.doesNotMatch(
+      profileSource,
+      /tier=\{\s*user\??\.tier\s*\}/,
+      'the chip must not read the DB tier — it can lag the entitlement and contradict the row',
+    );
+    // Positive: the prop that drives the chip references the SAME `isPro` the
+    // row branches on. Token match (not the whole expression) so a benign
+    // reformat does not break the pin while a source change does.
+    assert.match(
+      profileSource,
+      /tier=\{[^}]*isPro[^}]*\}/,
+      'the chip tier must derive from isPro — the same entitlement the status row reads',
+    );
+    assert.match(
+      profileSource,
+      /tier=\{[^}]*proLoading[^}]*\}/,
+      'the chip must be omitted while the entitlement resolves, so a Pro user never flashes "free"',
+    );
+    assert.match(
+      profileSource,
+      /useProEntitlement\(\)/,
+      'both halves must resolve the plan through the one entitlement hook',
+    );
+  });
+
+  await test('ProfileHeader omits the chip entirely when tier is not provided', () => {
+    assert.match(
+      profileHeaderSource,
+      /tier\?:\s*'free'\s*\|\s*'pro'/,
+      'tier must be optional so the chip can be hidden while the entitlement resolves',
+    );
+    assert.match(
+      profileHeaderSource,
+      /\{\s*tier\s*\?/,
+      'the chip must render only when tier is provided (no "free" chip while loading)',
+    );
+  });
+
   console.log('');
   if (failed > 0) {
     console.error(`[tests] ${failed} failed, ${passed} passed`);
