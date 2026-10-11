@@ -233,6 +233,27 @@ async function run() {
     );
   });
 
+  await test('formatQuotaRenewalLabel mid-year → "1 de julio de 2026"', () => {
+    assert.equal(
+      fmt.formatQuotaRenewalLabel(new Date('2026-06-15T12:00:00Z')),
+      '1 de julio de 2026',
+    );
+  });
+
+  await test('formatQuotaRenewalLabel January → "1 de febrero de 2026"', () => {
+    assert.equal(
+      fmt.formatQuotaRenewalLabel(new Date('2026-01-01T00:00:00Z')),
+      '1 de febrero de 2026',
+    );
+  });
+
+  await test('formatQuotaRenewalLabel December rolls to "1 de enero de 2027"', () => {
+    assert.equal(
+      fmt.formatQuotaRenewalLabel(new Date('2026-12-31T23:00:00Z')),
+      '1 de enero de 2027',
+    );
+  });
+
   await test('formatYearMonth short pt-BR January → "jan 2026"', () => {
     assert.equal(fmt.formatYearMonth('pt-BR', '2026-01'), 'jan 2026');
   });

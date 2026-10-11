@@ -1087,6 +1087,41 @@ async function run() {
     );
   });
 
+  // ── Bug #185 scan-quota gate (REQ-GATE-4): the Home scan FAB must not
+  // reach the camera while the free monthly cap is exhausted. RN screen
+  // internals are unreachable from a node harness, so the branching is
+  // pinned at the source: `handleScanPress` must gate on the exhausted
+  // state, show the quota dialog, and early-return BEFORE
+  // `router.push('/ticket/camera')`.
+  await test('home FAB blocks an exhausted quota before the camera (source pin)', () => {
+    const src = readFileSync(join(root, 'src/app/(tabs)/index.tsx'), 'utf8');
+    assert.match(
+      src,
+      /onPress=\{handleScanPress\}/,
+      'the scan FAB must route through the gating handler',
+    );
+    assert.match(
+      src,
+      /if \(state\.exhausted\)[\s\S]*?useDialogStore\.getState\(\)\.show\([\s\S]*?'Alcanzaste el límite gratuito'/,
+      'the exhausted branch must show the quota dialog',
+    );
+    assert.match(
+      src,
+      /'Alcanzaste el límite gratuito'[\s\S]*?return;/,
+      'the exhausted branch must early-return before the camera push',
+    );
+    assert.match(
+      src,
+      /formatQuotaRenewalLabel\(\)/,
+      'the dialog must state the quota renewal date (1st of next month)',
+    );
+    assert.match(
+      src,
+      /router\.push\('\/ticket\/camera'\)/,
+      'the non-blocked path must still reach the camera',
+    );
+  });
+
   await test('store + item drill-down purchases carry the receipt unit (source pin)', () => {
     const src = readFileSync(
       join(root, 'src/features/home/hooks/useHomeFeed.ts'),
