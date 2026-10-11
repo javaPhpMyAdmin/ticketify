@@ -227,7 +227,13 @@ export default function ProfileScreen() {
           <ProfileHeader
             name={user.full_name ?? t('settings:defaultDisplayName')}
             avatarUrl={user.avatar_url}
-            tier={user.tier}
+            // The chip is the plan indicator and MUST agree with the
+            // subscription row below, which reads the SAME `isPro`. Sourcing
+            // it from `user.tier` (the DB column) let a stale server tier
+            // say "active" while the entitlement said free — the two halves
+            // of the screen contradicted each other. Omitted while the
+            // entitlement resolves so a Pro user never flashes "free".
+            tier={proLoading ? undefined : isPro ? 'pro' : 'free'}
           />
         ) : null}
 
