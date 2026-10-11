@@ -684,6 +684,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.05 * 16,
     textTransform: 'uppercase',
   },
+  proPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   alertTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -838,7 +843,8 @@ function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
         <View style={styles.alertTitleRow}>
           <Text style={styles.priceAlert}>{t('analytics:priceAlertTitle')}</Text>
           {!isPro ? (
-            <View style={styles.proPill}>
+            <View style={[styles.proPill, styles.proPillRow]}>
+              <Icon name="lock.fill" size={11} color={colors.onPrimary} />
               <Text style={styles.proPillText}>{t('analytics:proPill')}</Text>
             </View>
           ) : null}

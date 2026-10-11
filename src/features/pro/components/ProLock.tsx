@@ -37,7 +37,7 @@ export interface ProLockProps {
  * Centered lock affordance: icon in a tinted circle, title, body, and
  * a primary CTA that navigates to the paywall. Used by `ProRouteGuard`
  * and any screen that wants to surface a Pro-only feature behind a
- * visible lock (export row, charts entry, analytics price-alert banner).
+ * visible lock (export row, charts entry).
  */
 export function ProLock({
   icon = 'lock.fill',
