@@ -1,0 +1,126 @@
+name: Migration drift
+
+# Migration HISTORY PARITY monitor (not a schema diff): it asserts that every
+# migration file merged to main has been applied to the hosted Supabase project.
+# It is deliberately NOT a pull-request gate — a PR that adds a migration
+# legitimately shows that version as local-only until it is merged and applied,
+# so running on PRs would be a false positive. Running after merge turns
+# "merged but never `supabase db push`ed to hosted" into an immediate, loud
+# signal instead of a silent runtime `42703 column ... does not exist`.
+#
+# Known limitation: this compares recorded version IDs only. A migration file
+# edited after it was applied, or an out-of-band schema change, is NOT detected
+# — it is history parity, not full schema drift.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: migration-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    name: Hosted migration history parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          # Pinned to match ci.yml (see the ci.yml comment on why the version is
+          # pinned rather than derived from the lockfile). 2.111.0 locally and
+          # 2.116.0 in CI both support `migration list --output-format json`.
+          version: 2.116.0
+
+      - name: Compare local migrations against the hosted project
+        # Requires two repository secrets:
+        #   SUPABASE_ACCESS_TOKEN — personal access token (account → Access
+        #                          Tokens), used by `supabase link`.
+        #   SUPABASE_DB_PASSWORD  — the hosted Postgres password (Dashboard →
+        #                          Settings → Database). `migration list
+        #                          --linked` connects over the wire protocol,
+        #                          so it needs this as well.
+        # If EITHER is missing the step FAILS rather than skips: a guard against
+        # silent drift must not itself go silent, or a rotated/mistyped secret
+        # would quietly disable the only hosted-drift visibility.
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_DB_PASSWORD:-}" ]; then
+            echo "::error::Hosted migration drift guard is not configured. Set BOTH repository secrets: SUPABASE_ACCESS_TOKEN and SUPABASE_DB_PASSWORD."
+            exit 1
+          fi
+
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "::error::jq is required to parse 'supabase migration list' output but is not installed."
+            exit 1
+          fi
+
+          # Retry transient network failures so a flake is not mistaken for
+          # drift — a red main on a blip erodes the signal. Mirrors the retry
+          # pattern used in ci.yml for `supabase start`.
+          retry() {
+            local attempt rc=0
+            for attempt in 1 2 3; do
+              if "$@"; then
+                return 0
+              else
+                rc=$?
+              fi
+              echo "::warning::attempt ${attempt}/3 failed (rc=${rc}): $*"
+              sleep "$((attempt * 5))"
+            done
+            return "$rc"
+          }
+
+          # The project ref is not a secret — it ships in EXPO_PUBLIC_SUPABASE_URL
+          # and in the app bundle. Move it to a repository variable if the
+          # project ever changes.
+          PROJECT_REF=lfbyifbccfjposuzgccl
+
+          retry supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+          # --output-format json keeps stdout machine-readable while progress
+          # and warnings go to stderr:
+          #   {"migrations":[{"local":"0045","remote":"0045","time":"0045"},...]}
+          retry supabase migration list --linked --password "$SUPABASE_DB_PASSWORD" --output-format json > ledger.json
+
+          # Fail LOUD, never open: if the CLI output shape ever changes, do not
+          # fall through to a false "no drift".
+          if ! jq -e '.migrations | type == "array" and (length > 0)' ledger.json >/dev/null 2>&1; then
+            echo "::error::Unexpected 'supabase migration list' output — expected a non-empty .migrations array. Refusing to report \"no drift\" from unparsed output."
+            head -c 500 ledger.json 2>/dev/null || true
+            exit 1
+          fi
+
+          # `// ""` collapses JSON nulls so "" is falsy for `select`.
+          #   pending = on disk but not applied to hosted
+          #   orphan  = applied to hosted but not on disk (out-of-band change)
+          pending="$(jq -r '.migrations[] | select((.local // "") != "" and ((.remote // "") == "")) | .local' ledger.json)"
+          orphan="$(jq -r '.migrations[] | select(((.local // "") == "") and (.remote // "") != "") | .remote' ledger.json)"
+
+          fail=0
+          if [ -n "$pending" ]; then
+            echo "::error::Migrations present on disk but NOT applied to the hosted project — run 'pnpm exec supabase db push':"
+            printf '%s\n' "$pending" | sed 's/^/    /'
+            fail=1
+          fi
+          if [ -n "$orphan" ]; then
+            echo "::error::Migrations applied to the hosted project but missing on disk. Add the missing migration file, or, if the change was intentional and out-of-band, reconcile with 'supabase migration repair --status reverted <version>':"
+            printf '%s\n' "$orphan" | sed 's/^/    /'
+            fail=1
+          fi
+          if [ "$fail" -eq 1 ]; then
+            exit 1
+          fi
+
+          echo "Hosted project matches the local migration history — no drift."
