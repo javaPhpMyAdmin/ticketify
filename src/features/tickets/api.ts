@@ -261,16 +261,20 @@ interface LocalImage {
 
 /**
  * Reads a local image URI (file:// or content://) into raw base64 and its
- * MIME type. `expo-file-system` is imported lazily so this module stays
- * loadable in plain-node test harnesses (its entry is TypeScript and
- * native-bound); Metro resolves it on first parse.
+ * MIME type. Loaded with a runtime `require` instead of `await import()`:
+ * Metro serves `import()` as an async chunk fetched through the dev HMR
+ * client, and when that socket is down the fetch triggers a FULL app reload
+ * (expo/expo#48932). `require()` is bundled inline, so it never hits that
+ * path. It also stays lazy at runtime, keeping this module loadable in
+ * plain-node test harnesses (where the native-bound module is stubbed).
  *
  * Rejects missing/empty files and images above MAX_IMAGE_BYTES before any
  * base64 encoding happens.
  */
 async function readLocalImage(imageUri: string): Promise<LocalImage> {
   try {
-    const { File } = await import('expo-file-system');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { File } = require('expo-file-system') as typeof import('expo-file-system');
     const file = new File(imageUri);
     if (!file.exists || file.size === 0) {
       throw new Error('image file is missing or empty');
