@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BackHandler, Image, ScrollView, StyleSheet } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -23,9 +23,15 @@ import {
   Text,
   View,
 } from '@/components';
+import {
+  computeItemPriceDeltas,
+  normalizePriceIdentity,
+} from '@/features/analytics/price-alerts';
 import { useSessionUser } from '@/features/auth';
 import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
+import { readPurchaseListByMonth } from '@/features/home/api';
 import { resolveCategoryDisplay } from '@/features/home/categories';
+import { getMonthKey, previousMonthKey } from '@/features/home/hooks/useHomeFeed';
 import type { PurchaseWithItems } from '@/features/tickets';
 import {
   deleteReceipt,
@@ -35,6 +41,7 @@ import {
 import { useScreenTitle } from '@/i18n/hooks/useScreenTitle';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
+import { toQueryData } from '@/lib/supabase/query-adapters';
 import {
   getSignedReceiptPhotoUrl,
   resolveReceiptPhotoPath,
@@ -133,6 +140,33 @@ export default function ReceiptDetailScreen() {
   // ── Derive receipt + category_totals from the fetched purchase ────────
   const rawReceipt = detailQuery.data;
   const receipt = rawReceipt ? purchaseToFeedRow(rawReceipt) : undefined;
+
+  // ── Previous-month unit-price deltas (per line item) ──────────────────
+  // Each item row shows a delta chip vs the IMMEDIATELY PRECEDING calendar
+  // month, only when a comparable price exists and the change is strictly
+  // > THRESHOLD. The previous month's rows are fetched month-scoped (the
+  // same read the analytics alerts use) and compared per (normalized
+  // identity, unit); the compared unit is this receipt's own display unit,
+  // so a currency switch never cross-compares amounts (#192).
+  const prevMonth = receipt ? previousMonthKey(getMonthKey(receipt.purchase_date)) : null;
+  const prevMonthValid = prevMonth ? /^\d{4}-\d{2}$/.test(prevMonth) : false;
+  const prevMonthQuery = useQuery({
+    queryKey: queryKeys.monthReceipts(userId!, prevMonth!),
+    queryFn: () => readPurchaseListByMonth(userId!, prevMonth!).then(toQueryData),
+    enabled: Boolean(userId && prevMonthValid),
+  });
+  const itemPriceDeltas = useMemo(() => {
+    // Memoize on the stable query payload (rawReceipt), not the derived feed
+    // row: purchaseToFeedRow returns a fresh object every call, which would
+    // defeat the memo and re-run the (regex-heavy) delta pass on every render.
+    if (!rawReceipt) return new Map<string, number>();
+    const feed = purchaseToFeedRow(rawReceipt);
+    return computeItemPriceDeltas(
+      feed.items,
+      prevMonthQuery.data ?? [],
+      feed.currency ?? currency,
+    );
+  }, [rawReceipt, prevMonthQuery.data, currency]);
 
   // ── Loading gate: session bootstrap OR query in flight ────────────────
   const isSessionLoading = !userId;
@@ -579,6 +613,7 @@ export default function ReceiptDetailScreen() {
                     ? formatCurrency(item.unit_price, receipt.currency ?? currency)
                     : null;
                 const showUnit = unitText != null && (quantity !== 1 || unitText !== amountText);
+                const delta = itemPriceDeltas.get(normalizePriceIdentity(item.name));
                 return (
                   <View key={`${item.name}-${idx}`}>
                     <View style={styles.itemRow}>
@@ -589,6 +624,13 @@ export default function ReceiptDetailScreen() {
                         {quantity > 1 ? (
                           <Text style={styles.itemQty}>
                             {t('receipts:itemQuantity', { quantity })}
+                          </Text>
+                        ) : null}
+                        {delta != null ? (
+                          <Text style={delta >= 0 ? styles.itemDeltaUp : styles.itemDeltaDown}>
+                            {delta >= 0
+                              ? t('receipts:itemPriceDeltaUp', { value: Math.abs(delta) })
+                              : t('receipts:itemPriceDeltaDown', { value: Math.abs(delta) })}
                           </Text>
                         ) : null}
                       </View>
@@ -863,6 +905,20 @@ const styles = StyleSheet.create({
   itemQty: {
     ...typography.labelSm,
     color: colors.textSecondary,
+  },
+  // Per-item delta chip vs the previous month (▲ price up → danger, ▼ price
+  // down → primary). Mirrors `itemQty`'s label styling at a 12px size.
+  itemDeltaUp: {
+    ...typography.labelSm,
+    fontSize: 12,
+    color: colors.danger,
+    marginTop: 2,
+  },
+  itemDeltaDown: {
+    ...typography.labelSm,
+    fontSize: 12,
+    color: colors.primary,
+    marginTop: 2,
   },
   itemRight: {
     alignItems: 'flex-end',

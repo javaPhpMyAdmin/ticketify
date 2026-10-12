@@ -44,6 +44,8 @@
   "countScanned_other": "{{count}} comprovantes escaneados",
   "countManual_one": "{{count}} comprovante manual",
   "countManual_other": "{{count}} comprovantes manuais",
+  "itemPriceDeltaDown": "▼ {{value}}% vs mês passado",
+  "itemPriceDeltaUp": "▲ {{value}}% vs mês passado",
   "itemQuantity": "Qtd. {{quantity}}",
   "itemUnitPrice": "Preço unitário {{price}}"
 }

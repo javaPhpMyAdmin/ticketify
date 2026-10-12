@@ -2515,6 +2515,43 @@ async function run() {
     }
   });
 
+  await test('receipt detail renders the per-item price delta chip via t(receipts:itemPriceDelta*) (source pin)', () => {
+    const src = readFileSync(join(root, 'src/app/receipts/[id].tsx'), 'utf8');
+    assert.ok(
+      src.includes("t('receipts:itemPriceDeltaUp'"),
+      'must call t with receipts:itemPriceDeltaUp for the up chip',
+    );
+    assert.ok(
+      src.includes("t('receipts:itemPriceDeltaDown'"),
+      'must call t with receipts:itemPriceDeltaDown for the down chip',
+    );
+    assert.ok(
+      /delta != null/.test(src),
+      'the chip must be gated on a real delta (delta != null)',
+    );
+    assert.ok(
+      /computeItemPriceDeltas\(/.test(src),
+      'the screen must call computeItemPriceDeltas',
+    );
+    assert.ok(
+      /feed\.currency \?\? currency/.test(src),
+      'the delta memo must bind the receipt unit (feed.currency ?? currency) — never the bare profile currency',
+    );
+    for (const loc of ['en', 'es-419', 'pt-BR']) {
+      const catalog = JSON.parse(
+        readFileSync(join(root, `src/i18n/locales/${loc}/receipts.json`), 'utf8'),
+      );
+      assert.ok(
+        catalog.itemPriceDeltaUp.includes('{{value}}'),
+        `${loc}/receipts.json:itemPriceDeltaUp must include the {{value}} placeholder`,
+      );
+      assert.ok(
+        catalog.itemPriceDeltaDown.includes('{{value}}'),
+        `${loc}/receipts.json:itemPriceDeltaDown must include the {{value}} placeholder`,
+      );
+    }
+  });
+
     await test('ReceiptCategoryItemsModal renders ONLY its currency prop (never the profile itself)', () => {
     const src = readFileSync(
       join(root, 'src/app/receipts/ReceiptCategoryItemsModal.tsx'),
