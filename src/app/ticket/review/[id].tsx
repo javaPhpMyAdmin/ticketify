@@ -49,7 +49,8 @@ import {
   useReceiptDraftDraft,
   useScanTicket,
 } from '@/features/tickets';
-import { formatCurrency, SUPPORTED_CURRENCIES, todayLocalISO } from '@/lib/format';
+import { formatCurrency, formatDate, SUPPORTED_CURRENCIES, todayLocalISO } from '@/lib/format';
+import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import {
   getSignedReceiptPhotoUrl,
   resolveReceiptPhotoPath,
@@ -104,6 +105,7 @@ export default function ReviewReceiptScreen() {
   // The receipt is denominated in the user's currency setting (default
   // UYU), the same store Home/History read — never a hardcoded code.
   const currency = useSettingsStore((s) => s.currency);
+  const activeLocale = useLocaleStore((s) => s.activeLocale);
   const { draft } = useReceiptDraftDraft();
   const { setStore, setPayment, upsertItem, clear, setItems } = useReceiptDraftActions();
   // PR 5 (D6): the merged catalog lets the review chips render CUSTOM slugs
@@ -601,7 +603,9 @@ export default function ReviewReceiptScreen() {
                   <View style={styles.metaCol}>
                     <Text style={styles.kicker}>{t('tickets:reviewDateKicker')}</Text>
                     <Text style={styles.metaValue}>
-                      {draft?.purchase_date ?? '—'}
+                      {draft?.purchase_date
+                        ? formatDate(activeLocale, draft.purchase_date)
+                        : '—'}
                     </Text>
                   </View>
                   <View style={styles.metaCol}>
