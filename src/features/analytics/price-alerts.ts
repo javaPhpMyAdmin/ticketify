@@ -104,23 +104,27 @@ export function computePriceAlerts(
   records: ReceiptSpendRecord[],
   threshold = THRESHOLD,
   nowMonth = currentMonthKey(),
+  viewerCurrency = '',
 ): PriceAlert[] {
-  // identity -> { month -> { total, count } }
+  const getUnit = (receipt: ReceiptSpendRecord) => receipt.currency ?? viewerCurrency ?? '';
+  // identity\0unit -> { month -> { total, count } }
   const byIdentity = new Map<string, Map<string, { total: number; count: number }>>();
-  // identity -> display name + category (first occurrence in records order
+  // identity\0unit -> display name + category (first occurrence in records order
   // wins — display metadata only, the math uses `id` throughout)
   const meta = new Map<string, { name: string; category: string }>();
-  // identity -> { month -> SourceReceipt } — S2 deterministic capture.
+  // identity\0unit -> { month -> SourceReceipt } — S2 deterministic capture.
   const sourceByIdentityMonth = new Map<string, Map<string, SourceReceipt>>();
 
   for (const receipt of records) {
     const month = getMonthKey(receipt.purchase_date);
     const receiptId = receipt.id ?? '';
-    for (const item of receipt.items ?? []) {
-      if (item.unit_price === undefined) continue;
-      // Identity keeps the package size so different presentations of the
-      // same product never cross-compare; display metadata stays raw.
-      const id = normalizePriceIdentity(item.name);
+      const unit = getUnit(receipt);
+      for (const item of receipt.items ?? []) {
+        if (item.unit_price === undefined) continue;
+        // Identity keeps the package size so different presentations of the
+        // same product never cross-compare; display metadata stays raw.
+        const identity = normalizePriceIdentity(item.name);
+        const id = identity + '\0' + unit;
       const perMonth = byIdentity.get(id) ?? new Map();
       const acc = perMonth.get(month) ?? { total: 0, count: 0 };
       acc.total += item.unit_price;

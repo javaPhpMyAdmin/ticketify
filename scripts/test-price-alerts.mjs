@@ -485,6 +485,39 @@ async function run() {
       "id-less receipt contributes an empty-string candidate; tap is a no-op (Pro with empty receiptId does nothing)",
     );
   });
+  await test('#192 regression: same identity, different currencies in same month -> no alert (buckets isolated)', () => {
+    const records = [
+      { id: 'r-usd', store_name: 'Store', purchase_date: '2026-08-01', items: [item('Leche entera 1L', 1000, 'lacteos')], currency: 'USD' },
+      { id: 'r-uyu', store_name: 'Store', purchase_date: '2026-08-15', items: [item('Leche entera 1L', 400, 'lacteos')], currency: 'UYU' },
+      { id: 'r-prev', store_name: 'Store', purchase_date: '2026-07-10', items: [item('Leche entera 1L', 1000, 'lacteos')], currency: 'USD' },
+    ];
+    const alerts = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(alerts.length, 0, 'different currencies must not cross-average');
+  });
+
+  await test('viewer fallback: null currency falls back to viewer; isolated when no viewer', () => {
+    const records = [
+      { store_name: 'S', purchase_date: '2026-07-10', items: [item('Leche entera 1L', 1000, 'lacteos')], currency: null },
+      { store_name: 'S', purchase_date: '2026-08-01', items: [item('Leche entera 1L', 1100, 'lacteos')] },
+      { store_name: 'S', purchase_date: '2026-07-10', items: [item('Leche entera 1L', 1000, 'lacteos')], currency: 'USD' },
+      { store_name: 'S', purchase_date: '2026-08-01', items: [item('Leche entera 1L', 1100, 'lacteos')], currency: 'USD' },
+    ];
+    const withViewer = alertsMod.computePriceAlerts(records, 0.05, '2026-08', 'USD');
+    assert.equal(withViewer.length, 1, 'null falls back to viewer and compares with same-currency rows');
+    const noViewer = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.ok(noViewer.length > 0, 'null with no viewer forms isolated bucket (may alert within bucket)');
+  });
+
+  await test('#192 no-regression: same-currency still alerts identically', () => {
+    const records = [
+      receipt('r1', '2026-07-10', item('Leche entera 1L', 1000, 'lacteos')),
+      receipt('r2', '2026-08-10', item('Leche entera 1L', 1060, 'lacteos')),
+    ];
+    const alerts = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(alerts.length, 1);
+    assert.equal(Math.round(alerts[0].changePct * 10) / 10, 6.0);
+  });
+
 
   // ── PART 2: usePriceAlerts hook wiring (BLOCKER 2) ─────────────────────
   // Exercises the ACTUAL hook: two month-scoped queries (selected + previous
@@ -530,6 +563,16 @@ async function run() {
     }
   });
 
+  await test('usePriceAlerts threads viewer currency into computePriceAlerts (source pin)', async () => {
+    const fs = await import('node:fs/promises');
+    const pathMod = await import('node:path');
+    const root = pathMod.join(process.cwd(), 'src', 'features', 'analytics', 'hooks', 'usePriceAlerts.ts');
+    const src = await fs.readFile(root, 'utf8');
+    assert.ok(src.includes('useSettingsStore'), 'must read viewer currency from settings store');
+    assert.ok(/computePriceAlerts\([^,]+,[^,]+,[^,]+,\s*currency\)/.test(src), 'must pass currency as 4th arg');
+  });
+
+
   // (b) empty data → empty alerts (no crash)
   await test('empty data → empty alerts (no crash)', async () => {
     await resetHookState();
@@ -552,6 +595,16 @@ async function run() {
       });
     }
   });
+
+  await test('usePriceAlerts threads viewer currency into computePriceAlerts (source pin)', async () => {
+    const fs = await import('node:fs/promises');
+    const pathMod = await import('node:path');
+    const root = pathMod.join(process.cwd(), 'src', 'features', 'analytics', 'hooks', 'usePriceAlerts.ts');
+    const src = await fs.readFile(root, 'utf8');
+    assert.ok(src.includes('useSettingsStore'), 'must read viewer currency from settings store');
+    assert.ok(/computePriceAlerts\([^,]+,[^,]+,[^,]+,\s*currency\)/.test(src), 'must pass currency as 4th arg');
+  });
+
 
   // (c) previous-month comparison yields the same alerts the pure fn computes
   await test('previous-month comparison matches the pure computePriceAlerts', async () => {
@@ -596,6 +649,16 @@ async function run() {
     }
   });
 
+  await test('usePriceAlerts threads viewer currency into computePriceAlerts (source pin)', async () => {
+    const fs = await import('node:fs/promises');
+    const pathMod = await import('node:path');
+    const root = pathMod.join(process.cwd(), 'src', 'features', 'analytics', 'hooks', 'usePriceAlerts.ts');
+    const src = await fs.readFile(root, 'utf8');
+    assert.ok(src.includes('useSettingsStore'), 'must read viewer currency from settings store');
+    assert.ok(/computePriceAlerts\([^,]+,[^,]+,[^,]+,\s*currency\)/.test(src), 'must pass currency as 4th arg');
+  });
+
+
   // (d) does NOT read the receipts store as its data source (regression guard)
   await test('does not read the receipts store as its source', async () => {
     await resetHookState();
@@ -630,6 +693,16 @@ async function run() {
       });
     }
   });
+
+  await test('usePriceAlerts threads viewer currency into computePriceAlerts (source pin)', async () => {
+    const fs = await import('node:fs/promises');
+    const pathMod = await import('node:path');
+    const root = pathMod.join(process.cwd(), 'src', 'features', 'analytics', 'hooks', 'usePriceAlerts.ts');
+    const src = await fs.readFile(root, 'utf8');
+    assert.ok(src.includes('useSettingsStore'), 'must read viewer currency from settings store');
+    assert.ok(/computePriceAlerts\([^,]+,[^,]+,[^,]+,\s*currency\)/.test(src), 'must pass currency as 4th arg');
+  });
+
 
 
   await test('analytics PriceAlertBanner enforces 3-case tap routing (source pin)', async () => {

@@ -11,6 +11,7 @@ import {
 import { readPurchaseListByMonth } from '@/features/home/api';
 import { queryKeys } from '@/lib/query-keys';
 import { toQueryData } from '@/lib/supabase/query-adapters';
+import { useSettingsStore } from '@/stores/use-settings-store';
 import { computePriceAlerts, type PriceAlert } from '../price-alerts';
 
 /**
@@ -28,6 +29,7 @@ import { computePriceAlerts, type PriceAlert } from '../price-alerts';
  */
 export function usePriceAlerts(monthKey = currentMonthKey()): PriceAlert[] {
   const { userId } = useSessionUser();
+  const currency = useSettingsStore((s) => s.currency);
 
   const previousMonth = previousMonthKey(monthKey);
 
@@ -49,7 +51,7 @@ export function usePriceAlerts(monthKey = currentMonthKey()): PriceAlert[] {
   );
 
   return useMemo(
-    () => computePriceAlerts(combined, undefined, monthKey),
-    [combined, monthKey],
+    () => computePriceAlerts(combined, undefined, monthKey, currency),
+    [combined, monthKey, currency],
   );
 }
