@@ -1008,11 +1008,19 @@ export function useHouseholdMonthTotal(
 ): {
   householdTotal: number | null;
   householdTotals: CurrencyTotal[];
+  /**
+   * Viewer-currency month-over-month delta vs the PREVIOUS month (rounded to
+   * one decimal), or `null` when there is no previous figure to compare
+   * against (the card omits the badge). Computed on the viewer-currency row
+   * ONLY — never a cross-currency sum: the RPC contract is one row per unit.
+   */
+  changePct: number | null;
   isLoading: boolean;
 } {
   const { userId } = useSessionUser();
   const householdId = useHouseholdStore((s) => s.household?.id);
   const currency = useSettingsStore((s) => s.currency);
+  const previousMonth = previousMonthKey(monthKey);
 
   // ── Household total (selected month, when household is active) ────────
   const householdTotalQuery = useQuery<CurrencyTotal[]>({
@@ -1022,6 +1030,24 @@ export function useHouseholdMonthTotal(
     enabled: !!userId && !!householdId,
     queryFn: async () => {
       const result = await readMonthlyPurchasesTotal(monthKey, householdId!);
+      return toQueryData(result);
+    },
+  });
+
+  // ── Same read for the PREVIOUS month (drives the MoM badge) ───────────
+  // Shares the household-scoped key family, so the existing prefix
+  // invalidation (`householdMonthlyPurchasesTotalPrefix`) refreshes every
+  // month variant at once — no extra invalidation needed after a save.
+  const householdPrevTotalQuery = useQuery<CurrencyTotal[]>({
+    queryKey: householdId
+      ? queryKeys.householdMonthlyPurchasesTotal(householdId, previousMonth)
+      : ['household-purchases-total', 'disabled', 'previous'],
+    enabled: !!userId && !!householdId,
+    queryFn: async () => {
+      const result = await readMonthlyPurchasesTotal(
+        previousMonthKey(monthKey),
+        householdId!,
+      );
       return toQueryData(result);
     },
   });
@@ -1043,9 +1069,22 @@ export function useHouseholdMonthTotal(
           total: Number.isFinite(r.total) ? r.total : 0,
         }));
 
+  // Month-over-month delta on the VIEWER-currency row only. `cur` is the
+  // already-resolved viewer-unit figure (0 when the month has no viewer-unit
+  // spend); `prev` is the same figure for the previous month. A missing/zero
+  // previous figure yields `null` (nothing to compare against) and the card
+  // omits the badge. Same formula as `useMonthlyOverview`.
+  const cur = householdTotal ?? 0;
+  const prev =
+    (householdPrevTotalQuery.data ?? []).find((r) => r.currency === currency)
+      ?.total ?? 0;
+  const changePct =
+    prev > 0 ? Math.round(((cur - prev) / prev) * 1000) / 10 : null;
+
   return {
     householdTotal,
     householdTotals,
+    changePct,
     isLoading: householdTotalQuery.isLoading,
   };
 }

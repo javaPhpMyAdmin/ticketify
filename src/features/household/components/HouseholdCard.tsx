@@ -27,6 +27,12 @@ interface HouseholdCardProps {
    * caller folds a viewer-unit zero so the card still states a real "0").
    */
   householdTotals: CurrencyTotal[];
+  /**
+   * Viewer-currency month-over-month delta vs the previous month (%). The
+   * badge renders ONLY when this is non-null (no previous figure → no badge);
+   * it is never a cross-currency sum (one row per unit).
+   */
+  changePct?: number | null;
   /** True while the household total query is loading. */
   isLoading: boolean;
 }
@@ -136,9 +142,10 @@ function AvatarCircle({
 
 export function HouseholdCard({
   householdTotals,
+  changePct,
   isLoading,
 }: HouseholdCardProps) {
-  const { t } = useTranslation(['household']);
+  const { t } = useTranslation(['household', 'analytics']);
   const household = useHouseholdStore((s) => s.household);
   const members = useHouseholdStore((s) => s.members);
   const currency = useSettingsStore((s) => s.currency);
@@ -152,6 +159,12 @@ export function HouseholdCard({
   const memberLabel = memberCount === 0
     ? ''
     : t('household:householdMemberCount', { count: memberCount });
+  // Same badge semantics as RunRateCard: spending ABOVE the previous month is
+  // a warning tint, spending below is the brand container; the delta always
+  // renders signed. The badge is present only when there is a figure to
+  // compare (changePct non-null).
+  const up = changePct != null && changePct > 0;
+  const deltaPrefix = changePct != null && changePct > 0 ? '+' : '';
 
   return (
     <Pressable
@@ -211,6 +224,32 @@ export function HouseholdCard({
             ))
           )}
         </View>
+        {changePct != null ? (
+          <View
+            style={[
+              styles.badge,
+              { backgroundColor: up ? '#fbe3e3' : colors.primaryContainer },
+            ]}
+          >
+            <Icon
+              name={up ? 'arrow.up.right' : 'arrow.down.right'}
+              size={14}
+              color={up ? 'red' : colors.primaryDark}
+            />
+            <Text
+              style={[
+                styles.badgeText,
+                { color: up ? 'red' : colors.primaryDark },
+              ]}
+            >
+              {deltaPrefix}
+              {changePct}%{' '}
+              {t('analytics:runRateBadge', {
+                source: t('analytics:runRateSourceMom'),
+              })}
+            </Text>
+          </View>
+        ) : null}
       </Card>
     </Pressable>
   );
@@ -311,6 +350,26 @@ const styles = StyleSheet.create({
     fontSize: 23,
     fontWeight: '900',
     color: colors.primary,
+  },
+  // Floats in the card's top-right corner (RunRateCard pattern), relative to
+  // the Card's padding box. Anchored just below the top edge so it clears the
+  // downward-shifted amount column (`amountContainer.top`).
+  badge: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+  },
+  badgeText: {
+    fontWeight: '900',
+    fontSize: 14,
+    fontStyle: 'normal',
+    color: 'red',
   },
   members: {
     // ...typography.labelSm,

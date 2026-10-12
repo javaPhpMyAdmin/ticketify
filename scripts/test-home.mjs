@@ -710,6 +710,34 @@ async function run() {
     );
   });
 
+  await test('useHouseholdMonthTotal: previous-month query + viewer-currency changePct (source pin)', () => {
+    // The household card badge needs a month-over-month delta: the hook must
+    // read the PREVIOUS month under the same household-scoped key family and
+    // derive the delta from the VIEWER-currency row only (never a
+    // cross-currency sum — the RPC contract is one row per unit). RN hook
+    // internals are unreachable from this node harness, so the behavior is
+    // pinned at source; the body slice scopes both matches to this hook.
+    const src = readFileSync(
+      join(root, 'src/features/home/hooks/useHomeFeed.ts'),
+      'utf8',
+    );
+    const start = src.indexOf('export function useHouseholdMonthTotal');
+    const body = src.slice(
+      start,
+      src.indexOf('export function ', start + 1),
+    );
+    assert.match(
+      body,
+      /readMonthlyPurchasesTotal\(\s*previousMonthKey\(monthKey\)/,
+      'the hook must read the previous month via readMonthlyPurchasesTotal(previousMonthKey(monthKey), …)',
+    );
+    assert.match(
+      body,
+      /Math\.round\(\(\([\s\S]*?\) \* 1000\) \/ 10/,
+      'the hook must compute the viewer-currency changePct (Math.round(… * 1000) / 10)',
+    );
+  });
+
   await test('a row without the origin flag defaults to scanned (isManual false)', () => {
     // Producers that do not emit `is_manual` (the optimistic review row)
     // must read as scanned until proven manual — never undefined.
