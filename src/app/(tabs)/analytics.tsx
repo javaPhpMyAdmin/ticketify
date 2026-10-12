@@ -794,14 +794,15 @@ function ChartsEntryCard({ isPro }: ChartsEntryCardProps) {
  * not hidden) so free users see that an alert exists and the Pro pill
  * makes the upsell explicit.
  *
- * Tap routing:
+ * Tap routing (three cases):
  *
- * - `isPro === true`: `onPress` navigates to the source receipt detail
+ * - `!isPro`: `onPress` pushes the paywall (`/pro`). The banner
+ *   content still renders so the user understands what they would unlock.
+ * - `isPro && alert.receiptId`: `onPress` navigates to the source receipt detail
  *   at `/receipts/${alert.receiptId}`. The id is captured deterministically
  *   by `computePriceAlerts` (S2: latest `purchase_date`, tie-break `id`
  *   ascending) so two runs on the same data land on the same receipt.
- * - `isPro === false`: `onPress` pushes the paywall (`/pro`). The banner
- *   content still renders so the user understands what they would unlock.
+ * - `isPro && !alert.receiptId`: no-op (do nothing; never the paywall).
  */
 interface PriceAlertBannerProps {
   alert: PriceAlert;
@@ -811,11 +812,15 @@ interface PriceAlertBannerProps {
 function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
   const { t } = useTranslation(['analytics']);
   const handlePress = () => {
-    if (isPro && alert.receiptId) {
-      router.push(`/receipts/${alert.receiptId}`);
-    } else {
+    if (!isPro) {
       router.push('/pro');
+      return;
     }
+    if (alert.receiptId) {
+      router.push(`/receipts/${alert.receiptId}`);
+      return;
+    }
+    // isPro && !alert.receiptId: no-op
   };
   return (
     <Pressable

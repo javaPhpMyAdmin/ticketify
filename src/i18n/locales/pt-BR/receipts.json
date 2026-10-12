@@ -44,5 +44,6 @@
   "countScanned_other": "{{count}} comprovantes escaneados",
   "countManual_one": "{{count}} comprovante manual",
   "countManual_other": "{{count}} comprovantes manuais",
-  "itemQuantity": "Qtd. {{quantity}}"
+  "itemQuantity": "Qtd. {{quantity}}",
+  "itemUnitPrice": "Preço unitário"
 }

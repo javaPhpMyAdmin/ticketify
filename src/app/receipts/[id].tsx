@@ -580,9 +580,22 @@ export default function ReceiptDetailScreen() {
                         </Text>
                       ) : null}
                     </View>
-                    <Text style={styles.itemAmount}>
-                      {formatCurrency(item.amount, receipt.currency ?? currency)}
-                    </Text>
+                    <View style={styles.itemRight}>
+                      {(() => {
+                        const unitPrice = (item as any).unit_price;
+                        const qty = item.quantity ?? 1;
+                        const showUnit = unitPrice != null && (qty !== 1 || unitPrice !== item.amount);
+                        if (!showUnit) return null;
+                        return (
+                          <Text style={styles.itemUnit}>
+                            {t('receipts:itemUnitPrice', { price: formatCurrency(unitPrice, receipt.currency ?? currency) })}
+                          </Text>
+                        );
+                      })()}
+                      <Text style={styles.itemAmount}>
+                        {formatCurrency(item.amount, receipt.currency ?? currency)}
+                      </Text>
+                    </View>
                   </View>
                   {idx < items.length - 1 ? <Divider /> : null}
                 </View>
@@ -843,6 +856,14 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   itemQty: {
+    ...typography.labelSm,
+    color: colors.textSecondary,
+  },
+  itemRight: {
+    alignItems: 'flex-end',
+    gap: 2,
+  },
+  itemUnit: {
     ...typography.labelSm,
     color: colors.textSecondary,
   },
