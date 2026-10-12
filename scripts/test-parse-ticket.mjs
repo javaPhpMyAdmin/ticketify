@@ -22,6 +22,7 @@ import {
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { readFile } from 'node:fs/promises';
 
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -178,9 +179,11 @@ async function run() {
     );
   });
 
-  await test('parseItem clamps quantity to a positive integer', () => {
-    const parsed = parseItem({ ...item(), quantity: 0 }, 0);
-    assert.equal(parsed.quantity, 1);
+  await test('parseItem falls back to quantity 1 when the count is non-positive', () => {
+    // A fractional count is PRESERVED (weighed lines), so the guard is only a
+    // floor on zero/negative input, not an integer coercion.
+    assert.equal(parseItem({ ...item(), quantity: 0 }, 0).quantity, 1);
+    assert.equal(parseItem({ ...item(), quantity: -2 }, 0).quantity, 1);
   });
 
   await test('parseItem re-derives unit_price when quantity × unit_price mismatches total', () => {
@@ -191,6 +194,31 @@ async function run() {
     assert.equal(parsed.quantity, 2);
     assert.equal(parsed.unit_price, 47);
     assert.equal(parsed.total_price, 94);
+  });
+
+  await test('parseItem keeps a fractional quantity and its per-unit price (weighed line)', () => {
+    const parsed = parseItem(
+      { name: 'Tomate', quantity: 1.35, unit_price: 100, total_price: 135 },
+      0,
+    );
+    assert.equal(parsed.quantity, 1.35);
+    assert.equal(parsed.unit_price, 100);
+    assert.equal(parsed.total_price, 135);
+  });
+
+  await test('parseItem guard re-derives unit_price from a weighed total (model put the total in unit_price)', () => {
+    const parsed = parseItem(
+      { name: 'Tomate', quantity: 1.35, unit_price: 135, total_price: 135 },
+      0,
+    );
+    assert.equal(parsed.quantity, 1.35);
+    assert.equal(parsed.unit_price, 100);
+    assert.equal(parsed.total_price, 135);
+  });
+
+  await test('parseItem rounds a fractional quantity to 3 decimals', () => {
+    const parsed = parseItem({ ...item(), quantity: 1.23456 }, 0);
+    assert.equal(parsed.quantity, 1.235);
   });
 
   console.log('\n[tests] parseReceiptJson still enforces receipt shape\n');
@@ -399,6 +427,18 @@ async function run() {
     assert.match(
       listPrompt,
       /All money values must be plain numbers without currency symbols or thousands separators\./,
+    );
+  });
+
+  await test('both prompts carry the weighed-line rule', async () => {
+    const source = await readFile(
+      join(root, 'supabase', 'functions', 'parse-ticket', 'index.ts'),
+      'utf8',
+    );
+    const occurrences = source.split('Weighed lines').length - 1;
+    assert.ok(
+      occurrences >= 2,
+      `expected the weighed-line rule in both prompts, found ${occurrences}`,
     );
   });
 
