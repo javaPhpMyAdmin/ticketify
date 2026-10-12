@@ -520,6 +520,40 @@ async function run() {
     }
   });
 
+  await test('the symbol gate re-keys on the currency AND the hydration flag (a currency change must not stick it shut)', async () => {
+    // Regression net for the mid-session currency change: `currencyHydrated`
+    // flips false→true exactly ONCE per session, so a close-on-currency-change
+    // effect with a separate open-on-hydration effect would close the gate on
+    // an edit and nothing would ever re-open it — every amount would lose its
+    // symbol until sign-out. The gate must follow the CURRENT state whenever
+    // either input moves.
+    const src = readFileSync(
+      join(root, 'src', 'features', 'profile', 'components', 'ProfileHydration.tsx'),
+      'utf8',
+    );
+    const opens = (src.match(/setCurrencySymbolGate\(currencyHydrated\)/g) ?? [])
+      .length;
+    const closes = (src.match(/setCurrencySymbolGate\(false\)/g) ?? []).length;
+    assert.equal(
+      opens,
+      1,
+      'the gate must follow the hydration flag exactly once (the merged effect)',
+    );
+    assert.equal(
+      closes,
+      1,
+      'only the unmount teardown may close the gate',
+    );
+    assert.ok(
+      src.includes('}, [currency, currencyHydrated]);'),
+      'the gate effect must re-key on BOTH the currency and the hydration flag',
+    );
+    assert.ok(
+      !/},\s*\[currency\]\);/.test(src),
+      'a close-on-currency-change effect would stick the gate shut',
+    );
+  });
+
   await test('a RETRYING transient read keeps the gate shut across its attempts', async () => {
     resetAll();
     signIn();
