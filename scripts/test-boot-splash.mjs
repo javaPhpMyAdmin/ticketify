@@ -445,6 +445,30 @@ async function run() {
     );
   });
 
+  await test('layout: auth overlay gate binds authFlowInFlight AND session == null on the same condition', () => {
+    assert.ok(
+      layout.includes('authFlowInFlight'),
+      '_layout.tsx must subscribe to authFlowInFlight (overlay gating)',
+    );
+    assert.ok(
+      layout.includes('session == null'),
+      '_layout.tsx must reference session == null in gating logic',
+    );
+    // The gate must AND both conditions together — a subscription alone is
+    // not enough (dropping `authFlowInFlight` from the condition would leave
+    // the overlay showing on a bare `session == null`, re-introducing the
+    // flash this fix removes).
+    const gateLine = layout
+      .split('\n')
+      .find(
+        (line) =>
+          line.includes('authFlowInFlight') && line.includes('session == null'),
+      );
+    assert.ok(
+      gateLine !== undefined,
+      'the auth overlay gate line must reference BOTH authFlowInFlight and session == null',
+    );
+  });
 
   console.log('');
   if (failed > 0) {

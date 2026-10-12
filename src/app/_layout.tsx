@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import { DialogHost, ToastHost } from '@/components';
+import { DialogHost, Spinner, ToastHost, View } from '@/components';
 import { BootSplash, BootSplashErrorBoundary } from '@/components/molecules/BootSplash';
 import { useSessionStore } from '@/features/auth';
 import { getOnboardingCompleted } from '@/features/onboarding/onboarding-storage';
@@ -17,6 +17,7 @@ import { ProBootstrap } from '@/features/pro';
 import { ProfileHydration } from '@/features/profile';
 import { I18nProvider } from '@/i18n/components/I18nProvider';
 import { decideSessionNavigation } from '@/lib/auth/session-nav';
+import { useAuthFlowStore } from '@/lib/auth/oauth';
 import { queryClient } from '@/lib/query-client';
 import { colors } from '@/theme';
 
@@ -41,6 +42,7 @@ export default function RootLayout() {
   const session = useSessionStore((s) => s.session);
   const signOut = useSessionStore((s) => s.signOut);
   const prevSession = useRef(session);
+  const authFlowInFlight = useAuthFlowStore((s) => s.inFlight);
   const pathname = usePathname();
 
   // Single owner of "go to app" navigation. The decision is a pure function
@@ -335,6 +337,18 @@ export default function RootLayout() {
             });
           }}
         />
+        {/* Sign-in handoff overlay: after the OS browser returns from Google
+            OAuth, `session` stays null until the PKCE code exchange resolves
+            (~1s). Without this, the root gate keeps `(auth)` committed and the
+            sign-in screen flashes. `authFlowInFlight` is the reactive flag that
+            covers exactly that window — it never shows during launch boot (no
+            flow) or once a session exists, and the flow's `finally` clears it on
+            success, cancel, and error. */}
+        {session == null && authFlowInFlight && !isBootstrapping ? (
+          <View style={styles.authFlowOverlay}>
+            <Spinner size="lg" color={colors.primary} />
+          </View>
+        ) : null}
       </QueryClientProvider>
     </GestureHandlerRootView>
   );
@@ -342,4 +356,18 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  // Root, absolute-fill surface (same layering pattern as ConsentGate's
+  // backdrop) that covers the Stack during the post-OAuth session handoff.
+  authFlowOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1002,
+    elevation: 1002,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
