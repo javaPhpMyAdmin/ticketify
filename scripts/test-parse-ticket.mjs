@@ -238,6 +238,18 @@ async function run() {
     assert.equal(parsed.quantity, 1);
   });
 
+  await test('parseItem still corrects a fractional line whose rate is plainly wrong', () => {
+    // Quantity and total are both right, so the total can re-derive the true
+    // per-unit price even with a fractional count (135 × 1.35 = 182.25 is off
+    // by far more than 2% of the total).
+    const parsed = parseItem(
+      { name: 'Tomate', quantity: 1.35, unit_price: 100, total_price: 200 },
+      0,
+    );
+    assert.equal(parsed.quantity, 1.35);
+    assert.equal(parsed.unit_price, 148.15);
+  });
+
   console.log('\n[tests] parseReceiptJson still enforces receipt shape\n');
 
   await test('parseReceiptJson accepts a well-formed receipt', () => {

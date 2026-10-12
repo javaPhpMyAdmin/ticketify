@@ -325,13 +325,16 @@ export function parseItem(entry: unknown, index: number): ParsedItem {
   // fires on an actual mismatch (> 2 cents) and always keeps the total as
   // the anchor, so legitimate multi-buy offers that happen to close are
   // untouched. The guard only rewrites `unit_price`; it never changes `quantity`.
-  // A fractional (weighed) count is exempt unless the model plainly reported
-  // the line total as the unit price: the printed per-unit rate beats dividing
-  // the total by a noisy decimal (2.004 × 47 against a total of 94 is correct
-  // and must not become 46.91).
-  const mismatch = Math.abs(quantity * unit_price - total_price) > 0.02;
-  const unitIsTotal = Math.abs(unit_price - total_price) <= 0.02;
-  if (mismatch && (Number.isInteger(quantity) || unitIsTotal)) {
+  // A fractional (weighed) count needs a RELATIVE tolerance: the 0.02 absolute
+  // floor turns an OCR wobble on the count into a corrupting re-derivation
+  // (2.004 × 47 against a total of 94 must stay 47, never 46.91), while a real
+  // wrong rate is off by far more than 2% of the line total. Whole-number
+  // counts keep the original absolute rule untouched.
+  const deviation = Math.abs(quantity * unit_price - total_price);
+  const fires = Number.isInteger(quantity)
+    ? deviation > 0.02
+    : deviation > Math.max(0.02, Math.abs(total_price) * 0.02);
+  if (fires) {
     const rederived = round2(total_price / quantity);
     if (Number.isFinite(rederived) && rederived > 0) {
       unit_price = rederived;
