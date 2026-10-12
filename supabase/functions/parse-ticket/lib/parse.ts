@@ -139,19 +139,33 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export const SUPPORTED_CURRENCIES = [
   // LATAM — thousands `.`, decimals `,`.
   'ARS',
+  'BOB',
   'BRL',
   'CLP',
   'COP',
+  'CRC',
+  'DOP',
+  'GTQ',
+  'HNL',
   'MXN',
+  'NIO',
+  'PAB',
   'PEN',
   'PYG',
   'UYU',
   // INTL — thousands `,`, decimals `.`.
   'AUD',
   'CAD',
+  'CHF',
+  'DKK',
   'EUR',
   'GBP',
+  'HKD',
   'JPY',
+  'NOK',
+  'NZD',
+  'SEK',
+  'SGD',
   'USD',
 ] as const;
 

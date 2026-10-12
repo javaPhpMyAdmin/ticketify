@@ -12,5 +12,19 @@
   "JPY": "Japanese yen",
   "MXN": "Mexican peso",
   "PEN": "Peruvian sol",
-  "PYG": "Paraguayan guaraní"
+  "PYG": "Paraguayan guaraní",
+  "BOB": "Bolivian boliviano",
+  "CRC": "Costa Rican colón",
+  "DOP": "Dominican peso",
+  "GTQ": "Guatemalan quetzal",
+  "HNL": "Honduran lempira",
+  "NIO": "Nicaraguan córdoba",
+  "PAB": "Panamanian balboa",
+  "CHF": "Swiss franc",
+  "DKK": "Danish krone",
+  "HKD": "Hong Kong dollar",
+  "NOK": "Norwegian krone",
+  "NZD": "New Zealand dollar",
+  "SEK": "Swedish krona",
+  "SGD": "Singapore dollar"
 }
