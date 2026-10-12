@@ -582,7 +582,7 @@ export default function ReceiptDetailScreen() {
                     </View>
                     <View style={styles.itemRight}>
                       {(() => {
-                        const unitPrice = (item as any).unit_price;
+                        const unitPrice = item.unit_price;
                         const qty = item.quantity ?? 1;
                         const showUnit = unitPrice != null && (qty !== 1 || unitPrice !== item.amount);
                         if (!showUnit) return null;

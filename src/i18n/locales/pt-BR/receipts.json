@@ -45,5 +45,5 @@
   "countManual_one": "{{count}} comprovante manual",
   "countManual_other": "{{count}} comprovantes manuais",
   "itemQuantity": "Qtd. {{quantity}}",
-  "itemUnitPrice": "Preço unitário"
+  "itemUnitPrice": "Preço unitário {{price}}"
 }

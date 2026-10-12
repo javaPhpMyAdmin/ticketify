@@ -45,5 +45,5 @@
   "countManual_one": "{{count}} manual entry",
   "countManual_other": "{{count}} manual entries",
   "itemQuantity": "Qty. {{quantity}}",
-  "itemUnitPrice": "Unit price"
+  "itemUnitPrice": "Unit price {{price}}"
 }

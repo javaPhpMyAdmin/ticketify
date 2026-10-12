@@ -45,5 +45,5 @@
   "countManual_one": "{{count}} manual",
   "countManual_other": "{{count}} manuales",
   "itemQuantity": "Cant. {{quantity}}",
-  "itemUnitPrice": "Precio unitario"
+  "itemUnitPrice": "Precio unitario {{price}}"
 }
