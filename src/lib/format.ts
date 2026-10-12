@@ -44,10 +44,17 @@ export interface FormatDateOpts {
  */
 export const LATAM_CURRENCY_CODES = [
   'ARS', // Peso argentino
+  'BOB', // Boliviano boliviano
   'BRL', // Real brasileño
   'CLP', // Peso chileno
   'COP', // Peso colombiano
+  'CRC', // Colón costarricense
+  'DOP', // Peso dominicano
+  'GTQ', // Quetzal guatemalteco
+  'HNL', // Lempira hondureño
   'MXN', // Peso mexicano
+  'NIO', // Córdoba nicaragüense
+  'PAB', // Balboa panameño
   'PEN', // Sol peruano
   'PYG', // Guaraní paraguayo
   'UYU', // Peso uruguayo
@@ -61,9 +68,16 @@ export const LATAM_CURRENCY_CODES = [
 export const INTL_CURRENCY_CODES = [
   'AUD',
   'CAD',
+  'CHF',
+  'DKK',
   'EUR',
   'GBP',
+  'HKD',
   'JPY',
+  'NOK',
+  'NZD',
+  'SEK',
+  'SGD',
   'USD',
 ] as const;
 
@@ -124,16 +138,30 @@ export const ZERO_DECIMAL_CURRENCIES: ReadonlySet<string> = new Set([
 export const CURRENCY_SYMBOL: Record<SupportedCurrency, string> = {
   ARS: '$',
   AUD: 'A$',
+  BOB: 'Bs',
   BRL: 'R$',
   CAD: 'CA$',
+  CHF: 'CHF',
   CLP: '$',
   COP: '$',
+  CRC: '₡',
+  DKK: 'kr',
+  DOP: 'RD$',
   EUR: '€',
   GBP: '£',
+  GTQ: 'Q',
+  HKD: 'HK$',
+  HNL: 'L',
   JPY: '¥',
   MXN: '$',
+  NIO: 'C$',
+  NOK: 'kr',
+  NZD: 'NZ$',
+  PAB: 'B/.',
   PEN: 'S/',
   PYG: '₲',
+  SEK: 'kr',
+  SGD: 'S$',
   USD: 'US$',
   UYU: '$U',
 };

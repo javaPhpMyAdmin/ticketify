@@ -366,7 +366,7 @@ async function run() {
     // An out-of-catalog code must be rejected at the validation boundary
     // with the user-safe error and must never reach the network.
     stubMod.__setDeleteRead('profiles', [{ id: 'u1' }]);
-    const result = await profileMod.setProfileCurrency('u1', 'CHF');
+    const result = await profileMod.setProfileCurrency('u1', 'QAR');
     assert.equal(result.status, 'error', 'out-of-catalog code is rejected');
     assert.equal(result.message, profileMod.WRITE_ERROR_MESSAGE);
     assert.equal(

@@ -181,7 +181,7 @@ Rules:
 - Multi-unit lines: receipts show the same product multiple times in different ways — a leading count column ("CANT 2"), a "2 x 47.00" notation, or two identical consecutive lines. When that happens, emit ONE item with quantity = the unit count, unit_price = the price of one unit, and total_price = the line total (quantity × unit_price). NEVER collapse a multi-unit line into quantity=1 with unit_price=total_price: a line "2 x 47.00" must become {"name": "...", "quantity": 2, "unit_price": 47, "total_price": 94}, never quantity=1 / unit_price=94.
 - Weighed lines: when a line shows a measured amount and a per-unit rate (e.g. "1.35 kg x 100.00", "0.750 KG 250.00/K", "1,350 kg x 100"), emit quantity = the measured amount as a decimal (1.35), unit_price = the rate for ONE unit (100), and total_price = quantity x unit_price (135). NEVER put the line total in unit_price. A weighed line that prints ONLY an amount, with no rate, stays quantity = 1 and unit_price = the line total.
 - suggested_category_slug: exactly one of bebidas, frutas-verduras, refrescos, panaderia, carnes, lacteos, limpieza, snacks, alimentos, higiene, farmacia, servicios, otros, or null when you are not confident.
-- currency: the ISO 4217 currency code the receipt's amounts are printed in — a three-letter alphabetic code such as "UYU", "CLP", "USD" or "BRL", uppercase, with NO currency symbol, NO thousands separators and NO amount attached. null when the receipt states no currency. Never guess or infer a currency from unrelated text.
+- currency: the ISO 4217 currency code the receipt's amounts are printed in — a three-letter alphabetic code such as "UYU", "CLP", "USD", "BRL", "NOK", "CHF" or "SGD", uppercase, with NO currency symbol, NO thousands separators and NO amount attached. null when the receipt states no currency. Never guess or infer a currency from unrelated text.
 - All money values must be plain numbers without currency symbols or thousands separators.`;
 
 /**
@@ -213,7 +213,7 @@ Rules:
 - Multi-unit lines like "2 x 47.00" become {"quantity": 2, "unit_price": 47, "total_price": 94}.
 - Weighed lines like "1.35 kg x 100.00" become {"quantity": 1.35, "unit_price": 100, "total_price": 135}: quantity is the decimal measured amount, unit_price is the price of ONE unit, total_price is the line total. Never put the line total in unit_price.
 - suggested_category_slug: exactly one of bebidas, frutas-verduras, refrescos, panaderia, carnes, lacteos, limpieza, snacks, alimentos, higiene, farmacia, servicios, otros, or null when you are not confident.
-- currency: the ISO 4217 currency code the list's prices are written in — a three-letter alphabetic code such as "UYU", "CLP", "USD" or "BRL", uppercase, with NO currency symbol, NO thousands separators and NO amount attached. null when the list states no currency. Never guess or infer a currency from unrelated text.
+- currency: the ISO 4217 currency code the list's prices are written in — a three-letter alphabetic code such as "UYU", "CLP", "USD", "BRL", "NOK", "CHF" or "SGD", uppercase, with NO currency symbol, NO thousands separators and NO amount attached. null when the list states no currency. Never guess or infer a currency from unrelated text.
 - All money values must be plain numbers without currency symbols or thousands separators.`;
 
 async function callGemini(

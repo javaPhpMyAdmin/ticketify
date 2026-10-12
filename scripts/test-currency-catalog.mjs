@@ -3,7 +3,7 @@
  * Single-source-of-truth harness for the currency-universality catalog (AD-6).
  *
  * This harness enforces STRUCTURAL invariants (key-set equality, catalog
- * membership, region-map coverage, ordering). The fourteen supported codes are
+ * membership, region-map coverage, ordering). The twenty-eight supported codes are
  * authoritative in `SUPPORTED_CURRENCIES` (`src/lib/format.ts`); everything
  * else (symbol table, three full-locale `currency.json` catalogs, region
  * defaults, settings selector) must derive from that source. Label
@@ -44,8 +44,10 @@ const FULL_LOCALES = ['en', 'es-419', 'pt-BR'];
  *  REMOVE from `SUPPORTED_CURRENCIES`. The catalog itself stays the authority
  *  for order. */
 const SPEC_LIST = [
-  'ARS', 'AUD', 'BRL', 'CAD', 'CLP', 'COP', 'EUR',
-  'GBP', 'JPY', 'MXN', 'PEN', 'PYG', 'USD', 'UYU',
+  'ARS', 'AUD', 'BOB', 'BRL', 'CAD', 'CHF', 'CLP',
+  'COP', 'CRC', 'DKK', 'DOP', 'EUR', 'GBP', 'GTQ',
+  'HKD', 'HNL', 'JPY', 'MXN', 'NIO', 'NOK', 'NZD',
+  'PAB', 'PEN', 'PYG', 'SEK', 'SGD', 'USD', 'UYU',
 ];
 
 /** Every currency code this app has EVER shipped, retired ones INCLUDED.
@@ -63,7 +65,7 @@ const SPEC_LIST = [
  *
  *  Why this matters at all: `ensureProfileCurrency` is INSERT-only, so it can
  *  never repair a profile whose stored `currency` has left the catalog. That
- *  row keeps a code no picker row matches (zero selected rows — the `CHF` case
+ *  row keeps a code no picker row matches (zero selected rows — the `QAR` case
  *  pinned in §3b) until a human taps a valid row, silently re-basing every
  *  amount in the app. Retiring a currency can therefore strand real profiles.
  *  `tsc` does stop the SLOPPY shrink (`Record<SupportedCurrency, string>` and
@@ -81,8 +83,10 @@ const SPEC_LIST = [
  *  this guard cannot close that path — review is the only defense. An edit to
  *  this array is therefore a ledger change, and should be reviewed as one. */
 const CATALOG_LEDGER = [
-  'ARS', 'AUD', 'BRL', 'CAD', 'CLP', 'COP', 'EUR',
-  'GBP', 'JPY', 'MXN', 'PEN', 'PYG', 'USD', 'UYU',
+  'ARS', 'AUD', 'BOB', 'BRL', 'CAD', 'CHF', 'CLP',
+  'COP', 'CRC', 'DKK', 'DOP', 'EUR', 'GBP', 'GTQ',
+  'HKD', 'HNL', 'JPY', 'MXN', 'NIO', 'NOK', 'NZD',
+  'PAB', 'PEN', 'PYG', 'SEK', 'SGD', 'USD', 'UYU',
 ];
 
 /** Retired code -> the migration file in `supabase/migrations/` that rewrites
@@ -262,43 +266,45 @@ async function run() {
   // ── 1. the catalog itself ───────────────────────────────────────────────
   console.log('\n[tests] catalog shape\n');
 
-  await test('SUPPORTED_CURRENCIES carries exactly 14 codes', () => {
-    assert.equal(codes.length, 14);
+  await test('SUPPORTED_CURRENCIES carries exactly 28 codes', () => {
+    assert.equal(codes.length, 28);
   });
 
   await test('SUPPORTED_CURRENCIES has no duplicates (Set size == length)', () => {
     assert.equal(new Set(codes).size, codes.length);
   });
 
-  await test('the sorted catalog equals the 14 codes the spec names', () => {
+  await test('the sorted catalog equals the 28 codes the spec names', () => {
     assert.deepEqual([...codes].sort(), SPEC_LIST);
   });
 
-  // ── 1a. the 0042 SQL re-check literal tracks the catalog ────────────────
+  // ── 1a. the 0046 SQL re-check literal tracks the catalog ────────────────
   // The migration's `v_currency not in (...)` gate is the server-side copy
   // of this list (see the comment above it). It cannot import src/, so it
   // is pinned here against the compiled source of truth — an edit to either
-  // side that makes them disagree fails this harness.
+  // side that makes them disagree fails this harness. 0046 re-creates the
+  // same save_receipt() validation 0042 shipped with the WIDENED catalog, so
+  // it is the live literal; 0042's is frozen at the 14 codes it shipped.
 
-  console.log('\n[tests] 0042 SQL catalog literal tracks SUPPORTED_CURRENCIES\n');
+  console.log('\n[tests] 0046 SQL catalog literal tracks SUPPORTED_CURRENCIES\n');
 
-  await test('0042 `v_currency not in (...)` literal === SUPPORTED_CURRENCIES', () => {
+  await test('0046 `v_currency not in (...)` literal === SUPPORTED_CURRENCIES', () => {
     const sql = readFileSync(
-      join(root, 'supabase', 'migrations', '0042_receipt_currency.sql'),
+      join(root, 'supabase', 'migrations', '0046_widen_currency_catalog.sql'),
       'utf8',
     );
     const gate = /v_currency not in \(([\s\S]*?)\) then/.exec(sql);
-    assert.ok(gate, '0042 catalog re-check (v_currency not in (...)) not found');
+    assert.ok(gate, '0046 catalog re-check (v_currency not in (...)) not found');
     const sqlCodes = [...gate[1].matchAll(/'([A-Z]{3})'/g)].map((m) => m[1]);
     assert.deepEqual(
       [...sqlCodes].sort(),
       [...codes].sort(),
-      '0042 SQL catalog literal drifted from SUPPORTED_CURRENCIES (src/lib/format.ts)',
+      '0046 SQL catalog literal drifted from SUPPORTED_CURRENCIES (src/lib/format.ts)',
     );
     assert.equal(
       new Set(sqlCodes).size,
       sqlCodes.length,
-      '0042 SQL catalog literal has duplicate codes',
+      '0046 SQL catalog literal has duplicate codes',
     );
   });
 
@@ -343,12 +349,12 @@ async function run() {
   // failure mode is driven through a fixture. This is what makes an empty
   // RETIRED_CURRENCIES safe to ship: the guard is exercised today rather than
   // for the first time during a live retirement.
-  const LIVE_14 = [...SPEC_LIST];
+  const LIVE_28 = [...SPEC_LIST];
   // Fixtures retire COP because it is genuinely in the catalog — an earlier
-  // draft used CHF, which the catalog never shipped, so every fixture silently
+  // draft used QAR, which the catalog never shipped, so every fixture silently
   // produced zero problems and every "rejects" assertion passed vacuously.
   const BACKFILL = "update profiles set currency = 'USD' where currency = 'COP';";
-  const without = (code) => LIVE_14.filter((c) => c !== code);
+  const without = (code) => LIVE_28.filter((c) => c !== code);
   const fixture = (files) => (file) =>
     Object.prototype.hasOwnProperty.call(files, file) ? files[file] : null;
   // Assert the mode is REPORTED, not the exact count: one bad state can trip
@@ -463,7 +469,7 @@ async function run() {
   await test('the validator rejects a retired code that is still live', () => {
     const problems = retirementProblems({
       ledger: CATALOG_LEDGER,
-      live: LIVE_14,
+      live: LIVE_28,
       retired: { COP: 'backfill.sql' },
       readMigration: fixture({ 'backfill.sql': BACKFILL }),
     });
@@ -478,7 +484,7 @@ async function run() {
     // only review catches it.
     const problems = retirementProblems({
       ledger: without('COP'),
-      live: LIVE_14,
+      live: LIVE_28,
       retired: {},
       readMigration: fixture({}),
     });
@@ -523,28 +529,48 @@ async function run() {
       codes,
       [
         'ARS',
+        'BOB',
         'BRL',
         'CLP',
         'COP',
+        'CRC',
+        'DOP',
+        'GTQ',
+        'HNL',
         'MXN',
+        'NIO',
+        'PAB',
         'PEN',
         'PYG',
         'UYU',
         'AUD',
         'CAD',
+        'CHF',
+        'DKK',
         'EUR',
         'GBP',
+        'HKD',
         'JPY',
+        'NOK',
+        'NZD',
+        'SEK',
+        'SGD',
         'USD',
       ],
     );
   });
 
   await test('every code resolves a non-empty symbol, never a bare fallback', () => {
+    // CHF is the ONE code whose CONVENTIONAL symbol is its own ISO code, so
+    // its explicit table entry legitimately equals the code — this is not the
+    // missing-key `code-as-symbol` fallback the assertion hunts for.
+    const selfSymbolCodes = new Set(['CHF']);
     for (const code of codes) {
       const symbol = fmt.CURRENCY_SYMBOL[code];
       assert.ok(symbol, `${code} has no CURRENCY_SYMBOL entry`);
-      assert.notEqual(symbol, code, `${code} must not fall back to its own code`);
+      if (!selfSymbolCodes.has(code)) {
+        assert.notEqual(symbol, code, `${code} must not fall back to its own code`);
+      }
     }
   });
 
@@ -708,7 +734,7 @@ async function run() {
   // stored lowercase 'usd' (written by an earlier migration) rendered
   // correctly in every money formatter because those case-fold, yet matched
   // no UPPERCASE catalog code, so no row appeared selected and
-  // `accessibilityState={{ selected }}` was false for all fourteen. The user
+  // `accessibilityState={{ selected }}` was false for all twenty-eight. The user
   // could not distinguish "my currency is gone" from "the list doesn't know
   // it", and tapping another row is a SILENT currency change that re-bases
   // every amount in the app.
@@ -737,7 +763,7 @@ async function run() {
     // Pinned, not wished: a currency the catalog does not ship renders an
     // unselected list. The graceful-degradation UI for it is a tracked
     // follow-up; inventing a synthetic row here would hide the gap.
-    assert.deepEqual(selectedFor('CHF'), []);
+    assert.deepEqual(selectedFor('QAR'), []);
     assert.deepEqual(selectedFor('usd2'), []);
   });
 
@@ -751,7 +777,7 @@ async function run() {
     // Guards the failure mode where a predicate is written against a few codes
     // (or is accidentally always true): each code, fed in as the current
     // value, must select ITSELF and nothing else.
-    assert.equal(codes.length, 14);
+    assert.equal(codes.length, 28);
     for (const code of codes) {
       assert.deepEqual(selectedFor(code), [code], `${code} must be selectable`);
     }

@@ -221,32 +221,38 @@ async function run() {
     assert.equal(fmt.formatCurrency(1234.56, 'usd'), 'US$ 1,234.56');
   });
 
-  await test('all 14 catalog codes render symbol-prefixed (never a bare code)', () => {
-    // REQ-1.3.3. The loop is non-vacuous: the catalog is asserted to hold 14
-    // distinct codes in the section below.
+  await test('all 28 catalog codes render symbol-prefixed (never a bare code)', () => {
+    // REQ-1.3.3. The loop is non-vacuous: the catalog is asserted to hold 28
+    // distinct codes in the section below. CHF is exempt from the "not the
+    // bare code" half: its conventional symbol IS "CHF", so a correct render
+    // legitimately starts with the code plus a space.
     for (const code of fmt.SUPPORTED_CURRENCIES) {
       const rendered = fmt.formatCurrency(1234.56, code);
       assert.ok(
         rendered.startsWith(`${fmt.CURRENCY_SYMBOL[code]} `),
         `${code} rendered without its symbol: ${rendered}`,
       );
-      assert.ok(!rendered.startsWith(`${code} `), `${code} fell back to the bare code`);
+      if (code !== 'CHF') {
+        assert.ok(!rendered.startsWith(`${code} `), `${code} fell back to the bare code`);
+      }
     }
   });
 
   console.log('\n[tests] catalog single source of truth (AD-1)\n');
 
-  await test('SUPPORTED_CURRENCIES is the 14-code catalog, no duplicates', () => {
+  await test('SUPPORTED_CURRENCIES is the 28-code catalog, no duplicates', () => {
     // REQ-1.1: the ordered set the selector renders. Pinned here (and again,
-    // cross-file, in test-currency-catalog) because a 13th or 15th code is
-    // exactly the drift this catalog exists to prevent.
-    assert.equal(fmt.SUPPORTED_CURRENCIES.length, 14);
-    assert.equal(new Set(fmt.SUPPORTED_CURRENCIES).size, 14);
+    // cross-file, in test-currency-catalog) because an added or dropped code
+    // is exactly the drift this catalog exists to prevent.
+    assert.equal(fmt.SUPPORTED_CURRENCIES.length, 28);
+    assert.equal(new Set(fmt.SUPPORTED_CURRENCIES).size, 28);
     assert.deepEqual(
       [...fmt.SUPPORTED_CURRENCIES].sort(),
       [
-        'ARS', 'AUD', 'BRL', 'CAD', 'CLP', 'COP', 'EUR', 'GBP', 'JPY',
-        'MXN', 'PEN', 'PYG', 'USD', 'UYU',
+        'ARS', 'AUD', 'BOB', 'BRL', 'CAD', 'CHF', 'CLP', 'COP', 'CRC',
+        'DKK', 'DOP', 'EUR', 'GBP', 'GTQ', 'HKD', 'HNL', 'JPY', 'MXN',
+        'NIO', 'NOK', 'NZD', 'PAB', 'PEN', 'PYG', 'SEK', 'SGD', 'USD',
+        'UYU',
       ],
     );
   });
@@ -261,7 +267,7 @@ async function run() {
   await test('every catalog code resolves a symbol (never a bare code)', () => {
     // REQ-1.3. The table is typed `Record<SupportedCurrency, string>` so a
     // missing entry is a `tsc` error; this is the runtime half of the same
-    // guarantee (the loop is non-vacuous — 14 codes are asserted above).
+    // guarantee (the loop is non-vacuous — 28 codes are asserted above).
     for (const code of fmt.SUPPORTED_CURRENCIES) {
       assert.ok(fmt.CURRENCY_SYMBOL[code], `${code} has no symbol`);
     }
