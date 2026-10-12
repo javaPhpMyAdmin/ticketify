@@ -811,6 +811,10 @@ interface PriceAlertBannerProps {
 
 function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
   const { t } = useTranslation(['analytics']);
+  // A Pro user with an id-less alert has nothing to open (receiptId is
+  // optional and can be an empty string). The banner stays readable, but it
+  // must not announce a dead action to assistive tech.
+  const canAct = !isPro || !!alert.receiptId;
   const handlePress = () => {
     if (!isPro) {
       router.push('/pro');
@@ -818,21 +822,26 @@ function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
     }
     if (alert.receiptId) {
       router.push(`/receipts/${alert.receiptId}`);
-      return;
     }
-    // isPro && !alert.receiptId: no-op
   };
   return (
     <Pressable
-      onPress={handlePress}
-      accessibilityRole="button"
+      onPress={canAct ? handlePress : undefined}
+      disabled={!canAct}
+      accessibilityRole={canAct ? 'button' : undefined}
       accessibilityHint={
-        isPro ? t('analytics:priceAlertA11yHint') : t('analytics:priceAlertProA11yHint')
+        canAct
+          ? isPro
+            ? t('analytics:priceAlertA11yHint')
+            : t('analytics:priceAlertProA11yHint')
+          : undefined
       }
       accessibilityLabel={
-        isPro
-          ? t('analytics:priceAlertA11y')
-          : t('analytics:priceAlertProA11y')
+        canAct
+          ? isPro
+            ? t('analytics:priceAlertA11y')
+            : t('analytics:priceAlertProA11y')
+          : undefined
       }
       style={({ pressed }) => [
         styles.alertBanner,

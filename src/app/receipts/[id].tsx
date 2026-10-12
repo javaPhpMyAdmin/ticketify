@@ -567,43 +567,43 @@ export default function ReceiptDetailScreen() {
           <Text style={styles.sectionTitle}>{t('receipts:itemsTitle')}</Text>
           <Card padding={spacing.lg}>
             {items.length > 0 ? (
-              items.map((item, idx) => (
-                <View key={`${item.name}-${idx}`}>
-                  <View style={styles.itemRow}>
-                    <View style={styles.itemInfo}>
-                      <Text style={styles.itemName} numberOfLines={1}>
-                        {item.name}
-                      </Text>
-                      {(item.quantity ?? 1) > 1 ? (
-                        <Text style={styles.itemQty}>
-                          {t('receipts:itemQuantity', { quantity: item.quantity ?? 1 })}
+              items.map((item, idx) => {
+                const quantity = item.quantity ?? 1;
+                const amountText = formatCurrency(item.amount, receipt.currency ?? currency);
+                // unit_price and amount use different precision (numeric(10,3)
+                // vs numeric(12,2)); compare what the user actually sees so two
+                // identical strings can never render one above the other.
+                const unitText =
+                  item.unit_price != null
+                    ? formatCurrency(item.unit_price, receipt.currency ?? currency)
+                    : null;
+                const showUnit = unitText != null && (quantity !== 1 || unitText !== amountText);
+                return (
+                  <View key={`${item.name}-${idx}`}>
+                    <View style={styles.itemRow}>
+                      <View style={styles.itemInfo}>
+                        <Text style={styles.itemName} numberOfLines={1}>
+                          {item.name}
                         </Text>
-                      ) : null}
-                    </View>
-                    <View style={styles.itemRight}>
-                      {(() => {
-                        const unitPrice = item.unit_price;
-                        const qty = item.quantity ?? 1;
-                        const cur = receipt.currency ?? currency;
-                        const unitText = unitPrice != null ? formatCurrency(unitPrice, cur) : null;
-                        const amountText = formatCurrency(item.amount, cur);
-                        if (unitText == null) return null;
-                        const showUnit = qty !== 1 || unitText !== amountText;
-                        if (!showUnit) return null;
-                        return (
+                        {quantity > 1 ? (
+                          <Text style={styles.itemQty}>
+                            {t('receipts:itemQuantity', { quantity })}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <View style={styles.itemRight}>
+                        {showUnit ? (
                           <Text style={styles.itemUnit}>
                             {t('receipts:itemUnitPrice', { price: unitText })}
                           </Text>
-                        );
-                      })()}
-                      <Text style={styles.itemAmount}>
-                        {formatCurrency(item.amount, receipt.currency ?? currency)}
-                      </Text>
+                        ) : null}
+                        <Text style={styles.itemAmount}>{amountText}</Text>
+                      </View>
                     </View>
+                    {idx < items.length - 1 ? <Divider /> : null}
                   </View>
-                  {idx < items.length - 1 ? <Divider /> : null}
-                </View>
-              ))
+                );
+              })
             ) : (
               <Text style={styles.empty}>{t('receipts:itemsEmpty')}</Text>
             )}

@@ -640,15 +640,29 @@ async function run() {
     const m = src.match(/const handlePress\s*=\s*\(\)\s*=>\s*\{([\s\S]*?)^\s*  \};/m);
     assert.ok(m, 'handlePress function must exist in analytics.tsx');
     const body = m[1];
-    const pushesToPro = /router\.push\(['"]\/pro['"]\)/g;
-    const proPushes = (body.match(pushesToPro) || []).length;
-    assert.ok(proPushes >= 1, 'must push /pro at least once');
-    assert.ok(/alert\.receiptId/.test(body), 'must reference alert.receiptId');
-    assert.ok(/receipts/.test(body), 'must reference receipts route');
-    assert.ok(!/else\s*\{\s*router\.push\(['"]\/pro['"]\)\s*\}/s.test(body), 'must NOT have else { push("/pro") } fallback');
-    assert.ok(/\!\s*isPro\b/.test(body), 'must have !isPro guard');
-    assert.ok(/if\s*\(\s*alert\.receiptId\s*\)/.test(body), 'must have isPro && alert.receiptId guard');
-    assert.ok(/!\s*alert\.receiptId/.test(body), 'must have isPro && !alert.receiptId (no-op) branch');
+    // /pro is reachable ONLY through the free-user guard...
+    assert.ok(
+      /if\s*\(\s*!isPro\s*\)\s*\{\s*router\.push\(['"]\/pro['"]\)/.test(body),
+      'must push /pro only inside `if (!isPro)`',
+    );
+    // ...and the receipt route only when an id exists.
+    assert.ok(
+      /if\s*\(\s*alert\.receiptId\s*\)\s*\{\s*router\.push\(`\/receipts\/\$\{alert\.receiptId\}`\)/.test(
+        body,
+      ),
+      'must push /receipts/:id only inside `if (alert.receiptId)`',
+    );
+    // The #191 defect was an `else` falling back to the paywall — forbid it.
+    assert.ok(!/\belse\b/.test(body), 'handler must have no else branch (no paywall fallback)');
+    // The no-op state must not advertise an action that never fires.
+    assert.ok(
+      /const canAct\s*=\s*!isPro\s*\|\|\s*!!alert\.receiptId/.test(src),
+      'no-op state must be derived as canAct = !isPro || !!alert.receiptId',
+    );
+    assert.ok(
+      /disabled=\{!canAct\}/.test(src),
+      'the dead-action state must be disabled (no announced no-op)',
+    );
   });
 
     console.log(`\n[tests] ${passed} passed, ${failed} failed`);
