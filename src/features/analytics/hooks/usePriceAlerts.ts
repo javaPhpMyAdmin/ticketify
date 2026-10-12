@@ -30,6 +30,7 @@ import { computePriceAlerts, type PriceAlert } from '../price-alerts';
 export function usePriceAlerts(monthKey = currentMonthKey()): PriceAlert[] {
   const { userId } = useSessionUser();
   const currency = useSettingsStore((s) => s.currency);
+  const currencyHydrated = useSettingsStore((s) => s.currencyHydrated);
 
   const previousMonth = previousMonthKey(monthKey);
 
@@ -51,7 +52,13 @@ export function usePriceAlerts(monthKey = currentMonthKey()): PriceAlert[] {
   );
 
   return useMemo(
-    () => computePriceAlerts(combined, undefined, monthKey, currency),
-    [combined, monthKey, currency],
+    () =>
+      computePriceAlerts(
+        combined,
+        undefined,
+        monthKey,
+        currencyHydrated ? currency : '',
+      ),
+    [combined, monthKey, currency, currencyHydrated],
   );
 }

@@ -78,27 +78,38 @@ export interface PriceAlert {
 const THRESHOLD = 0.05; // 5% — the demo shows one alert, one miss.
 /**
  * Pure price-alert computation (data-access spec). Groups receipts' line
- * items by normalized identity (package size preserved — "Leche 1L" and
- * "Leche 2L" are different products, so only the same presentation is
- * compared), averages the unit price per month, and
- * compares the "current" month against the one before it. Only items with
- * an explicit `unit_price` participate — without it there is no comparable
+ * items by normalized identity scoped to currency unit (package size preserved
+ * — "Leche 1L" and "Leche 2L" are different products; currency isolation
+ * prevents cross-currency averaging per REQ-8). Averages the unit price per
+ * month and compares the "current" month against the one before it. Only items
+ * with an explicit `unit_price` participate — without it there is no comparable
  * price. A change counts as an alert only when it is strictly ABOVE the
- * threshold (a change of exactly the threshold is not an alert). Returns
- * alerts sorted by absolute change, descending.
+ * threshold (a change of exactly the threshold is not an alert).
+ *
+ * Buckets are keyed by (identity, unit) where unit = receipt.currency ??
+ * viewerCurrency ?? '' — this satisfies REQ-8 NULL policy: a row whose
+ * `currency` is null/undefined falls back to the viewer's currency; with no
+ * viewer (`''`) those rows form their own isolated bucket.
  *
  * While aggregating, the function also tracks the source receipt per
- * `(identity, month)` tuple under the S2 deterministic rule (latest
- * `purchase_date`; tie-break `id` ascending) so each emitted alert
- * carries the receipt id the analytics banner will navigate to. Receipts
- * without an `id` contribute an empty-string candidate — the deterministic
- * comparison still resolves (id is `''`).
+ * `(identity, unit, month)` tuple under the S2 deterministic rule (latest
+ * `purchase_date`; tie-break `id` ascending) so each emitted alert carries the
+ * receipt id the analytics banner will navigate to. Receipts without an `id`
+ * contribute an empty-string candidate — the deterministic comparison still
+ * resolves (id is `''`).
  *
  * `nowMonth` is an explicit `YYYY-MM` so the computation is deterministic
  * and testable with fixed fixtures; callers that want "right now" (the
  * analytics tab) can omit it and it falls back to the real current month.
  * Passing a past month lets the upcoming month selector compare any two
- * consecutive months (e.g. July vs June).
+ * consecutive months (e.g. July vs June). `viewerCurrency` scopes null
+ * currencies and is used only when `receipt.currency` is falsy; pass `''` when
+ * unknown.
+ *
+ * Note: the banner has no currency dimension. When the same normalized
+ * product crosses the threshold in multiple currency units, we collapse to at
+ * most ONE alert per product identity (keep the one with largest |changePct|,
+ * tie → lexicographically smaller unit) before sorting by |changePct| desc.
  */
 export function computePriceAlerts(
   records: ReceiptSpendRecord[],
@@ -106,25 +117,25 @@ export function computePriceAlerts(
   nowMonth = currentMonthKey(),
   viewerCurrency = '',
 ): PriceAlert[] {
-  const getUnit = (receipt: ReceiptSpendRecord) => receipt.currency ?? viewerCurrency ?? '';
-  // identity\0unit -> { month -> { total, count } }
+  const getUnit = (receipt: ReceiptSpendRecord) => receipt.currency ?? viewerCurrency;
+  // identity::unit -> { month -> { total, count } }
   const byIdentity = new Map<string, Map<string, { total: number; count: number }>>();
-  // identity\0unit -> display name + category (first occurrence in records order
+  // identity::unit -> display name + category (first occurrence in records order
   // wins — display metadata only, the math uses `id` throughout)
   const meta = new Map<string, { name: string; category: string }>();
-  // identity\0unit -> { month -> SourceReceipt } — S2 deterministic capture.
+  // identity::unit -> { month -> SourceReceipt } — S2 deterministic capture.
   const sourceByIdentityMonth = new Map<string, Map<string, SourceReceipt>>();
 
   for (const receipt of records) {
     const month = getMonthKey(receipt.purchase_date);
     const receiptId = receipt.id ?? '';
-    const unit = getUnit(receipt);
+    const unit = getUnit(receipt) ?? '';
     for (const item of receipt.items ?? []) {
       if (item.unit_price === undefined) continue;
       // Identity keeps the package size so different presentations of the
       // same product never cross-compare; display metadata stays raw.
       const identity = normalizePriceIdentity(item.name);
-      const id = identity + '\0' + unit;
+      const id = `${identity}::${unit}`;
       const perMonth = byIdentity.get(id) ?? new Map();
       const acc = perMonth.get(month) ?? { total: 0, count: 0 };
       acc.total += item.unit_price;
@@ -152,8 +163,9 @@ export function computePriceAlerts(
   const previous = previousMonthKey(nowMonth);
   const nowSources = sourceByIdentityMonth;
 
-  const alerts: PriceAlert[] = [];
+  const alertsWithUnit: Array<PriceAlert & { identity: string; unit: string }> = [];
   for (const [id, perMonth] of byIdentity) {
+    const [identityKey, unitKey = ''] = id.split('::');
     const now = perMonth.get(nowMonth);
     const then = perMonth.get(previous);
     // No pair in one of the months → nothing to compare. A zero base in the
@@ -164,8 +176,10 @@ export function computePriceAlerts(
     const change = (currentPrice - previousPrice) / previousPrice;
     // Strictly ABOVE the threshold — a change of exactly 5% is not an alert.
     if (Math.abs(change) <= threshold) continue;
-    alerts.push({
-      name: meta.get(id)?.name ?? id,
+    alertsWithUnit.push({
+      identity: identityKey,
+      unit: unitKey,
+      name: meta.get(id)?.name ?? identityKey,
       category: meta.get(id)?.category ?? '',
       currentPrice,
       previousPrice,
@@ -174,5 +188,25 @@ export function computePriceAlerts(
     });
   }
 
-  return alerts.sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
+  // Collapse to at most one alert per product identity (banner has no currency
+  // dimension). Keep the one with largest absolute changePct; tie-break by
+  // lexicographically smaller unit.
+  const collapsed = new Map<string, PriceAlert & { identity: string; unit: string; abs: number }>();
+  for (const a of alertsWithUnit) {
+    const abs = Math.abs(a.changePct);
+    const existing = collapsed.get(a.identity);
+    if (!existing) {
+      collapsed.set(a.identity, { ...(a as any), abs } as any);
+      continue;
+    }
+    if (abs > existing.abs || (abs === existing.abs && a.unit < existing.unit)) {
+      collapsed.set(a.identity, { ...(a as any), abs } as any);
+    }
+  }
+
+  const final = Array.from(collapsed.values()).map((v) => {
+    const { abs: _abs, identity: _identity, unit: _unit, ...rest } = v;
+    return rest as PriceAlert;
+  });
+  return final.sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
 }

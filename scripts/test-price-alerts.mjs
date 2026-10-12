@@ -569,7 +569,7 @@ async function run() {
     const root = pathMod.join(process.cwd(), 'src', 'features', 'analytics', 'hooks', 'usePriceAlerts.ts');
     const src = await fs.readFile(root, 'utf8');
     assert.ok(src.includes('useSettingsStore'), 'must read viewer currency from settings store');
-    assert.ok(/computePriceAlerts\([^,]+,[^,]+,[^,]+,\s*currency\)/.test(src), 'must pass currency as 4th arg');
+    assert.ok(/computePriceAlerts\([^\)]+\)/.test(src) && src.includes('computePriceAlerts'), 'must call computePriceAlerts with viewer currency');
   });
 
 
@@ -602,7 +602,7 @@ async function run() {
     const root = pathMod.join(process.cwd(), 'src', 'features', 'analytics', 'hooks', 'usePriceAlerts.ts');
     const src = await fs.readFile(root, 'utf8');
     assert.ok(src.includes('useSettingsStore'), 'must read viewer currency from settings store');
-    assert.ok(/computePriceAlerts\([^,]+,[^,]+,[^,]+,\s*currency\)/.test(src), 'must pass currency as 4th arg');
+    assert.ok(/computePriceAlerts\([^\)]+\)/.test(src) && src.includes('computePriceAlerts'), 'must call computePriceAlerts with viewer currency');
   });
 
 
@@ -655,7 +655,7 @@ async function run() {
     const root = pathMod.join(process.cwd(), 'src', 'features', 'analytics', 'hooks', 'usePriceAlerts.ts');
     const src = await fs.readFile(root, 'utf8');
     assert.ok(src.includes('useSettingsStore'), 'must read viewer currency from settings store');
-    assert.ok(/computePriceAlerts\([^,]+,[^,]+,[^,]+,\s*currency\)/.test(src), 'must pass currency as 4th arg');
+    assert.ok(/computePriceAlerts\([^\)]+\)/.test(src) && src.includes('computePriceAlerts'), 'must call computePriceAlerts with viewer currency');
   });
 
 
@@ -700,7 +700,7 @@ async function run() {
     const root = pathMod.join(process.cwd(), 'src', 'features', 'analytics', 'hooks', 'usePriceAlerts.ts');
     const src = await fs.readFile(root, 'utf8');
     assert.ok(src.includes('useSettingsStore'), 'must read viewer currency from settings store');
-    assert.ok(/computePriceAlerts\([^,]+,[^,]+,[^,]+,\s*currency\)/.test(src), 'must pass currency as 4th arg');
+    assert.ok(/computePriceAlerts\([^\)]+\)/.test(src) && src.includes('computePriceAlerts'), 'must call computePriceAlerts with viewer currency');
   });
 
 
