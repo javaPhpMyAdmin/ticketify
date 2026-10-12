@@ -44,6 +44,8 @@
   "countScanned_other": "{{count}} tickets escaneados",
   "countManual_one": "{{count}} manual",
   "countManual_other": "{{count}} manuales",
+  "itemPriceDeltaDown": "▼ {{value}}% vs el mes pasado",
+  "itemPriceDeltaUp": "▲ {{value}}% vs el mes pasado",
   "itemQuantity": "Cant. {{quantity}}",
   "itemUnitPrice": "Precio unitario {{price}}"
 }

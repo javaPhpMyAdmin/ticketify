@@ -15,7 +15,7 @@ import {
  * ("Leche 1L" vs "Leche 1 L") still collapse into one identity, so a
  * real price change on the same presentation still fires.
  */
-function normalizePriceIdentity(name: string): string {
+export function normalizePriceIdentity(name: string): string {
   return name
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -75,7 +75,7 @@ export interface PriceAlert {
   receiptId: string;
 }
 
-const THRESHOLD = 0.05; // 5% — the demo shows one alert, one miss.
+export const THRESHOLD = 0.05; // 5% — the demo shows one alert, one miss.
 /**
  * Pure price-alert computation (data-access spec). Groups receipts' line
  * items by normalized identity scoped to currency unit (package size preserved
@@ -223,4 +223,45 @@ export function computePriceAlerts(
       receiptId,
     }))
     .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
+}
+
+/**
+ * Per-item unit-price delta vs a previous month, for the receipt detail
+ * screen. Mirrors computePriceAlerts' identity + currency isolation: the
+ * previous month is averaged per (normalized identity, unit) and only the
+ * unit passed here (the current receipt's display unit) is compared, so a
+ * currency switch never cross-compares amounts (see #192). Returns
+ * identity -> changePct (percent, 1 decimal) ONLY when the previous month
+ * had at least one same-unit occurrence AND |changePct| is strictly above
+ * THRESHOLD. No entry = no comparable previous price.
+ */
+export function computeItemPriceDeltas(
+  items: { name: string; unit_price?: number }[],
+  prevMonth: ReceiptSpendRecord[],
+  unit: string,
+): Map<string, number> {
+  const byIdentity = new Map<string, { total: number; count: number }>();
+  for (const record of prevMonth) {
+    const recordUnit = record.currency ?? unit;
+    if (recordUnit !== unit) continue;
+    for (const item of record.items ?? []) {
+      if (item.unit_price === undefined) continue;
+      const identity = normalizePriceIdentity(item.name);
+      const acc = byIdentity.get(identity) ?? { total: 0, count: 0 };
+      acc.total += item.unit_price;
+      acc.count += 1;
+      byIdentity.set(identity, acc);
+    }
+  }
+  const deltas = new Map<string, number>();
+  for (const item of items) {
+    if (item.unit_price === undefined) continue;
+    const identity = normalizePriceIdentity(item.name);
+    const prev = byIdentity.get(identity);
+    if (!prev || prev.count === 0 || prev.total <= 0) continue;
+    const change = (item.unit_price - prev.total / prev.count) / (prev.total / prev.count);
+    if (Math.abs(change) <= THRESHOLD) continue;
+    deltas.set(identity, Math.round(change * 1000) / 10);
+  }
+  return deltas;
 }

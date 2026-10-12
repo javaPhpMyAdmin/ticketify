@@ -577,6 +577,104 @@ async function run() {
     assert.deepEqual(names, ['Leche', 'Leche::Promo']);
   });
 
+  console.log('\n[tests] item price deltas vs the previous month\n');
+
+  await test('item delta: same identity + unit across months', () => {
+    const prev = [
+      { ...receipt('p1', '2026-07-03', item('Leche entera 1L', 100, 'lacteos')), currency: 'USD' },
+      { ...receipt('p2', '2026-07-10', item('Leche entera 1L', 120, 'lacteos')), currency: 'USD' },
+    ];
+    const deltas = alertsMod.computeItemPriceDeltas(
+      [{ name: 'Leche entera 1L', unit_price: 132 }],
+      prev,
+      'USD',
+    );
+    assert.equal(deltas.size, 1);
+    assert.equal(deltas.get('leche entera 1l'), 20);
+  });
+
+  await test('item delta: DOWN is negative', () => {
+    const prev = [
+      { ...receipt('p1', '2026-07-03', item('Leche entera 1L', 110, 'lacteos')), currency: 'USD' },
+    ];
+    const deltas = alertsMod.computeItemPriceDeltas(
+      [{ name: 'Leche entera 1L', unit_price: 100 }],
+      prev,
+      'USD',
+    );
+    assert.equal(deltas.size, 1);
+    assert.equal(deltas.get('leche entera 1l'), -9.1);
+  });
+
+  await test('item delta: exactly 5% is NOT a delta', () => {
+    const prev = [
+      { ...receipt('p1', '2026-07-03', item('Leche entera 1L', 100, 'lacteos')), currency: 'USD' },
+    ];
+    const deltas = alertsMod.computeItemPriceDeltas(
+      [{ name: 'Leche entera 1L', unit_price: 105 }],
+      prev,
+      'USD',
+    );
+    assert.equal(deltas.size, 0);
+  });
+
+  await test('item delta: a different currency in the previous month is ignored', () => {
+    const prev = [
+      { ...receipt('p1', '2026-07-03', item('Leche entera 1L', 1000, 'lacteos')), currency: 'UYU' },
+    ];
+    const deltas = alertsMod.computeItemPriceDeltas(
+      [{ name: 'Leche entera 1L', unit_price: 132 }],
+      prev,
+      'USD',
+    );
+    assert.equal(deltas.size, 0);
+  });
+
+  await test('item delta: a prev row WITHOUT currency is attributed to the compared unit', () => {
+    const prev = [receipt('p1', '2026-07-03', item('Leche entera 1L', 100, 'lacteos'))];
+    const deltas = alertsMod.computeItemPriceDeltas(
+      [{ name: 'Leche entera 1L', unit_price: 132 }],
+      prev,
+      'USD',
+    );
+    assert.equal(deltas.size, 1);
+    assert.equal(deltas.get('leche entera 1l'), 32);
+  });
+
+  await test('item delta: identity normalization collapses equivalent spellings', () => {
+    const prev = [
+      receipt('p1', '2026-07-03', item('Leche 1 L', 100, 'lacteos')),
+      receipt('p2', '2026-07-10', item('Leche 2L', 200, 'lacteos')),
+    ];
+    const deltas = alertsMod.computeItemPriceDeltas(
+      [{ name: 'Leche 1L', unit_price: 120 }],
+      prev,
+      'USD',
+    );
+    assert.equal(deltas.size, 1);
+    assert.equal(deltas.get('leche 1l'), 20, 'spaced size collapses onto the compact one');
+    assert.equal(deltas.get('leche 2l'), undefined, 'a different package size must NOT match');
+  });
+
+  await test('item delta: no previous data → no entry', () => {
+    const deltas = alertsMod.computeItemPriceDeltas(
+      [{ name: 'Leche entera 1L', unit_price: 132 }],
+      [],
+      'USD',
+    );
+    assert.equal(deltas.size, 0);
+  });
+
+  await test('item delta: threshold semantics match alerts exactly', () => {
+    const prev = [receipt('p1', '2026-07-03', item('Leche entera 1L', 94, 'lacteos'))];
+    const deltas = alertsMod.computeItemPriceDeltas(
+      [{ name: 'Leche entera 1L', unit_price: 100 }],
+      prev,
+      'USD',
+    );
+    assert.equal(deltas.get('leche entera 1l'), 6.4);
+  });
+
 
   // ── PART 2: usePriceAlerts hook wiring (BLOCKER 2) ─────────────────────
   // Exercises the ACTUAL hook: two month-scoped queries (selected + previous
