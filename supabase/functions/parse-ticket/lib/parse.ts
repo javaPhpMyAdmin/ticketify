@@ -199,6 +199,10 @@ export function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+export function round3(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
 /** Unknown payment methods degrade to 'other' instead of failing the scan. */
 export function normalizePaymentMethod(
   value: unknown,
@@ -297,11 +301,16 @@ export function parseItem(entry: unknown, index: number): ParsedItem {
     throw new ParseError(`items[${index}] is not an object`);
   }
   const name = requireNonEmptyString(entry.name, `items[${index}].name`);
-  // Clamp quantity to a positive integer (floor, min 1).
-  const quantity = Math.max(
-    1,
-    Math.floor(requireFiniteNumber(entry.quantity, `items[${index}].quantity`)),
+  // Keep fractional quantities (weighed lines: "1.35 kg") rounded to 3
+  // decimals — the precision the DB stores (`purchase_items.quantity
+  // numeric(10,3)`). A count that rounds to zero (or overflows) falls back to 1.
+  const rawQuantity = requireFiniteNumber(
+    entry.quantity,
+    `items[${index}].quantity`,
   );
+  const roundedQuantity = round3(rawQuantity);
+  const quantity =
+    Number.isFinite(roundedQuantity) && roundedQuantity > 0 ? roundedQuantity : 1;
   let unit_price = round2(
     requireFiniteNumber(entry.unit_price, `items[${index}].unit_price`),
   );
@@ -315,8 +324,17 @@ export function parseItem(entry: unknown, index: number): ParsedItem {
   // line total is the most reliable figure on the receipt. The guard only
   // fires on an actual mismatch (> 2 cents) and always keeps the total as
   // the anchor, so legitimate multi-buy offers that happen to close are
-  // untouched. It never produces a fractional quantity.
-  if (Math.abs(quantity * unit_price - total_price) > 0.02) {
+  // untouched. The guard only rewrites `unit_price`; it never changes `quantity`.
+  // A fractional (weighed) count needs a RELATIVE tolerance: the 0.02 absolute
+  // floor turns an OCR wobble on the count into a corrupting re-derivation
+  // (2.004 × 47 against a total of 94 must stay 47, never 46.91), while a real
+  // wrong rate is off by far more than 2% of the line total. Whole-number
+  // counts keep the original absolute rule untouched.
+  const deviation = Math.abs(quantity * unit_price - total_price);
+  const fires = Number.isInteger(quantity)
+    ? deviation > 0.02
+    : deviation > Math.max(0.02, Math.abs(total_price) * 0.02);
+  if (fires) {
     const rederived = round2(total_price / quantity);
     if (Number.isFinite(rederived) && rederived > 0) {
       unit_price = rederived;
