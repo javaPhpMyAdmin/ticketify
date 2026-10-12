@@ -546,16 +546,35 @@ async function run() {
   });
 
   await test('collapse tie-break: equal |changePct| keeps the lexicographically smaller unit', () => {
+    // The larger unit (UYU) is inserted FIRST on purpose: a "keep the first
+    // seen" collapse would also keep UYU, so only a real lexicographic
+    // tie-break can pass this.
     const records = [
-      { store_name: 'S', purchase_date: '2026-07-10', items: [item('Leche entera 1L', 100, 'lacteos')], currency: 'USD' },
-      { store_name: 'S', purchase_date: '2026-08-10', items: [item('Leche entera 1L', 110, 'lacteos')], currency: 'USD' },
       { store_name: 'S', purchase_date: '2026-07-18', items: [item('Leche entera 1L', 1000, 'lacteos')], currency: 'UYU' },
       { store_name: 'S', purchase_date: '2026-08-18', items: [item('Leche entera 1L', 1100, 'lacteos')], currency: 'UYU' },
+      { store_name: 'S', purchase_date: '2026-07-10', items: [item('Leche entera 1L', 100, 'lacteos')], currency: 'USD' },
+      { store_name: 'S', purchase_date: '2026-08-10', items: [item('Leche entera 1L', 110, 'lacteos')], currency: 'USD' },
     ];
     const alerts = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
     assert.equal(alerts.length, 1);
     assert.equal(alerts[0].changePct, 10);
     assert.equal(alerts[0].currentPrice, 110, 'USD < UYU wins the tie');
+  });
+
+  await test('a "::" inside a product name never merges two distinct products', () => {
+    // "Leche" and "Leche::Promo" normalize to "leche" and "leche::promo". Under
+    // a key that is split back with `split('::')` both truncate to "leche" and
+    // collapse into one alert — silently dropping a real price increase.
+    const records = [
+      { store_name: 'S', purchase_date: '2026-07-10', items: [item('Leche', 100, 'lacteos')], currency: 'USD' },
+      { store_name: 'S', purchase_date: '2026-08-10', items: [item('Leche', 120, 'lacteos')], currency: 'USD' },
+      { store_name: 'S', purchase_date: '2026-07-11', items: [item('Leche::Promo', 100, 'lacteos')], currency: 'USD' },
+      { store_name: 'S', purchase_date: '2026-08-11', items: [item('Leche::Promo', 120, 'lacteos')], currency: 'USD' },
+    ];
+    const alerts = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    const names = alerts.map((a) => a.name).sort();
+    assert.equal(alerts.length, 2, 'two distinct products must produce two alerts');
+    assert.deepEqual(names, ['Leche', 'Leche::Promo']);
   });
 
 

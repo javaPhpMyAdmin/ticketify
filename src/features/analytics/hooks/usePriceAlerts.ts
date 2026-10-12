@@ -22,10 +22,13 @@ import { computePriceAlerts, type PriceAlert } from '../price-alerts';
  * selected month AND the previous month's full receipt rows via
  * `readPurchaseListByMonth` and combines them — preserving the exact output
  * the store-backed version produced (which had all loaded months). The
- * combines is memoized: `computePriceAlerts` re-runs only when either
- * month's rows or the selected month changes. `monthKey` defaults to the
- * current month; the analytics month selector passes the chosen month so
- * alerts compare that month against its predecessor.
+ * combination is memoized: `computePriceAlerts` re-runs when either month's
+ * rows, the selected month, or the viewer currency changes. The viewer
+ * currency is gated on hydration: until the profile row is read, `currency`
+ * is only the seed, so the hook passes `''` (null-currency rows then stay in
+ * their own bucket instead of being mis-filed under the seed). `monthKey`
+ * defaults to the current month; the analytics month selector passes the
+ * chosen month so alerts compare that month against its predecessor.
  */
 export function usePriceAlerts(monthKey = currentMonthKey()): PriceAlert[] {
   const { userId } = useSessionUser();
