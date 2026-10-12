@@ -466,7 +466,7 @@ async function run() {
   await test('receipts without an id field contribute an empty-string candidate (no crash)', () => {
     // The implementation accepts id-less receipts (it falls back to ''),
     // so the deterministic comparison still resolves. The analytics tap
-    // becomes a no-op navigation rather than crashing on a missing id.
+    // becomes a no-op (do nothing) when receiptId is empty.
     // Here the ONLY current-month receipt has no id → alert.receiptId=''.
     const records = [
       receipt('r1', '2026-07-03', item('Leche entera 1L', 1000, 'lacteos')),
@@ -482,7 +482,7 @@ async function run() {
     assert.equal(
       alerts[0].receiptId,
       '',
-      'id-less receipt contributes an empty-string candidate; tap is a no-op navigation',
+      "id-less receipt contributes an empty-string candidate; tap is a no-op (Pro with empty receiptId does nothing)",
     );
   });
 
@@ -631,7 +631,27 @@ async function run() {
     }
   });
 
-  console.log(`\n[tests] ${passed} passed, ${failed} failed`);
+
+  await test('analytics PriceAlertBanner enforces 3-case tap routing (source pin)', async () => {
+    const fs = await import('node:fs/promises');
+    const pathMod = await import('node:path');
+    const root = pathMod.join(process.cwd(), 'src', 'app', '(tabs)', 'analytics.tsx');
+    const src = await fs.readFile(root, 'utf8');
+    const m = src.match(/const handlePress\s*=\s*\(\)\s*=>\s*\{([\s\S]*?)^\s*  \};/m);
+    assert.ok(m, 'handlePress function must exist in analytics.tsx');
+    const body = m[1];
+    const pushesToPro = /router\.push\(['"]\/pro['"]\)/g;
+    const proPushes = (body.match(pushesToPro) || []).length;
+    assert.ok(proPushes >= 1, 'must push /pro at least once');
+    assert.ok(/alert\.receiptId/.test(body), 'must reference alert.receiptId');
+    assert.ok(/receipts/.test(body), 'must reference receipts route');
+    assert.ok(!/else\s*\{\s*router\.push\(['"]\/pro['"]\)\s*\}/s.test(body), 'must NOT have else { push("/pro") } fallback');
+    assert.ok(/\!\s*isPro\b/.test(body), 'must have !isPro guard');
+    assert.ok(/if\s*\(\s*alert\.receiptId\s*\)/.test(body), 'must have isPro && alert.receiptId guard');
+    assert.ok(/!\s*alert\.receiptId/.test(body), 'must have isPro && !alert.receiptId (no-op) branch');
+  });
+
+    console.log(`\n[tests] ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
   rmSync(workdir, { recursive: true, force: true });
 }

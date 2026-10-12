@@ -2488,7 +2488,13 @@ async function run() {
     );
   });
 
-  await test('ReceiptCategoryItemsModal renders ONLY its currency prop (never the profile itself)', () => {
+  await test('receipt detail renders item unit price via t(receipts:itemUnitPrice) with formatCurrency (source pin)', () => {
+    const src = readFileSync(join(root, 'src/app/receipts/[id].tsx'), 'utf8');
+    assert.ok(src.includes("t('receipts:itemUnitPrice'"), 'must call t with receipts:itemUnitPrice');
+    assert.ok(/formatCurrency\(.*unitPrice.*receipt\.currency \?\? currency\)/s.test(src), 'must format unit price with receipt.currency ?? currency');
+  });
+
+    await test('ReceiptCategoryItemsModal renders ONLY its currency prop (never the profile itself)', () => {
     const src = readFileSync(
       join(root, 'src/app/receipts/ReceiptCategoryItemsModal.tsx'),
       'utf8',

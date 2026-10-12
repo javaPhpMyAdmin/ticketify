@@ -576,7 +576,7 @@ export default function ReceiptDetailScreen() {
                       </Text>
                       {(item.quantity ?? 1) > 1 ? (
                         <Text style={styles.itemQty}>
-                          Cant. {item.quantity}
+                          {t('receipts:itemQuantity', { quantity: item.quantity ?? 1 })}
                         </Text>
                       ) : null}
                     </View>
@@ -584,11 +584,15 @@ export default function ReceiptDetailScreen() {
                       {(() => {
                         const unitPrice = item.unit_price;
                         const qty = item.quantity ?? 1;
-                        const showUnit = unitPrice != null && (qty !== 1 || unitPrice !== item.amount);
+                        const cur = receipt.currency ?? currency;
+                        const unitText = unitPrice != null ? formatCurrency(unitPrice, cur) : null;
+                        const amountText = formatCurrency(item.amount, cur);
+                        if (unitText == null) return null;
+                        const showUnit = qty !== 1 || unitText !== amountText;
                         if (!showUnit) return null;
                         return (
                           <Text style={styles.itemUnit}>
-                            {t('receipts:itemUnitPrice', { price: formatCurrency(unitPrice, receipt.currency ?? currency) })}
+                            {t('receipts:itemUnitPrice', { price: unitText })}
                           </Text>
                         );
                       })()}
