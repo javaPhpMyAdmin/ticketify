@@ -423,50 +423,57 @@ async function run() {
 
   const layout = readComponent('src/app/_layout.tsx');
 
-  await test('layout: BootSplash appears BEFORE </I18nProvider> (i18n-ready first frame)', () => {
+  await test('layout: BootSplash renders INSIDE I18nProvider (after <I18nProvider, before </I18nProvider>)', () => {
     const bootSplashIdx = layout.indexOf('<BootSplashErrorBoundary');
+    const i18nOpenIdx = layout.indexOf('<I18nProvider');
     const i18nCloseIdx = layout.indexOf('</I18nProvider>');
     assert.ok(bootSplashIdx > -1, 'BootSplashErrorBoundary must exist in _layout.tsx');
+    assert.ok(i18nOpenIdx > -1, '<I18nProvider must exist in _layout.tsx');
     assert.ok(i18nCloseIdx > -1, '</I18nProvider> must exist in _layout.tsx');
+    // BOTH bounds, not just the close tag: a block moved ABOVE the open tag
+    // still sits "before </I18nProvider>" but mounts OUTSIDE the provider and
+    // paints raw i18n keys. The open-tag lower bound closes that vector.
+    assert.ok(
+      bootSplashIdx > i18nOpenIdx,
+      'BootSplash block must appear AFTER <I18nProvider (mounts inside the provider)',
+    );
     assert.ok(
       bootSplashIdx < i18nCloseIdx,
-      'BootSplash block must appear BEFORE </I18nProvider> so it mounts inside the provider (localized first frame)',
+      'BootSplash block must appear BEFORE </I18nProvider so it mounts inside the provider (localized first frame)',
     );
   });
 
   await test('BootSplash headline: no bare letterSpacing: -0.01 (must use em-aware -0.01 * 16)', () => {
+    // Negative: the bare literal ANYWHERE on the line (NO end anchor) — the
+    // old `$`-anchored patterns missed trailing-content forms such as
+    // `letterSpacing: -0.01, color: colors.textPrimary`. The lookahead
+    // `(?!\s*\*)` excludes the correct em-aware form because `-0.01 * 16`
+    // has ` * ` right after `0.01`.
     assert.ok(
-      !/letterSpacing\s*:\s*-0\.01\s*,?$/m.test(bootSplash) && !/letterSpacing\s*:\s*-0\.01\s*$/m.test(bootSplash),
-      'styles.headline must NOT contain bare letterSpacing: -0.01',
+      !/letterSpacing\s*:\s*-0\.01(?!\s*\*)/m.test(bootSplash),
+      'styles.headline must NOT contain bare letterSpacing: -0.01 (anywhere on the line)',
     );
+    // Positive: the em-aware form must be present.
     assert.ok(
       /letterSpacing\s*:\s*-0\.01\s*\*\s*16/m.test(bootSplash),
       'styles.headline must contain letterSpacing: -0.01 * 16',
     );
   });
 
-  await test('layout: auth overlay gate binds authFlowInFlight AND session == null on the same condition', () => {
+  await test('layout: auth overlay gate is the exact AND triple (session == null && authFlowInFlight && !isBootstrapping)', () => {
     assert.ok(
       layout.includes('authFlowInFlight'),
       '_layout.tsx must subscribe to authFlowInFlight (overlay gating)',
     );
-    assert.ok(
-      layout.includes('session == null'),
-      '_layout.tsx must reference session == null in gating logic',
-    );
-    // The gate must AND both conditions together — a subscription alone is
-    // not enough (dropping `authFlowInFlight` from the condition would leave
-    // the overlay showing on a bare `session == null`, re-introducing the
-    // flash this fix removes).
-    const gateLine = layout
-      .split('\n')
-      .find(
-        (line) =>
-          line.includes('authFlowInFlight') && line.includes('session == null'),
-      );
-    assert.ok(
-      gateLine !== undefined,
-      'the auth overlay gate line must reference BOTH authFlowInFlight and session == null',
+    // The FULL gate expression, in order. Co-occurrence on a line is too
+    // weak: `session == null || authFlowInFlight && !isBootstrapping` and
+    // `session == null && authFlowInFlight` (missing !isBootstrapping) both
+    // satisfy a substring check but weaken/break the gate. Matching the whole
+    // ordered triple rejects every weakening; `\s*` keeps it whitespace-robust.
+    assert.match(
+      layout,
+      /session == null\s*&&\s*authFlowInFlight\s*&&\s*!isBootstrapping/,
+      'auth overlay gate must be exactly `session == null && authFlowInFlight && !isBootstrapping`',
     );
   });
 
