@@ -35,13 +35,19 @@ import {
   useMonthNavigation,
   useMonthReceipts,
   useRunRate,
+  useScanQuota,
 } from '@/features/home';
+import { computeQuotaState } from '@/features/home/quota';
 import {
   HouseholdCard,
   HouseholdCardSkeleton,
   useHousehold,
 } from '@/features/household';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
+import { formatQuotaRenewalLabel } from '@/lib/format';
+import { queryClient } from '@/lib/query-client';
+import { queryKeys, utcYearMonth } from '@/lib/query-keys';
+import { useDialogStore } from '@/stores/use-dialog-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 import { useSessionStore, useSessionUser } from '../../features/auth';
@@ -87,6 +93,50 @@ export default function HomeScreen() {
   const { data: monthList, isLoading: monthLoading } =
     useMonthReceipts(monthKey);
   const { userId } = useSessionUser();
+  // Scan quota for the FAB gate (pro-subscription spec — REQ-GATE-4):
+  // free users at the monthly cap must not reach the camera. Fetches the
+  // current-month row for the FAB decision; shares the scanUsage query
+  // key with the profile meter, so the two never double-fetch
+  // (SCAN_USAGE_STALE_TIME).
+  const { usage: scanUsage, isPro } = useScanQuota();
+
+  // FAB gate: free users at the monthly cap see the quota dialog instead
+  // of the camera. `scanUsage === null` means the row is still loading —
+  // OR a brand-new month with no row yet (scan_usage rows are created on
+  // first consume). Never block on unknown state: Pro always reaches the
+  // camera; free users wait for the pending read and decide once, so an
+  // existing at-cap row (bug #185) still blocks while a fresh-month
+  // null row lets the scan through. The server-side `save_receipt` gate
+  // remains the backstop for genuine free rows.
+  const handleScanPress = useCallback(async () => {
+    let used = scanUsage?.used ?? null;
+    let limit = scanUsage?.limit ?? null;
+    if (used === null && !isPro) {
+      const key = queryKeys.scanUsage(userId!, utcYearMonth());
+      await queryClient.refetchQueries({ queryKey: key });
+      const fresh = queryClient.getQueryData<{
+        scans_used: number;
+        scans_limit: number | null;
+      }>(key);
+      used = fresh?.scans_used ?? null;
+      limit = fresh?.scans_limit ?? null;
+    }
+    if (used !== null) {
+      const state = computeQuotaState(used, limit, isPro);
+      if (state.exhausted) {
+        useDialogStore.getState().show({
+          title: 'Alcanzaste el límite gratuito',
+          message: `Tu plan gratuito incluye ${state.effectiveLimit} escaneos por mes. Se renueva ${formatQuotaRenewalLabel()}.`,
+          primaryLabel: 'Mejorar a Pro',
+          onPrimary: () => router.push('/pro'),
+          secondaryLabel: 'Ahora no',
+        });
+        return;
+      }
+    }
+    router.push('/ticket/camera');
+  }, [scanUsage, isPro, userId]);
+
   // Display convergence (REQ-008): the merged catalog converges the Home
   // feed's category rows with the other tabs — same hook, same query key,
   // same static-first resolution for canonical slugs (W-2).
@@ -369,7 +419,7 @@ export default function HomeScreen() {
           // action `guard()` wrapper is needed. The previous
           // `useFrozenGuard().guard()` wrapper (migration 0035) is now a
           // no-op pass-through; inlined for clarity.
-          onPress={() => router.push('/ticket/camera')}
+          onPress={handleScanPress}
           accessibilityLabel={t('receipts:scanA11y')}
           style={styles.fabCircle}
         />

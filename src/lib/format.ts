@@ -498,6 +498,23 @@ export function formatYearMonth(
 }
 
 /**
+ * Quota-renewal label for the free monthly scan bucket (bug #185 pre-scan
+ * gate). The bucket is keyed by `year_month` via `utcYearMonth` — a UTC
+ * key — so renewal is always the 1st of the NEXT month in UTC, never local
+ * (a local-aware formatter would drift the month at the timezone edge).
+ *
+ * Spanish by design: the app's scan-quota copy is hardcoded es-419
+ * (`ScanQuotaCard`, the FAB gate dialog), so no locale argument is taken.
+ * `now` is injectable for deterministic tests.
+ */
+export function formatQuotaRenewalLabel(now: Date = new Date()): string {
+  const next = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
+  );
+  return `1 de ${MONTHS_FULL_ES[next.getUTCMonth()]} de ${next.getUTCFullYear()}`;
+}
+
+/**
  * Renders a 0-100 percent share as a compact, locale-neutral label —
  * the token itself ("12%") reads the same in every shipped locale, so
  * no locale argument is needed. Keeps a significant digit for tiny
