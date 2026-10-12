@@ -2499,6 +2499,10 @@ async function run() {
       /receipt\.currency \?\? currency/.test(src),
       'must bind the receipt currency (receipt.currency ?? currency)',
     );
+    assert.ok(
+      /unitText !== amountText/.test(src),
+      'unit-price visibility must compare the formatted strings (unitText !== amountText)',
+    );
     // A value edit dropping the placeholder would render the label with no price.
     for (const loc of ['en', 'es-419', 'pt-BR']) {
       const catalog = JSON.parse(

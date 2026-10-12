@@ -570,9 +570,10 @@ export default function ReceiptDetailScreen() {
               items.map((item, idx) => {
                 const quantity = item.quantity ?? 1;
                 const amountText = formatCurrency(item.amount, receipt.currency ?? currency);
-                // unit_price and amount use different precision (numeric(10,3)
-                // vs numeric(12,2)); compare what the user actually sees so two
-                // identical strings can never render one above the other.
+                // formatCurrency rounds for display, so compare the rendered
+                // strings: a raw numeric comparison can surface two identical
+                // amounts stacked (e.g. a qty-1 line whose unit price rounds
+                // to the same value shown as the amount).
                 const unitText =
                   item.unit_price != null
                     ? formatCurrency(item.unit_price, receipt.currency ?? currency)

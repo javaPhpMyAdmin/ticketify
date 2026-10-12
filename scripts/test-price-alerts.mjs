@@ -663,6 +663,10 @@ async function run() {
       /disabled=\{!canAct\}/.test(src),
       'the dead-action state must be disabled (no announced no-op)',
     );
+    assert.ok(
+      /accessibilityRole=\{canAct \? 'button' : undefined\}/.test(src),
+      'the inert state must drop accessibilityRole (no announced dead action)',
+    );
   });
 
     console.log(`\n[tests] ${passed} passed, ${failed} failed`);
