@@ -44,5 +44,6 @@
   "countScanned_other": "{{count}} tickets escaneados",
   "countManual_one": "{{count}} manual",
   "countManual_other": "{{count}} manuales",
-  "itemQuantity": "Cant. {{quantity}}"
+  "itemQuantity": "Cant. {{quantity}}",
+  "itemUnitPrice": "Precio unitario {{price}}"
 }

@@ -2488,7 +2488,34 @@ async function run() {
     );
   });
 
-  await test('ReceiptCategoryItemsModal renders ONLY its currency prop (never the profile itself)', () => {
+  await test('receipt detail renders item unit price via t(receipts:itemUnitPrice) with formatCurrency (source pin)', () => {
+    const src = readFileSync(join(root, 'src/app/receipts/[id].tsx'), 'utf8');
+    assert.ok(src.includes("t('receipts:itemUnitPrice'"), 'must call t with receipts:itemUnitPrice');
+    assert.ok(
+      /formatCurrency\(item\.unit_price,\s*receipt\.currency \?\? currency\)/.test(src),
+      'must format unit_price with the receipt currency',
+    );
+    assert.ok(
+      /receipt\.currency \?\? currency/.test(src),
+      'must bind the receipt currency (receipt.currency ?? currency)',
+    );
+    assert.ok(
+      /unitText !== amountText/.test(src),
+      'unit-price visibility must compare the formatted strings (unitText !== amountText)',
+    );
+    // A value edit dropping the placeholder would render the label with no price.
+    for (const loc of ['en', 'es-419', 'pt-BR']) {
+      const catalog = JSON.parse(
+        readFileSync(join(root, `src/i18n/locales/${loc}/receipts.json`), 'utf8'),
+      );
+      assert.ok(
+        catalog.itemUnitPrice.includes('{{price}}'),
+        `${loc}/receipts.json:itemUnitPrice must include the {{price}} placeholder`,
+      );
+    }
+  });
+
+    await test('ReceiptCategoryItemsModal renders ONLY its currency prop (never the profile itself)', () => {
     const src = readFileSync(
       join(root, 'src/app/receipts/ReceiptCategoryItemsModal.tsx'),
       'utf8',

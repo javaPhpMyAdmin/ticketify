@@ -466,7 +466,7 @@ async function run() {
   await test('receipts without an id field contribute an empty-string candidate (no crash)', () => {
     // The implementation accepts id-less receipts (it falls back to ''),
     // so the deterministic comparison still resolves. The analytics tap
-    // becomes a no-op navigation rather than crashing on a missing id.
+    // becomes a no-op (do nothing) when receiptId is empty.
     // Here the ONLY current-month receipt has no id → alert.receiptId=''.
     const records = [
       receipt('r1', '2026-07-03', item('Leche entera 1L', 1000, 'lacteos')),
@@ -482,7 +482,7 @@ async function run() {
     assert.equal(
       alerts[0].receiptId,
       '',
-      'id-less receipt contributes an empty-string candidate; tap is a no-op navigation',
+      "id-less receipt contributes an empty-string candidate; tap is a no-op (Pro with empty receiptId does nothing)",
     );
   });
 
@@ -631,7 +631,45 @@ async function run() {
     }
   });
 
-  console.log(`\n[tests] ${passed} passed, ${failed} failed`);
+
+  await test('analytics PriceAlertBanner enforces 3-case tap routing (source pin)', async () => {
+    const fs = await import('node:fs/promises');
+    const pathMod = await import('node:path');
+    const root = pathMod.join(process.cwd(), 'src', 'app', '(tabs)', 'analytics.tsx');
+    const src = await fs.readFile(root, 'utf8');
+    const m = src.match(/const handlePress\s*=\s*\(\)\s*=>\s*\{([\s\S]*?)^\s*  \};/m);
+    assert.ok(m, 'handlePress function must exist in analytics.tsx');
+    const body = m[1];
+    // /pro is reachable ONLY through the free-user guard...
+    assert.ok(
+      /if\s*\(\s*!isPro\s*\)\s*\{\s*router\.push\(['"]\/pro['"]\)/.test(body),
+      'must push /pro only inside `if (!isPro)`',
+    );
+    // ...and the receipt route only when an id exists.
+    assert.ok(
+      /if\s*\(\s*alert\.receiptId\s*\)\s*\{\s*router\.push\(`\/receipts\/\$\{alert\.receiptId\}`\)/.test(
+        body,
+      ),
+      'must push /receipts/:id only inside `if (alert.receiptId)`',
+    );
+    // The #191 defect was an `else` falling back to the paywall — forbid it.
+    assert.ok(!/\belse\b/.test(body), 'handler must have no else branch (no paywall fallback)');
+    // The no-op state must not advertise an action that never fires.
+    assert.ok(
+      /const canAct\s*=\s*!isPro\s*\|\|\s*!!alert\.receiptId/.test(src),
+      'no-op state must be derived as canAct = !isPro || !!alert.receiptId',
+    );
+    assert.ok(
+      /disabled=\{!canAct\}/.test(src),
+      'the dead-action state must be disabled (no announced no-op)',
+    );
+    assert.ok(
+      /accessibilityRole=\{canAct \? 'button' : undefined\}/.test(src),
+      'the inert state must drop accessibilityRole (no announced dead action)',
+    );
+  });
+
+    console.log(`\n[tests] ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
   rmSync(workdir, { recursive: true, force: true });
 }

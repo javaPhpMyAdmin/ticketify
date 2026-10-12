@@ -92,8 +92,7 @@ const THRESHOLD = 0.05; // 5% — the demo shows one alert, one miss.
  * `purchase_date`; tie-break `id` ascending) so each emitted alert
  * carries the receipt id the analytics banner will navigate to. Receipts
  * without an `id` contribute an empty-string candidate — the deterministic
- * comparison still resolves (id is `''`), and the analytics tap becomes
- * a no-op navigation rather than crashing.
+ * comparison still resolves (id is `''`).
  *
  * `nowMonth` is an explicit `YYYY-MM` so the computation is deterministic
  * and testable with fixed fixtures; callers that want "right now" (the

@@ -567,26 +567,44 @@ export default function ReceiptDetailScreen() {
           <Text style={styles.sectionTitle}>{t('receipts:itemsTitle')}</Text>
           <Card padding={spacing.lg}>
             {items.length > 0 ? (
-              items.map((item, idx) => (
-                <View key={`${item.name}-${idx}`}>
-                  <View style={styles.itemRow}>
-                    <View style={styles.itemInfo}>
-                      <Text style={styles.itemName} numberOfLines={1}>
-                        {item.name}
-                      </Text>
-                      {(item.quantity ?? 1) > 1 ? (
-                        <Text style={styles.itemQty}>
-                          Cant. {item.quantity}
+              items.map((item, idx) => {
+                const quantity = item.quantity ?? 1;
+                const amountText = formatCurrency(item.amount, receipt.currency ?? currency);
+                // formatCurrency rounds for display, so compare the rendered
+                // strings: a raw numeric comparison can surface two identical
+                // amounts stacked (e.g. a qty-1 line whose unit price rounds
+                // to the same value shown as the amount).
+                const unitText =
+                  item.unit_price != null
+                    ? formatCurrency(item.unit_price, receipt.currency ?? currency)
+                    : null;
+                const showUnit = unitText != null && (quantity !== 1 || unitText !== amountText);
+                return (
+                  <View key={`${item.name}-${idx}`}>
+                    <View style={styles.itemRow}>
+                      <View style={styles.itemInfo}>
+                        <Text style={styles.itemName} numberOfLines={1}>
+                          {item.name}
                         </Text>
-                      ) : null}
+                        {quantity > 1 ? (
+                          <Text style={styles.itemQty}>
+                            {t('receipts:itemQuantity', { quantity })}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <View style={styles.itemRight}>
+                        {showUnit ? (
+                          <Text style={styles.itemUnit}>
+                            {t('receipts:itemUnitPrice', { price: unitText })}
+                          </Text>
+                        ) : null}
+                        <Text style={styles.itemAmount}>{amountText}</Text>
+                      </View>
                     </View>
-                    <Text style={styles.itemAmount}>
-                      {formatCurrency(item.amount, receipt.currency ?? currency)}
-                    </Text>
+                    {idx < items.length - 1 ? <Divider /> : null}
                   </View>
-                  {idx < items.length - 1 ? <Divider /> : null}
-                </View>
-              ))
+                );
+              })
             ) : (
               <Text style={styles.empty}>{t('receipts:itemsEmpty')}</Text>
             )}
@@ -843,6 +861,14 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   itemQty: {
+    ...typography.labelSm,
+    color: colors.textSecondary,
+  },
+  itemRight: {
+    alignItems: 'flex-end',
+    gap: 2,
+  },
+  itemUnit: {
     ...typography.labelSm,
     color: colors.textSecondary,
   },
