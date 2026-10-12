@@ -33,27 +33,31 @@ import { useProfile } from '../hooks/useProfile';
  *
  * ── The subscribe/unsubscribe pair ───────────────────────────────────────
  * Mounting closes the gate synchronously in the effect body (before any
- * money screen's own effect can format). The subscription then pushes every
- * later transition into the module, and the unsubscribe on teardown re-closes
- * it — so a remount (Fast Refresh, a session flip that re-gates this
- * component) can never leave the gate open with no owner. Session teardown
- * itself also calls `resetHydration()`, so the flag is shut even during the
- * window where this component is unmounted.
+ * money screen's own effect can format). The single effect then re-keys on
+ * BOTH the profile currency value and the hydration flag, pushing the
+ * CURRENT state into the module on every transition; the unsubscribe on
+ * teardown re-closes it — so a remount (Fast Refresh, a session flip that
+ * re-gates this component) can never leave the gate open with no owner.
+ * Session teardown itself also calls `resetHydration()`, so the flag is shut
+ * even during the window where this component is unmounted.
  */
 export function ProfileHydration() {
   const currencyHydrated = useSettingsStore((s) => s.currencyHydrated);
   const currency = useProfile().user?.currency;
 
   useEffect(() => {
-    // Fail closed on mount, and on every currency change while the gate is
-    // still shut: a NEW session reusing a cached profile row must not inherit
-    // the previous user's symbol before its own row is confirmed.
-    setCurrencySymbolGate(false);
-  }, [currency]);
-
-  useEffect(() => {
+    // Fail closed on mount and on every currency change while hydration is
+    // still pending: a NEW session reusing a cached profile row must not
+    // inherit the previous user's symbol before its own row is confirmed.
+    // The effect re-keys on the VALUE of `currency` (so a change re-runs it)
+    // AND on `currencyHydrated`, and the gate follows the CURRENT state each
+    // time either moves. Keying only the close on `currency` would stick the
+    // gate shut: `markCurrencyHydrated()` flips false→true exactly once per
+    // session, so a mid-session currency change would close the gate and the
+    // re-open effect (keyed on a transition that never happens again) would
+    // never run — every amount would lose its symbol until sign-out.
     setCurrencySymbolGate(currencyHydrated);
-  }, [currencyHydrated]);
+  }, [currency, currencyHydrated]);
 
   useEffect(() => () => setCurrencySymbolGate(false), []);
 
