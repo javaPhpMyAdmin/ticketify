@@ -118,13 +118,13 @@ export function computePriceAlerts(
   for (const receipt of records) {
     const month = getMonthKey(receipt.purchase_date);
     const receiptId = receipt.id ?? '';
-      const unit = getUnit(receipt);
-      for (const item of receipt.items ?? []) {
-        if (item.unit_price === undefined) continue;
-        // Identity keeps the package size so different presentations of the
-        // same product never cross-compare; display metadata stays raw.
-        const identity = normalizePriceIdentity(item.name);
-        const id = identity + '\0' + unit;
+    const unit = getUnit(receipt);
+    for (const item of receipt.items ?? []) {
+      if (item.unit_price === undefined) continue;
+      // Identity keeps the package size so different presentations of the
+      // same product never cross-compare; display metadata stays raw.
+      const identity = normalizePriceIdentity(item.name);
+      const id = identity + '\0' + unit;
       const perMonth = byIdentity.get(id) ?? new Map();
       const acc = perMonth.get(month) ?? { total: 0, count: 0 };
       acc.total += item.unit_price;
