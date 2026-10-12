@@ -163,7 +163,7 @@ export function computePriceAlerts(
   const previous = previousMonthKey(nowMonth);
   const nowSources = sourceByIdentityMonth;
 
-  const alertsWithUnit: Array<PriceAlert & { identity: string; unit: string }> = [];
+  const alertsWithUnit: (PriceAlert & { identity: string; unit: string })[] = [];
   for (const [id, perMonth] of byIdentity) {
     const [identityKey, unitKey = ''] = id.split('::');
     const now = perMonth.get(nowMonth);
@@ -188,25 +188,23 @@ export function computePriceAlerts(
     });
   }
 
-  // Collapse to at most one alert per product identity (banner has no currency
-  // dimension). Keep the one with largest absolute changePct; tie-break by
-  // lexicographically smaller unit.
-  const collapsed = new Map<string, PriceAlert & { identity: string; unit: string; abs: number }>();
-  for (const a of alertsWithUnit) {
-    const abs = Math.abs(a.changePct);
-    const existing = collapsed.get(a.identity);
-    if (!existing) {
-      collapsed.set(a.identity, { ...(a as any), abs } as any);
-      continue;
-    }
-    if (abs > existing.abs || (abs === existing.abs && a.unit < existing.unit)) {
-      collapsed.set(a.identity, { ...(a as any), abs } as any);
+  // Collapse to at most one alert per product identity (the banner has no
+  // currency dimension). Keep the largest |changePct|; tie → smaller unit.
+  const best = new Map<string, PriceAlert & { identity: string; unit: string }>();
+  for (const candidate of alertsWithUnit) {
+    const current = best.get(candidate.identity);
+    const candidateAbs = Math.abs(candidate.changePct);
+    const currentAbs = current ? Math.abs(current.changePct) : -1;
+    if (
+      !current ||
+      candidateAbs > currentAbs ||
+      (candidateAbs === currentAbs && candidate.unit < current.unit)
+    ) {
+      best.set(candidate.identity, candidate);
     }
   }
 
-  const final = Array.from(collapsed.values()).map((v) => {
-    const { abs: _abs, identity: _identity, unit: _unit, ...rest } = v;
-    return rest as PriceAlert;
-  });
-  return final.sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
+  return [...best.values()].sort(
+    (a, b) => Math.abs(b.changePct) - Math.abs(a.changePct),
+  );
 }
