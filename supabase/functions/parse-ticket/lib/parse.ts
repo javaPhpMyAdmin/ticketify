@@ -303,12 +303,14 @@ export function parseItem(entry: unknown, index: number): ParsedItem {
   const name = requireNonEmptyString(entry.name, `items[${index}].name`);
   // Keep fractional quantities (weighed lines: "1.35 kg") rounded to 3
   // decimals — the precision the DB stores (`purchase_items.quantity
-  // numeric(10,3)`). A non-positive count (missing/zero) still becomes 1.
+  // numeric(10,3)`). A count that rounds to zero (or overflows) falls back to 1.
   const rawQuantity = requireFiniteNumber(
     entry.quantity,
     `items[${index}].quantity`,
   );
-  const quantity = rawQuantity > 0 ? round3(rawQuantity) : 1;
+  const roundedQuantity = round3(rawQuantity);
+  const quantity =
+    Number.isFinite(roundedQuantity) && roundedQuantity > 0 ? roundedQuantity : 1;
   let unit_price = round2(
     requireFiniteNumber(entry.unit_price, `items[${index}].unit_price`),
   );
@@ -323,7 +325,13 @@ export function parseItem(entry: unknown, index: number): ParsedItem {
   // fires on an actual mismatch (> 2 cents) and always keeps the total as
   // the anchor, so legitimate multi-buy offers that happen to close are
   // untouched. The guard only rewrites `unit_price`; it never changes `quantity`.
-  if (Math.abs(quantity * unit_price - total_price) > 0.02) {
+  // A fractional (weighed) count is exempt unless the model plainly reported
+  // the line total as the unit price: the printed per-unit rate beats dividing
+  // the total by a noisy decimal (2.004 × 47 against a total of 94 is correct
+  // and must not become 46.91).
+  const mismatch = Math.abs(quantity * unit_price - total_price) > 0.02;
+  const unitIsTotal = Math.abs(unit_price - total_price) <= 0.02;
+  if (mismatch && (Number.isInteger(quantity) || unitIsTotal)) {
     const rederived = round2(total_price / quantity);
     if (Number.isFinite(rederived) && rederived > 0) {
       unit_price = rederived;

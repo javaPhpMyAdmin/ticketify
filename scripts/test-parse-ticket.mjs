@@ -221,6 +221,23 @@ async function run() {
     assert.equal(parsed.quantity, 1.235);
   });
 
+  await test('parseItem keeps the printed rate of a weighed line with a noisy count', () => {
+    // The model read the count slightly off (2.004 kg instead of 2) but the
+    // printed per-unit rate is exact. Dividing the total by that decimal would
+    // corrupt a correct 47 into 46.91 — the guard must not fire here.
+    const parsed = parseItem(
+      { name: 'Tomate', quantity: 2.004, unit_price: 47, total_price: 94 },
+      0,
+    );
+    assert.equal(parsed.quantity, 2.004);
+    assert.equal(parsed.unit_price, 47);
+  });
+
+  await test('parseItem falls back to quantity 1 when a positive count rounds to zero', () => {
+    const parsed = parseItem({ ...item(), quantity: 0.0004 }, 0);
+    assert.equal(parsed.quantity, 1);
+  });
+
   console.log('\n[tests] parseReceiptJson still enforces receipt shape\n');
 
   await test('parseReceiptJson accepts a well-formed receipt', () => {
