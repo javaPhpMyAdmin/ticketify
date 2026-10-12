@@ -419,6 +419,33 @@ async function run() {
     assert.equal(seen.size, totalMessages, 'must reach exactly 3 distinct indices (no skipped slots)');
   });
 
+  console.log('\n[tests] source pins — BootSplash layout + headline spacing\n');
+
+  const layout = readComponent('src/app/_layout.tsx');
+
+  await test('layout: BootSplash appears BEFORE </I18nProvider> (i18n-ready first frame)', () => {
+    const bootSplashIdx = layout.indexOf('<BootSplashErrorBoundary');
+    const i18nCloseIdx = layout.indexOf('</I18nProvider>');
+    assert.ok(bootSplashIdx > -1, 'BootSplashErrorBoundary must exist in _layout.tsx');
+    assert.ok(i18nCloseIdx > -1, '</I18nProvider> must exist in _layout.tsx');
+    assert.ok(
+      bootSplashIdx < i18nCloseIdx,
+      'BootSplash block must appear BEFORE </I18nProvider> so it mounts inside the provider (localized first frame)',
+    );
+  });
+
+  await test('BootSplash headline: no bare letterSpacing: -0.01 (must use em-aware -0.01 * 16)', () => {
+    assert.ok(
+      !/letterSpacing\s*:\s*-0\.01\s*,?$/m.test(bootSplash) && !/letterSpacing\s*:\s*-0\.01\s*$/m.test(bootSplash),
+      'styles.headline must NOT contain bare letterSpacing: -0.01',
+    );
+    assert.ok(
+      /letterSpacing\s*:\s*-0\.01\s*\*\s*16/m.test(bootSplash),
+      'styles.headline must contain letterSpacing: -0.01 * 16',
+    );
+  });
+
+
   console.log('');
   if (failed > 0) {
     console.error(`[tests] ${failed} failed, ${passed} passed`);
