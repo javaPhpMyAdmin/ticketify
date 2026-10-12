@@ -11,6 +11,7 @@ import {
 import { readPurchaseListByMonth } from '@/features/home/api';
 import { queryKeys } from '@/lib/query-keys';
 import { toQueryData } from '@/lib/supabase/query-adapters';
+import { useSettingsStore } from '@/stores/use-settings-store';
 import { computePriceAlerts, type PriceAlert } from '../price-alerts';
 
 /**
@@ -21,13 +22,18 @@ import { computePriceAlerts, type PriceAlert } from '../price-alerts';
  * selected month AND the previous month's full receipt rows via
  * `readPurchaseListByMonth` and combines them — preserving the exact output
  * the store-backed version produced (which had all loaded months). The
- * combines is memoized: `computePriceAlerts` re-runs only when either
- * month's rows or the selected month changes. `monthKey` defaults to the
- * current month; the analytics month selector passes the chosen month so
- * alerts compare that month against its predecessor.
+ * combination is memoized: `computePriceAlerts` re-runs when either month's
+ * rows, the selected month, or the viewer currency changes. The viewer
+ * currency is gated on hydration: until the profile row is read, `currency`
+ * is only the seed, so the hook passes `''` (null-currency rows then stay in
+ * their own bucket instead of being mis-filed under the seed). `monthKey`
+ * defaults to the current month; the analytics month selector passes the
+ * chosen month so alerts compare that month against its predecessor.
  */
 export function usePriceAlerts(monthKey = currentMonthKey()): PriceAlert[] {
   const { userId } = useSessionUser();
+  const currency = useSettingsStore((s) => s.currency);
+  const currencyHydrated = useSettingsStore((s) => s.currencyHydrated);
 
   const previousMonth = previousMonthKey(monthKey);
 
@@ -49,7 +55,13 @@ export function usePriceAlerts(monthKey = currentMonthKey()): PriceAlert[] {
   );
 
   return useMemo(
-    () => computePriceAlerts(combined, undefined, monthKey),
-    [combined, monthKey],
+    () =>
+      computePriceAlerts(
+        combined,
+        undefined,
+        monthKey,
+        currencyHydrated ? currency : '',
+      ),
+    [combined, monthKey, currency, currencyHydrated],
   );
 }

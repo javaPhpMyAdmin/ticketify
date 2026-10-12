@@ -485,6 +485,98 @@ async function run() {
       "id-less receipt contributes an empty-string candidate; tap is a no-op (Pro with empty receiptId does nothing)",
     );
   });
+  await test('#192 regression: same identity, different currencies in same month -> no alert (buckets isolated)', () => {
+    const records = [
+      { id: 'r-usd', store_name: 'Store', purchase_date: '2026-08-01', items: [item('Leche entera 1L', 1000, 'lacteos')], currency: 'USD' },
+      { id: 'r-uyu', store_name: 'Store', purchase_date: '2026-08-15', items: [item('Leche entera 1L', 400, 'lacteos')], currency: 'UYU' },
+      { id: 'r-prev', store_name: 'Store', purchase_date: '2026-07-10', items: [item('Leche entera 1L', 1000, 'lacteos')], currency: 'USD' },
+    ];
+    const alerts = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(alerts.length, 0, 'different currencies must not cross-average');
+  });
+
+  await test('viewer fallback: null currency merges into the viewer bucket; isolated without a viewer', () => {
+    // All four rows are the same identity. With viewer 'USD' the null rows
+    // share the USD bucket: July avg (1000+2000)/2 = 1500 → Aug (1100+2200)/2
+    // = 1650 (+10%). Without a viewer the null rows are their own bucket:
+    // 1000 → 1100, so the alert carries the null bucket's prices, not the
+    // merged ones — that is what proves isolation.
+    const records = [
+      { store_name: 'S', purchase_date: '2026-07-10', items: [item('Leche entera 1L', 1000, 'lacteos')], currency: null },
+      { store_name: 'S', purchase_date: '2026-07-11', items: [item('Leche entera 1L', 2000, 'lacteos')], currency: 'USD' },
+      { store_name: 'S', purchase_date: '2026-08-10', items: [item('Leche entera 1L', 1100, 'lacteos')], currency: null },
+      { store_name: 'S', purchase_date: '2026-08-11', items: [item('Leche entera 1L', 2200, 'lacteos')], currency: 'USD' },
+    ];
+    const withViewer = alertsMod.computePriceAlerts(records, 0.05, '2026-08', 'USD');
+    assert.equal(withViewer.length, 1, 'null rows merge into the viewer bucket');
+    assert.equal(withViewer[0].previousPrice, 1500, 'null + USD averaged together');
+    assert.equal(withViewer[0].currentPrice, 1650);
+    assert.equal(withViewer[0].changePct, 10);
+
+    const noViewer = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(noViewer.length, 1, 'the null-only bucket alerts on its own');
+    assert.equal(noViewer[0].previousPrice, 1000, 'no viewer → null rows stay isolated');
+    assert.equal(noViewer[0].currentPrice, 1100);
+  });
+
+  await test('#192 no-regression: same-currency still alerts identically', () => {
+    const records = [
+      receipt('r1', '2026-07-10', item('Leche entera 1L', 1000, 'lacteos')),
+      receipt('r2', '2026-08-10', item('Leche entera 1L', 1060, 'lacteos')),
+    ];
+    const alerts = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(alerts.length, 1);
+    assert.equal(Math.round(alerts[0].changePct * 10) / 10, 6.0);
+  });
+
+  await test('collapses to ONE alert per identity when a product alerts in two currencies', () => {
+    // Both units exceed the threshold, but the banner keys by `alert.name`,
+    // so emitting two would duplicate React keys. USD +20% beats UYU +8%.
+    const records = [
+      { store_name: 'S', purchase_date: '2026-07-10', items: [item('Leche entera 1L', 100, 'lacteos')], currency: 'USD' },
+      { store_name: 'S', purchase_date: '2026-08-10', items: [item('Leche entera 1L', 120, 'lacteos')], currency: 'USD' },
+      { store_name: 'S', purchase_date: '2026-07-18', items: [item('Leche entera 1L', 1000, 'lacteos')], currency: 'UYU' },
+      { store_name: 'S', purchase_date: '2026-08-18', items: [item('Leche entera 1L', 1080, 'lacteos')], currency: 'UYU' },
+    ];
+    const alerts = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(alerts.length, 1, 'at most one alert per product identity');
+    assert.equal(alerts[0].name, 'Leche entera 1L');
+    assert.equal(alerts[0].changePct, 20, 'the larger absolute change wins');
+    assert.equal(alerts[0].currentPrice, 120, 'the winner is the USD bucket');
+  });
+
+  await test('collapse tie-break: equal |changePct| keeps the lexicographically smaller unit', () => {
+    // The larger unit (UYU) is inserted FIRST on purpose: a "keep the first
+    // seen" collapse would also keep UYU, so only a real lexicographic
+    // tie-break can pass this.
+    const records = [
+      { store_name: 'S', purchase_date: '2026-07-18', items: [item('Leche entera 1L', 1000, 'lacteos')], currency: 'UYU' },
+      { store_name: 'S', purchase_date: '2026-08-18', items: [item('Leche entera 1L', 1100, 'lacteos')], currency: 'UYU' },
+      { store_name: 'S', purchase_date: '2026-07-10', items: [item('Leche entera 1L', 100, 'lacteos')], currency: 'USD' },
+      { store_name: 'S', purchase_date: '2026-08-10', items: [item('Leche entera 1L', 110, 'lacteos')], currency: 'USD' },
+    ];
+    const alerts = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].changePct, 10);
+    assert.equal(alerts[0].currentPrice, 110, 'USD < UYU wins the tie');
+  });
+
+  await test('a "::" inside a product name never merges two distinct products', () => {
+    // "Leche" and "Leche::Promo" normalize to "leche" and "leche::promo". Under
+    // a key that is split back with `split('::')` both truncate to "leche" and
+    // collapse into one alert — silently dropping a real price increase.
+    const records = [
+      { store_name: 'S', purchase_date: '2026-07-10', items: [item('Leche', 100, 'lacteos')], currency: 'USD' },
+      { store_name: 'S', purchase_date: '2026-08-10', items: [item('Leche', 120, 'lacteos')], currency: 'USD' },
+      { store_name: 'S', purchase_date: '2026-07-11', items: [item('Leche::Promo', 100, 'lacteos')], currency: 'USD' },
+      { store_name: 'S', purchase_date: '2026-08-11', items: [item('Leche::Promo', 120, 'lacteos')], currency: 'USD' },
+    ];
+    const alerts = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    const names = alerts.map((a) => a.name).sort();
+    assert.equal(alerts.length, 2, 'two distinct products must produce two alerts');
+    assert.deepEqual(names, ['Leche', 'Leche::Promo']);
+  });
+
 
   // ── PART 2: usePriceAlerts hook wiring (BLOCKER 2) ─────────────────────
   // Exercises the ACTUAL hook: two month-scoped queries (selected + previous
@@ -528,6 +620,28 @@ async function run() {
         renderer.unmount();
       });
     }
+  });
+
+  await test('usePriceAlerts threads the hydrated viewer currency into computePriceAlerts (source pin)', async () => {
+    const fs = await import('node:fs/promises');
+    const pathMod = await import('node:path');
+    const root = pathMod.join(process.cwd(), 'src', 'features', 'analytics', 'hooks', 'usePriceAlerts.ts');
+    const src = await fs.readFile(root, 'utf8');
+    assert.ok(src.includes('useSettingsStore'), 'must read viewer currency from settings store');
+    assert.ok(
+      /currencyHydrated\s*\?\s*currency\s*:\s*''/.test(src),
+      "must gate the viewer on hydration (currencyHydrated ? currency : '')",
+    );
+    assert.ok(
+      /computePriceAlerts\([\s\S]*?\bcurrencyHydrated\s*\?\s*currency\s*:\s*''\s*,?\s*\)/.test(src),
+      'must pass the hydrated currency as the 4th argument',
+    );
+    // Dropping either selector from the deps would freeze the first memoized
+    // result forever, and no behavior test would notice.
+    assert.ok(
+      /\[[^\]]*\bcurrency\b[^\]]*\bcurrencyHydrated\b[^\]]*\]/.test(src),
+      'currency and currencyHydrated must both be in the useMemo deps',
+    );
   });
 
   // (b) empty data → empty alerts (no crash)
@@ -630,7 +744,6 @@ async function run() {
       });
     }
   });
-
 
   await test('analytics PriceAlertBanner enforces 3-case tap routing (source pin)', async () => {
     const fs = await import('node:fs/promises');
