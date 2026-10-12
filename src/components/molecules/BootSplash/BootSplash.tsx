@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
     ...typography.headlineLgMobile,
     color: colors.textPrimary,
     fontWeight: '700',
-    letterSpacing: -0.01,
+    letterSpacing: -0.01 * 16,
   },
   pulseDot: {
     width: 6,

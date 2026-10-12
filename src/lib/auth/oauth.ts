@@ -30,6 +30,7 @@
  */
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
+import { create } from 'zustand';
 
 import { supabase } from '@/lib/supabase';
 
@@ -165,15 +166,19 @@ export async function exchangeOAuthCode(
 }
 
 /**
- * True while `signInWithProvider` is running — from the provider tap until
- * the flow settles. The OAuth callback route reads this to resolve the warm
- * race: when the deep link arrives while the in-process flow is still
- * exchanging, the route defers to it instead of exchanging the same code
- * twice (PKCE codes are single-use) or flashing the sign-in screen. A
- * terminated process resets the flag, so a cold-start callback always sees
- * `false` and exchanges the code itself.
+ * Reactive store for the provider-flow in-flight flag. True while
+ * `signInWithProvider` is running — from the provider tap until the flow
+ * settles. The OAuth callback route reads it (via `isOAuthFlowInFlight`) to
+ * resolve the warm race: when the deep link arrives while the in-process flow
+ * is still exchanging, the route defers to it instead of exchanging the same
+ * code twice (PKCE codes are single-use) or flashing the sign-in screen. The
+ * root layout subscribes to it to cover the post-OAuth window with a loading
+ * overlay while the session resolves. A terminated process resets the flag, so
+ * a cold-start callback always sees `false` and exchanges the code itself.
  */
-let providerFlowInFlight = false;
+export const useAuthFlowStore = create<{ inFlight: boolean }>(() => ({
+  inFlight: false,
+}));
 
 /** Last error copy from the most recent provider flow (null on success or
  *  cancellation). The OAuth callback route reads this for the warm-race
@@ -182,7 +187,7 @@ let providerFlowInFlight = false;
 let lastProviderFlowError: string | null = null;
 
 export function isOAuthFlowInFlight(): boolean {
-  return providerFlowInFlight;
+  return useAuthFlowStore.getState().inFlight;
 }
 
 export function getLastOAuthError(): string | null {
@@ -197,7 +202,7 @@ export function getLastOAuthError(): string | null {
 export async function signInWithProvider(
   provider: OAuthProvider,
 ): Promise<OAuthResult> {
-  providerFlowInFlight = true;
+  useAuthFlowStore.setState({ inFlight: true });
   try {
     const result = await runProviderFlow(provider).catch(() => ({
       cancelled: false,
@@ -206,7 +211,7 @@ export async function signInWithProvider(
     lastProviderFlowError = result.error;
     return result;
   } finally {
-    providerFlowInFlight = false;
+    useAuthFlowStore.setState({ inFlight: false });
   }
 }
 
