@@ -10,9 +10,7 @@
  *
  *   - INTL grouping (`,` thousands + `.` decimals) for USD/EUR/GBP/JPY/
  *     CAD/AUD.
- *   - LATAM grouping (`.` thousands + `,` decimals) for ARS/UYU/BRL/MXN.
- *   - Symbol form keyed by `CURRENCY_SYMBOL` (UYU → `$U`, USD → `US$`,
- *     etc.). Unknown codes fall back to the code itself.
+ *   - LATAM grouping (`.` thousands + `,` decimals) for ARS/UYU/BRL.
  *   - ZERO-DECIMAL minor units: the twelve catalog codes with ISO 4217 minor
  *     unit 0 (BIF, CLP, GNF, JPY, KRW, PYG, RWF, UGX, VND, XAF, XOF, XPF)
  *     are whole-unit currencies, so they render as whole amounts (`¥ 1,235`,
@@ -20,6 +18,18 @@
  *     `¥ 1,234.56` fabricates a sub-unit that does not exist. PEN is NOT one of
  *     them: the Peruvian sol is ISO 4217 minor unit 2 and renders its two
  *     decimals like the other LATAM currencies.
+ *   - THREE-DECIMAL minor units: the six catalog codes with ISO 4217 minor
+ *     unit 3 (IQD, JOD, KWD, LYD, OMR, TND) render exactly three decimals
+ *     (`KD 1.234`, `KD 1,234.560`) but DROP the fraction when all three digits
+ *     are zero (`KD 1,234`), the same unit convention as the 2-decimal codes
+ *     with a wider fraction window.
+ *   - SEPARATOR OVERRIDES: the six LATAM-classified codes whose national
+ *     convention is INTL grouping (MXN, GTQ, HNL, NIO, DOP, PAB) render
+ *     `1,234.56` even though they belong to the LATAM group. The override is a
+ *     per-code set consulted by BOTH `formatCurrency` and
+ *     `formatCurrencyWhole`; it never mutates the LATAM membership.
+ *   - Symbol form keyed by `CURRENCY_SYMBOL` (UYU → `$U`, USD → `US$`,
+ *     etc.). Unknown codes fall back to the code itself.
  *   - Symbol coverage for every one of the 123 catalog codes — each renders
  *     symbol-prefixed, never as a bare code.
  *   - Edge cases: zero (`'$ 0'`), negative (`-US$ 1,234.56`), and a legacy
@@ -112,7 +122,7 @@ async function run() {
     assert.equal(fmt.formatCurrency(1234.56, 'AUD'), 'A$ 1,234.56');
   });
 
-  console.log('\n[tests] LATAM grouping (ARS/UYU/BRL/MXN)\n');
+  console.log('\n[tests] LATAM grouping (ARS/UYU/BRL)\n');
 
   await test('formatCurrency ARS → "$ 1.234,56" (LATAM grouping)', () => {
     assert.equal(fmt.formatCurrency(1234.56, 'ARS'), '$ 1.234,56');
@@ -128,8 +138,69 @@ async function run() {
     assert.equal(fmt.formatCurrency(1234.56, 'BRL'), 'R$ 1.234,56');
   });
 
-  await test('formatCurrency MXN → "$ 1.234,56" (LATAM grouping)', () => {
-    assert.equal(fmt.formatCurrency(1234.56, 'MXN'), '$ 1.234,56');
+  console.log('\n[tests] separator overrides (LATAM codes rendering INTL)\n');
+
+  await test('formatCurrency MXN → "$ 1,234.56" (LATAM code, INTL override)', () => {
+    // MXN belongs to the LATAM group but its recorded national convention is
+    // INTL grouping. The override SET wins over group membership (REQ-005 /
+    // S-005.1) without mutating LATAM_CURRENCIES.
+    assert.equal(fmt.formatCurrency(1234.56, 'MXN'), '$ 1,234.56');
+  });
+
+  await test('formatCurrency GTQ → "Q 1,234.56" (LATAM code, INTL override)', () => {
+    // GTQ is the second override code; `Q` is the quetzal symbol. Same rule.
+    assert.equal(fmt.formatCurrency(1234.56, 'GTQ'), 'Q 1,234.56');
+  });
+
+  await test('the override set is exactly the six locked LATAM codes', () => {
+    // REQ-005: the override mechanism is a per-code set, never a mutation.
+    assert.deepEqual(
+      [...fmt.SEPARATOR_OVERRIDES].sort(),
+      ['DOP', 'GTQ', 'HNL', 'MXN', 'NIO', 'PAB'],
+    );
+    // And every override code is still a LATAM member (the set only changes
+    // the SEPARATORS, not the group).
+    for (const code of fmt.SEPARATOR_OVERRIDES) {
+      assert.ok(fmt.LATAM_CURRENCIES.has(code), `${code} must stay a LATAM member`);
+    }
+  });
+
+  await test('formatCurrencyWhole MXN → "$ 1,235" (override applies to the whole format)', () => {
+    // The whole-number format shares the currency's unit convention: if
+    // `formatCurrency(1234.56,'MXN')` is INTL, the truncated total must be too,
+    // otherwise charts and totals disagree on the same screen (design §2).
+    assert.equal(fmt.formatCurrencyWhole(1234.56, 'MXN'), '$ 1,235');
+  });
+
+  await test('formatCurrencyWhole ARS → "$ 1.235" (no override, LATAM grouping)', () => {
+    // Regression control for the override: an un-overridden LATAM code keeps
+    // the LATAM grouping in the whole format.
+    assert.equal(fmt.formatCurrencyWhole(1234.56, 'ARS'), '$ 1.235');
+  });
+
+  console.log('\n[tests] three-decimal minor units (ISO 4217 minor unit 3)\n');
+
+  await test('formatCurrency KWD 1.234 → "KD 1.234" (exactly three decimals)', () => {
+    // KWD is minor unit 3; `CURRENCY_SYMBOL.KWD` is the committed literal `KD`.
+    assert.equal(fmt.formatCurrency(1.234, 'KWD'), 'KD 1.234');
+  });
+
+  await test('formatCurrency KWD 1234 → "KD 1,234" (all-zero `000` fraction DROPPED)', () => {
+    // `(1234).toFixed(3)` is `"1234.000"`; the length-aware zero-fraction guard
+    // recognizes the all-zero `000` and drops the decimal segment (S-004.2 /
+    // S-007.2), exactly like `formatCurrency(0,'ARS')` drops `00`.
+    assert.equal(fmt.formatCurrency(1234, 'KWD'), 'KD 1,234');
+  });
+
+  await test('formatCurrency KWD 1234.56 → "KD 1,234.560" (non-zero fraction keeps 3)', () => {
+    // INTL grouping with a three-digit non-zero fraction.
+    assert.equal(fmt.formatCurrency(1234.56, 'KWD'), 'KD 1,234.560');
+  });
+
+  await test('formatCurrency JOD → "د.ا 1,234.560" (a second 3-decimal code)', () => {
+    // Triangulation across the 3-decimal set: JOD shares the minor unit 3
+    // model, so the same rule must generalize beyond KWD.
+    assert.equal(fmt.formatCurrency(1234.56, 'JOD'), 'د.ا 1,234.560');
   });
 
   console.log('\n[tests] unknown / zero / negative edges\n');

@@ -1081,24 +1081,35 @@ function currencySymbolPrefix(upperCode: string, rawCode: string): string {
  *      INTL-grouped (`,` thousands + `.` decimals). Unknown codes fall
  *      back to the INTL default and use the code itself as the symbol
  *      (e.g. `XYZ 1,234.56`).
- *   2. Symbol form is keyed by `CURRENCY_SYMBOL`. UYU renders `$U`,
+ *   2. Minor-unit precision is per-code (REQ-004 / REQ-007): a code in
+ *      `ZERO_DECIMAL_CURRENCIES` renders 0 decimals, a code in
+ *      `THREE_DECIMAL_CURRENCIES` renders 3 decimals, and every other
+ *      code renders 2. The fraction is DROPPED whenever it would render
+ *      all zeros — `'0'.repeat(minorUnit)` — so `1234` under a 3-decimal
+ *      code is `KD 1,234`, never `KD 1,234.000`.
+ *   3. Grouping separators are per-code with an explicit override
+ *      (REQ-005). `SEPARATOR_OVERRIDES` lists LATAM-classified codes whose
+ *      national convention is INTL grouping (MXN, GTQ, …); the override
+ *      SET wins over group membership and is never a mutation of
+ *      `LATAM_CURRENCIES`.
+ *   4. Symbol form is keyed by `CURRENCY_SYMBOL`. UYU renders `$U`,
  *      USD renders `US$`, ARS renders `$`, etc. (Different from the old
  *      `formatCurrency`, which collapsed UYU / ARS / USD to a single
  *      `$` — the AD-6 symbol table disambiguates them.)
- *   3. A space separates the symbol from the number for both grouping
+ *   5. A space separates the symbol from the number for both grouping
  *      styles (`US$ 1,234.56`, `R$ 1.234,56`). The old format glued them
  *      (`$1,234.50`); the space makes the symbol stand out from the
  *      digits.
- *   4. Negative values are prefixed with `-` BEFORE the symbol
+ *   6. Negative values are prefixed with `-` BEFORE the symbol
  *      (`-US$ 1,234.56`) — matches the LATAM / INTL norm. The old
  *      format did the same; this preserves the existing call-site
  *      ergonomics.
- *   5. While the hydration gate is shut, rules 1-4 are all suspended: the
+ *   7. While the hydration gate is shut, rules 1-6 are all suspended: the
  *      code is an unconfirmed placeholder, so the output is the bare
  *      `1234.56` — no symbol, no thousands separator, no unit convention
- *      of any kind. Re-opened, the same call returns `US$ 1,234.56`.
- *      See `currencySymbolGateOpen` for why the separators are part of
- *      the gate.
+ *      of any kind (the precision also defaults to 2). Re-opened, the same
+ *      call returns `US$ 1,234.56`. See `currencySymbolGateOpen` for why
+ *      the separators are part of the gate.
  *
  * The function intentionally reads `i18next.language` internally so a
  * future round of work (PR 3) can branch on language for things like a
@@ -1109,32 +1120,45 @@ export function formatCurrency(value: number, currencyCode: string): string {
   const upperCode = currencyCode.toUpperCase();
   // While the gate is shut the code is only the store's PLACEHOLDER SEED, so
   // it is not an input to the format at all: LATAM vs INTL grouping and the
-  // zero-decimal rule both encode a unit the profile row has not confirmed.
+  // minor-unit rule both encode a unit the profile row has not confirmed.
   // The formatters deliberately IGNORE the code and emit a bare number
   // (`1234.56`) until the gate opens. See the gate doc above for the 1000x
   // misread this prevents.
   const gateShut = !currencySymbolGateOpen;
-  const isLATAM = LATAM_CURRENCIES.has(upperCode);
   const symbolPrefix = currencySymbolPrefix(upperCode, currencyCode);
-  // A zero-decimal code has no fraction to print: round to the whole unit and
-  // leave `decPart` empty, which makes the `hasNonZeroDecimal` guard below
-  // fall through to the grouped integer. Grouping still runs on `intPart`, so
-  // `1234.56` → `1235` → `1.235` and `100.4` → `100`.
-  const isZeroDecimal = !gateShut && ZERO_DECIMAL_CURRENCIES.has(upperCode);
-  const fixed = Math.abs(value).toFixed(isZeroDecimal ? 0 : 2);
+  // The override WINS over group membership: a LATAM-classified code in the
+  // override set renders with INTL separators. The override is a SET read, not
+  // a mutation of `LATAM_CURRENCIES` (REQ-005).
+  const override = SEPARATOR_OVERRIDES.has(upperCode);
+  const latamStyle = LATAM_CURRENCIES.has(upperCode) && !override;
+  // Precision model: 0 (zero-decimal), 3 (three-decimal), else 2. While the
+  // gate is shut the code is an unconfirmed seed, so the unit convention is
+  // suspended and the default is 2 (REQ-007).
+  const minorUnit: 0 | 2 | 3 = gateShut
+    ? 2
+    : ZERO_DECIMAL_CURRENCIES.has(upperCode)
+      ? 0
+      : THREE_DECIMAL_CURRENCIES.has(upperCode)
+        ? 3
+        : 2;
+  const fixed = Math.abs(value).toFixed(minorUnit);
   const [intPart, decPart = ''] = fixed.split('.');
   // Hand-rolled grouping: thousands separator every 3 digits from the
   // right, no leading separator. An empty `groupSep` is the shut gate's bare
   // form — the lookahead still runs and matches, it just replaces nothing.
-  const groupSep = gateShut ? '' : isLATAM ? '.' : ',';
+  const groupSep = gateShut ? '' : latamStyle ? '.' : ',';
   // A shut gate keeps a plain `.` so the two decimals stay readable as a
   // decimal point rather than collapsing into the integer digits.
-  const decSep = gateShut ? '.' : isLATAM ? ',' : '.';
+  const decSep = gateShut ? '.' : latamStyle ? ',' : '.';
   const withSeparators = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, groupSep);
-  // Drop the decimal segment when it would render all zeros (e.g. `0.00`
-  // → `0`) — keeps `formatCurrency(0, 'ARS')` as `'$ 0'` rather than
-  // `'$ 0,00'`. PR 2 spec table, WU-2.3 zero edge case.
-  const hasNonZeroDecimal = decPart && decPart !== '00';
+  // Drop the decimal segment when it would render all zeros — length-aware so
+  // a 2-decimal code compares against `'00'` and a 3-decimal code against
+  // `'000'` (`'0'.repeat(minorUnit)`). Keeps `formatCurrency(0, 'ARS')` as
+  // `'$ 0'` and `formatCurrency(1234, 'KWD')` as `'KD 1,234'` rather than
+  // `'$ 0,00'` / `'KD 1,234.000'`. PR 2 spec table, WU-2.3 zero edge case;
+  // S-004.2 / S-007.2 for the 3-decimal branch.
+  const zeroFraction = minorUnit > 0 ? '0'.repeat(minorUnit) : '';
+  const hasNonZeroDecimal = decPart !== '' && decPart !== zeroFraction;
   const number = hasNonZeroDecimal
     ? `${withSeparators}${decSep}${decPart}`
     : withSeparators;
@@ -1154,12 +1178,17 @@ export function formatCurrencyWhole(
   currencyCode: string,
 ): string {
   const upperCode = currencyCode.toUpperCase();
-  const isLATAM = LATAM_CURRENCIES.has(upperCode);
+  // The separator override applies here too: the whole-number format is the
+  // SAME unit convention with the fraction truncated, so an overridden LATAM
+  // code (MXN, GTQ, …) must group INTL here as well — otherwise charts and
+  // totals would disagree on the same screen (REQ-005).
+  const latamStyle =
+    LATAM_CURRENCIES.has(upperCode) && !SEPARATOR_OVERRIDES.has(upperCode);
   const symbolPrefix = currencySymbolPrefix(upperCode, currencyCode);
   const rounded = Math.abs(value).toFixed(0);
   // Same gate rule as `formatCurrency`: a shut gate emits the bare integer,
   // ungrouped, because the code it would group by is an unconfirmed seed.
-  const groupSep = currencySymbolGateOpen ? (isLATAM ? '.' : ',') : '';
+  const groupSep = currencySymbolGateOpen ? (latamStyle ? '.' : ',') : '';
   const withSeparators = rounded.replace(/\B(?=(\d{3})+(?!\d))/g, groupSep);
   const sign = value < 0 ? '-' : '';
   return `${sign}${symbolPrefix}${withSeparators}`;
