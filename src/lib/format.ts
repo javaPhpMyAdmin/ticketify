@@ -30,56 +30,162 @@ export interface FormatDateOpts {
 // ---------------------------------------------------------------------------
 // Currency catalog (AD-1) — currency code is the authority of format
 //
-// This module is the SINGLE owner of the supported-currency catalog: the two
-// grouping code arrays are the source, and the supported set, the grouping
-// Sets and the symbol table are all derived from them. It keeps ZERO runtime
-// imports on purpose — `scripts/tsconfig.format-currency-test.json` compiles
-// this file as its single root, and `src/i18n/detector.ts` references the
-// `SupportedCurrency` type only (`import type`, erased at runtime).
+// `scripts/generate-currency-catalog.mjs` is the SINGLE SOURCE for the arrays,
+// sets and symbol table below: it renders every
+// `@generated currency-catalog:begin|end` region from the canonical catalog in
+// `scripts/currency-catalog.ts`. Edit that catalog and run
+// `node scripts/generate-currency-catalog.mjs` (`--check` fails on drift) —
+// never hand-edit a generated region.
+//
+// The type plumbing AROUND those regions stays hand-authored:
+// `SupportedCurrency`, `SUPPORTED_CURRENCIES`, `LATAM_CURRENCIES` and
+// `INTL_CURRENCIES` are derived from the generated arrays. This module keeps
+// ZERO runtime imports on purpose — `scripts/tsconfig.format-currency-test.json`
+// compiles this file as its single root, and `src/i18n/detector.ts` references
+// the `SupportedCurrency` type only (`import type`, erased at runtime).
 // ---------------------------------------------------------------------------
 
 /**
  * LATAM ISO 4217 codes: thousands `.`, decimals `,` (es-AR / pt-BR / es-MX /
  * es-CL / es-CO / es-PE convention).
  */
+// @generated currency-catalog:begin LATAM_CURRENCY_CODES
 export const LATAM_CURRENCY_CODES = [
-  'ARS', // Peso argentino
-  'BOB', // Boliviano boliviano
-  'BRL', // Real brasileño
-  'CLP', // Peso chileno
-  'COP', // Peso colombiano
-  'CRC', // Colón costarricense
-  'DOP', // Peso dominicano
-  'GTQ', // Quetzal guatemalteco
-  'HNL', // Lempira hondureño
-  'MXN', // Peso mexicano
-  'NIO', // Córdoba nicaragüense
-  'PAB', // Balboa panameño
-  'PEN', // Sol peruano
-  'PYG', // Guaraní paraguayo
-  'UYU', // Peso uruguayo
+  'ARS', // Argentine peso
+  'BOB', // Bolivian boliviano
+  'BRL', // Brazilian real
+  'CLP', // Chilean peso
+  'COP', // Colombian peso
+  'CRC', // Costa Rican colón
+  'CUP', // Cuban peso
+  'DOP', // Dominican peso
+  'GTQ', // Guatemalan quetzal
+  'HNL', // Honduran lempira
+  'MXN', // Mexican peso
+  'NIO', // Nicaraguan córdoba
+  'PAB', // Panamanian balboa
+  'PEN', // Peruvian sol
+  'PYG', // Paraguayan guaraní
+  'UYU', // Uruguayan peso
+  'VES', // Venezuelan bolívar
 ] as const;
+// @generated currency-catalog:end LATAM_CURRENCY_CODES
 
 /**
  * INTL ISO 4217 codes: thousands `,`, decimals `.` (USD / EUR / GBP / JPY /
  * etc.). Anything outside both sets also lands here (the spec rule: unknown
  * code → INTL default).
  */
+// @generated currency-catalog:begin INTL_CURRENCY_CODES
 export const INTL_CURRENCY_CODES = [
+  'AED',
+  'AFN',
+  'ALL',
+  'AMD',
+  'AOA',
   'AUD',
+  'AZN',
+  'BAM',
+  'BDT',
+  'BGN',
+  'BIF',
+  'BWP',
+  'BYN',
   'CAD',
+  'CDF',
   'CHF',
+  'CNY',
+  'CZK',
   'DKK',
+  'DZD',
+  'EGP',
+  'ERN',
+  'ETB',
   'EUR',
   'GBP',
+  'GEL',
+  'GHS',
+  'GMD',
+  'GNF',
   'HKD',
+  'HTG',
+  'HUF',
+  'IDR',
+  'ILS',
+  'INR',
+  'IQD',
+  'IRR',
+  'JMD',
+  'JOD',
   'JPY',
+  'KES',
+  'KGS',
+  'KHR',
+  'KPW',
+  'KRW',
+  'KWD',
+  'KZT',
+  'LAK',
+  'LBP',
+  'LKR',
+  'LRD',
+  'LSL',
+  'LYD',
+  'MAD',
+  'MDL',
+  'MGA',
+  'MKD',
+  'MMK',
+  'MNT',
+  'MRU',
+  'MWK',
+  'MYR',
+  'MZN',
+  'NAD',
+  'NGN',
   'NOK',
+  'NPR',
   'NZD',
+  'OMR',
+  'PGK',
+  'PHP',
+  'PKR',
+  'PLN',
+  'QAR',
+  'RON',
+  'RSD',
+  'RUB',
+  'RWF',
+  'SAR',
+  'SDG',
   'SEK',
   'SGD',
+  'SLE',
+  'SOS',
+  'SSP',
+  'SYP',
+  'THB',
+  'TJS',
+  'TMT',
+  'TND',
+  'TRY',
+  'TWD',
+  'TZS',
+  'UAH',
+  'UGX',
   'USD',
+  'UZS',
+  'VND',
+  'XAF',
+  'XCD',
+  'XOF',
+  'XPF',
+  'YER',
+  'ZAR',
+  'ZMW',
+  'ZWG',
 ] as const;
+// @generated currency-catalog:end INTL_CURRENCY_CODES
 
 /** Every code the app can speak — the union the catalog, the symbol table and
  *  the currency selector are all typed against. */
@@ -106,27 +212,69 @@ export const LATAM_CURRENCIES: ReadonlySet<string> = new Set(
 export const INTL_CURRENCIES: ReadonlySet<string> = new Set(INTL_CURRENCY_CODES);
 
 /**
- * Currencies with NO minor unit: CLP (peso), JPY (yen), PEN (sol) and PYG
- * (guaraní). Their smallest circulating unit is the whole one, so
- * `formatCurrency` rounds to the nearest unit and emits no decimal separator
- * — printing `¥ 1,234.56` fabricates a cent that does not exist and misstates
- * the amount.
+ * Currencies with NO minor unit (ISO 4217 minor unit 0): the twelve catalog
+ * codes whose smallest circulating unit is the whole one, so `formatCurrency`
+ * rounds to the nearest unit and emits no decimal separator — printing
+ * `¥ 1,234.56` fabricates a sub-unit that does not exist and misstates the
+ * amount.
  *
- * The spec names `JPY` and `PYG` (REQ-2 prose) and then pins whole-amount
- * output for `CLP` and `PEN` in REQ-2.1/2.2 and acceptance gate 2 — all four
- * are factually zero-decimal, so all four belong here.
+ * PEN is NO LONGER part of this set: the Peruvian sol is ISO 4217 minor unit
+ * 2 and renders its two decimals like the other LATAM currencies.
  *
  * Deliberately NOT included: `COP`, which is factually zero-decimal in
  * circulation but is excluded by the recorded scope decision (widening the
  * set changes what every existing COP balance looks like and is a separate
  * product call, not a catalog cleanup).
  */
+// @generated currency-catalog:begin ZERO_DECIMAL_CURRENCIES
 export const ZERO_DECIMAL_CURRENCIES: ReadonlySet<string> = new Set([
+  'BIF',
   'CLP',
+  'GNF',
   'JPY',
-  'PEN',
+  'KRW',
   'PYG',
+  'RWF',
+  'UGX',
+  'VND',
+  'XAF',
+  'XOF',
+  'XPF',
 ]);
+// @generated currency-catalog:end ZERO_DECIMAL_CURRENCIES
+
+/**
+ * Currencies with three minor digits (ISO 4217 minor unit 3) — the six
+ * catalog codes whose smallest unit is 1/1000 of the major unit (the Gulf,
+ * Iraqi, Libyan and Tunisian dinars). BHD is deliberately absent from the
+ * catalog.
+ */
+// @generated currency-catalog:begin THREE_DECIMAL_CURRENCIES
+export const THREE_DECIMAL_CURRENCIES: ReadonlySet<string> = new Set([
+  'IQD',
+  'JOD',
+  'KWD',
+  'LYD',
+  'OMR',
+  'TND',
+]);
+// @generated currency-catalog:end THREE_DECIMAL_CURRENCIES
+
+/**
+ * LATAM codes that render with INTL grouping (`1,234.56`, not `1.234,56`) —
+ * six codes whose recorded national convention follows the INTL style
+ * despite belonging to the LATAM group.
+ */
+// @generated currency-catalog:begin SEPARATOR_OVERRIDES
+export const SEPARATOR_OVERRIDES: ReadonlySet<string> = new Set([
+  'DOP',
+  'GTQ',
+  'HNL',
+  'MXN',
+  'NIO',
+  'PAB',
+]);
+// @generated currency-catalog:end SEPARATOR_OVERRIDES
 
 /**
  * Symbol lookup keyed by ISO 4217 code. Typed `Record<SupportedCurrency,
@@ -135,36 +283,133 @@ export const ZERO_DECIMAL_CURRENCIES: ReadonlySet<string> = new Set([
  * still fall back to the code itself (`XYZ 1,234.56`) — that path is a
  * widening at the READ, not a widening of the table.
  */
+// @generated currency-catalog:begin CURRENCY_SYMBOL
 export const CURRENCY_SYMBOL: Record<SupportedCurrency, string> = {
+  AED: 'د.إ',
+  AFN: '؋',
+  ALL: 'L',
+  AMD: '֏',
+  AOA: 'Kz',
   ARS: '$',
   AUD: 'A$',
+  AZN: '₼',
+  BAM: 'KM',
+  BDT: '৳',
+  BGN: 'лв',
+  BIF: 'FBu',
   BOB: 'Bs',
   BRL: 'R$',
+  BWP: 'P',
+  BYN: 'Br',
   CAD: 'CA$',
+  CDF: 'FC',
   CHF: 'CHF',
   CLP: '$',
+  CNY: 'CN¥',
   COP: '$',
   CRC: '₡',
+  CUP: '$',
+  CZK: 'Kč',
   DKK: 'kr',
   DOP: 'RD$',
+  DZD: 'د.ج',
+  EGP: 'E£',
+  ERN: 'Nfk',
+  ETB: 'Br',
   EUR: '€',
   GBP: '£',
+  GEL: '₾',
+  GHS: '₵',
+  GMD: 'D',
+  GNF: 'FG',
   GTQ: 'Q',
   HKD: 'HK$',
   HNL: 'L',
+  HTG: 'G',
+  HUF: 'Ft',
+  IDR: 'Rp',
+  ILS: '₪',
+  INR: '₹',
+  IQD: 'ع.د',
+  IRR: '﷼',
+  JMD: 'J$',
+  JOD: 'د.ا',
   JPY: '¥',
+  KES: 'KSh',
+  KGS: '⃀',
+  KHR: '៛',
+  KPW: '₩',
+  KRW: '₩',
+  KWD: 'KD',
+  KZT: '₸',
+  LAK: '₭',
+  LBP: 'L£',
+  LKR: 'Rs',
+  LRD: 'L$',
+  LSL: 'L',
+  LYD: 'LD',
+  MAD: 'DH',
+  MDL: 'L',
+  MGA: 'Ar',
+  MKD: 'ден',
+  MMK: 'K',
+  MNT: '₮',
+  MRU: 'UM',
+  MWK: 'MK',
   MXN: '$',
+  MYR: 'RM',
+  MZN: 'MT',
+  NAD: 'N$',
+  NGN: '₦',
   NIO: 'C$',
   NOK: 'kr',
+  NPR: 'Rs',
   NZD: 'NZ$',
+  OMR: 'ر.ع.',
   PAB: 'B/.',
   PEN: 'S/',
+  PGK: 'K',
+  PHP: '₱',
+  PKR: 'Rs',
+  PLN: 'zł',
   PYG: '₲',
+  QAR: 'QR',
+  RON: 'lei',
+  RSD: 'дин',
+  RUB: '₽',
+  RWF: 'RF',
+  SAR: 'SR',
+  SDG: 'ج.س.',
   SEK: 'kr',
   SGD: 'S$',
+  SLE: 'Le',
+  SOS: 'Sh',
+  SSP: 'SS£',
+  SYP: 'S£',
+  THB: '฿',
+  TJS: 'ЅМ',
+  TMT: 'm',
+  TND: 'DT',
+  TRY: '₺',
+  TWD: 'NT$',
+  TZS: 'TSh',
+  UAH: '₴',
+  UGX: 'USh',
   USD: 'US$',
   UYU: '$U',
+  UZS: "so'm",
+  VES: 'Bs.',
+  VND: '₫',
+  XAF: 'FCFA',
+  XCD: 'EC$',
+  XOF: 'CFA',
+  XPF: 'CFPF',
+  YER: '﷼',
+  ZAR: 'R',
+  ZMW: 'ZK',
+  ZWG: 'ZiG',
 };
+// @generated currency-catalog:end CURRENCY_SYMBOL
 
 // ---------------------------------------------------------------------------
 // Month / weekday arrays (es-AR source of truth)

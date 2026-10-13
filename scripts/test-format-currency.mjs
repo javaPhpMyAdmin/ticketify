@@ -13,13 +13,14 @@
  *   - LATAM grouping (`.` thousands + `,` decimals) for ARS/UYU/BRL/MXN.
  *   - Symbol form keyed by `CURRENCY_SYMBOL` (UYU → `$U`, USD → `US$`,
  *     etc.). Unknown codes fall back to the code itself.
- *   - ZERO-DECIMAL minor units: CLP, JPY, PEN and PYG are factually
- *     whole-unit currencies, so they render as whole amounts (`$ 1.235`,
- *     `¥ 1,235`, `S/ 1.235`, `₲ 100`) and NEVER emit a decimal separator.
- *     The one intentional change to ESTABLISHED shipped output is JPY, which
- *     used to render `¥ 1,234.56` — a fabricated cent. CLP and PEN had no
- *     symbol at all before this change and so rendered as bare codes.
- *   - Symbol coverage for every one of the 14 catalog codes — each renders
+ *   - ZERO-DECIMAL minor units: the twelve catalog codes with ISO 4217 minor
+ *     unit 0 (BIF, CLP, GNF, JPY, KRW, PYG, RWF, UGX, VND, XAF, XOF, XPF)
+ *     are whole-unit currencies, so they render as whole amounts (`¥ 1,235`,
+ *     `$ 1.235`, `₲ 1.235`, …) and NEVER emit a decimal separator — printing
+ *     `¥ 1,234.56` fabricates a sub-unit that does not exist. PEN is NOT one of
+ *     them: the Peruvian sol is ISO 4217 minor unit 2 and renders its two
+ *     decimals like the other LATAM currencies.
+ *   - Symbol coverage for every one of the 123 catalog codes — each renders
  *     symbol-prefixed, never as a bare code.
  *   - Edge cases: zero (`'$ 0'`), negative (`-US$ 1,234.56`), and a legacy
  *     lowercase row (`'usd'`).
@@ -166,9 +167,11 @@ async function run() {
     assert.equal(fmt.formatCurrency(1234.56, 'CLP'), '$ 1.235');
   });
 
-  await test('formatCurrency PEN → "S/ 1.235" (LATAM, "S/" symbol, whole amount)', () => {
-    // PEN retired the centavo; `S/` is the sol's symbol. REQ-2.2.
-    assert.equal(fmt.formatCurrency(1234.56, 'PEN'), 'S/ 1.235');
+  await test('formatCurrency PEN → "S/ 1.234,56" (LATAM, "S/" symbol, two decimals)', () => {
+    // The Peruvian sol is ISO 4217 minor unit 2: it renders its cents like the
+    // other LATAM currencies, and `S/` is the sol's symbol. PEN is NOT
+    // zero-decimal.
+    assert.equal(fmt.formatCurrency(1234.56, 'PEN'), 'S/ 1.234,56');
   });
 
   await test('formatCurrency PYG → "₲ 1.235" (LATAM, guaraní symbol, whole)', () => {
@@ -184,24 +187,44 @@ async function run() {
   });
 
   await test('every zero-decimal code renders without a decimal separator', () => {
-    // Triangulation on the OTHER branch and across BOTH grouping styles: JPY
-    // groups INTL, CLP / PEN / PYG group LATAM — and none of the four keeps a
-    // `.` or `,` fraction. COP is absent on purpose (recorded scope decision).
-    const zeroDecimal = ['CLP', 'JPY', 'PEN', 'PYG'];
+    // The full ISO 4217 minor-unit-0 catalog set (twelve codes). Triangulation
+    // across BOTH grouping styles: BIF / GNF / JPY / KRW / RWF / UGX / VND /
+    // XAF / XOF / XPF group INTL, CLP / PYG group LATAM — and none keeps a `.`
+    // or `,` fraction. PEN is GONE from this set (minor unit 2), and COP is
+    // absent on purpose (recorded scope decision).
+    const zeroDecimal = [
+      'BIF', 'CLP', 'GNF', 'JPY', 'KRW', 'PYG',
+      'RWF', 'UGX', 'VND', 'XAF', 'XOF', 'XPF',
+    ];
     const expected = {
+      BIF: 'FBu 1,235',
       CLP: '$ 1.235',
+      GNF: 'FG 1,235',
       JPY: '¥ 1,235',
-      PEN: 'S/ 1.235',
+      KRW: '₩ 1,235',
       PYG: '₲ 1.235',
+      RWF: 'RF 1,235',
+      UGX: 'USh 1,235',
+      VND: '₫ 1,235',
+      XAF: 'FCFA 1,235',
+      XOF: 'CFA 1,235',
+      XPF: 'CFPF 1,235',
     };
-    assert.equal(zeroDecimal.length, 4);
+    assert.equal(zeroDecimal.length, 12);
+    assert.deepEqual(
+      [...fmt.ZERO_DECIMAL_CURRENCIES].sort(),
+      [...zeroDecimal].sort(),
+      'the zero-decimal set must be exactly the twelve minor-unit-0 catalog codes',
+    );
     for (const code of zeroDecimal) {
       const rendered = fmt.formatCurrency(1234.56, code);
       assert.equal(rendered, expected[code]);
       assert.ok(!/\d[.,]\d{2}$/.test(rendered), `${code} kept a fraction: ${rendered}`);
     }
-    // The control: COP is factually zero-decimal but deliberately OUT of the
-    // set, so it still renders a fraction.
+    // Controls: PEN is no longer zero-decimal (minor unit 2) and renders its
+    // cents; COP is factually zero-decimal but deliberately OUT of the set.
+    assert.ok(!fmt.ZERO_DECIMAL_CURRENCIES.has('PEN'));
+    assert.equal(fmt.formatCurrency(1234.56, 'PEN'), 'S/ 1.234,56');
     assert.equal(fmt.formatCurrency(1234.56, 'COP'), '$ 1.234,56');
   });
 
@@ -221,8 +244,8 @@ async function run() {
     assert.equal(fmt.formatCurrency(1234.56, 'usd'), 'US$ 1,234.56');
   });
 
-  await test('all 28 catalog codes render symbol-prefixed (never a bare code)', () => {
-    // REQ-1.3.3. The loop is non-vacuous: the catalog is asserted to hold 28
+  await test('all 123 catalog codes render symbol-prefixed (never a bare code)', () => {
+    // REQ-1.3.3. The loop is non-vacuous: the catalog is asserted to hold 123
     // distinct codes in the section below. CHF is exempt from the "not the
     // bare code" half: its conventional symbol IS "CHF", so a correct render
     // legitimately starts with the code plus a space.
@@ -240,19 +263,33 @@ async function run() {
 
   console.log('\n[tests] catalog single source of truth (AD-1)\n');
 
-  await test('SUPPORTED_CURRENCIES is the 28-code catalog, no duplicates', () => {
+  await test('SUPPORTED_CURRENCIES is the 123-code catalog, no duplicates', () => {
     // REQ-1.1: the ordered set the selector renders. Pinned here (and again,
     // cross-file, in test-currency-catalog) because an added or dropped code
     // is exactly the drift this catalog exists to prevent.
-    assert.equal(fmt.SUPPORTED_CURRENCIES.length, 28);
-    assert.equal(new Set(fmt.SUPPORTED_CURRENCIES).size, 28);
+    assert.equal(fmt.SUPPORTED_CURRENCIES.length, 123);
+    assert.equal(new Set(fmt.SUPPORTED_CURRENCIES).size, 123);
     assert.deepEqual(
       [...fmt.SUPPORTED_CURRENCIES].sort(),
       [
-        'ARS', 'AUD', 'BOB', 'BRL', 'CAD', 'CHF', 'CLP', 'COP', 'CRC',
-        'DKK', 'DOP', 'EUR', 'GBP', 'GTQ', 'HKD', 'HNL', 'JPY', 'MXN',
-        'NIO', 'NOK', 'NZD', 'PAB', 'PEN', 'PYG', 'SEK', 'SGD', 'USD',
-        'UYU',
+        'AED', 'AFN', 'ALL', 'AMD', 'AOA', 'ARS', 'AUD',
+        'AZN', 'BAM', 'BDT', 'BGN', 'BIF', 'BOB', 'BRL',
+        'BWP', 'BYN', 'CAD', 'CDF', 'CHF', 'CLP', 'CNY',
+        'COP', 'CRC', 'CUP', 'CZK', 'DKK', 'DOP', 'DZD',
+        'EGP', 'ERN', 'ETB', 'EUR', 'GBP', 'GEL', 'GHS',
+        'GMD', 'GNF', 'GTQ', 'HKD', 'HNL', 'HTG', 'HUF',
+        'IDR', 'ILS', 'INR', 'IQD', 'IRR', 'JMD', 'JOD',
+        'JPY', 'KES', 'KGS', 'KHR', 'KPW', 'KRW', 'KWD',
+        'KZT', 'LAK', 'LBP', 'LKR', 'LRD', 'LSL', 'LYD',
+        'MAD', 'MDL', 'MGA', 'MKD', 'MMK', 'MNT', 'MRU',
+        'MWK', 'MXN', 'MYR', 'MZN', 'NAD', 'NGN', 'NIO',
+        'NOK', 'NPR', 'NZD', 'OMR', 'PAB', 'PEN', 'PGK',
+        'PHP', 'PKR', 'PLN', 'PYG', 'QAR', 'RON', 'RSD',
+        'RUB', 'RWF', 'SAR', 'SDG', 'SEK', 'SGD', 'SLE',
+        'SOS', 'SSP', 'SYP', 'THB', 'TJS', 'TMT', 'TND',
+        'TRY', 'TWD', 'TZS', 'UAH', 'UGX', 'USD', 'UYU',
+        'UZS', 'VES', 'VND', 'XAF', 'XCD', 'XOF', 'XPF',
+        'YER', 'ZAR', 'ZMW', 'ZWG',
       ],
     );
   });
@@ -267,7 +304,7 @@ async function run() {
   await test('every catalog code resolves a symbol (never a bare code)', () => {
     // REQ-1.3. The table is typed `Record<SupportedCurrency, string>` so a
     // missing entry is a `tsc` error; this is the runtime half of the same
-    // guarantee (the loop is non-vacuous — 28 codes are asserted above).
+    // guarantee (the loop is non-vacuous — 123 codes are asserted above).
     for (const code of fmt.SUPPORTED_CURRENCIES) {
       assert.ok(fmt.CURRENCY_SYMBOL[code], `${code} has no symbol`);
     }
