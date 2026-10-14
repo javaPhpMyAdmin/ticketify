@@ -340,13 +340,14 @@ async function run() {
     const codes = Object.values(mod.REGION_DEFAULT_CURRENCY);
     // Exact row count pinned: every UN M.49 country/territory whose circulating
     // currency is in the catalog, unions expanding to all their members.
-    assert.equal(regions.length, 209);
+    assert.equal(regions.length, 210);
     // Unions SHARE codes, so the distinct-code count is SMALLER than the row
     // count — the pre-widening `new Set(codes).size === regions.length`
     // invariant is WRONG now that many regions map to EUR/XOF/XAF/XCD/XPF.
-    // Pinned exactly at 122: every catalog code is reachable from some region
-    // except `SEK`, because `SE` is deliberately absent (see below).
-    assert.equal(new Set(codes).size, 122);
+    // Pinned exactly at 123: all 123 catalog codes are reachable from some region
+    // (the count is still smaller than the row count because EUR/XOF/XAF/XCD/XPF
+    // are shared by many regions).
+    assert.equal(new Set(codes).size, 123);
     for (const region of regions) {
       assert.match(region, /^[A-Z]{2}$|^\d{3}$/, `${region} is not an uppercase region`);
     }
@@ -356,9 +357,8 @@ async function run() {
     }
     // The Latin-American macro-region must never be guessed into one country.
     assert.ok(!('419' in mod.REGION_DEFAULT_CURRENCY), '419 must stay absent');
-    // Sweden is the deliberate exception: SEK is in the catalog, but SE stays
-    // unmapped so the `sv-SE → USD` regression pin in test-profile-hook holds.
-    assert.ok(!('SE' in mod.REGION_DEFAULT_CURRENCY), 'SE must stay absent');
+    // Sweden now maps to its own currency.
+    assert.equal(mod.REGION_DEFAULT_CURRENCY.SE, 'SEK', 'SE maps to SEK');
   });
 
   console.log('\n[tests] codesForRegion — review-subset forward lookup\n');
@@ -375,14 +375,15 @@ async function run() {
   });
 
   await test('an unmapped, macro-region, empty or absent region yields [] (never USD)', () => {
-    assert.deepEqual(mod.codesForRegion('SE'), []);
+    // AQ (Antarctica) has no circulating currency in the catalog and is not mapped.
+    assert.deepEqual(mod.codesForRegion('AQ'), []);
     assert.deepEqual(mod.codesForRegion('419'), []);
     assert.deepEqual(mod.codesForRegion('XX'), []);
     assert.deepEqual(mod.codesForRegion(''), []);
     assert.deepEqual(mod.codesForRegion(null), []);
     assert.deepEqual(mod.codesForRegion(undefined), []);
     // The subset must never inject a currency the user never chose.
-    assert.ok(!mod.codesForRegion('SE').includes('USD'));
+    assert.ok(!mod.codesForRegion('AQ').includes('USD'));
     assert.ok(!mod.codesForRegion('419').includes('USD'));
   });
 
