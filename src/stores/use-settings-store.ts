@@ -1,6 +1,22 @@
 import { create } from 'zustand';
 
+import { SUPPORTED_CURRENCIES } from '@/lib/format';
+import {
+  loadRecentCurrencies,
+  saveRecentCurrencies,
+} from '@/stores/recent-currencies-storage';
 import { useHouseholdStore } from '@/stores/use-household-store';
+
+/**
+ * How many recently-chosen currencies the picker surfaces. A small cap keeps
+ * the review-screen chip row short; the full catalog stays one tap away.
+ */
+const RECENT_CURRENCIES_CAP = 5;
+
+/** Same-order, same-length content comparison for the recent-code list. */
+function sameRecentCurrencies(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((code, index) => code === b[index]);
+}
 
 /**
  * App-level user preferences (non-auth settings). Session presence in
@@ -43,6 +59,14 @@ import { useHouseholdStore } from '@/stores/use-household-store';
  * so a late-arriving good payload cannot re-close a gate a later error opened;
  * `resetHydration()` is the single teardown path shared by sign-out and
  * account deletion, so neither can forget to shut it.
+ *
+ * Recent currencies (D8): a device-local convenience, NOT profile state — the
+ * most-recent-first codes the user has chosen in a picker, capped at
+ * `RECENT_CURRENCIES_CAP`. The STORE is the in-memory authority; the mirror
+ * lives in `recent-currencies-storage.ts` behind a best-effort AsyncStorage
+ * write that can never block a selection. `hydrate()` is the merge seam: it
+ * applies the caller's patch synchronously (unchanged) and then loads the
+ * stored list in the background, filtered to codes the catalog still ships.
  */
 interface SettingsState {
   monthly_budget: number;
@@ -50,21 +74,26 @@ interface SettingsState {
   household_sharing: boolean;
   /** True once `profiles.currency` has been read for the current session. */
   currencyHydrated: boolean;
+  /** Most-recent-first chosen codes, capped at `RECENT_CURRENCIES_CAP`. */
+  recentCurrencies: string[];
   setBudget: (value: number) => void;
   setCurrency: (currency: string) => void;
   setHouseholdSharing: (enabled: boolean) => void;
   /** Marks the profile currency as authoritative. Never re-closes the gate. */
   markCurrencyHydrated: () => void;
+  /** Promote `code` to the front of `recentCurrencies` and mirror it. */
+  pushRecentCurrency: (code: string) => void;
   /** Session teardown: re-closes the gate so the next user starts fail-closed. */
   resetHydration: () => void;
   hydrate: (next: Partial<SettingsState>) => void;
 }
 
-export const useSettingsStore = create<SettingsState>((set) => ({
+export const useSettingsStore = create<SettingsState>((set, get) => ({
   monthly_budget: 1200,
   currency: 'USD',
   household_sharing: false,
   currencyHydrated: false,
+  recentCurrencies: [],
   setBudget: (monthly_budget) => set({ monthly_budget }),
   setCurrency: (currency) => set({ currency }),
   setHouseholdSharing: (household_sharing) => {
@@ -78,7 +107,41 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     // bad one (or after an unrelated re-render) from notifying subscribers
     // with a no-op write, which every money screen would re-render for.
     set((prev) => (prev.currencyHydrated ? prev : { currencyHydrated: true })),
+  pushRecentCurrency: (code) => {
+    // Case-fold first so `'usd'` and `'USD'` can never both appear; drop any
+    // existing entry, then cap at the front-of-list (LRU) limit.
+    const upper = code.toUpperCase();
+    const next = [
+      upper,
+      ...get().recentCurrencies.filter((existing) => existing !== upper),
+    ].slice(0, RECENT_CURRENCIES_CAP);
+    set({ recentCurrencies: next });
+    // Fire-and-forget mirror: the store already holds the truth and a storage
+    // failure must NEVER block the selection that produced it.
+    void saveRecentCurrencies(next);
+  },
   resetHydration: () =>
     set((prev) => (prev.currencyHydrated ? { currencyHydrated: false } : prev)),
-  hydrate: (next) => set((prev) => ({ ...prev, ...next })),
+  hydrate: (next) => {
+    set((prev) => ({ ...prev, ...next }));
+    // Recents are device-local, so they hydrate from their own mirror rather
+    // than the profile patch. Filter to codes the catalog still ships (a
+    // future shrink must not resurrect a retired code) and re-cap. The
+    // skip-equal guard keeps a repeat hydrate from notifying subscribers with
+    // an identical list.
+    void loadRecentCurrencies()
+      .then((stored) => {
+        const catalog = new Set<string>(SUPPORTED_CURRENCIES);
+        const recent = stored
+          .filter((code) => catalog.has(code))
+          .slice(0, RECENT_CURRENCIES_CAP);
+        if (!sameRecentCurrencies(get().recentCurrencies, recent)) {
+          set({ recentCurrencies: recent });
+        }
+      })
+      .catch(() => {
+        // `loadRecentCurrencies` never rejects; this guards a future change to
+        // that contract without ever surfacing an unhandled rejection.
+      });
+  },
 }));

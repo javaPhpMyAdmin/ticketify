@@ -7,18 +7,19 @@
  * supported codes are
  * authoritative in `SUPPORTED_CURRENCIES` (`src/lib/format.ts`); everything
  * else (symbol table, three full-locale `currency.json` catalogs, region
- * defaults, settings selector) must derive from that source. Label
- * TRANSLATION quality is not automatable and is not pretended to be. A
+ * defaults, the shared `CurrencyPickerList` and its settings consumer) must
+ * derive from that source. Label TRANSLATION quality is not automatable and is
+ * not pretended to be. A
  * wrong-but-different label is out of scope for this harness.
  *
  * §3b is the one deliberate exception to "structural only": the picker's
  * selected-row decision was extracted into `src/lib/currency-selection.ts`, a
  * PURE and dependency-free module, precisely so it could be pinned
- * BEHAVIORALLY here. A regex over `currency.tsx` can prove the text still says
- * `code === currency`; it can never observe which rows actually render as
- * selected, which is where the reported regression lived.
+ * BEHAVIORALLY here. A regex over `CurrencyPickerList.tsx` can prove the text
+ * still says `code === currency`; it can never observe which rows actually
+ * render as selected, which is where the reported regression lived.
  *
- * The leaf-count pin (914) belongs to
+ * The leaf-count pin (916) belongs to
  * `scripts/test-i18n-catalog-parity.mjs`, and duplicating it here would create
  * a second place to update on the next catalog bump.
  *
@@ -798,35 +799,35 @@ async function run() {
       assert.ok(fmt.SUPPORTED_CURRENCIES.includes(currency), `${region} -> ${currency} not in SUPPORTED_CURRENCIES`);
     }
   });
-  // ── 3. the selector REFERENCES the catalog ──────────────────────────────
-  console.log('\n[tests] settings selector consumes the catalog\n');
+  // ── 3. the picker REFERENCES the catalog ────────────────────────────────
+  console.log('\n[tests] shared picker consumes the catalog\n');
 
-  const selector = readFileSync(join(root, 'src', 'app', 'settings', 'currency.tsx'), 'utf8');
+  const selector = readFileSync(join(root, 'src', 'components', 'CurrencyPickerList.tsx'), 'utf8');
 
-  await test('currency.tsx imports SUPPORTED_CURRENCIES from the format module', () => {
+  await test('CurrencyPickerList.tsx imports SUPPORTED_CURRENCIES from the format module', () => {
     assert.match(
       selector,
       /import\s*\{[^}]*\bSUPPORTED_CURRENCIES\b[^}]*\}\s*from\s*'@\/lib\/format'/,
-      'the selector must import the catalog, not redeclare it',
+      'the picker must import the catalog, not redeclare it',
     );
     assert.match(selector, /SUPPORTED_CURRENCIES\.map\(/);
   });
 
-  await test('currency.tsx declares no currency-code array of its own', () => {
+  await test('CurrencyPickerList.tsx declares no currency-code array of its own', () => {
     // Matches `const FOO = ['UYU', ...]` / ReadonlyArray<string> style lists.
     assert.doesNotMatch(
       selector,
       /const\s+[A-Z_]*CURRENC[A-Z_]*\w*\s*(:\s*ReadonlyArray<[^>]*>)?\s*=/,
-      'a second code array in the selector is the exact drift this change removed',
+      'a second code array in the picker is the exact drift this change removed',
     );
     assert.doesNotMatch(
       selector,
       /'currency:[A-Z]{3}'/,
-      'a hand-written currency key union is back in the selector',
+      'a hand-written currency key union is back in the picker',
     );
   });
 
-  await test('currency.tsx has no `as` cast on its i18n key (the T-8 lesson)', () => {
+  await test('CurrencyPickerList.tsx has no `as` cast on its i18n key (the T-8 lesson)', () => {
     // `as \`currency:${CurrencyKey}\`` typechecks while silently narrowing a
     // wider union down to the catalog's — an assertion between two unions only
     // needs one direction of assignability. The guard that actually bites is
@@ -836,20 +837,50 @@ async function run() {
     assert.doesNotMatch(
       selector,
       /as\s+`?currency:/,
-      'the selector must derive its key with `satisfies`, never `as`',
+      'the picker must derive its key with `satisfies`, never `as`',
     );
     assert.match(
       selector,
       /satisfies\s+`currency:\$\{CurrencyKey\}`/,
-      'the selector must narrow its i18n key with `satisfies`',
+      'the picker must narrow its i18n key with `satisfies`',
     );
   });
 
-  await test('currency.tsx carries no region-default badge (REQ-6.6)', () => {
+  await test('CurrencyPickerList.tsx carries no region-default badge (REQ-6.6)', () => {
     assert.doesNotMatch(
       selector,
       /regionDefault|region_default|\bdefault:\s*true/i,
-      'no region-default marker may reappear in the selector',
+      'no region-default marker may reappear in the picker',
+    );
+  });
+
+  // The picker was extracted into a SHARED component so the settings screen and
+  // the review "More" modal cannot drift apart. The screen is therefore pinned
+  // as a CONSUMER: it must render the shared list, and must not fall back to
+  // mapping the catalog inline (which is how the two copies drifted in the
+  // first place).
+  const screen = readFileSync(join(root, 'src', 'app', 'settings', 'currency.tsx'), 'utf8');
+
+  await test('currency.tsx renders the shared CurrencyPickerList', () => {
+    assert.match(
+      screen,
+      /import\s*\{[^}]*\bCurrencyPickerList\b[^}]*\}\s*from\s*'@\/components\/CurrencyPickerList'/,
+      'the settings screen must import the shared picker',
+    );
+    assert.match(
+      screen,
+      /<CurrencyPickerList\b/,
+      'the settings screen must render CurrencyPickerList',
+    );
+    assert.doesNotMatch(
+      screen,
+      /SUPPORTED_CURRENCIES\.map\(/,
+      'the screen must not map the catalog itself — the picker owns the rows',
+    );
+    assert.doesNotMatch(
+      screen,
+      /\bScrollView\b/,
+      'the picker owns its own scroll — nesting a SectionList inside a ScrollView breaks virtualisation',
     );
   });
 
@@ -915,7 +946,7 @@ async function run() {
     assert.match(
       selector,
       /const\s+selected\s*=\s*isCurrencySelected\(\s*code\s*,\s*currency\s*\)/,
-      'currency.tsx must derive `selected` from the pinned predicate, not re-implement it',
+      'CurrencyPickerList.tsx must derive `selected` from the pinned predicate, not re-implement it',
     );
     assert.doesNotMatch(
       selector,
@@ -925,7 +956,7 @@ async function run() {
   });
 
   await test('the checkmark and the a11y state read the SAME `selected` value', () => {
-    // The comment above `const selected` in currency.tsx promises the visual
+    // The comment above `const selected` in CurrencyPickerList.tsx promises the visual
     // checkmark and `accessibilityState` "cannot drift apart" because both read
     // that one value. Nothing pinned the promise, and it breaks from inside a
     // single row: `{code === currency.toUpperCase() || selected ? <Icon
