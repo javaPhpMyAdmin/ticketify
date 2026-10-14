@@ -2,16 +2,14 @@ import { create } from 'zustand';
 
 import { SUPPORTED_CURRENCIES } from '@/lib/format';
 import {
+  pushRecentCurrency as pushRecentCurrencyPure,
+  sanitizeRecentCurrencies,
+} from '@/lib/recent-currencies';
+import {
   loadRecentCurrencies,
   saveRecentCurrencies,
 } from '@/stores/recent-currencies-storage';
 import { useHouseholdStore } from '@/stores/use-household-store';
-
-/**
- * How many recently-chosen currencies the picker surfaces. A small cap keeps
- * the review-screen chip row short; the full catalog stays one tap away.
- */
-const RECENT_CURRENCIES_CAP = 5;
 
 /** Same-order, same-length content comparison for the recent-code list. */
 function sameRecentCurrencies(a: string[], b: string[]): boolean {
@@ -62,9 +60,11 @@ function sameRecentCurrencies(a: string[], b: string[]): boolean {
  *
  * Recent currencies (D8): a device-local convenience, NOT profile state — the
  * most-recent-first codes the user has chosen in a picker, capped at
- * `RECENT_CURRENCIES_CAP`. The STORE is the in-memory authority; the mirror
+ * `MAX_RECENT_CURRENCIES`. The STORE is the in-memory authority; the mirror
  * lives in `recent-currencies-storage.ts` behind a best-effort AsyncStorage
- * write that can never block a selection. `hydrate()` is the merge seam: it
+ * write that can never block a selection. The pure list math (de-dupe, cap,
+ * catalog filter) lives in `src/lib/recent-currencies.ts` so it can be tested
+ * without this module's import graph. `hydrate()` is the merge seam: it
  * applies the caller's patch synchronously (unchanged) and then loads the
  * stored list in the background, filtered to codes the catalog still ships.
  */
@@ -74,7 +74,7 @@ interface SettingsState {
   household_sharing: boolean;
   /** True once `profiles.currency` has been read for the current session. */
   currencyHydrated: boolean;
-  /** Most-recent-first chosen codes, capped at `RECENT_CURRENCIES_CAP`. */
+  /** Most-recent-first chosen codes, capped at `MAX_RECENT_CURRENCIES`. */
   recentCurrencies: string[];
   setBudget: (value: number) => void;
   setCurrency: (currency: string) => void;
@@ -108,13 +108,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     // with a no-op write, which every money screen would re-render for.
     set((prev) => (prev.currencyHydrated ? prev : { currencyHydrated: true })),
   pushRecentCurrency: (code) => {
-    // Case-fold first so `'usd'` and `'USD'` can never both appear; drop any
-    // existing entry, then cap at the front-of-list (LRU) limit.
-    const upper = code.toUpperCase();
-    const next = [
-      upper,
-      ...get().recentCurrencies.filter((existing) => existing !== upper),
-    ].slice(0, RECENT_CURRENCIES_CAP);
+    // Pure list math (upper-case, case-insensitive de-dupe, front-insert,
+    // cap) lives in `src/lib/recent-currencies.ts` — this method only owns
+    // the state write and the fire-and-forget mirror.
+    const next = pushRecentCurrencyPure(get().recentCurrencies, code);
     set({ recentCurrencies: next });
     // Fire-and-forget mirror: the store already holds the truth and a storage
     // failure must NEVER block the selection that produced it.
@@ -125,16 +122,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   hydrate: (next) => {
     set((prev) => ({ ...prev, ...next }));
     // Recents are device-local, so they hydrate from their own mirror rather
-    // than the profile patch. Filter to codes the catalog still ships (a
-    // future shrink must not resurrect a retired code) and re-cap. The
-    // skip-equal guard keeps a repeat hydrate from notifying subscribers with
-    // an identical list.
+    // than the profile patch. The pure sanitizer filters to codes the catalog
+    // still ships (a future shrink must not resurrect a retired code),
+    // upper-cases, de-dupes and re-caps. The skip-equal guard keeps a repeat
+    // hydrate from notifying subscribers with an identical list.
     void loadRecentCurrencies()
       .then((stored) => {
-        const catalog = new Set<string>(SUPPORTED_CURRENCIES);
-        const recent = stored
-          .filter((code) => catalog.has(code))
-          .slice(0, RECENT_CURRENCIES_CAP);
+        const recent = sanitizeRecentCurrencies(stored, SUPPORTED_CURRENCIES);
         if (!sameRecentCurrencies(get().recentCurrencies, recent)) {
           set({ recentCurrencies: recent });
         }

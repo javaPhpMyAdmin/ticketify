@@ -27,7 +27,7 @@ export const RECENT_CURRENCIES_KEY = 'ticketify.recent-currencies.v1';
  * The minimal AsyncStorage surface this module needs. The real module
  * satisfies it structurally (`getItem` / `setItem` return promises).
  */
-interface AsyncStorageBackend {
+export interface RecentCurrenciesBackend {
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;
 }
@@ -36,11 +36,11 @@ interface AsyncStorageBackend {
  * Resolve the AsyncStorage backend lazily, or `null` when the native module is
  * unavailable (plain-Node harness, unlinked native module). Never throws.
  */
-function getBackend(): AsyncStorageBackend | null {
+function getBackend(): RecentCurrenciesBackend | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const loaded = require('@react-native-async-storage/async-storage') as
-      | ({ default?: AsyncStorageBackend } & AsyncStorageBackend)
+      | ({ default?: RecentCurrenciesBackend } & RecentCurrenciesBackend)
       | undefined;
     if (!loaded) return null;
     // The CJS build exports `{ default: AsyncStorage }` (interop shape); fall
@@ -56,10 +56,15 @@ function getBackend(): AsyncStorageBackend | null {
  * value is stored, the value is not a JSON array, or parsing fails — the
  * adapter never throws, so callers can rely on `[]` meaning "no stored list".
  * Non-string members of a stored array are dropped rather than trusted.
+ *
+ * `backend` defaults to the lazily-resolved AsyncStorage module (production);
+ * the harness injects an in-memory backend through `__testing__` so a Node
+ * process never touches the native module.
  */
-export async function loadRecentCurrencies(): Promise<string[]> {
+export async function loadRecentCurrencies(
+  backend: RecentCurrenciesBackend | null = getBackend(),
+): Promise<string[]> {
   try {
-    const backend = getBackend();
     if (!backend) return [];
     const raw = await backend.getItem(RECENT_CURRENCIES_KEY);
     if (raw == null) return [];
@@ -75,13 +80,33 @@ export async function loadRecentCurrencies(): Promise<string[]> {
  * Persist the recent codes. Best-effort: failures are swallowed and logged, so
  * an AsyncStorage write failure can never block a currency selection. The
  * in-memory store has already updated by the time this runs.
+ *
+ * `backend` defaults to the lazily-resolved AsyncStorage module (production);
+ * the harness injects an in-memory backend through `__testing__`.
  */
-export async function saveRecentCurrencies(list: string[]): Promise<void> {
+export async function saveRecentCurrencies(
+  list: string[],
+  backend: RecentCurrenciesBackend | null = getBackend(),
+): Promise<void> {
   try {
-    const backend = getBackend();
     if (!backend) return;
     await backend.setItem(RECENT_CURRENCIES_KEY, JSON.stringify(list));
   } catch (err) {
     console.warn('[settings] failed to persist recent currencies', err);
   }
 }
+
+/**
+ * Test-only seam. Production code uses the lazily-resolved backend; the
+ * harness injects an in-memory backend here without module-mocking the native
+ * module. Mirrors `onboarding-storage.ts`'s `__testing__` factory.
+ */
+export const __testing__ = {
+  createRecentCurrenciesStorage(backend: RecentCurrenciesBackend) {
+    return {
+      loadRecentCurrencies: () => loadRecentCurrencies(backend),
+      saveRecentCurrencies: (list: string[]) =>
+        saveRecentCurrencies(list, backend),
+    };
+  },
+};
