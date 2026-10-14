@@ -1,4 +1,4 @@
-import { ZERO_DECIMAL_CURRENCIES } from './format';
+import { THREE_DECIMAL_CURRENCIES, ZERO_DECIMAL_CURRENCIES } from './format';
 
 /** Trimmed input must be digits and separators only (design: reject anything
  * not `^[0-9.,]+$`). `$45`, `12abc`, `1e3` are all rejected → null. */
@@ -7,8 +7,10 @@ const MONEY_SHAPE = /^[0-9.,]+$/;
 /**
  * Parse a human-entered money string with a fixed, locale-independent rule
  * (REQ-7, decision 10 — symmetric rule). The result never varies with the UI
- * locale, the region, or `currencyCode`: `currencyCode` is used ONLY to apply
- * zero-decimal rounding for codes in `ZERO_DECIMAL_CURRENCIES`.
+ * locale, the region, or `currencyCode`; `currencyCode` is used ONLY to apply
+ * minor-unit rounding: zero-decimal codes round to the whole unit, three-decimal
+ * codes round to the third decimal, and every other code passes through
+ * unchanged.
  *
  * Rule:
  * - Both `.` and `,` appear → the RIGHTMOST separator is the decimal
@@ -41,7 +43,14 @@ export function parseMoney(
   if (!Number.isFinite(value)) return null;
 
   const upperCode = currencyCode ? currencyCode.toUpperCase() : '';
-  return ZERO_DECIMAL_CURRENCIES.has(upperCode) ? Math.round(value) : value;
+  if (ZERO_DECIMAL_CURRENCIES.has(upperCode)) return Math.round(value);
+  // `toFixed(3)` rounds the decimal string; `Math.round(value * 1000) / 1000`
+  // would rescale the binary double before rounding (e.g.
+  // `4.015 * 1000 === 4014.9999999999995`) and can land on the wrong side of
+  // the half. The input is user-typed text parsed with `parseFloat`, so this is
+  // a display/round-consistency fix, not a monetary ledger.
+  if (THREE_DECIMAL_CURRENCIES.has(upperCode)) return Number(value.toFixed(3));
+  return value;
 }
 
 /**

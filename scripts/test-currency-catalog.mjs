@@ -3,21 +3,23 @@
  * Single-source-of-truth harness for the currency-universality catalog (AD-6).
  *
  * This harness enforces STRUCTURAL invariants (key-set equality, catalog
- * membership, region-map coverage, ordering). The twenty-eight supported codes are
+ * membership, region-map coverage, ordering). The one hundred twenty-three
+ * supported codes are
  * authoritative in `SUPPORTED_CURRENCIES` (`src/lib/format.ts`); everything
  * else (symbol table, three full-locale `currency.json` catalogs, region
- * defaults, settings selector) must derive from that source. Label
- * TRANSLATION quality is not automatable and is not pretended to be. A
+ * defaults, the shared `CurrencyPickerList` and its settings consumer) must
+ * derive from that source. Label TRANSLATION quality is not automatable and is
+ * not pretended to be. A
  * wrong-but-different label is out of scope for this harness.
  *
  * §3b is the one deliberate exception to "structural only": the picker's
  * selected-row decision was extracted into `src/lib/currency-selection.ts`, a
  * PURE and dependency-free module, precisely so it could be pinned
- * BEHAVIORALLY here. A regex over `currency.tsx` can prove the text still says
- * `code === currency`; it can never observe which rows actually render as
- * selected, which is where the reported regression lived.
+ * BEHAVIORALLY here. A regex over `CurrencyPickerList.tsx` can prove the text
+ * still says `code === currency`; it can never observe which rows actually
+ * render as selected, which is where the reported regression lived.
  *
- * The leaf-count pin (805) belongs to
+ * The leaf-count pin (917) belongs to
  * `scripts/test-i18n-catalog-parity.mjs`, and duplicating it here would create
  * a second place to update on the next catalog bump.
  *
@@ -44,10 +46,24 @@ const FULL_LOCALES = ['en', 'es-419', 'pt-BR'];
  *  REMOVE from `SUPPORTED_CURRENCIES`. The catalog itself stays the authority
  *  for order. */
 const SPEC_LIST = [
-  'ARS', 'AUD', 'BOB', 'BRL', 'CAD', 'CHF', 'CLP',
-  'COP', 'CRC', 'DKK', 'DOP', 'EUR', 'GBP', 'GTQ',
-  'HKD', 'HNL', 'JPY', 'MXN', 'NIO', 'NOK', 'NZD',
-  'PAB', 'PEN', 'PYG', 'SEK', 'SGD', 'USD', 'UYU',
+  'AED', 'AFN', 'ALL', 'AMD', 'AOA', 'ARS', 'AUD',
+  'AZN', 'BAM', 'BDT', 'BGN', 'BIF', 'BOB', 'BRL',
+  'BWP', 'BYN', 'CAD', 'CDF', 'CHF', 'CLP', 'CNY',
+  'COP', 'CRC', 'CUP', 'CZK', 'DKK', 'DOP', 'DZD',
+  'EGP', 'ERN', 'ETB', 'EUR', 'GBP', 'GEL', 'GHS',
+  'GMD', 'GNF', 'GTQ', 'HKD', 'HNL', 'HTG', 'HUF',
+  'IDR', 'ILS', 'INR', 'IQD', 'IRR', 'JMD', 'JOD',
+  'JPY', 'KES', 'KGS', 'KHR', 'KPW', 'KRW', 'KWD',
+  'KZT', 'LAK', 'LBP', 'LKR', 'LRD', 'LSL', 'LYD',
+  'MAD', 'MDL', 'MGA', 'MKD', 'MMK', 'MNT', 'MRU',
+  'MWK', 'MXN', 'MYR', 'MZN', 'NAD', 'NGN', 'NIO',
+  'NOK', 'NPR', 'NZD', 'OMR', 'PAB', 'PEN', 'PGK',
+  'PHP', 'PKR', 'PLN', 'PYG', 'QAR', 'RON', 'RSD',
+  'RUB', 'RWF', 'SAR', 'SDG', 'SEK', 'SGD', 'SLE',
+  'SOS', 'SSP', 'SYP', 'THB', 'TJS', 'TMT', 'TND',
+  'TRY', 'TWD', 'TZS', 'UAH', 'UGX', 'USD', 'UYU',
+  'UZS', 'VES', 'VND', 'XAF', 'XCD', 'XOF', 'XPF',
+  'YER', 'ZAR', 'ZMW', 'ZWG',
 ];
 
 /** Every currency code this app has EVER shipped, retired ones INCLUDED.
@@ -65,7 +81,7 @@ const SPEC_LIST = [
  *
  *  Why this matters at all: `ensureProfileCurrency` is INSERT-only, so it can
  *  never repair a profile whose stored `currency` has left the catalog. That
- *  row keeps a code no picker row matches (zero selected rows — the `QAR` case
+ *  row keeps a code no picker row matches (zero selected rows — the `XCG` case
  *  pinned in §3b) until a human taps a valid row, silently re-basing every
  *  amount in the app. Retiring a currency can therefore strand real profiles.
  *  `tsc` does stop the SLOPPY shrink (`Record<SupportedCurrency, string>` and
@@ -83,10 +99,24 @@ const SPEC_LIST = [
  *  this guard cannot close that path — review is the only defense. An edit to
  *  this array is therefore a ledger change, and should be reviewed as one. */
 const CATALOG_LEDGER = [
-  'ARS', 'AUD', 'BOB', 'BRL', 'CAD', 'CHF', 'CLP',
-  'COP', 'CRC', 'DKK', 'DOP', 'EUR', 'GBP', 'GTQ',
-  'HKD', 'HNL', 'JPY', 'MXN', 'NIO', 'NOK', 'NZD',
-  'PAB', 'PEN', 'PYG', 'SEK', 'SGD', 'USD', 'UYU',
+  'AED', 'AFN', 'ALL', 'AMD', 'AOA', 'ARS', 'AUD',
+  'AZN', 'BAM', 'BDT', 'BGN', 'BIF', 'BOB', 'BRL',
+  'BWP', 'BYN', 'CAD', 'CDF', 'CHF', 'CLP', 'CNY',
+  'COP', 'CRC', 'CUP', 'CZK', 'DKK', 'DOP', 'DZD',
+  'EGP', 'ERN', 'ETB', 'EUR', 'GBP', 'GEL', 'GHS',
+  'GMD', 'GNF', 'GTQ', 'HKD', 'HNL', 'HTG', 'HUF',
+  'IDR', 'ILS', 'INR', 'IQD', 'IRR', 'JMD', 'JOD',
+  'JPY', 'KES', 'KGS', 'KHR', 'KPW', 'KRW', 'KWD',
+  'KZT', 'LAK', 'LBP', 'LKR', 'LRD', 'LSL', 'LYD',
+  'MAD', 'MDL', 'MGA', 'MKD', 'MMK', 'MNT', 'MRU',
+  'MWK', 'MXN', 'MYR', 'MZN', 'NAD', 'NGN', 'NIO',
+  'NOK', 'NPR', 'NZD', 'OMR', 'PAB', 'PEN', 'PGK',
+  'PHP', 'PKR', 'PLN', 'PYG', 'QAR', 'RON', 'RSD',
+  'RUB', 'RWF', 'SAR', 'SDG', 'SEK', 'SGD', 'SLE',
+  'SOS', 'SSP', 'SYP', 'THB', 'TJS', 'TMT', 'TND',
+  'TRY', 'TWD', 'TZS', 'UAH', 'UGX', 'USD', 'UYU',
+  'UZS', 'VES', 'VND', 'XAF', 'XCD', 'XOF', 'XPF',
+  'YER', 'ZAR', 'ZMW', 'ZWG',
 ];
 
 /** Retired code -> the migration file in `supabase/migrations/` that rewrites
@@ -266,45 +296,46 @@ async function run() {
   // ── 1. the catalog itself ───────────────────────────────────────────────
   console.log('\n[tests] catalog shape\n');
 
-  await test('SUPPORTED_CURRENCIES carries exactly 28 codes', () => {
-    assert.equal(codes.length, 28);
+  await test('SUPPORTED_CURRENCIES carries exactly 123 codes', () => {
+    assert.equal(codes.length, 123);
   });
 
   await test('SUPPORTED_CURRENCIES has no duplicates (Set size == length)', () => {
     assert.equal(new Set(codes).size, codes.length);
   });
 
-  await test('the sorted catalog equals the 28 codes the spec names', () => {
+  await test('the sorted catalog equals the 123 codes the spec names', () => {
     assert.deepEqual([...codes].sort(), SPEC_LIST);
   });
 
-  // ── 1a. the 0046 SQL re-check literal tracks the catalog ────────────────
+  // ── 1a. the 0047 SQL re-check literal tracks the catalog ────────────────
   // The migration's `v_currency not in (...)` gate is the server-side copy
   // of this list (see the comment above it). It cannot import src/, so it
   // is pinned here against the compiled source of truth — an edit to either
-  // side that makes them disagree fails this harness. 0046 re-creates the
+  // side that makes them disagree fails this harness. 0047 re-creates the
   // same save_receipt() validation 0042 shipped with the WIDENED catalog, so
-  // it is the live literal; 0042's is frozen at the 14 codes it shipped.
+  // it is the live literal; 0042's is frozen at the 14 codes it shipped and
+  // 0046's at the 28.
 
-  console.log('\n[tests] 0046 SQL catalog literal tracks SUPPORTED_CURRENCIES\n');
+  console.log('\n[tests] 0047 SQL catalog literal tracks SUPPORTED_CURRENCIES\n');
 
-  await test('0046 `v_currency not in (...)` literal === SUPPORTED_CURRENCIES', () => {
+  await test('0047 `v_currency not in (...)` literal === SUPPORTED_CURRENCIES', () => {
     const sql = readFileSync(
-      join(root, 'supabase', 'migrations', '0046_widen_currency_catalog.sql'),
+      join(root, 'supabase', 'migrations', '0047_widen_currency_catalog.sql'),
       'utf8',
     );
     const gate = /v_currency not in \(([\s\S]*?)\) then/.exec(sql);
-    assert.ok(gate, '0046 catalog re-check (v_currency not in (...)) not found');
+    assert.ok(gate, '0047 catalog re-check (v_currency not in (...)) not found');
     const sqlCodes = [...gate[1].matchAll(/'([A-Z]{3})'/g)].map((m) => m[1]);
     assert.deepEqual(
       [...sqlCodes].sort(),
       [...codes].sort(),
-      '0046 SQL catalog literal drifted from SUPPORTED_CURRENCIES (src/lib/format.ts)',
+      '0047 SQL catalog literal drifted from SUPPORTED_CURRENCIES (src/lib/format.ts)',
     );
     assert.equal(
       new Set(sqlCodes).size,
       sqlCodes.length,
-      '0046 SQL catalog literal has duplicate codes',
+      '0047 SQL catalog literal has duplicate codes',
     );
   });
 
@@ -349,12 +380,12 @@ async function run() {
   // failure mode is driven through a fixture. This is what makes an empty
   // RETIRED_CURRENCIES safe to ship: the guard is exercised today rather than
   // for the first time during a live retirement.
-  const LIVE_28 = [...SPEC_LIST];
+  const LIVE_123 = [...SPEC_LIST];
   // Fixtures retire COP because it is genuinely in the catalog — an earlier
-  // draft used QAR, which the catalog never shipped, so every fixture silently
+  // draft used XCG, which the catalog never shipped, so every fixture silently
   // produced zero problems and every "rejects" assertion passed vacuously.
   const BACKFILL = "update profiles set currency = 'USD' where currency = 'COP';";
-  const without = (code) => LIVE_28.filter((c) => c !== code);
+  const without = (code) => LIVE_123.filter((c) => c !== code);
   const fixture = (files) => (file) =>
     Object.prototype.hasOwnProperty.call(files, file) ? files[file] : null;
   // Assert the mode is REPORTED, not the exact count: one bad state can trip
@@ -469,7 +500,7 @@ async function run() {
   await test('the validator rejects a retired code that is still live', () => {
     const problems = retirementProblems({
       ledger: CATALOG_LEDGER,
-      live: LIVE_28,
+      live: LIVE_123,
       retired: { COP: 'backfill.sql' },
       readMigration: fixture({ 'backfill.sql': BACKFILL }),
     });
@@ -484,7 +515,7 @@ async function run() {
     // only review catches it.
     const problems = retirementProblems({
       ledger: without('COP'),
-      live: LIVE_28,
+      live: LIVE_123,
       retired: {},
       readMigration: fixture({}),
     });
@@ -534,6 +565,7 @@ async function run() {
         'CLP',
         'COP',
         'CRC',
+        'CUP',
         'DOP',
         'GTQ',
         'HNL',
@@ -543,19 +575,113 @@ async function run() {
         'PEN',
         'PYG',
         'UYU',
+        'VES',
+        'AED',
+        'AFN',
+        'ALL',
+        'AMD',
+        'AOA',
         'AUD',
+        'AZN',
+        'BAM',
+        'BDT',
+        'BGN',
+        'BIF',
+        'BWP',
+        'BYN',
         'CAD',
+        'CDF',
         'CHF',
+        'CNY',
+        'CZK',
         'DKK',
+        'DZD',
+        'EGP',
+        'ERN',
+        'ETB',
         'EUR',
         'GBP',
+        'GEL',
+        'GHS',
+        'GMD',
+        'GNF',
         'HKD',
+        'HTG',
+        'HUF',
+        'IDR',
+        'ILS',
+        'INR',
+        'IQD',
+        'IRR',
+        'JMD',
+        'JOD',
         'JPY',
+        'KES',
+        'KGS',
+        'KHR',
+        'KPW',
+        'KRW',
+        'KWD',
+        'KZT',
+        'LAK',
+        'LBP',
+        'LKR',
+        'LRD',
+        'LSL',
+        'LYD',
+        'MAD',
+        'MDL',
+        'MGA',
+        'MKD',
+        'MMK',
+        'MNT',
+        'MRU',
+        'MWK',
+        'MYR',
+        'MZN',
+        'NAD',
+        'NGN',
         'NOK',
+        'NPR',
         'NZD',
+        'OMR',
+        'PGK',
+        'PHP',
+        'PKR',
+        'PLN',
+        'QAR',
+        'RON',
+        'RSD',
+        'RUB',
+        'RWF',
+        'SAR',
+        'SDG',
         'SEK',
         'SGD',
+        'SLE',
+        'SOS',
+        'SSP',
+        'SYP',
+        'THB',
+        'TJS',
+        'TMT',
+        'TND',
+        'TRY',
+        'TWD',
+        'TZS',
+        'UAH',
+        'UGX',
         'USD',
+        'UZS',
+        'VND',
+        'XAF',
+        'XCD',
+        'XOF',
+        'XPF',
+        'YER',
+        'ZAR',
+        'ZMW',
+        'ZWG',
       ],
     );
   });
@@ -673,35 +799,35 @@ async function run() {
       assert.ok(fmt.SUPPORTED_CURRENCIES.includes(currency), `${region} -> ${currency} not in SUPPORTED_CURRENCIES`);
     }
   });
-  // ── 3. the selector REFERENCES the catalog ──────────────────────────────
-  console.log('\n[tests] settings selector consumes the catalog\n');
+  // ── 3. the picker REFERENCES the catalog ────────────────────────────────
+  console.log('\n[tests] shared picker consumes the catalog\n');
 
-  const selector = readFileSync(join(root, 'src', 'app', 'settings', 'currency.tsx'), 'utf8');
+  const selector = readFileSync(join(root, 'src', 'components', 'CurrencyPickerList.tsx'), 'utf8');
 
-  await test('currency.tsx imports SUPPORTED_CURRENCIES from the format module', () => {
+  await test('CurrencyPickerList.tsx imports SUPPORTED_CURRENCIES from the format module', () => {
     assert.match(
       selector,
       /import\s*\{[^}]*\bSUPPORTED_CURRENCIES\b[^}]*\}\s*from\s*'@\/lib\/format'/,
-      'the selector must import the catalog, not redeclare it',
+      'the picker must import the catalog, not redeclare it',
     );
     assert.match(selector, /SUPPORTED_CURRENCIES\.map\(/);
   });
 
-  await test('currency.tsx declares no currency-code array of its own', () => {
+  await test('CurrencyPickerList.tsx declares no currency-code array of its own', () => {
     // Matches `const FOO = ['UYU', ...]` / ReadonlyArray<string> style lists.
     assert.doesNotMatch(
       selector,
       /const\s+[A-Z_]*CURRENC[A-Z_]*\w*\s*(:\s*ReadonlyArray<[^>]*>)?\s*=/,
-      'a second code array in the selector is the exact drift this change removed',
+      'a second code array in the picker is the exact drift this change removed',
     );
     assert.doesNotMatch(
       selector,
       /'currency:[A-Z]{3}'/,
-      'a hand-written currency key union is back in the selector',
+      'a hand-written currency key union is back in the picker',
     );
   });
 
-  await test('currency.tsx has no `as` cast on its i18n key (the T-8 lesson)', () => {
+  await test('CurrencyPickerList.tsx has no `as` cast on its i18n key (the T-8 lesson)', () => {
     // `as \`currency:${CurrencyKey}\`` typechecks while silently narrowing a
     // wider union down to the catalog's — an assertion between two unions only
     // needs one direction of assignability. The guard that actually bites is
@@ -711,20 +837,101 @@ async function run() {
     assert.doesNotMatch(
       selector,
       /as\s+`?currency:/,
-      'the selector must derive its key with `satisfies`, never `as`',
+      'the picker must derive its key with `satisfies`, never `as`',
     );
     assert.match(
       selector,
       /satisfies\s+`currency:\$\{CurrencyKey\}`/,
-      'the selector must narrow its i18n key with `satisfies`',
+      'the picker must narrow its i18n key with `satisfies`',
     );
   });
 
-  await test('currency.tsx carries no region-default badge (REQ-6.6)', () => {
+  await test('CurrencyPickerList.tsx carries no region-default badge (REQ-6.6)', () => {
     assert.doesNotMatch(
       selector,
       /regionDefault|region_default|\bdefault:\s*true/i,
-      'no region-default marker may reappear in the selector',
+      'no region-default marker may reappear in the picker',
+    );
+  });
+
+  // The picker was extracted into a SHARED component so the settings screen and
+  // the review "More" modal cannot drift apart. The screen is therefore pinned
+  // as a CONSUMER: it must render the shared list, and must not fall back to
+  // mapping the catalog inline (which is how the two copies drifted in the
+  // first place).
+  const screen = readFileSync(join(root, 'src', 'app', 'settings', 'currency.tsx'), 'utf8');
+
+  await test('currency.tsx renders the shared CurrencyPickerList', () => {
+    assert.match(
+      screen,
+      /import\s*\{[^}]*\bCurrencyPickerList\b[^}]*\}\s*from\s*'@\/components\/CurrencyPickerList'/,
+      'the settings screen must import the shared picker',
+    );
+    assert.match(
+      screen,
+      /<CurrencyPickerList\b/,
+      'the settings screen must render CurrencyPickerList',
+    );
+    assert.doesNotMatch(
+      screen,
+      /SUPPORTED_CURRENCIES\.map\(/,
+      'the screen must not map the catalog itself — the picker owns the rows',
+    );
+    assert.doesNotMatch(
+      screen,
+      /\bScrollView\b/,
+      'the picker owns its own scroll — nesting a SectionList inside a ScrollView breaks virtualisation',
+    );
+  });
+
+  // ── 3c. c2: the review "More" modal reuses the SAME shared list ─────────
+  //
+  // The review chip row shows a SUBSET; the full catalog lives behind a
+  // persistent "More" chip that opens `CurrencyPickerModal`. That modal must
+  // FRAME the shared `CurrencyPickerList` — if it ever grew its own copy of
+  // the rows, the review and settings pickers would drift, which is the exact
+  // defect the shared extraction removed.
+  const modal = readFileSync(
+    join(root, 'src', 'features', 'tickets', 'components', 'CurrencyPickerModal.tsx'),
+    'utf8',
+  );
+
+  await test('CurrencyPickerModal.tsx renders the shared CurrencyPickerList', () => {
+    assert.match(
+      modal,
+      /import\s*\{[^}]*\bCurrencyPickerList\b[^}]*\}\s*from\s*'@\/components\/CurrencyPickerList'/,
+      'the modal must import the shared picker, not redeclare rows',
+    );
+    assert.match(modal, /<CurrencyPickerList\b/, 'the modal must render CurrencyPickerList');
+    assert.doesNotMatch(
+      modal,
+      /SUPPORTED_CURRENCIES\.map\(/,
+      'the modal must not map the catalog itself — the shared list owns the rows',
+    );
+  });
+
+  await test('CurrencyPickerModal is exported from the tickets barrel', () => {
+    const barrel = readFileSync(
+      join(root, 'src', 'features', 'tickets', 'index.ts'),
+      'utf8',
+    );
+    assert.match(
+      barrel,
+      /export\s*\{[^}]*\bCurrencyPickerModal\b[^}]*\}\s*from\s*'\.\/components\/CurrencyPickerModal'/,
+      'the review screen imports it from the barrel',
+    );
+  });
+
+  await test('the review screen consumes the modal and never maps the whole catalog inline', () => {
+    const review = readFileSync(
+      join(root, 'src', 'app', 'ticket', 'review', '[id].tsx'),
+      'utf8',
+    );
+    assert.match(review, /<CurrencyPickerModal\b/, 'the review screen must render the modal');
+    assert.doesNotMatch(
+      review,
+      /SUPPORTED_CURRENCIES\.map\(/,
+      'the review row must map the SUBSET, not the whole catalog inline',
     );
   });
 
@@ -734,7 +941,8 @@ async function run() {
   // stored lowercase 'usd' (written by an earlier migration) rendered
   // correctly in every money formatter because those case-fold, yet matched
   // no UPPERCASE catalog code, so no row appeared selected and
-  // `accessibilityState={{ selected }}` was false for all twenty-eight. The user
+  // `accessibilityState={{ selected }}` was false for all one hundred
+  // twenty-three. The user
   // could not distinguish "my currency is gone" from "the list doesn't know
   // it", and tapping another row is a SILENT currency change that re-bases
   // every amount in the app.
@@ -761,9 +969,11 @@ async function run() {
 
   await test('an out-of-catalog current value selects ZERO rows (no fallback row invented)', () => {
     // Pinned, not wished: a currency the catalog does not ship renders an
-    // unselected list. The graceful-degradation UI for it is a tracked
+    // unselected list. XCG (the Caribbean guilder) is deliberately deferred and
+    // absent from the 123-code catalog, so it stands in for a real ISO code the
+    // app no longer lists. The graceful-degradation UI for it is a tracked
     // follow-up; inventing a synthetic row here would hide the gap.
-    assert.deepEqual(selectedFor('QAR'), []);
+    assert.deepEqual(selectedFor('XCG'), []);
     assert.deepEqual(selectedFor('usd2'), []);
   });
 
@@ -777,7 +987,7 @@ async function run() {
     // Guards the failure mode where a predicate is written against a few codes
     // (or is accidentally always true): each code, fed in as the current
     // value, must select ITSELF and nothing else.
-    assert.equal(codes.length, 28);
+    assert.equal(codes.length, 123);
     for (const code of codes) {
       assert.deepEqual(selectedFor(code), [code], `${code} must be selectable`);
     }
@@ -787,7 +997,7 @@ async function run() {
     assert.match(
       selector,
       /const\s+selected\s*=\s*isCurrencySelected\(\s*code\s*,\s*currency\s*\)/,
-      'currency.tsx must derive `selected` from the pinned predicate, not re-implement it',
+      'CurrencyPickerList.tsx must derive `selected` from the pinned predicate, not re-implement it',
     );
     assert.doesNotMatch(
       selector,
@@ -797,7 +1007,7 @@ async function run() {
   });
 
   await test('the checkmark and the a11y state read the SAME `selected` value', () => {
-    // The comment above `const selected` in currency.tsx promises the visual
+    // The comment above `const selected` in CurrencyPickerList.tsx promises the visual
     // checkmark and `accessibilityState` "cannot drift apart" because both read
     // that one value. Nothing pinned the promise, and it breaks from inside a
     // single row: `{code === currency.toUpperCase() || selected ? <Icon

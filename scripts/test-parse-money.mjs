@@ -140,6 +140,29 @@ async function run() {
     assert.equal(parseMoney('45.99', 'COP'), 45.99);
   });
 
+  console.log('\n[tests] three-decimal rounding — currencyCode is the only knob\n');
+
+  await test('1234.5678 as KWD → 1234.568 (rounds to the third decimal)', () => {
+    // KWD is ISO 4217 minor unit 3: the value is quantized to three decimals,
+    // mirroring the zero-decimal branch one precision band up. The same input
+    // under USD passes through untouched (pinned above as 1234.5678).
+    assert.equal(parseMoney('1234.5678', 'KWD'), 1234.568);
+  });
+
+  await test('2.5 as KWD → 2.5 (a value within three decimals passes through)', () => {
+    // Guards against over-rounding: a 3-decimal code must NOT collapse a
+    // sub-unit value to the whole unit the way a zero-decimal code does.
+    assert.equal(parseMoney('2.5', 'KWD'), 2.5);
+  });
+
+  await test('45.99 as KWD → 45.99 (two-decimal input is not padded or integer-rounded)', () => {
+    assert.equal(parseMoney('45.99', 'KWD'), 45.99);
+  });
+
+  await test('45.99 as USD → 45.99 (a 2-decimal code is unchanged — control)', () => {
+    assert.equal(parseMoney('45.99', 'USD'), 45.99);
+  });
+
   console.log('\n[tests] currency independence — the API exposes no locale knob\n');
 
   await test('1,234 returns 1234 under ARS and USD alike', () => {

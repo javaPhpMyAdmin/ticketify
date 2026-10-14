@@ -2128,22 +2128,52 @@ async function editorWiringTests() {
     );
   });
 
-  // ── Review unit switcher (money-integrity slice B, 2.5) ────────────────
+  // ── Review unit switcher (money-integrity slice B, 2.5; c2 subset) ─────
   // RN screen internals are unreachable from a node harness, so the
   // switcher contract is pinned at the source level (design.md testing
   // strategy, cell "Switcher render (source-pin)"):
-  //   * it renders the ONE catalog (SUPPORTED_CURRENCIES), not a hand list;
+  //   * it maps a SUBSET (≤12) derived FROM the ONE catalog
+  //     (SUPPORTED_CURRENCIES) — current + recents + region — never a hand
+  //     list and never the whole 123-code catalog inline (c2);
+  //   * a persistent "More" chip opens the full-catalog CurrencyPickerModal;
   //   * a chip press writes draft.currency and NOTHING else — REQ-8 #5 is
   //     relabel-only: switching CLP -> UYU must never touch total/items
   //     (convert-on-switch is FX, out of scope by design).
-  await test('review: unit switcher renders the 14-code catalog', () => {
+  await test('review: unit switcher maps the SUBSET (current + recents + region), not the whole catalog', () => {
     assert.ok(
-      /SUPPORTED_CURRENCIES\.map\(/.test(reviewSource),
-      'the switcher must map SUPPORTED_CURRENCIES (the one catalog), never a hardcoded list',
+      /subset\.map\(/.test(reviewSource),
+      'the switcher must map the derived `subset`, not SUPPORTED_CURRENCIES directly',
+    );
+    assert.ok(
+      reviewSource.includes('codesForRegion(regionCode)'),
+      'the subset must fold the device-region suggestions',
+    );
+    assert.ok(
+      reviewSource.includes('recentCurrencies'),
+      'the subset must fold the recents ring',
+    );
+    assert.ok(
+      /\.slice\(0, 12\)/.test(reviewSource),
+      'the subset must cap at 12 codes so the row stays bounded',
+    );
+    assert.ok(
+      reviewSource.includes('SUPPORTED_CURRENCIES'),
+      'membership must still be filtered through the ONE catalog',
     );
     assert.ok(
       reviewSource.includes('updateDraft({ currency: code })'),
       'a chip press must write draft.currency through updateDraft',
+    );
+  });
+
+  await test('review: a persistent "More" chip opens the full-catalog picker (c2)', () => {
+    assert.ok(
+      reviewSource.includes("t('common:more')"),
+      'the persistent More chip must be labeled from common:more',
+    );
+    assert.ok(
+      reviewSource.includes('<CurrencyPickerModal'),
+      'the review screen must render the CurrencyPickerModal for the full catalog',
     );
   });
 
@@ -2226,8 +2256,8 @@ async function editorWiringTests() {
     // forbid the old scan-only gate inside the JSX block itself.
     assert.match(
       reviewSource,
-      /<View style=\{styles\.currencyBlock\}>[\s\S]{0,400}SUPPORTED_CURRENCIES\.map\(/,
-      'the switcher JSX must render the currencyBlock View and map SUPPORTED_CURRENCIES',
+      /<View style=\{styles\.currencyBlock\}>[\s\S]{0,400}subset\.map\(/,
+      'the switcher JSX must render the currencyBlock View and map the derived subset',
     );
     const jsxStart = reviewSource.indexOf('<View style={styles.currencyBlock}>');
     assert.ok(jsxStart !== -1, 'currencyBlock JSX not found');

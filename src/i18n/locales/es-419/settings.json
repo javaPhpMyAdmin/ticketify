@@ -21,6 +21,8 @@
   "okShort": "OK",
   "savedAs": "Listo",
   "currencyTitle": "Moneda",
+  "currencySectionLatam": "América Latina",
+  "currencySectionIntl": "Internacional",
   "monthlyBudgetTitle": "Presupuesto mensual",
   "monthlyBudgetHelper": "Monto máximo que quieres gastar este mes.",
   "monthlyBudgetInputLabel": "Monto del presupuesto",

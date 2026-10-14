@@ -1,4 +1,5 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { getLocales } from 'expo-localization';
 import LottieView from 'lottie-react-native';
 import {
   Component,
@@ -35,6 +36,7 @@ import {
   buildFeedRow,
   CategoryPickerModal,
   CARD_TYPE_LABEL_KEYS,
+  CurrencyPickerModal,
   PAYMENT_METHOD_KEYS,
   PAYMENT_METHOD_LABEL_KEYS,
   QUOTA_ERROR_MESSAGE,
@@ -49,7 +51,14 @@ import {
   useReceiptDraftDraft,
   useScanTicket,
 } from '@/features/tickets';
-import { formatCurrency, formatDate, SUPPORTED_CURRENCIES, todayLocalISO } from '@/lib/format';
+import {
+  formatCurrency,
+  formatDate,
+  SUPPORTED_CURRENCIES,
+  todayLocalISO,
+  type SupportedCurrency,
+} from '@/lib/format';
+import { codesForRegion } from '@/i18n/detector';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import {
   getSignedReceiptPhotoUrl,
@@ -68,6 +77,13 @@ function capitalize(value: string): string {
     ? value.charAt(0).toUpperCase() + value.slice(1)
     : value;
 }
+
+/**
+ * O(1) membership in the ONE catalog. `SupportedCurrency` is a literal union,
+ * so `SUPPORTED_CURRENCIES.includes(code: string)` is a `tsc` error; this Set
+ * keeps the review screen's subset fold honest without a cast.
+ */
+const SUPPORTED_CURRENCY_CODES: ReadonlySet<string> = new Set(SUPPORTED_CURRENCIES);
 
 /**
  * Catches a render throw from LottieView when the native module is
@@ -105,6 +121,12 @@ export default function ReviewReceiptScreen() {
   // The receipt is denominated in the user's currency setting (default
   // UYU), the same store Home/History read — never a hardcoded code.
   const currency = useSettingsStore((s) => s.currency);
+  // c2: the chip row is a SUBSET folded from three inputs — the current unit,
+  // the recents ring (the store is the in-memory authority) and the device
+  // region's suggestion. Every write (chip OR modal) pushes the chosen code
+  // back into the ring so the next visit surfaces it first.
+  const recentCurrencies = useSettingsStore((s) => s.recentCurrencies);
+  const pushRecentCurrency = useSettingsStore((s) => s.pushRecentCurrency);
   const activeLocale = useLocaleStore((s) => s.activeLocale);
   const { draft } = useReceiptDraftDraft();
   const { setStore, setPayment, upsertItem, clear, setItems } = useReceiptDraftActions();
@@ -118,6 +140,28 @@ export default function ReviewReceiptScreen() {
   // failure leaves the store untouched, so the screen shows a retry state
   // instead of a half-empty form.
   const { scan, error: scanError, reset } = useScanTicket();
+
+  // c2 subset (design §5, exact algorithm): current → recents → region, then
+  // membership-filtered through the ONE catalog and capped at 12. A stale
+  // recent or an out-of-catalog code can therefore never reach a chip.
+  const currentCurrency = draft?.currency ?? currency;
+  const regionCode = getLocales()[0]?.regionCode ?? null;
+  const subset = Array.from(
+    new Set([currentCurrency, ...recentCurrencies, ...codesForRegion(regionCode)]),
+  )
+    .filter((code): code is SupportedCurrency => SUPPORTED_CURRENCY_CODES.has(code))
+    .slice(0, 12);
+
+  // Any selection — a chip OR the "More" modal — relabels the draft AND
+  // records the code in the recents ring (S-015.1/2). Shared by both surfaces
+  // so they cannot diverge; the modal wrapper adds the close on top.
+  const handleSelectCurrency = useCallback(
+    (code: SupportedCurrency) => {
+      updateDraft({ currency: code });
+      pushRecentCurrency(code);
+    },
+    [updateDraft, pushRecentCurrency],
+  );
 
   // Edit skips the parse entirely: the draft was seeded before navigation,
   // so the form is ready on mount (no processing flash).
@@ -349,6 +393,9 @@ export default function ReviewReceiptScreen() {
   // The modal stays mounted (visible=false) so its slide-out animation runs;
   // `lastCategoryTarget` keeps the title/number on screen while it animates.
   const [categoryTarget, setCategoryTarget] = useState<ReviewItem | null>(null);
+  // c2: the persistent "More" chip opens the full-catalog picker. Its own
+  // boolean so the sheet mounts/unmounts independently of the category picker.
+  const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
   const lastCategoryTarget = useRef<ReviewItem | null>(null);
   if (categoryTarget) lastCategoryTarget.current = categoryTarget;
   const sheetTarget = categoryTarget ?? lastCategoryTarget.current;
@@ -650,14 +697,23 @@ export default function ReviewReceiptScreen() {
                     {t('tickets:reviewCurrencyKicker')}
                   </Text>
                   <View style={styles.currencyRow}>
-                    {SUPPORTED_CURRENCIES.map((code) => (
+                    {subset.map((code) => (
                       <Chip
                         key={code}
                         label={code}
                         selected={draft?.currency === code}
-                        onPress={() => updateDraft({ currency: code })}
+                        onPress={() => handleSelectCurrency(code)}
                       />
                     ))}
+                    {/* Persistent "More" affordance: ALWAYS present, even when
+                        the subset already fills the 12-cap, so the full catalog
+                        is one tap away. Its label is an i18n string, never a
+                        code, so it can't be mistaken for a selectable unit. */}
+                    <Chip
+                      label={t('common:more')}
+                      selected={false}
+                      onPress={() => setCurrencyPickerOpen(true)}
+                    />
                   </View>
                 </View>
               </Card>
@@ -757,6 +813,16 @@ export default function ReviewReceiptScreen() {
         onSelect={handleSelectCategory}
         onCategoryDeleted={handleCategoryDeleted}
         onClose={() => setCategoryTarget(null)}
+      />
+
+      <CurrencyPickerModal
+        visible={currencyPickerOpen}
+        current={currentCurrency}
+        onSelect={(code) => {
+          handleSelectCurrency(code);
+          setCurrencyPickerOpen(false);
+        }}
+        onClose={() => setCurrencyPickerOpen(false)}
       />
 
       <RenameItemModal
@@ -906,8 +972,9 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.xs,
   },
-  // Unit switcher (money-integrity slice B): wraps the 14 catalog codes
-  // like the payment chips — same pill rhythm, no horizontal scroll.
+  // Unit switcher (money-integrity slice B; c2 subset): wraps the SUBSET
+  // (≤12 codes) + a persistent "More" chip like the payment chips — same pill
+  // rhythm, no horizontal scroll. The full catalog lives behind More.
   currencyBlock: {
     marginTop: spacing.lg,
     gap: spacing.xs,

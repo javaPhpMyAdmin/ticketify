@@ -10,16 +10,27 @@
  *
  *   - INTL grouping (`,` thousands + `.` decimals) for USD/EUR/GBP/JPY/
  *     CAD/AUD.
- *   - LATAM grouping (`.` thousands + `,` decimals) for ARS/UYU/BRL/MXN.
+ *   - LATAM grouping (`.` thousands + `,` decimals) for ARS/UYU/BRL.
+ *   - ZERO-DECIMAL minor units: the twelve catalog codes with ISO 4217 minor
+ *     unit 0 (BIF, CLP, GNF, JPY, KRW, PYG, RWF, UGX, VND, XAF, XOF, XPF)
+ *     are whole-unit currencies, so they render as whole amounts (`¥ 1,235`,
+ *     `$ 1.235`, `₲ 1.235`, …) and NEVER emit a decimal separator — printing
+ *     `¥ 1,234.56` fabricates a sub-unit that does not exist. PEN is NOT one of
+ *     them: the Peruvian sol is ISO 4217 minor unit 2 and renders its two
+ *     decimals like the other LATAM currencies.
+ *   - THREE-DECIMAL minor units: the six catalog codes with ISO 4217 minor
+ *     unit 3 (IQD, JOD, KWD, LYD, OMR, TND) render exactly three decimals
+ *     (`KD 1.234`, `KD 1,234.560`) but DROP the fraction when all three digits
+ *     are zero (`KD 1,234`), the same unit convention as the 2-decimal codes
+ *     with a wider fraction window.
+ *   - SEPARATOR OVERRIDES: the six LATAM-classified codes whose national
+ *     convention is INTL grouping (MXN, GTQ, HNL, NIO, DOP, PAB) render
+ *     `1,234.56` even though they belong to the LATAM group. The override is a
+ *     per-code set consulted by BOTH `formatCurrency` and
+ *     `formatCurrencyWhole`; it never mutates the LATAM membership.
  *   - Symbol form keyed by `CURRENCY_SYMBOL` (UYU → `$U`, USD → `US$`,
  *     etc.). Unknown codes fall back to the code itself.
- *   - ZERO-DECIMAL minor units: CLP, JPY, PEN and PYG are factually
- *     whole-unit currencies, so they render as whole amounts (`$ 1.235`,
- *     `¥ 1,235`, `S/ 1.235`, `₲ 100`) and NEVER emit a decimal separator.
- *     The one intentional change to ESTABLISHED shipped output is JPY, which
- *     used to render `¥ 1,234.56` — a fabricated cent. CLP and PEN had no
- *     symbol at all before this change and so rendered as bare codes.
- *   - Symbol coverage for every one of the 14 catalog codes — each renders
+ *   - Symbol coverage for every one of the 123 catalog codes — each renders
  *     symbol-prefixed, never as a bare code.
  *   - Edge cases: zero (`'$ 0'`), negative (`-US$ 1,234.56`), and a legacy
  *     lowercase row (`'usd'`).
@@ -111,7 +122,7 @@ async function run() {
     assert.equal(fmt.formatCurrency(1234.56, 'AUD'), 'A$ 1,234.56');
   });
 
-  console.log('\n[tests] LATAM grouping (ARS/UYU/BRL/MXN)\n');
+  console.log('\n[tests] LATAM grouping (ARS/UYU/BRL)\n');
 
   await test('formatCurrency ARS → "$ 1.234,56" (LATAM grouping)', () => {
     assert.equal(fmt.formatCurrency(1234.56, 'ARS'), '$ 1.234,56');
@@ -127,8 +138,69 @@ async function run() {
     assert.equal(fmt.formatCurrency(1234.56, 'BRL'), 'R$ 1.234,56');
   });
 
-  await test('formatCurrency MXN → "$ 1.234,56" (LATAM grouping)', () => {
-    assert.equal(fmt.formatCurrency(1234.56, 'MXN'), '$ 1.234,56');
+  console.log('\n[tests] separator overrides (LATAM codes rendering INTL)\n');
+
+  await test('formatCurrency MXN → "$ 1,234.56" (LATAM code, INTL override)', () => {
+    // MXN belongs to the LATAM group but its recorded national convention is
+    // INTL grouping. The override SET wins over group membership (REQ-005 /
+    // S-005.1) without mutating LATAM_CURRENCIES.
+    assert.equal(fmt.formatCurrency(1234.56, 'MXN'), '$ 1,234.56');
+  });
+
+  await test('formatCurrency GTQ → "Q 1,234.56" (LATAM code, INTL override)', () => {
+    // GTQ is the second override code; `Q` is the quetzal symbol. Same rule.
+    assert.equal(fmt.formatCurrency(1234.56, 'GTQ'), 'Q 1,234.56');
+  });
+
+  await test('the override set is exactly the six locked LATAM codes', () => {
+    // REQ-005: the override mechanism is a per-code set, never a mutation.
+    assert.deepEqual(
+      [...fmt.SEPARATOR_OVERRIDES].sort(),
+      ['DOP', 'GTQ', 'HNL', 'MXN', 'NIO', 'PAB'],
+    );
+    // And every override code is still a LATAM member (the set only changes
+    // the SEPARATORS, not the group).
+    for (const code of fmt.SEPARATOR_OVERRIDES) {
+      assert.ok(fmt.LATAM_CURRENCIES.has(code), `${code} must stay a LATAM member`);
+    }
+  });
+
+  await test('formatCurrencyWhole MXN → "$ 1,235" (override applies to the whole format)', () => {
+    // The whole-number format shares the currency's unit convention: if
+    // `formatCurrency(1234.56,'MXN')` is INTL, the truncated total must be too,
+    // otherwise charts and totals disagree on the same screen (design §2).
+    assert.equal(fmt.formatCurrencyWhole(1234.56, 'MXN'), '$ 1,235');
+  });
+
+  await test('formatCurrencyWhole ARS → "$ 1.235" (no override, LATAM grouping)', () => {
+    // Regression control for the override: an un-overridden LATAM code keeps
+    // the LATAM grouping in the whole format.
+    assert.equal(fmt.formatCurrencyWhole(1234.56, 'ARS'), '$ 1.235');
+  });
+
+  console.log('\n[tests] three-decimal minor units (ISO 4217 minor unit 3)\n');
+
+  await test('formatCurrency KWD 1.234 → "KD 1.234" (exactly three decimals)', () => {
+    // KWD is minor unit 3; `CURRENCY_SYMBOL.KWD` is the committed literal `KD`.
+    assert.equal(fmt.formatCurrency(1.234, 'KWD'), 'KD 1.234');
+  });
+
+  await test('formatCurrency KWD 1234 → "KD 1,234" (all-zero `000` fraction DROPPED)', () => {
+    // `(1234).toFixed(3)` is `"1234.000"`; the length-aware zero-fraction guard
+    // recognizes the all-zero `000` and drops the decimal segment (S-004.2 /
+    // S-007.2), exactly like `formatCurrency(0,'ARS')` drops `00`.
+    assert.equal(fmt.formatCurrency(1234, 'KWD'), 'KD 1,234');
+  });
+
+  await test('formatCurrency KWD 1234.56 → "KD 1,234.560" (non-zero fraction keeps 3)', () => {
+    // INTL grouping with a three-digit non-zero fraction.
+    assert.equal(fmt.formatCurrency(1234.56, 'KWD'), 'KD 1,234.560');
+  });
+
+  await test('formatCurrency JOD → "د.ا 1,234.560" (a second 3-decimal code)', () => {
+    // Triangulation across the 3-decimal set: JOD shares the minor unit 3
+    // model, so the same rule must generalize beyond KWD.
+    assert.equal(fmt.formatCurrency(1234.56, 'JOD'), 'د.ا 1,234.560');
   });
 
   console.log('\n[tests] unknown / zero / negative edges\n');
@@ -166,9 +238,11 @@ async function run() {
     assert.equal(fmt.formatCurrency(1234.56, 'CLP'), '$ 1.235');
   });
 
-  await test('formatCurrency PEN → "S/ 1.235" (LATAM, "S/" symbol, whole amount)', () => {
-    // PEN retired the centavo; `S/` is the sol's symbol. REQ-2.2.
-    assert.equal(fmt.formatCurrency(1234.56, 'PEN'), 'S/ 1.235');
+  await test('formatCurrency PEN → "S/ 1.234,56" (LATAM, "S/" symbol, two decimals)', () => {
+    // The Peruvian sol is ISO 4217 minor unit 2: it renders its cents like the
+    // other LATAM currencies, and `S/` is the sol's symbol. PEN is NOT
+    // zero-decimal.
+    assert.equal(fmt.formatCurrency(1234.56, 'PEN'), 'S/ 1.234,56');
   });
 
   await test('formatCurrency PYG → "₲ 1.235" (LATAM, guaraní symbol, whole)', () => {
@@ -184,24 +258,44 @@ async function run() {
   });
 
   await test('every zero-decimal code renders without a decimal separator', () => {
-    // Triangulation on the OTHER branch and across BOTH grouping styles: JPY
-    // groups INTL, CLP / PEN / PYG group LATAM — and none of the four keeps a
-    // `.` or `,` fraction. COP is absent on purpose (recorded scope decision).
-    const zeroDecimal = ['CLP', 'JPY', 'PEN', 'PYG'];
+    // The full ISO 4217 minor-unit-0 catalog set (twelve codes). Triangulation
+    // across BOTH grouping styles: BIF / GNF / JPY / KRW / RWF / UGX / VND /
+    // XAF / XOF / XPF group INTL, CLP / PYG group LATAM — and none keeps a `.`
+    // or `,` fraction. PEN is GONE from this set (minor unit 2), and COP is
+    // absent on purpose (recorded scope decision).
+    const zeroDecimal = [
+      'BIF', 'CLP', 'GNF', 'JPY', 'KRW', 'PYG',
+      'RWF', 'UGX', 'VND', 'XAF', 'XOF', 'XPF',
+    ];
     const expected = {
+      BIF: 'FBu 1,235',
       CLP: '$ 1.235',
+      GNF: 'FG 1,235',
       JPY: '¥ 1,235',
-      PEN: 'S/ 1.235',
+      KRW: '₩ 1,235',
       PYG: '₲ 1.235',
+      RWF: 'RF 1,235',
+      UGX: 'USh 1,235',
+      VND: '₫ 1,235',
+      XAF: 'FCFA 1,235',
+      XOF: 'CFA 1,235',
+      XPF: 'CFPF 1,235',
     };
-    assert.equal(zeroDecimal.length, 4);
+    assert.equal(zeroDecimal.length, 12);
+    assert.deepEqual(
+      [...fmt.ZERO_DECIMAL_CURRENCIES].sort(),
+      [...zeroDecimal].sort(),
+      'the zero-decimal set must be exactly the twelve minor-unit-0 catalog codes',
+    );
     for (const code of zeroDecimal) {
       const rendered = fmt.formatCurrency(1234.56, code);
       assert.equal(rendered, expected[code]);
       assert.ok(!/\d[.,]\d{2}$/.test(rendered), `${code} kept a fraction: ${rendered}`);
     }
-    // The control: COP is factually zero-decimal but deliberately OUT of the
-    // set, so it still renders a fraction.
+    // Controls: PEN is no longer zero-decimal (minor unit 2) and renders its
+    // cents; COP is factually zero-decimal but deliberately OUT of the set.
+    assert.ok(!fmt.ZERO_DECIMAL_CURRENCIES.has('PEN'));
+    assert.equal(fmt.formatCurrency(1234.56, 'PEN'), 'S/ 1.234,56');
     assert.equal(fmt.formatCurrency(1234.56, 'COP'), '$ 1.234,56');
   });
 
@@ -221,8 +315,8 @@ async function run() {
     assert.equal(fmt.formatCurrency(1234.56, 'usd'), 'US$ 1,234.56');
   });
 
-  await test('all 28 catalog codes render symbol-prefixed (never a bare code)', () => {
-    // REQ-1.3.3. The loop is non-vacuous: the catalog is asserted to hold 28
+  await test('all 123 catalog codes render symbol-prefixed (never a bare code)', () => {
+    // REQ-1.3.3. The loop is non-vacuous: the catalog is asserted to hold 123
     // distinct codes in the section below. CHF is exempt from the "not the
     // bare code" half: its conventional symbol IS "CHF", so a correct render
     // legitimately starts with the code plus a space.
@@ -240,19 +334,33 @@ async function run() {
 
   console.log('\n[tests] catalog single source of truth (AD-1)\n');
 
-  await test('SUPPORTED_CURRENCIES is the 28-code catalog, no duplicates', () => {
+  await test('SUPPORTED_CURRENCIES is the 123-code catalog, no duplicates', () => {
     // REQ-1.1: the ordered set the selector renders. Pinned here (and again,
     // cross-file, in test-currency-catalog) because an added or dropped code
     // is exactly the drift this catalog exists to prevent.
-    assert.equal(fmt.SUPPORTED_CURRENCIES.length, 28);
-    assert.equal(new Set(fmt.SUPPORTED_CURRENCIES).size, 28);
+    assert.equal(fmt.SUPPORTED_CURRENCIES.length, 123);
+    assert.equal(new Set(fmt.SUPPORTED_CURRENCIES).size, 123);
     assert.deepEqual(
       [...fmt.SUPPORTED_CURRENCIES].sort(),
       [
-        'ARS', 'AUD', 'BOB', 'BRL', 'CAD', 'CHF', 'CLP', 'COP', 'CRC',
-        'DKK', 'DOP', 'EUR', 'GBP', 'GTQ', 'HKD', 'HNL', 'JPY', 'MXN',
-        'NIO', 'NOK', 'NZD', 'PAB', 'PEN', 'PYG', 'SEK', 'SGD', 'USD',
-        'UYU',
+        'AED', 'AFN', 'ALL', 'AMD', 'AOA', 'ARS', 'AUD',
+        'AZN', 'BAM', 'BDT', 'BGN', 'BIF', 'BOB', 'BRL',
+        'BWP', 'BYN', 'CAD', 'CDF', 'CHF', 'CLP', 'CNY',
+        'COP', 'CRC', 'CUP', 'CZK', 'DKK', 'DOP', 'DZD',
+        'EGP', 'ERN', 'ETB', 'EUR', 'GBP', 'GEL', 'GHS',
+        'GMD', 'GNF', 'GTQ', 'HKD', 'HNL', 'HTG', 'HUF',
+        'IDR', 'ILS', 'INR', 'IQD', 'IRR', 'JMD', 'JOD',
+        'JPY', 'KES', 'KGS', 'KHR', 'KPW', 'KRW', 'KWD',
+        'KZT', 'LAK', 'LBP', 'LKR', 'LRD', 'LSL', 'LYD',
+        'MAD', 'MDL', 'MGA', 'MKD', 'MMK', 'MNT', 'MRU',
+        'MWK', 'MXN', 'MYR', 'MZN', 'NAD', 'NGN', 'NIO',
+        'NOK', 'NPR', 'NZD', 'OMR', 'PAB', 'PEN', 'PGK',
+        'PHP', 'PKR', 'PLN', 'PYG', 'QAR', 'RON', 'RSD',
+        'RUB', 'RWF', 'SAR', 'SDG', 'SEK', 'SGD', 'SLE',
+        'SOS', 'SSP', 'SYP', 'THB', 'TJS', 'TMT', 'TND',
+        'TRY', 'TWD', 'TZS', 'UAH', 'UGX', 'USD', 'UYU',
+        'UZS', 'VES', 'VND', 'XAF', 'XCD', 'XOF', 'XPF',
+        'YER', 'ZAR', 'ZMW', 'ZWG',
       ],
     );
   });
@@ -267,7 +375,7 @@ async function run() {
   await test('every catalog code resolves a symbol (never a bare code)', () => {
     // REQ-1.3. The table is typed `Record<SupportedCurrency, string>` so a
     // missing entry is a `tsc` error; this is the runtime half of the same
-    // guarantee (the loop is non-vacuous — 28 codes are asserted above).
+    // guarantee (the loop is non-vacuous — 123 codes are asserted above).
     for (const code of fmt.SUPPORTED_CURRENCIES) {
       assert.ok(fmt.CURRENCY_SYMBOL[code], `${code} has no symbol`);
     }

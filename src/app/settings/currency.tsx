@@ -1,24 +1,15 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ScrollView, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Card, Divider, Icon, Pressable, Text, View } from '@/components';
+import { CurrencyPickerList } from '@/components/CurrencyPickerList';
+import { Icon, Pressable, Text, View } from '@/components';
 import { useProfile } from '@/features/profile';
-import es419Currency from '@/i18n/locales/es-419/currency.json';
-import { isCurrencySelected } from '@/lib/currency-selection';
 import { SUPPORTED_CURRENCIES } from '@/lib/format';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, spacing, typography } from '@/theme';
-
-/**
- * The label keys this screen may ask i18next for, derived from the SHIPPED
- * Spanish base catalog rather than a hand-written union. A supported code
- * with no `currency.<code>` key is a `tsc` error here, not a raw key painted
- * on screen at runtime.
- */
-type CurrencyKey = keyof typeof es419Currency;
 
 /**
  * Full-screen currency selector reached from the profile screen's
@@ -28,12 +19,13 @@ type CurrencyKey = keyof typeof es419Currency;
  * settings store re-hydrates from the profile row. A failed write shows
  * the user-safe message inline instead of navigating.
  *
- * Rows are driven by `SUPPORTED_CURRENCIES` — the one catalog in
- * `src/lib/format.ts` — so this screen can never drift from what the app
- * actually supports. Labels come from the `currency` catalog, so the
- * locale-aware name (e.g. "Uruguayan peso" in en, "Peso uruguayo" in
- * es-AR) wins at render time; the code stays the ISO 4217 string for
- * storage.
+ * The conversation between user and catalog (search box, LATAM / INTL
+ * sections, selected row) lives in the shared `CurrencyPickerList`, which this
+ * screen only drives: `SUPPORTED_CURRENCIES` — the one catalog in
+ * `src/lib/format.ts` — still feeds it, so this screen can never drift from
+ * what the app actually supports. This screen's own job is the write: the
+ * store's recent-currency history is updated by `setCurrency`, and the picker's
+ * "already current" case just closes.
  */
 export default function CurrencySelectorScreen() {
   const { t } = useTranslation(['settings', 'currency', 'common']);
@@ -81,57 +73,9 @@ export default function CurrencySelectorScreen() {
         <Text style={styles.title}>{t('settings:currencyTitle')}</Text>
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <Card padding={spacing.xs}>
-          {SUPPORTED_CURRENCIES.map((code, idx) => {
-            // The one place the picker decides which row is the user's
-            // currency, and it case-folds on purpose — see
-            // `isCurrencySelected`. A raw `code === currency` here is the
-            // regression this change set exists to prevent: a stored lowercase
-            // 'usd' renders correctly in every formatter (they case-fold) yet
-            // matches no UPPERCASE catalog code, so no row looks selected and
-            // the a11y `selected` state is false for all 14. Both the checkmark
-            // and `accessibilityState` read this one value, so they cannot
-            // drift apart.
-            const selected = isCurrencySelected(code, currency);
-            // Currency code is the runtime key. `satisfies` (not `as`) is
-            // load-bearing: a plain `as` would happily narrow a 15-member
-            // union down to the 14 the catalog ships and pass, so the guard
-            // below would be decorative. This makes an unresolvable code a
-            // tsc error instead of a raw key painted on screen.
-            const labelKey = `currency:${code}` satisfies `currency:${CurrencyKey}`;
-            const label = t(labelKey);
-            return (
-              <View key={code}>
-                <Pressable
-                  onPress={() => handleSelect(code)}
-                  disabled={saving}
-                  style={styles.row}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  accessibilityLabel={label}
-                >
-                  <Text style={styles.label} numberOfLines={1}>
-                    {label}
-                  </Text>
-                  <Text style={[styles.code, selected && styles.codeSelected]}>
-                    {code}
-                  </Text>
-                  {selected ? (
-                    <Icon name="checkmark" size={18} color={colors.primary} />
-                  ) : null}
-                </Pressable>
-                {idx < SUPPORTED_CURRENCIES.length - 1 ? <Divider /> : null}
-              </View>
-            );
-          })}
-        </Card>
+      <CurrencyPickerList current={currency} onSelect={handleSelect} />
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-      </ScrollView>
+      {error ? <Text style={styles.error}>{error}</Text> : null}
     </SafeAreaView>
   );
 }
@@ -152,32 +96,10 @@ const styles = StyleSheet.create({
     ...typography.headlineLgMobile,
     color: colors.textPrimary,
   },
-  scrollContent: {
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xxl,
-    gap: spacing.md,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
-    gap: spacing.md,
-  },
-  label: {
-    flex: 1,
-    ...typography.bodyLg,
-    color: colors.textPrimary,
-  },
-  code: {
-    ...typography.bodyMd,
-    color: colors.textSecondary,
-  },
-  codeSelected: {
-    color: colors.primaryDark,
-  },
   error: {
     ...typography.labelSm,
     color: colors.danger,
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.md,
   },
 });

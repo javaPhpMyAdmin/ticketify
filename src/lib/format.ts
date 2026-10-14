@@ -30,56 +30,162 @@ export interface FormatDateOpts {
 // ---------------------------------------------------------------------------
 // Currency catalog (AD-1) — currency code is the authority of format
 //
-// This module is the SINGLE owner of the supported-currency catalog: the two
-// grouping code arrays are the source, and the supported set, the grouping
-// Sets and the symbol table are all derived from them. It keeps ZERO runtime
-// imports on purpose — `scripts/tsconfig.format-currency-test.json` compiles
-// this file as its single root, and `src/i18n/detector.ts` references the
-// `SupportedCurrency` type only (`import type`, erased at runtime).
+// `scripts/generate-currency-catalog.mjs` is the SINGLE SOURCE for the arrays,
+// sets and symbol table below: it renders every
+// `@generated currency-catalog:begin|end` region from the canonical catalog in
+// `scripts/currency-catalog.ts`. Edit that catalog and run
+// `node scripts/generate-currency-catalog.mjs` (`--check` fails on drift) —
+// never hand-edit a generated region.
+//
+// The type plumbing AROUND those regions stays hand-authored:
+// `SupportedCurrency`, `SUPPORTED_CURRENCIES`, `LATAM_CURRENCIES` and
+// `INTL_CURRENCIES` are derived from the generated arrays. This module keeps
+// ZERO runtime imports on purpose — `scripts/tsconfig.format-currency-test.json`
+// compiles this file as its single root, and `src/i18n/detector.ts` references
+// the `SupportedCurrency` type only (`import type`, erased at runtime).
 // ---------------------------------------------------------------------------
 
 /**
  * LATAM ISO 4217 codes: thousands `.`, decimals `,` (es-AR / pt-BR / es-MX /
  * es-CL / es-CO / es-PE convention).
  */
+// @generated currency-catalog:begin LATAM_CURRENCY_CODES
 export const LATAM_CURRENCY_CODES = [
-  'ARS', // Peso argentino
-  'BOB', // Boliviano boliviano
-  'BRL', // Real brasileño
-  'CLP', // Peso chileno
-  'COP', // Peso colombiano
-  'CRC', // Colón costarricense
-  'DOP', // Peso dominicano
-  'GTQ', // Quetzal guatemalteco
-  'HNL', // Lempira hondureño
-  'MXN', // Peso mexicano
-  'NIO', // Córdoba nicaragüense
-  'PAB', // Balboa panameño
-  'PEN', // Sol peruano
-  'PYG', // Guaraní paraguayo
-  'UYU', // Peso uruguayo
+  'ARS', // Argentine peso
+  'BOB', // Bolivian boliviano
+  'BRL', // Brazilian real
+  'CLP', // Chilean peso
+  'COP', // Colombian peso
+  'CRC', // Costa Rican colón
+  'CUP', // Cuban peso
+  'DOP', // Dominican peso
+  'GTQ', // Guatemalan quetzal
+  'HNL', // Honduran lempira
+  'MXN', // Mexican peso
+  'NIO', // Nicaraguan córdoba
+  'PAB', // Panamanian balboa
+  'PEN', // Peruvian sol
+  'PYG', // Paraguayan guaraní
+  'UYU', // Uruguayan peso
+  'VES', // Venezuelan bolívar
 ] as const;
+// @generated currency-catalog:end LATAM_CURRENCY_CODES
 
 /**
  * INTL ISO 4217 codes: thousands `,`, decimals `.` (USD / EUR / GBP / JPY /
  * etc.). Anything outside both sets also lands here (the spec rule: unknown
  * code → INTL default).
  */
+// @generated currency-catalog:begin INTL_CURRENCY_CODES
 export const INTL_CURRENCY_CODES = [
+  'AED',
+  'AFN',
+  'ALL',
+  'AMD',
+  'AOA',
   'AUD',
+  'AZN',
+  'BAM',
+  'BDT',
+  'BGN',
+  'BIF',
+  'BWP',
+  'BYN',
   'CAD',
+  'CDF',
   'CHF',
+  'CNY',
+  'CZK',
   'DKK',
+  'DZD',
+  'EGP',
+  'ERN',
+  'ETB',
   'EUR',
   'GBP',
+  'GEL',
+  'GHS',
+  'GMD',
+  'GNF',
   'HKD',
+  'HTG',
+  'HUF',
+  'IDR',
+  'ILS',
+  'INR',
+  'IQD',
+  'IRR',
+  'JMD',
+  'JOD',
   'JPY',
+  'KES',
+  'KGS',
+  'KHR',
+  'KPW',
+  'KRW',
+  'KWD',
+  'KZT',
+  'LAK',
+  'LBP',
+  'LKR',
+  'LRD',
+  'LSL',
+  'LYD',
+  'MAD',
+  'MDL',
+  'MGA',
+  'MKD',
+  'MMK',
+  'MNT',
+  'MRU',
+  'MWK',
+  'MYR',
+  'MZN',
+  'NAD',
+  'NGN',
   'NOK',
+  'NPR',
   'NZD',
+  'OMR',
+  'PGK',
+  'PHP',
+  'PKR',
+  'PLN',
+  'QAR',
+  'RON',
+  'RSD',
+  'RUB',
+  'RWF',
+  'SAR',
+  'SDG',
   'SEK',
   'SGD',
+  'SLE',
+  'SOS',
+  'SSP',
+  'SYP',
+  'THB',
+  'TJS',
+  'TMT',
+  'TND',
+  'TRY',
+  'TWD',
+  'TZS',
+  'UAH',
+  'UGX',
   'USD',
+  'UZS',
+  'VND',
+  'XAF',
+  'XCD',
+  'XOF',
+  'XPF',
+  'YER',
+  'ZAR',
+  'ZMW',
+  'ZWG',
 ] as const;
+// @generated currency-catalog:end INTL_CURRENCY_CODES
 
 /** Every code the app can speak — the union the catalog, the symbol table and
  *  the currency selector are all typed against. */
@@ -106,27 +212,69 @@ export const LATAM_CURRENCIES: ReadonlySet<string> = new Set(
 export const INTL_CURRENCIES: ReadonlySet<string> = new Set(INTL_CURRENCY_CODES);
 
 /**
- * Currencies with NO minor unit: CLP (peso), JPY (yen), PEN (sol) and PYG
- * (guaraní). Their smallest circulating unit is the whole one, so
- * `formatCurrency` rounds to the nearest unit and emits no decimal separator
- * — printing `¥ 1,234.56` fabricates a cent that does not exist and misstates
- * the amount.
+ * Currencies with NO minor unit (ISO 4217 minor unit 0): the twelve catalog
+ * codes whose smallest circulating unit is the whole one, so `formatCurrency`
+ * rounds to the nearest unit and emits no decimal separator — printing
+ * `¥ 1,234.56` fabricates a sub-unit that does not exist and misstates the
+ * amount.
  *
- * The spec names `JPY` and `PYG` (REQ-2 prose) and then pins whole-amount
- * output for `CLP` and `PEN` in REQ-2.1/2.2 and acceptance gate 2 — all four
- * are factually zero-decimal, so all four belong here.
+ * PEN is NO LONGER part of this set: the Peruvian sol is ISO 4217 minor unit
+ * 2 and renders its two decimals like the other LATAM currencies.
  *
  * Deliberately NOT included: `COP`, which is factually zero-decimal in
  * circulation but is excluded by the recorded scope decision (widening the
  * set changes what every existing COP balance looks like and is a separate
  * product call, not a catalog cleanup).
  */
+// @generated currency-catalog:begin ZERO_DECIMAL_CURRENCIES
 export const ZERO_DECIMAL_CURRENCIES: ReadonlySet<string> = new Set([
+  'BIF',
   'CLP',
+  'GNF',
   'JPY',
-  'PEN',
+  'KRW',
   'PYG',
+  'RWF',
+  'UGX',
+  'VND',
+  'XAF',
+  'XOF',
+  'XPF',
 ]);
+// @generated currency-catalog:end ZERO_DECIMAL_CURRENCIES
+
+/**
+ * Currencies with three minor digits (ISO 4217 minor unit 3) — the six
+ * catalog codes whose smallest unit is 1/1000 of the major unit (the Gulf,
+ * Iraqi, Libyan and Tunisian dinars). BHD is deliberately absent from the
+ * catalog.
+ */
+// @generated currency-catalog:begin THREE_DECIMAL_CURRENCIES
+export const THREE_DECIMAL_CURRENCIES: ReadonlySet<string> = new Set([
+  'IQD',
+  'JOD',
+  'KWD',
+  'LYD',
+  'OMR',
+  'TND',
+]);
+// @generated currency-catalog:end THREE_DECIMAL_CURRENCIES
+
+/**
+ * LATAM codes that render with INTL grouping (`1,234.56`, not `1.234,56`) —
+ * six codes whose recorded national convention follows the INTL style
+ * despite belonging to the LATAM group.
+ */
+// @generated currency-catalog:begin SEPARATOR_OVERRIDES
+export const SEPARATOR_OVERRIDES: ReadonlySet<string> = new Set([
+  'DOP',
+  'GTQ',
+  'HNL',
+  'MXN',
+  'NIO',
+  'PAB',
+]);
+// @generated currency-catalog:end SEPARATOR_OVERRIDES
 
 /**
  * Symbol lookup keyed by ISO 4217 code. Typed `Record<SupportedCurrency,
@@ -135,36 +283,133 @@ export const ZERO_DECIMAL_CURRENCIES: ReadonlySet<string> = new Set([
  * still fall back to the code itself (`XYZ 1,234.56`) — that path is a
  * widening at the READ, not a widening of the table.
  */
+// @generated currency-catalog:begin CURRENCY_SYMBOL
 export const CURRENCY_SYMBOL: Record<SupportedCurrency, string> = {
+  AED: 'د.إ',
+  AFN: '؋',
+  ALL: 'L',
+  AMD: '֏',
+  AOA: 'Kz',
   ARS: '$',
   AUD: 'A$',
+  AZN: '₼',
+  BAM: 'KM',
+  BDT: '৳',
+  BGN: 'лв',
+  BIF: 'FBu',
   BOB: 'Bs',
   BRL: 'R$',
+  BWP: 'P',
+  BYN: 'Br',
   CAD: 'CA$',
+  CDF: 'FC',
   CHF: 'CHF',
   CLP: '$',
+  CNY: 'CN¥',
   COP: '$',
   CRC: '₡',
+  CUP: '$',
+  CZK: 'Kč',
   DKK: 'kr',
   DOP: 'RD$',
+  DZD: 'د.ج',
+  EGP: 'E£',
+  ERN: 'Nfk',
+  ETB: 'Br',
   EUR: '€',
   GBP: '£',
+  GEL: '₾',
+  GHS: '₵',
+  GMD: 'D',
+  GNF: 'FG',
   GTQ: 'Q',
   HKD: 'HK$',
   HNL: 'L',
+  HTG: 'G',
+  HUF: 'Ft',
+  IDR: 'Rp',
+  ILS: '₪',
+  INR: '₹',
+  IQD: 'ع.د',
+  IRR: '﷼',
+  JMD: 'J$',
+  JOD: 'د.ا',
   JPY: '¥',
+  KES: 'KSh',
+  KGS: '⃀',
+  KHR: '៛',
+  KPW: '₩',
+  KRW: '₩',
+  KWD: 'KD',
+  KZT: '₸',
+  LAK: '₭',
+  LBP: 'L£',
+  LKR: 'Rs',
+  LRD: 'L$',
+  LSL: 'L',
+  LYD: 'LD',
+  MAD: 'DH',
+  MDL: 'L',
+  MGA: 'Ar',
+  MKD: 'ден',
+  MMK: 'K',
+  MNT: '₮',
+  MRU: 'UM',
+  MWK: 'MK',
   MXN: '$',
+  MYR: 'RM',
+  MZN: 'MT',
+  NAD: 'N$',
+  NGN: '₦',
   NIO: 'C$',
   NOK: 'kr',
+  NPR: 'Rs',
   NZD: 'NZ$',
+  OMR: 'ر.ع.',
   PAB: 'B/.',
   PEN: 'S/',
+  PGK: 'K',
+  PHP: '₱',
+  PKR: 'Rs',
+  PLN: 'zł',
   PYG: '₲',
+  QAR: 'QR',
+  RON: 'lei',
+  RSD: 'дин',
+  RUB: '₽',
+  RWF: 'RF',
+  SAR: 'SR',
+  SDG: 'ج.س.',
   SEK: 'kr',
   SGD: 'S$',
+  SLE: 'Le',
+  SOS: 'Sh',
+  SSP: 'SS£',
+  SYP: 'S£',
+  THB: '฿',
+  TJS: 'ЅМ',
+  TMT: 'm',
+  TND: 'DT',
+  TRY: '₺',
+  TWD: 'NT$',
+  TZS: 'TSh',
+  UAH: '₴',
+  UGX: 'USh',
   USD: 'US$',
   UYU: '$U',
+  UZS: "so'm",
+  VES: 'Bs.',
+  VND: '₫',
+  XAF: 'FCFA',
+  XCD: 'EC$',
+  XOF: 'CFA',
+  XPF: 'CFPF',
+  YER: '﷼',
+  ZAR: 'R',
+  ZMW: 'ZK',
+  ZWG: 'ZiG',
 };
+// @generated currency-catalog:end CURRENCY_SYMBOL
 
 // ---------------------------------------------------------------------------
 // Month / weekday arrays (es-AR source of truth)
@@ -836,24 +1081,35 @@ function currencySymbolPrefix(upperCode: string, rawCode: string): string {
  *      INTL-grouped (`,` thousands + `.` decimals). Unknown codes fall
  *      back to the INTL default and use the code itself as the symbol
  *      (e.g. `XYZ 1,234.56`).
- *   2. Symbol form is keyed by `CURRENCY_SYMBOL`. UYU renders `$U`,
+ *   2. Minor-unit precision is per-code (REQ-004 / REQ-007): a code in
+ *      `ZERO_DECIMAL_CURRENCIES` renders 0 decimals, a code in
+ *      `THREE_DECIMAL_CURRENCIES` renders 3 decimals, and every other
+ *      code renders 2. The fraction is DROPPED whenever it would render
+ *      all zeros — `'0'.repeat(minorUnit)` — so `1234` under a 3-decimal
+ *      code is `KD 1,234`, never `KD 1,234.000`.
+ *   3. Grouping separators are per-code with an explicit override
+ *      (REQ-005). `SEPARATOR_OVERRIDES` lists LATAM-classified codes whose
+ *      national convention is INTL grouping (MXN, GTQ, …); the override
+ *      SET wins over group membership and is never a mutation of
+ *      `LATAM_CURRENCIES`.
+ *   4. Symbol form is keyed by `CURRENCY_SYMBOL`. UYU renders `$U`,
  *      USD renders `US$`, ARS renders `$`, etc. (Different from the old
  *      `formatCurrency`, which collapsed UYU / ARS / USD to a single
  *      `$` — the AD-6 symbol table disambiguates them.)
- *   3. A space separates the symbol from the number for both grouping
+ *   5. A space separates the symbol from the number for both grouping
  *      styles (`US$ 1,234.56`, `R$ 1.234,56`). The old format glued them
  *      (`$1,234.50`); the space makes the symbol stand out from the
  *      digits.
- *   4. Negative values are prefixed with `-` BEFORE the symbol
+ *   6. Negative values are prefixed with `-` BEFORE the symbol
  *      (`-US$ 1,234.56`) — matches the LATAM / INTL norm. The old
  *      format did the same; this preserves the existing call-site
  *      ergonomics.
- *   5. While the hydration gate is shut, rules 1-4 are all suspended: the
+ *   7. While the hydration gate is shut, rules 1-6 are all suspended: the
  *      code is an unconfirmed placeholder, so the output is the bare
  *      `1234.56` — no symbol, no thousands separator, no unit convention
- *      of any kind. Re-opened, the same call returns `US$ 1,234.56`.
- *      See `currencySymbolGateOpen` for why the separators are part of
- *      the gate.
+ *      of any kind (the precision also defaults to 2). Re-opened, the same
+ *      call returns `US$ 1,234.56`. See `currencySymbolGateOpen` for why
+ *      the separators are part of the gate.
  *
  * The function intentionally reads `i18next.language` internally so a
  * future round of work (PR 3) can branch on language for things like a
@@ -864,32 +1120,45 @@ export function formatCurrency(value: number, currencyCode: string): string {
   const upperCode = currencyCode.toUpperCase();
   // While the gate is shut the code is only the store's PLACEHOLDER SEED, so
   // it is not an input to the format at all: LATAM vs INTL grouping and the
-  // zero-decimal rule both encode a unit the profile row has not confirmed.
+  // minor-unit rule both encode a unit the profile row has not confirmed.
   // The formatters deliberately IGNORE the code and emit a bare number
   // (`1234.56`) until the gate opens. See the gate doc above for the 1000x
   // misread this prevents.
   const gateShut = !currencySymbolGateOpen;
-  const isLATAM = LATAM_CURRENCIES.has(upperCode);
   const symbolPrefix = currencySymbolPrefix(upperCode, currencyCode);
-  // A zero-decimal code has no fraction to print: round to the whole unit and
-  // leave `decPart` empty, which makes the `hasNonZeroDecimal` guard below
-  // fall through to the grouped integer. Grouping still runs on `intPart`, so
-  // `1234.56` → `1235` → `1.235` and `100.4` → `100`.
-  const isZeroDecimal = !gateShut && ZERO_DECIMAL_CURRENCIES.has(upperCode);
-  const fixed = Math.abs(value).toFixed(isZeroDecimal ? 0 : 2);
+  // The override WINS over group membership: a LATAM-classified code in the
+  // override set renders with INTL separators. The override is a SET read, not
+  // a mutation of `LATAM_CURRENCIES` (REQ-005).
+  const override = SEPARATOR_OVERRIDES.has(upperCode);
+  const latamStyle = LATAM_CURRENCIES.has(upperCode) && !override;
+  // Precision model: 0 (zero-decimal), 3 (three-decimal), else 2. While the
+  // gate is shut the code is an unconfirmed seed, so the unit convention is
+  // suspended and the default is 2 (REQ-007).
+  const minorUnit: 0 | 2 | 3 = gateShut
+    ? 2
+    : ZERO_DECIMAL_CURRENCIES.has(upperCode)
+      ? 0
+      : THREE_DECIMAL_CURRENCIES.has(upperCode)
+        ? 3
+        : 2;
+  const fixed = Math.abs(value).toFixed(minorUnit);
   const [intPart, decPart = ''] = fixed.split('.');
   // Hand-rolled grouping: thousands separator every 3 digits from the
   // right, no leading separator. An empty `groupSep` is the shut gate's bare
   // form — the lookahead still runs and matches, it just replaces nothing.
-  const groupSep = gateShut ? '' : isLATAM ? '.' : ',';
+  const groupSep = gateShut ? '' : latamStyle ? '.' : ',';
   // A shut gate keeps a plain `.` so the two decimals stay readable as a
   // decimal point rather than collapsing into the integer digits.
-  const decSep = gateShut ? '.' : isLATAM ? ',' : '.';
+  const decSep = gateShut ? '.' : latamStyle ? ',' : '.';
   const withSeparators = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, groupSep);
-  // Drop the decimal segment when it would render all zeros (e.g. `0.00`
-  // → `0`) — keeps `formatCurrency(0, 'ARS')` as `'$ 0'` rather than
-  // `'$ 0,00'`. PR 2 spec table, WU-2.3 zero edge case.
-  const hasNonZeroDecimal = decPart && decPart !== '00';
+  // Drop the decimal segment when it would render all zeros — length-aware so
+  // a 2-decimal code compares against `'00'` and a 3-decimal code against
+  // `'000'` (`'0'.repeat(minorUnit)`). Keeps `formatCurrency(0, 'ARS')` as
+  // `'$ 0'` and `formatCurrency(1234, 'KWD')` as `'KD 1,234'` rather than
+  // `'$ 0,00'` / `'KD 1,234.000'`. PR 2 spec table, WU-2.3 zero edge case;
+  // S-004.2 / S-007.2 for the 3-decimal branch.
+  const zeroFraction = minorUnit > 0 ? '0'.repeat(minorUnit) : '';
+  const hasNonZeroDecimal = decPart !== '' && decPart !== zeroFraction;
   const number = hasNonZeroDecimal
     ? `${withSeparators}${decSep}${decPart}`
     : withSeparators;
@@ -909,12 +1178,17 @@ export function formatCurrencyWhole(
   currencyCode: string,
 ): string {
   const upperCode = currencyCode.toUpperCase();
-  const isLATAM = LATAM_CURRENCIES.has(upperCode);
+  // The separator override applies here too: the whole-number format is the
+  // SAME unit convention with the fraction truncated, so an overridden LATAM
+  // code (MXN, GTQ, …) must group INTL here as well — otherwise charts and
+  // totals would disagree on the same screen (REQ-005).
+  const latamStyle =
+    LATAM_CURRENCIES.has(upperCode) && !SEPARATOR_OVERRIDES.has(upperCode);
   const symbolPrefix = currencySymbolPrefix(upperCode, currencyCode);
   const rounded = Math.abs(value).toFixed(0);
   // Same gate rule as `formatCurrency`: a shut gate emits the bare integer,
   // ungrouped, because the code it would group by is an unconfirmed seed.
-  const groupSep = currencySymbolGateOpen ? (isLATAM ? '.' : ',') : '';
+  const groupSep = currencySymbolGateOpen ? (latamStyle ? '.' : ',') : '';
   const withSeparators = rounded.replace(/\B(?=(\d{3})+(?!\d))/g, groupSep);
   const sign = value < 0 ? '-' : '';
   return `${sign}${symbolPrefix}${withSeparators}`;
