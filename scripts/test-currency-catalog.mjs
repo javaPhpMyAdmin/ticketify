@@ -19,7 +19,7 @@
  * still says `code === currency`; it can never observe which rows actually
  * render as selected, which is where the reported regression lived.
  *
- * The leaf-count pin (916) belongs to
+ * The leaf-count pin (917) belongs to
  * `scripts/test-i18n-catalog-parity.mjs`, and duplicating it here would create
  * a second place to update on the next catalog bump.
  *
@@ -881,6 +881,57 @@ async function run() {
       screen,
       /\bScrollView\b/,
       'the picker owns its own scroll — nesting a SectionList inside a ScrollView breaks virtualisation',
+    );
+  });
+
+  // ── 3c. c2: the review "More" modal reuses the SAME shared list ─────────
+  //
+  // The review chip row shows a SUBSET; the full catalog lives behind a
+  // persistent "More" chip that opens `CurrencyPickerModal`. That modal must
+  // FRAME the shared `CurrencyPickerList` — if it ever grew its own copy of
+  // the rows, the review and settings pickers would drift, which is the exact
+  // defect the shared extraction removed.
+  const modal = readFileSync(
+    join(root, 'src', 'features', 'tickets', 'components', 'CurrencyPickerModal.tsx'),
+    'utf8',
+  );
+
+  await test('CurrencyPickerModal.tsx renders the shared CurrencyPickerList', () => {
+    assert.match(
+      modal,
+      /import\s*\{[^}]*\bCurrencyPickerList\b[^}]*\}\s*from\s*'@\/components\/CurrencyPickerList'/,
+      'the modal must import the shared picker, not redeclare rows',
+    );
+    assert.match(modal, /<CurrencyPickerList\b/, 'the modal must render CurrencyPickerList');
+    assert.doesNotMatch(
+      modal,
+      /SUPPORTED_CURRENCIES\.map\(/,
+      'the modal must not map the catalog itself — the shared list owns the rows',
+    );
+  });
+
+  await test('CurrencyPickerModal is exported from the tickets barrel', () => {
+    const barrel = readFileSync(
+      join(root, 'src', 'features', 'tickets', 'index.ts'),
+      'utf8',
+    );
+    assert.match(
+      barrel,
+      /export\s*\{[^}]*\bCurrencyPickerModal\b[^}]*\}\s*from\s*'\.\/components\/CurrencyPickerModal'/,
+      'the review screen imports it from the barrel',
+    );
+  });
+
+  await test('the review screen consumes the modal and never maps the whole catalog inline', () => {
+    const review = readFileSync(
+      join(root, 'src', 'app', 'ticket', 'review', '[id].tsx'),
+      'utf8',
+    );
+    assert.match(review, /<CurrencyPickerModal\b/, 'the review screen must render the modal');
+    assert.doesNotMatch(
+      review,
+      /SUPPORTED_CURRENCIES\.map\(/,
+      'the review row must map the SUBSET, not the whole catalog inline',
     );
   });
 

@@ -6,6 +6,8 @@ export { ReceiptItemsList } from './components/ReceiptItemsList';
 export type { ReceiptItemsListProps } from './components/ReceiptItemsList';
 export { CategoryPickerModal } from './components/CategoryPickerModal';
 export type { CategoryPickerModalProps } from './components/CategoryPickerModal';
+export { CurrencyPickerModal } from './components/CurrencyPickerModal';
+export type { CurrencyPickerModalProps } from './components/CurrencyPickerModal';
 // Pure picker helpers the category-picker screens consume (node-loadable):
 // the draft sweep resolves every sibling reference to a deleted slug (W1).
 export {
