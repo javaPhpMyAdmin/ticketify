@@ -188,20 +188,18 @@ export const INTL_CODES: readonly string[] = CURRENCIES.filter(
 export const SUPPORTED: readonly string[] = [...LATAM_CODES, ...INTL_CODES];
 
 /**
- * ISO 4217 zero-decimal currencies that are NOT Tier-A catalog members (their
- * countries fall below the catalog's population threshold): Djibouti (DJF),
- * Iceland (ISK), Comoros (KMF) and Vanuatu (VUV). REQ-003 fixes the
- * zero-decimal set at exactly 16 codes, so these documented ISO-only codes are
- * unioned with the catalog-derived subset below.
+ * Zero-decimal codes (minor unit 0) — the 12 catalog members, fixed by the
+ * amendment to REQ-003 (the pre-amendment design floated 16).
+ *
+ * The four ISO-only zero-decimal codes below the catalog's population
+ * threshold (Djibouti DJF, Iceland ISK, Comoros KMF, Vanuatu VUV) are
+ * deliberately EXCLUDED — exactly like BHD and XCG. A currency the catalog
+ * does not carry has no balance to format, so it must not inflate this set.
  */
-const ISO_ONLY_ZERO_DECIMAL: readonly string[] = ['DJF', 'ISK', 'KMF', 'VUV'];
-
-/** Zero-decimal codes (minor unit 0) — 16 per REQ-003. */
 export const ZERO_DECIMAL: ReadonlySet<string> = new Set(
-  [
-    ...CURRENCIES.filter((c) => c.minorUnit === 0).map((c) => c.code),
-    ...ISO_ONLY_ZERO_DECIMAL,
-  ].sort(),
+  CURRENCIES.filter((c) => c.minorUnit === 0)
+    .map((c) => c.code)
+    .sort(),
 );
 
 /** Three-decimal codes (minor unit 3) — 6. BHD is deliberately absent. */
@@ -246,8 +244,8 @@ export function assertCatalogInvariants(): void {
   if (SUPPORTED.length !== 123) {
     throw new Error(`currency-catalog: expected 123 supported codes, got ${SUPPORTED.length}`);
   }
-  if (ZERO_DECIMAL.size !== 16) {
-    throw new Error(`currency-catalog: expected 16 zero-decimal codes, got ${ZERO_DECIMAL.size}`);
+  if (ZERO_DECIMAL.size !== 12) {
+    throw new Error(`currency-catalog: expected 12 zero-decimal codes, got ${ZERO_DECIMAL.size}`);
   }
   if (THREE_DECIMAL.size !== 6) {
     throw new Error(`currency-catalog: expected 6 three-decimal codes, got ${THREE_DECIMAL.size}`);
