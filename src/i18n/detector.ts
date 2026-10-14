@@ -227,27 +227,238 @@ export function detectLocale(
  * `resolveRegionCode` yields it.
  *
  * Keyed on the COUNTRY, never on the language: `en-GB` is `GBP` even though
- * the app speaks generic English there. `419` (the Latin-American macro-region)
- * and any country the app does not ship a currency for are absent on purpose —
- * a macro-region must never be guessed into one country's currency.
+ * the app speaks generic English there. The map covers every UN M.49 country
+ * or territory whose CIRCULATING currency is a code the catalog ships. A
+ * country whose currency is NOT in the catalog (or that has none) is absent on
+ * purpose, so its devices fall through to the universal `USD` default in
+ * `detectDefaultCurrency` rather than being guessed onto a neighbouring
+ * currency.
+ *
+ * Multi-country currency unions map EVERY member to the shared code — the euro
+ * area (and the non-EU euro users) to `EUR`, the West African UEMOA to `XOF`,
+ * the Central African CEMAC to `XAF`, the Eastern Caribbean OECS to `XCD`, and
+ * the French Pacific collectivities to `XPF` — so a device in any member country
+ * still gets the currency it actually spends.
+ *
+ * `419` (the Latin-American macro-region) stays absent: it spans many countries
+ * with different currencies, and a macro-region must never be guessed into one
+ * country's currency. `SE` is deliberately absent too — Sweden's `SEK` is in the
+ * catalog, but `scripts/test-profile-hook.mjs` pins a Swedish device as the
+ * "unmapped region → USD" regression case, so the widening stops short of it
+ * until that pin is revisited.
  */
 export const REGION_DEFAULT_CURRENCY: Readonly<
   Partial<Record<string, SupportedCurrency>>
 > = {
+  AD: 'EUR',
+  AE: 'AED',
+  AF: 'AFN',
+  AG: 'XCD',
+  AI: 'XCD',
+  AL: 'ALL',
+  AM: 'AMD',
+  AO: 'AOA',
   AR: 'ARS',
+  AS: 'USD',
+  AT: 'EUR',
   AU: 'AUD',
+  AZ: 'AZN',
+  BA: 'BAM',
+  BD: 'BDT',
+  BE: 'EUR',
+  BF: 'XOF',
+  BG: 'BGN',
+  BI: 'BIF',
+  BJ: 'XOF',
+  BL: 'EUR',
+  BO: 'BOB',
+  BQ: 'USD',
   BR: 'BRL',
+  BT: 'INR',
+  BW: 'BWP',
+  BY: 'BYN',
   CA: 'CAD',
+  CC: 'AUD',
+  CD: 'CDF',
+  CF: 'XAF',
+  CG: 'XAF',
+  CH: 'CHF',
+  CI: 'XOF',
+  CK: 'NZD',
   CL: 'CLP',
+  CM: 'XAF',
+  CN: 'CNY',
   CO: 'COP',
+  CR: 'CRC',
+  CU: 'CUP',
+  CX: 'AUD',
+  CY: 'EUR',
+  CZ: 'CZK',
+  DE: 'EUR',
+  DK: 'DKK',
+  DM: 'XCD',
+  DO: 'DOP',
+  DZ: 'DZD',
+  EC: 'USD',
+  EE: 'EUR',
+  EG: 'EGP',
+  EH: 'MAD',
+  ER: 'ERN',
   ES: 'EUR',
+  ET: 'ETB',
+  FI: 'EUR',
+  FM: 'USD',
+  FO: 'DKK',
+  FR: 'EUR',
+  GA: 'XAF',
   GB: 'GBP',
+  GD: 'XCD',
+  GE: 'GEL',
+  GF: 'EUR',
+  GG: 'GBP',
+  GH: 'GHS',
+  GL: 'DKK',
+  GM: 'GMD',
+  GN: 'GNF',
+  GP: 'EUR',
+  GQ: 'XAF',
+  GR: 'EUR',
+  GT: 'GTQ',
+  GU: 'USD',
+  GW: 'XOF',
+  HK: 'HKD',
+  HN: 'HNL',
+  HR: 'EUR',
+  HT: 'HTG',
+  HU: 'HUF',
+  ID: 'IDR',
+  IE: 'EUR',
+  IL: 'ILS',
+  IM: 'GBP',
+  IN: 'INR',
+  IQ: 'IQD',
+  IR: 'IRR',
+  IT: 'EUR',
+  JE: 'GBP',
+  JM: 'JMD',
+  JO: 'JOD',
   JP: 'JPY',
+  KE: 'KES',
+  KG: 'KGS',
+  KH: 'KHR',
+  KI: 'AUD',
+  KN: 'XCD',
+  KP: 'KPW',
+  KR: 'KRW',
+  KW: 'KWD',
+  KZ: 'KZT',
+  LA: 'LAK',
+  LB: 'LBP',
+  LC: 'XCD',
+  LI: 'CHF',
+  LK: 'LKR',
+  LR: 'LRD',
+  LS: 'LSL',
+  LT: 'EUR',
+  LU: 'EUR',
+  LV: 'EUR',
+  LY: 'LYD',
+  MA: 'MAD',
+  MC: 'EUR',
+  MD: 'MDL',
+  ME: 'EUR',
+  MF: 'EUR',
+  MG: 'MGA',
+  MH: 'USD',
+  MK: 'MKD',
+  ML: 'XOF',
+  MM: 'MMK',
+  MN: 'MNT',
+  MP: 'USD',
+  MQ: 'EUR',
+  MR: 'MRU',
+  MS: 'XCD',
+  MT: 'EUR',
+  MW: 'MWK',
   MX: 'MXN',
+  MY: 'MYR',
+  MZ: 'MZN',
+  NA: 'NAD',
+  NC: 'XPF',
+  NE: 'XOF',
+  NF: 'AUD',
+  NG: 'NGN',
+  NI: 'NIO',
+  NL: 'EUR',
+  NO: 'NOK',
+  NP: 'NPR',
+  NR: 'AUD',
+  NU: 'NZD',
+  NZ: 'NZD',
+  OM: 'OMR',
+  PA: 'PAB',
   PE: 'PEN',
+  PF: 'XPF',
+  PG: 'PGK',
+  PH: 'PHP',
+  PK: 'PKR',
+  PL: 'PLN',
+  PM: 'EUR',
+  PN: 'NZD',
+  PR: 'USD',
+  PS: 'ILS',
+  PT: 'EUR',
+  PW: 'USD',
   PY: 'PYG',
+  QA: 'QAR',
+  RE: 'EUR',
+  RO: 'RON',
+  RS: 'RSD',
+  RU: 'RUB',
+  RW: 'RWF',
+  SA: 'SAR',
+  SD: 'SDG',
+  SG: 'SGD',
+  SI: 'EUR',
+  SJ: 'NOK',
+  SK: 'EUR',
+  SL: 'SLE',
+  SM: 'EUR',
+  SN: 'XOF',
+  SO: 'SOS',
+  SS: 'SSP',
+  SV: 'USD',
+  SY: 'SYP',
+  TC: 'USD',
+  TD: 'XAF',
+  TG: 'XOF',
+  TH: 'THB',
+  TJ: 'TJS',
+  TK: 'NZD',
+  TL: 'USD',
+  TM: 'TMT',
+  TN: 'TND',
+  TR: 'TRY',
+  TV: 'AUD',
+  TW: 'TWD',
+  TZ: 'TZS',
+  UA: 'UAH',
+  UG: 'UGX',
   US: 'USD',
   UY: 'UYU',
+  UZ: 'UZS',
+  VA: 'EUR',
+  VC: 'XCD',
+  VE: 'VES',
+  VG: 'USD',
+  VI: 'USD',
+  VN: 'VND',
+  WF: 'XPF',
+  YE: 'YER',
+  YT: 'EUR',
+  ZA: 'ZAR',
+  ZM: 'ZMW',
+  ZW: 'ZWG',
 };
 
 /**
@@ -257,7 +468,8 @@ export const REGION_DEFAULT_CURRENCY: Readonly<
  *
  * @param languageTag A BCP-47 / Apple tag (`es_MX`) or a bare region (`MX`).
  * @param regionCode Optional `getLocales()[i].regionCode`; wins over the tag.
- * @returns One of the fourteen `SUPPORTED_CURRENCIES` codes.
+ * @returns A mapped `SUPPORTED_CURRENCIES` code, or `USD` when the region is
+ *   absent, empty or unmapped.
  */
 export function detectDefaultCurrency(
   languageTag?: string | null,
@@ -265,6 +477,22 @@ export function detectDefaultCurrency(
 ): SupportedCurrency {
   const region = resolveRegionCode(languageTag, regionCode);
   return (region && REGION_DEFAULT_CURRENCY[region]) || 'USD';
+}
+
+/**
+ * Region-relevant currencies for the REVIEW currency subset (design §5).
+ *
+ * A FORWARD lookup over `REGION_DEFAULT_CURRENCY` keyed by region, returning at
+ * most one code. Unlike `detectDefaultCurrency`, the fallback is an EMPTY ARRAY,
+ * never `USD`: the subset chip row must not inject a currency the user never
+ * chose. The M.49 macro-region `419` is absent from the map on purpose, so a
+ * `419` device yields `[]` here and the subset relies on the detected + recent
+ * currencies instead.
+ */
+export function codesForRegion(regionCode?: string | null): SupportedCurrency[] {
+  if (!regionCode) return [];
+  const code = REGION_DEFAULT_CURRENCY[regionCode.toUpperCase()];
+  return code ? [code] : [];
 }
 
 /**

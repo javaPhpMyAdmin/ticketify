@@ -55,11 +55,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 const tscBin = require.resolve('typescript/bin/tsc');
 const harnessConfig = join(__dirname, 'tsconfig.i18n-detector-test.json');
+const formatConfig = join(__dirname, 'tsconfig.format-currency-test.json');
 
 const tmpRoot = join(root, 'node_modules', '.tmp');
 mkdirSync(tmpRoot, { recursive: true });
 const workdir = mkdtempSync(join(tmpRoot, 'detector-regional-test-'));
 const outDir = join(workdir, 'out');
+const formatOutDir = join(workdir, 'format-out');
 
 let passed = 0;
 let failed = 0;
@@ -82,6 +84,14 @@ function compile() {
     [tscBin, '-p', harnessConfig, '--outDir', outDir],
     { cwd: root, stdio: ['ignore', 'inherit', 'inherit'] },
   );
+  // The catalog (`SUPPORTED_CURRENCIES`) lives in `format.ts`; compile it too so
+  // the region-map membership pin can assert against the REAL catalog rather
+  // than a restated list.
+  execFileSync(
+    process.execPath,
+    [tscBin, '-p', formatConfig, '--outDir', formatOutDir],
+    { cwd: root, stdio: ['ignore', 'inherit', 'inherit'] },
+  );
 }
 
 async function run() {
@@ -91,6 +101,10 @@ async function run() {
   const mod = await import(
     pathToFileURL(join(outDir, 'src/i18n/detector.js')).href
   );
+  const fmt = await import(
+    pathToFileURL(join(formatOutDir, 'src/lib/format.js')).href
+  );
+  const CATALOG = new Set(fmt.SUPPORTED_CURRENCIES);
 
   console.log('\n[tests] regional Spanish mapping (tag only)\n');
 
@@ -264,12 +278,14 @@ async function run() {
     assert.equal(mod.resolveRegionCode('es-419-MX'), 'MX');
   });
 
-  console.log('\n[tests] region → default currency (every supported code reachable)\n');
+  console.log('\n[tests] region → default currency (widened map)\n');
 
-  await test('all fourteen mapped regions return their currency code', () => {
-    // Table-driven from the spec map, one pair per code. Non-vacuous: the
-    // table holds fourteen distinct regions.
+  await test('every mapped region returns its currency code', () => {
+    // A representative slice of the widened map: the original fourteen rows
+    // (kept intact), the design's concrete anchors, and one member of each
+    // currency union. Non-vacuous: every pair is a distinct region.
     const table = [
+      // The original fourteen rows stay intact.
       ['AR', 'ARS'],
       ['AU', 'AUD'],
       ['BR', 'BRL'],
@@ -284,24 +300,90 @@ async function run() {
       ['PY', 'PYG'],
       ['US', 'USD'],
       ['UY', 'UYU'],
+      // The design's concrete anchors.
+      ['NG', 'NGN'],
+      ['IN', 'INR'],
+      ['VN', 'VND'],
+      ['KW', 'KWD'],
+      ['ZA', 'ZAR'],
+      ['KE', 'KES'],
+      ['EG', 'EGP'],
+      ['PL', 'PLN'],
+      ['TR', 'TRY'],
+      ['UA', 'UAH'],
+      ['SA', 'SAR'],
+      ['AE', 'AED'],
+      ['IL', 'ILS'],
+      ['KR', 'KRW'],
+      ['TH', 'THB'],
+      ['PH', 'PHP'],
+      ['ID', 'IDR'],
+      ['MY', 'MYR'],
+      ['TZ', 'TZS'],
+      ['GH', 'GHS'],
+      ['MA', 'MAD'],
+      ['DZ', 'DZD'],
+      // One member of each multi-country currency union.
+      ['DE', 'EUR'],
+      ['SN', 'XOF'],
+      ['CM', 'XAF'],
+      ['AG', 'XCD'],
+      ['NC', 'XPF'],
     ];
-    assert.equal(table.length, 14);
     for (const [region, expected] of table) {
       assert.equal(mod.detectDefaultCurrency(region), expected, region);
     }
   });
 
-  await test('REGION_DEFAULT_CURRENCY maps 14 uppercase regions to 14 codes', () => {
+  await test('REGION_DEFAULT_CURRENCY is a well-formed region → catalog-code map', () => {
     const regions = Object.keys(mod.REGION_DEFAULT_CURRENCY);
     const codes = Object.values(mod.REGION_DEFAULT_CURRENCY);
-    assert.equal(regions.length, 14);
-    assert.equal(new Set(codes).size, 14);
+    // Exact row count pinned: every UN M.49 country/territory whose circulating
+    // currency is in the catalog, unions expanding to all their members.
+    assert.equal(regions.length, 209);
+    // Unions SHARE codes, so the distinct-code count is SMALLER than the row
+    // count — the pre-widening `new Set(codes).size === regions.length`
+    // invariant is WRONG now that many regions map to EUR/XOF/XAF/XCD/XPF.
+    // Pinned exactly at 122: every catalog code is reachable from some region
+    // except `SEK`, because `SE` is deliberately absent (see below).
+    assert.equal(new Set(codes).size, 122);
     for (const region of regions) {
       assert.match(region, /^[A-Z]{2}$|^\d{3}$/, `${region} is not an uppercase region`);
     }
     for (const code of codes) {
       assert.match(code, /^[A-Z]{3}$/, `${code} is not an uppercase ISO 4217 code`);
+      assert.ok(CATALOG.has(code), `${code} is not a SUPPORTED_CURRENCIES code`);
     }
+    // The Latin-American macro-region must never be guessed into one country.
+    assert.ok(!('419' in mod.REGION_DEFAULT_CURRENCY), '419 must stay absent');
+    // Sweden is the deliberate exception: SEK is in the catalog, but SE stays
+    // unmapped so the `sv-SE → USD` regression pin in test-profile-hook holds.
+    assert.ok(!('SE' in mod.REGION_DEFAULT_CURRENCY), 'SE must stay absent');
+  });
+
+  console.log('\n[tests] codesForRegion — review-subset forward lookup\n');
+
+  await test('a mapped region yields exactly its single code', () => {
+    assert.deepEqual(mod.codesForRegion('NG'), ['NGN']);
+    assert.deepEqual(mod.codesForRegion('MX'), ['MXN']);
+    assert.deepEqual(mod.codesForRegion('DE'), ['EUR']);
+  });
+
+  await test('codesForRegion lookup is case-insensitive', () => {
+    assert.deepEqual(mod.codesForRegion('mx'), ['MXN']);
+    assert.deepEqual(mod.codesForRegion('ng'), ['NGN']);
+  });
+
+  await test('an unmapped, macro-region, empty or absent region yields [] (never USD)', () => {
+    assert.deepEqual(mod.codesForRegion('SE'), []);
+    assert.deepEqual(mod.codesForRegion('419'), []);
+    assert.deepEqual(mod.codesForRegion('XX'), []);
+    assert.deepEqual(mod.codesForRegion(''), []);
+    assert.deepEqual(mod.codesForRegion(null), []);
+    assert.deepEqual(mod.codesForRegion(undefined), []);
+    // The subset must never inject a currency the user never chose.
+    assert.ok(!mod.codesForRegion('SE').includes('USD'));
+    assert.ok(!mod.codesForRegion('419').includes('USD'));
   });
 
   await test('an absent, empty or unmapped region falls back to USD', () => {
