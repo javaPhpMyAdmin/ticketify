@@ -227,12 +227,26 @@ export function detectLocale(
  * `resolveRegionCode` yields it.
  *
  * Keyed on the COUNTRY, never on the language: `en-GB` is `GBP` even though
- * the app speaks generic English there. The map covers every UN M.49 country
- * or territory whose CIRCULATING currency is a code the catalog ships. A
- * country whose currency is NOT in the catalog (or that has none) is absent on
- * purpose, so its devices fall through to the universal `USD` default in
- * `detectDefaultCurrency` rather than being guessed onto a neighbouring
- * currency.
+ * the app speaks generic English there.
+ *
+ * COVERAGE POLICY — a territory is mapped iff it has a permanent population
+ * AND its CIRCULATING currency is a code the catalog ships (plus the
+ * user-assigned `XK`). Its devices then get the currency they actually spend;
+ * every code the catalog does not cover falls through to the universal `USD`
+ * default in `detectDefaultCurrency` rather than being guessed onto a
+ * neighbouring currency, so the map only ever carries deliberate, justified
+ * absences. The deliberately-absent ISO 3166-1 alpha-2 codes are:
+ *
+ *   - No circulating currency / uninhabited:
+ *       AQ (Antarctica), BV (Bouvet), GS (South Georgia), HM (Heard &
+ *       McDonald), TF (French Southern Territories), UM (US Outlying Islands).
+ *   - Transient population only: IO (British Indian Ocean Territory).
+ *   - Currency NOT in the catalog:
+ *       AW BB BH BM BN BS BZ CV CW DJ FJ FK GI GY IS KM KY MO MU MV SB SC SH
+ *       SR ST SX SZ TO TT VU WS.
+ *
+ * Note `XK` (Kosovo) is a user-assigned ISO code — not issued by UN M.49 — but
+ * its 1.8M inhabitants spend the euro, so it is mapped explicitly.
  *
  * Multi-country currency unions map EVERY member to the shared code — the euro
  * area (and the non-EU euro users) to `EUR`, the West African UEMOA to `XOF`,
@@ -259,6 +273,7 @@ export const REGION_DEFAULT_CURRENCY: Readonly<
   AS: 'USD',
   AT: 'EUR',
   AU: 'AUD',
+  AX: 'EUR',
   AZ: 'AZN',
   BA: 'BAM',
   BD: 'BDT',
@@ -452,6 +467,7 @@ export const REGION_DEFAULT_CURRENCY: Readonly<
   VI: 'USD',
   VN: 'VND',
   WF: 'XPF',
+  XK: 'EUR',
   YE: 'YER',
   YT: 'EUR',
   ZA: 'ZAR',
