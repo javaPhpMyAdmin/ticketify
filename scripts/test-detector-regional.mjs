@@ -66,6 +66,88 @@ const formatOutDir = join(workdir, 'format-out');
 let passed = 0;
 let failed = 0;
 
+/**
+ * The EXACT set of region keys `REGION_DEFAULT_CURRENCY` must carry, sorted.
+ * Pinned as a literal so a silent addition or removal of ANY region fails —
+ * a count-only pin (210 → 212) is blind to a swap, which is exactly how the
+ * SE/AX/XK class of "region falls through to USD" bug hides. Regenerate with:
+ *
+ *   node -e "import('./<compiled>/src/i18n/detector.js').then(m => \
+ *     console.log(JSON.stringify(Object.keys(m.REGION_DEFAULT_CURRENCY).sort())))"
+ *
+ * or by diffing against this list after editing `src/i18n/detector.ts`.
+ */
+const EXPECTED_REGION_KEYS = [
+  'AD', 'AE', 'AF', 'AG', 'AI', 'AL', 'AM', 'AO', 'AR', 'AS',
+  'AT', 'AU', 'AX', 'AZ', 'BA', 'BD', 'BE', 'BF', 'BG', 'BI',
+  'BJ', 'BL', 'BO', 'BQ', 'BR', 'BT', 'BW', 'BY', 'CA', 'CC',
+  'CD', 'CF', 'CG', 'CH', 'CI', 'CK', 'CL', 'CM', 'CN', 'CO',
+  'CR', 'CU', 'CX', 'CY', 'CZ', 'DE', 'DK', 'DM', 'DO', 'DZ',
+  'EC', 'EE', 'EG', 'EH', 'ER', 'ES', 'ET', 'FI', 'FM', 'FO',
+  'FR', 'GA', 'GB', 'GD', 'GE', 'GF', 'GG', 'GH', 'GL', 'GM',
+  'GN', 'GP', 'GQ', 'GR', 'GT', 'GU', 'GW', 'HK', 'HN', 'HR',
+  'HT', 'HU', 'ID', 'IE', 'IL', 'IM', 'IN', 'IQ', 'IR', 'IT',
+  'JE', 'JM', 'JO', 'JP', 'KE', 'KG', 'KH', 'KI', 'KN', 'KP',
+  'KR', 'KW', 'KZ', 'LA', 'LB', 'LC', 'LI', 'LK', 'LR', 'LS',
+  'LT', 'LU', 'LV', 'LY', 'MA', 'MC', 'MD', 'ME', 'MF', 'MG',
+  'MH', 'MK', 'ML', 'MM', 'MN', 'MP', 'MQ', 'MR', 'MS', 'MT',
+  'MW', 'MX', 'MY', 'MZ', 'NA', 'NC', 'NE', 'NF', 'NG', 'NI',
+  'NL', 'NO', 'NP', 'NR', 'NU', 'NZ', 'OM', 'PA', 'PE', 'PF',
+  'PG', 'PH', 'PK', 'PL', 'PM', 'PN', 'PR', 'PS', 'PT', 'PW',
+  'PY', 'QA', 'RE', 'RO', 'RS', 'RU', 'RW', 'SA', 'SD', 'SE',
+  'SG', 'SI', 'SJ', 'SK', 'SL', 'SM', 'SN', 'SO', 'SS', 'SV',
+  'SY', 'TC', 'TD', 'TG', 'TH', 'TJ', 'TK', 'TL', 'TM', 'TN',
+  'TR', 'TV', 'TW', 'TZ', 'UA', 'UG', 'US', 'UY', 'UZ', 'VA',
+  'VC', 'VE', 'VG', 'VI', 'VN', 'WF', 'XK', 'YE', 'YT', 'ZA',
+  'ZM', 'ZW',
+];
+
+/**
+ * The official ISO 3166-1 alpha-2 code list (249 codes). User-assigned codes
+ * (`XK`) are NOT part of it — they are carried by the map, not by ISO.
+ */
+const ISO_3166_1_ALPHA2 = [
+  'AD', 'AE', 'AF', 'AG', 'AI', 'AL', 'AM', 'AO', 'AQ', 'AR', 'AS', 'AT',
+  'AU', 'AW', 'AX', 'AZ', 'BA', 'BB', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI',
+  'BJ', 'BL', 'BM', 'BN', 'BO', 'BQ', 'BR', 'BS', 'BT', 'BV', 'BW', 'BY',
+  'BZ', 'CA', 'CC', 'CD', 'CF', 'CG', 'CH', 'CI', 'CK', 'CL', 'CM', 'CN',
+  'CO', 'CR', 'CU', 'CV', 'CW', 'CX', 'CY', 'CZ', 'DE', 'DJ', 'DK', 'DM',
+  'DO', 'DZ', 'EC', 'EE', 'EG', 'EH', 'ER', 'ES', 'ET', 'FI', 'FJ', 'FK',
+  'FM', 'FO', 'FR', 'GA', 'GB', 'GD', 'GE', 'GF', 'GG', 'GH', 'GI', 'GL',
+  'GM', 'GN', 'GP', 'GQ', 'GR', 'GS', 'GT', 'GU', 'GW', 'GY', 'HK', 'HM',
+  'HN', 'HR', 'HT', 'HU', 'ID', 'IE', 'IL', 'IM', 'IN', 'IO', 'IQ', 'IR',
+  'IS', 'IT', 'JE', 'JM', 'JO', 'JP', 'KE', 'KG', 'KH', 'KI', 'KM', 'KN',
+  'KP', 'KR', 'KW', 'KY', 'KZ', 'LA', 'LB', 'LC', 'LI', 'LK', 'LR', 'LS',
+  'LT', 'LU', 'LV', 'LY', 'MA', 'MC', 'MD', 'ME', 'MF', 'MG', 'MH', 'MK',
+  'ML', 'MM', 'MN', 'MO', 'MP', 'MQ', 'MR', 'MS', 'MT', 'MU', 'MV', 'MW',
+  'MX', 'MY', 'MZ', 'NA', 'NC', 'NE', 'NF', 'NG', 'NI', 'NL', 'NO', 'NP',
+  'NR', 'NU', 'NZ', 'OM', 'PA', 'PE', 'PF', 'PG', 'PH', 'PK', 'PL', 'PM',
+  'PN', 'PR', 'PS', 'PT', 'PW', 'PY', 'QA', 'RE', 'RO', 'RS', 'RU', 'RW',
+  'SA', 'SB', 'SC', 'SD', 'SE', 'SG', 'SH', 'SI', 'SJ', 'SK', 'SL', 'SM',
+  'SN', 'SO', 'SR', 'SS', 'ST', 'SV', 'SX', 'SY', 'SZ', 'TC', 'TD', 'TF',
+  'TG', 'TH', 'TJ', 'TK', 'TL', 'TM', 'TN', 'TO', 'TR', 'TT', 'TV', 'TW',
+  'TZ', 'UA', 'UG', 'UM', 'US', 'UY', 'UZ', 'VA', 'VC', 'VE', 'VG', 'VI',
+  'VN', 'VU', 'WF', 'WS', 'YE', 'YT', 'ZA', 'ZM', 'ZW',
+];
+
+/**
+ * The ISO codes this map withholds ON PURPOSE, each carrying a reason.
+ * A territory is mapped iff it has a permanent population AND its circulating
+ * currency is a catalog member (plus the user-assigned `XK`). Everything in
+ * here is therefore either uninhabited, transient, or spends a currency the
+ * catalog does not ship.
+ */
+const KNOWN_UNMAPPED = new Set([
+  // No circulating currency / uninhabited.
+  'AQ', 'BV', 'GS', 'HM', 'TF', 'UM',
+  // Transient population only (military / research rotations).
+  'IO',
+  // Currency is NOT a catalog member (falls through to the USD default).
+  'AW', 'BB', 'BH', 'BM', 'BN', 'BS', 'BZ', 'CV', 'CW', 'DJ', 'FJ', 'FK',
+  'GI', 'GY', 'IS', 'KM', 'KY', 'MO', 'MU', 'MV', 'SB', 'SC', 'SH', 'SR',
+  'ST', 'SX', 'SZ', 'TO', 'TT', 'VU', 'WS',
+]);
+
 async function test(name, fn) {
   try {
     await fn();
@@ -338,9 +420,10 @@ async function run() {
   await test('REGION_DEFAULT_CURRENCY is a well-formed region → catalog-code map', () => {
     const regions = Object.keys(mod.REGION_DEFAULT_CURRENCY);
     const codes = Object.values(mod.REGION_DEFAULT_CURRENCY);
-    // Exact row count pinned: every UN M.49 country/territory whose circulating
-    // currency is in the catalog, unions expanding to all their members.
-    assert.equal(regions.length, 210);
+    // Exact row count pinned: every inhabited country/territory whose circulating
+    // currency is in the catalog (plus the user-assigned XK), unions expanding
+    // to all their members.
+    assert.equal(regions.length, 212);
     // Unions SHARE codes, so the distinct-code count is SMALLER than the row
     // count — the pre-widening `new Set(codes).size === regions.length`
     // invariant is WRONG now that many regions map to EUR/XOF/XAF/XCD/XPF.
@@ -359,6 +442,54 @@ async function run() {
     assert.ok(!('419' in mod.REGION_DEFAULT_CURRENCY), '419 must stay absent');
     // Sweden now maps to its own currency.
     assert.equal(mod.REGION_DEFAULT_CURRENCY.SE, 'SEK', 'SE maps to SEK');
+    // Åland (AX) is an autonomous region of Finland that spends the euro; it
+    // was absent and fell through to USD on every Åland device.
+    assert.equal(mod.REGION_DEFAULT_CURRENCY.AX, 'EUR', 'AX maps to EUR');
+    // Kosovo (XK) is a user-assigned ISO code (not UN M.49) whose people spend
+    // the euro; it was skipped by the M.49 sweep and fell through to USD.
+    assert.equal(mod.REGION_DEFAULT_CURRENCY.XK, 'EUR', 'XK maps to EUR');
+  });
+
+  await test('REGION_DEFAULT_CURRENCY maps EXACTLY the expected region set', () => {
+    // A count-only pin cannot see a SWAP: dropping one region and adding
+    // another keeps the length identical while silently sending a country's
+    // devices to USD. Pinning the exact sorted key set makes any addition or
+    // removal fail by name — the SE/AX/XK class of bug cannot hide here.
+    assert.deepEqual(
+      Object.keys(mod.REGION_DEFAULT_CURRENCY).sort(),
+      [...EXPECTED_REGION_KEYS].sort(),
+    );
+  });
+
+  await test('every ISO 3166-1 alpha-2 code is mapped or in the KNOWN_UNMAPPED policy', () => {
+    // The guard that WOULD have caught AX: walk the official 249-code list and
+    // require each code to be either a mapped region or an explicitly excluded
+    // one. An inhabited territory that spends a catalog currency but is missing
+    // from the map falls into neither bucket and fails here — no count needed.
+    const mapped = new Set(Object.keys(mod.REGION_DEFAULT_CURRENCY));
+    // Non-vacuous: the ISO list is the real 249, XK is deliberately NOT among
+    // them (it is user-assigned), and the map carries it anyway.
+    assert.equal(ISO_3166_1_ALPHA2.length, 249);
+    assert.equal(new Set(ISO_3166_1_ALPHA2).size, 249, 'ISO list has no duplicates');
+    assert.ok(!ISO_3166_1_ALPHA2.includes('XK'), 'XK is user-assigned, not ISO');
+    assert.ok(mapped.has('XK'), 'XK is mapped even though ISO omits it');
+    assert.equal(mapped.size, 212);
+    assert.equal(KNOWN_UNMAPPED.size, 38);
+    for (const code of ISO_3166_1_ALPHA2) {
+      assert.ok(
+        mapped.has(code) || KNOWN_UNMAPPED.has(code),
+        `${code} is neither mapped nor in KNOWN_UNMAPPED`,
+      );
+    }
+    // ...and the complement is EXACTLY KNOWN_UNMAPPED: nothing is both mapped
+    // and "known unmapped", and the policy set is not padded with codes that
+    // are actually in the map (which would let a real omission hide behind it).
+    const uncovered = ISO_3166_1_ALPHA2.filter((code) => !mapped.has(code));
+    assert.deepEqual(
+      uncovered.sort(),
+      [...KNOWN_UNMAPPED].sort(),
+      'the ISO complement must be exactly KNOWN_UNMAPPED',
+    );
   });
 
   console.log('\n[tests] codesForRegion — review-subset forward lookup\n');
