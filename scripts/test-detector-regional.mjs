@@ -131,22 +131,109 @@ const ISO_3166_1_ALPHA2 = [
 ];
 
 /**
- * The ISO codes this map withholds ON PURPOSE, each carrying a reason.
+ * The ISO codes this map withholds ON PURPOSE, grouped by WHY.
+ *
+ * The reason split is DATA, not a comment, because the catalog-membership test
+ * below asserts that the `currency-not-in-catalog` group is EXACTLY the region
+ * set its fixture covers. A code excluded for a currency reason but missing from
+ * the fixture is skipped by the membership loop and would fall through to USD
+ * the moment its currency entered the catalog — the exact bug this file exists
+ * to catch, reopened by a one-line edit.
+ *
  * A territory is mapped iff it has a permanent population AND its circulating
- * currency is a catalog member (plus the user-assigned `XK`). Everything in
- * here is therefore either uninhabited, transient, or spends a currency the
- * catalog does not ship.
+ * currency is a catalog member (plus the user-assigned `XK`). Everything below
+ * is therefore uninhabited, transient, or spends a currency the catalog does not
+ * ship.
  */
-const KNOWN_UNMAPPED = new Set([
+const UNMAPPED_REASON = {
+  UNINHABITED: 'uninhabited',
+  TRANSIENT: 'transient',
+  CURRENCY_NOT_IN_CATALOG: 'currency-not-in-catalog',
+};
+
+const KNOWN_UNMAPPED_BY_REASON = new Map([
   // No circulating currency / uninhabited.
-  'AQ', 'BV', 'GS', 'HM', 'TF', 'UM',
+  [UNMAPPED_REASON.UNINHABITED, ['AQ', 'BV', 'GS', 'HM', 'TF', 'UM']],
   // Transient population only (military / research rotations).
-  'IO',
+  [UNMAPPED_REASON.TRANSIENT, ['IO']],
   // Currency is NOT a catalog member (falls through to the USD default).
-  'AW', 'BB', 'BH', 'BM', 'BN', 'BS', 'BZ', 'CV', 'CW', 'DJ', 'FJ', 'FK',
-  'GI', 'GY', 'IS', 'KM', 'KY', 'MO', 'MU', 'MV', 'SB', 'SC', 'SH', 'SR',
-  'ST', 'SX', 'SZ', 'TO', 'TT', 'VU', 'WS',
+  [
+    UNMAPPED_REASON.CURRENCY_NOT_IN_CATALOG,
+    [
+      'AW', 'BB', 'BH', 'BM', 'BN', 'BS', 'BZ', 'CV', 'CW', 'DJ', 'FJ', 'FK',
+      'GI', 'GY', 'IS', 'KM', 'KY', 'MO', 'MU', 'MV', 'SB', 'SC', 'SH', 'SR',
+      'ST', 'SX', 'SZ', 'TO', 'TT', 'VU', 'WS',
+    ],
+  ],
 ]);
+
+/** Every excluded code, derived from the reason groups so the two cannot diverge. */
+const KNOWN_UNMAPPED = new Set([...KNOWN_UNMAPPED_BY_REASON.values()].flat());
+
+/** The currency-reason group: exactly the regions the fixture below must cover. */
+const CURRENCY_NOT_IN_CATALOG_REGIONS = KNOWN_UNMAPPED_BY_REASON.get(
+  UNMAPPED_REASON.CURRENCY_NOT_IN_CATALOG,
+);
+
+/**
+ * The fixture pairing each currency-excluded region with its circulating ISO
+ * 4217 code. Written independently of `KNOWN_UNMAPPED_BY_REASON` on purpose:
+ * the coupling assertion below requires the two to agree, so neither the
+ * exclusion policy nor the catalog check can be quietly edited alone.
+ */
+const REGION_TO_CURRENCY = new Map([
+  ['AW', 'AWG'],
+  ['BB', 'BBD'],
+  ['BH', 'BHD'],
+  ['BM', 'BMD'],
+  ['BN', 'BND'],
+  ['BS', 'BSD'],
+  ['BZ', 'BZD'],
+  ['CV', 'CVE'],
+  ['CW', 'XCG'],
+  ['DJ', 'DJF'],
+  ['FJ', 'FJD'],
+  ['FK', 'FKP'],
+  ['GI', 'GIP'],
+  ['GY', 'GYD'],
+  ['IS', 'ISK'],
+  ['KM', 'KMF'],
+  ['KY', 'KYD'],
+  ['MO', 'MOP'],
+  ['MU', 'MUR'],
+  ['MV', 'MVR'],
+  ['SB', 'SBD'],
+  ['SC', 'SCR'],
+  ['SH', 'SHP'],
+  ['SR', 'SRD'],
+  ['ST', 'STN'],
+  ['SX', 'XCG'],
+  ['SZ', 'SZL'],
+  ['TO', 'TOP'],
+  ['TT', 'TTD'],
+  ['VU', 'VUV'],
+  ['WS', 'WST'],
+]);
+
+/**
+ * The shipped guard, one real path: every region excluded for the currency
+ * reason must still hold a currency OUTSIDE the given catalog. The catalog is a
+ * parameter so the RED demo can inject a currency (e.g. `ISK`) into a copy and
+ * prove this exact function throws, rather than asserting against a hand-rolled
+ * re-implementation.
+ */
+function checkCatalogMembership(catalogSet) {
+  for (const region of CURRENCY_NOT_IN_CATALOG_REGIONS) {
+    const currency = REGION_TO_CURRENCY.get(region);
+    assert.ok(currency, `missing currency mapping for ${region}`);
+    assert.ok(
+      !catalogSet.has(currency),
+      `region ${region} is excluded as currency-not-in-catalog but ${currency} is in the catalog; ` +
+        `removing ${region} from KNOWN_UNMAPPED or adding ${currency} to the catalog ` +
+        `would fall back to USD — map the territory to ${currency} instead of deleting this check`,
+    );
+  }
+}
 
 async function test(name, fn) {
   try {
@@ -411,6 +498,10 @@ async function run() {
       ['CM', 'XAF'],
       ['AG', 'XCD'],
       ['NC', 'XPF'],
+      // The commit's own claim, asserted through the exported behaviour rather
+      // than by induction through the map: an Åland or Kosovo device gets EUR.
+      ['AX', 'EUR'],
+      ['XK', 'EUR'],
     ];
     for (const [region, expected] of table) {
       assert.equal(mod.detectDefaultCurrency(region), expected, region);
@@ -461,6 +552,75 @@ async function run() {
     );
   });
 
+  await test('currency-not-in-catalog reason group matches the fixture, and every entry still holds a non-catalog currency', () => {
+    // COUPLING: the exclusion policy (data) and the fixture the catalog check
+    // walks must name the SAME regions. A one-sided edit — deleting 'WS' from
+    // the fixture, say — would otherwise make the membership loop silently skip
+    // it and all tests would still pass while WST could drift back to USD.
+    const fixtureRegions = [...REGION_TO_CURRENCY.keys()].sort();
+    const reasonGroupRegions = [...CURRENCY_NOT_IN_CATALOG_REGIONS].sort();
+    const fixtureOnly = fixtureRegions.filter((r) => !reasonGroupRegions.includes(r));
+    const reasonGroupOnly = reasonGroupRegions.filter((r) => !fixtureRegions.includes(r));
+    const drift = [
+      ...fixtureOnly.map((r) => `${r} (in REGION_TO_CURRENCY only)`),
+      ...reasonGroupOnly.map((r) => `${r} (in the reason group only)`),
+    ];
+    assert.deepEqual(
+      fixtureRegions,
+      reasonGroupRegions,
+      drift.length
+        ? `the KNOWN_UNMAPPED "${UNMAPPED_REASON.CURRENCY_NOT_IN_CATALOG}" reason group and the ` +
+          `REGION_TO_CURRENCY fixture have drifted: ${drift.join(', ')}. Update BOTH ` +
+          `KNOWN_UNMAPPED_BY_REASON and REGION_TO_CURRENCY with the same region — a region ` +
+          `excluded for its currency but absent from the fixture is silently unchecked and ` +
+          `would fall through to USD if its currency ever entered the catalog.`
+        : 'the currency reason group must equal the REGION_TO_CURRENCY fixture key set',
+    );
+
+    // The real guard: every currency-excluded region still holds a currency the
+    // catalog does not ship.
+    checkCatalogMembership(CATALOG);
+
+    // RED demo: inject ISK into a COPY of the catalog and call the SHIPPED
+    // guard. It must throw from its OWN assertion (region IS / ISK in catalog),
+    // proving the function — not a re-implementation — fails on expansion.
+    assert.throws(
+      () => checkCatalogMembership(new Set([...CATALOG, 'ISK'])),
+      /region IS .* but ISK is in the catalog/,
+      'injecting ISK must make the shipped membership guard reject IS',
+    );
+  });
+
+  await test('KNOWN_UNMAPPED reason groups are non-empty, non-overlapping and map exactly the derived set', () => {
+    // The reason split exists so it can be asserted; that only helps if the
+    // groups themselves are well-formed. A duplicated code would be counted
+    // once by the Set while hiding a second, contradictory reason.
+    const seen = new Set();
+    const duplicates = [];
+    for (const codes of KNOWN_UNMAPPED_BY_REASON.values()) {
+      assert.ok(codes.length > 0, 'a reason group must not be empty');
+      for (const code of codes) {
+        if (seen.has(code)) duplicates.push(code);
+        seen.add(code);
+      }
+    }
+    assert.deepEqual(
+      duplicates,
+      [],
+      `codes listed under more than one reason: ${duplicates.join(', ')}`,
+    );
+    assert.deepEqual(
+      [...seen].sort(),
+      [...KNOWN_UNMAPPED].sort(),
+      'KNOWN_UNMAPPED must be exactly the union of the reason groups',
+    );
+    // A code cannot be both mapped and excluded.
+    const mapped = new Set(Object.keys(mod.REGION_DEFAULT_CURRENCY));
+    for (const code of KNOWN_UNMAPPED) {
+      assert.ok(!mapped.has(code), `${code} is both mapped and KNOWN_UNMAPPED`);
+    }
+  });
+
   await test('every ISO 3166-1 alpha-2 code is mapped or in the KNOWN_UNMAPPED policy', () => {
     // The guard that WOULD have caught AX: walk the official 249-code list and
     // require each code to be either a mapped region or an explicitly excluded
@@ -498,6 +658,11 @@ async function run() {
     assert.deepEqual(mod.codesForRegion('NG'), ['NGN']);
     assert.deepEqual(mod.codesForRegion('MX'), ['MXN']);
     assert.deepEqual(mod.codesForRegion('DE'), ['EUR']);
+    // The Åland / Kosovo rows in the behaviour table are covered by induction;
+    // assert the exported lookup directly too, so the claim holds through the
+    // forward-lookup consumer as well.
+    assert.deepEqual(mod.codesForRegion('AX'), ['EUR']);
+    assert.deepEqual(mod.codesForRegion('XK'), ['EUR']);
   });
 
   await test('codesForRegion lookup is case-insensitive', () => {
