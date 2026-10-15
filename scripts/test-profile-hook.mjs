@@ -1086,8 +1086,9 @@ async function run() {
 
   await test('detectDeviceDefaultCurrency falls back to USD when the region is unmapped', () => {
     resetAll();
+    // AQ (Antarctica) has no circulating currency mapped.
     localizationStubMod.__setDeviceLocales([
-      { languageTag: 'sv-SE', languageCode: 'sv', regionCode: 'SE', currencyCode: null },
+      { languageTag: 'und-AQ', languageCode: 'und', regionCode: 'AQ', currencyCode: null },
     ]);
     assert.equal(
       deviceCurrencyMod.detectDeviceDefaultCurrency(),

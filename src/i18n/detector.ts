@@ -242,10 +242,7 @@ export function detectLocale(
  *
  * `419` (the Latin-American macro-region) stays absent: it spans many countries
  * with different currencies, and a macro-region must never be guessed into one
- * country's currency. `SE` is deliberately absent too — Sweden's `SEK` is in the
- * catalog, but `scripts/test-profile-hook.mjs` pins a Swedish device as the
- * "unmapped region → USD" regression case, so the widening stops short of it
- * until that pin is revisited.
+ * country's currency.
  */
 export const REGION_DEFAULT_CURRENCY: Readonly<
   Partial<Record<string, SupportedCurrency>>
@@ -418,6 +415,7 @@ export const REGION_DEFAULT_CURRENCY: Readonly<
   RW: 'RWF',
   SA: 'SAR',
   SD: 'SDG',
+  SE: 'SEK',
   SG: 'SGD',
   SI: 'EUR',
   SJ: 'NOK',
