@@ -460,20 +460,77 @@ async function run() {
     );
   });
 
-  await test('layout: auth overlay gate is the exact AND triple (session == null && authFlowInFlight && !isBootstrapping)', () => {
+  await test('layout: auth overlay gate is delegated to the pure shouldShowAuthOverlay decision', () => {
+    // The gate itself is no longer an inline boolean: it is the extracted
+    // pure decision in `src/lib/auth/auth-overlay.ts`, covered behaviourally
+    // in the auth harness (`pnpm test:auth`, "sign-in handoff overlay
+    // decision") and its transition tracker in `src/lib/auth/handoff-latch.ts`
+    // ("handoff latch reducer (render sequences)"). This source pin only
+    // guards the WIRING, so it asserts the DERIVATIONS, not just that the
+    // identifiers appear somewhere — a refactor to `handoffLatched: false`, a
+    // constant `flipDetectedThisRender`, or a flip derived from the wrong ref
+    // must fail here.
     assert.ok(
-      layout.includes('authFlowInFlight'),
-      '_layout.tsx must subscribe to authFlowInFlight (overlay gating)',
+      layout.includes('shouldShowAuthOverlay'),
+      '_layout.tsx must delegate the overlay gate to shouldShowAuthOverlay',
     );
-    // The FULL gate expression, in order. Co-occurrence on a line is too
-    // weak: `session == null || authFlowInFlight && !isBootstrapping` and
-    // `session == null && authFlowInFlight` (missing !isBootstrapping) both
-    // satisfy a substring check but weaken/break the gate. Matching the whole
-    // ordered triple rejects every weakening; `\s*` keeps it whitespace-robust.
     assert.match(
       layout,
-      /session == null\s*&&\s*authFlowInFlight\s*&&\s*!isBootstrapping/,
-      'auth overlay gate must be exactly `session == null && authFlowInFlight && !isBootstrapping`',
+      /shouldShowAuthOverlay\(\s*\{[\s\S]*?hasSession:\s*session\s*!=\s*null[\s\S]*?pathname[\s\S]*?authFlowInFlight[\s\S]*?isBootstrapping[\s\S]*?flipDetectedThisRender[\s\S]*?handoffLatched[\s\S]*?\}\s*\)/,
+      'shouldShowAuthOverlay must receive hasSession, pathname, authFlowInFlight, isBootstrapping, flipDetectedThisRender and handoffLatched',
+    );
+
+    // The #215 transition signal is DERIVED, not constant. The flip must read
+    // the `prevSession` ref (the ref the navigation effect updates post-paint)
+    // and compare null → non-null; a flip derived from any other source, or a
+    // hardcoded `flipDetectedThisRender`, would silently regress #215.
+    assert.match(
+      layout,
+      /flipDetectedThisRender\s*=\s*prevSession\.current\s*===\s*null\s*&&\s*session\s*!=\s*null/,
+      'flipDetectedThisRender must be derived from prevSession.current === null && session != null',
+    );
+
+    // The transition tracker must be the extracted pure reducer, fed the same
+    // per-render inputs the behavioural sequence tests use — not an inline
+    // `hasSession && isAuthSurfacePathname(pathname)` branch (the reachable
+    // dead-end). Assert each reducer input is wired to a live value.
+    assert.match(
+      layout,
+      /reduceHandoff\(\s*\{[\s\S]*?latched:\s*handoffLatched[\s\S]*?\}\s*,\s*\{[\s\S]*?prevSessionWasNull:\s*prevSession\.current\s*===\s*null[\s\S]*?hasSession:\s*session\s*!=\s*null[\s\S]*?onAuthSurface[\s\S]*?isBootstrapping[\s\S]*?\}\s*\)/,
+      'the layout must feed reduceHandoff the prevSession-derived flip, hasSession, onAuthSurface and isBootstrapping',
+    );
+    // The latched state must come from the reducer's next state, not a literal.
+    assert.match(
+      layout,
+      /setHandoffLatched\(\s*nextHandoff\.latched\s*\)/,
+      'handoffLatched must be updated from reduceHandoff(...).latched',
+    );
+
+    // No hardcoded transition literals may reach the decision — the two
+    // fields must be threaded as bare identifiers (the live state), never as
+    // `flipDetectedThisRender: true` / `handoffLatched: false`.
+    assert.doesNotMatch(
+      layout,
+      /flipDetectedThisRender\s*:\s*(true|false)/,
+      'flipDetectedThisRender must not be hardcoded into the gate',
+    );
+    assert.doesNotMatch(
+      layout,
+      /handoffLatched\s*:\s*(true|false)/,
+      'handoffLatched must not be hardcoded into the gate',
+    );
+    // Guard the inline dead-end branch itself: the removed, unbounded form
+    // must not reappear (an `if`/`&&` that gates the overlay on hasSession and
+    // isAuthSurfacePathname alone).
+    assert.ok(
+      !/hasSession\s*&&\s*isAuthSurfacePathname\(/.test(layout),
+      'the unbounded `hasSession && isAuthSurfacePathname(pathname)` dead-end must not return',
+    );
+
+    assert.match(
+      layout,
+      /\{showAuthOverlay\s*\?\s*\(/,
+      'the overlay JSX must render off the showAuthOverlay decision',
     );
   });
 

@@ -27,6 +27,8 @@
     "../src/lib/auth/auth-listener-registry.ts",
     "../src/lib/auth/profile-sync.ts",
     "../src/lib/auth/session-nav.ts",
+    "../src/lib/auth/auth-overlay.ts",
+    "../src/lib/auth/handoff-latch.ts",
     "../src/features/auth/use-session-store.ts",
     "../src/stores/use-settings-store.ts",
     "../scripts/test-stubs/globals.d.ts",

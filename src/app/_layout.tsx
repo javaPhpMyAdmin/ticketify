@@ -16,6 +16,8 @@ import { ConsentGate } from '@/features/legal/components/ConsentGate';
 import { ProBootstrap } from '@/features/pro';
 import { ProfileHydration } from '@/features/profile';
 import { I18nProvider } from '@/i18n/components/I18nProvider';
+import { shouldShowAuthOverlay, isAuthSurfacePathname } from '@/lib/auth/auth-overlay';
+import { reduceHandoff } from '@/lib/auth/handoff-latch';
 import { decideSessionNavigation } from '@/lib/auth/session-nav';
 import { useAuthFlowStore } from '@/lib/auth/oauth';
 import { queryClient } from '@/lib/query-client';
@@ -44,6 +46,11 @@ export default function RootLayout() {
   const prevSession = useRef(session);
   const authFlowInFlight = useAuthFlowStore((s) => s.inFlight);
   const pathname = usePathname();
+  // Armed by the #215 session handoff (a null→session flip on the auth
+  // surface) and released once the route has left that surface; it is what
+  // keeps the overlay up across the post-paint `router.replace('/')`. See the
+  // overlay block below for the full render-ordering argument.
+  const [handoffLatched, setHandoffLatched] = useState(false);
 
   // Single owner of "go to app" navigation. The decision is a pure function
   // (`decideSessionNavigation` in src/lib/auth/session-nav.ts, unit-tested in
@@ -185,6 +192,66 @@ export default function RootLayout() {
   }, [isBootstrapping]);
 
   const [bootSplashVisible, setBootSplashVisible] = useState(true);
+
+  // ── Sign-in handoff overlay (issue #215, #206) ──────────────────────
+  // Visibility is the pure `shouldShowAuthOverlay` decision
+  // (`src/lib/auth/auth-overlay.ts`, unit-tested in the auth harness). It
+  // stays up across TWO windows: the OAuth provider handoff (#206: no
+  // session, flow in flight) AND the handoff frames after a session LANDS
+  // while the route is still on the auth surface (#215). The gate only
+  // adds/removes screens; the nav to `(tabs)` is the post-paint
+  // `router.replace` above, so the overlay must outlive the landing render.
+  //
+  // The handoff branch is BOUNDED to the transition — never "signed in on an
+  // auth route". A signed-in user can reach `/sign-in` with NO flip (the
+  // /legal footer's `router.replace('/sign-in')`, or a `ticketify://sign-in`
+  // deep link) and `decideSessionNavigation` never navigates them away, so
+  // covering that would be a permanent, affordance-less dead-end.
+  //
+  // `flipDetectedThisRender` reads the `prevSession` ref BEFORE the
+  // navigation effect above updates it, so it is true on the exact render
+  // the session lands. `handoffLatched` carries the cover across the
+  // frame(s) until the route commits off the auth surface (e.g. when
+  // `authFlowInFlight` clears in a separate render first). The transition is
+  // tracked by the pure `reduceHandoff` (unit-tested as render sequences in
+  // test-auth); arm/disarm during render is the documented "adjusting state
+  // during render" pattern: React re-renders immediately, so no committed
+  // frame is ever uncovered or over-covered.
+  //
+  // F3 (known): reading `prevSession.current` during render is a migration
+  // hazard under a concurrent-renderer refactor; acceptable for a plain
+  // `useRef` today.
+  const flipDetectedThisRender = prevSession.current === null && session != null;
+  const onAuthSurface = isAuthSurfacePathname(pathname);
+  // The reducer owns the arm/disarm decision (tested as render sequences in
+  // scripts/test-auth.mjs). Its `!isBootstrapping` arm guard is what keeps the
+  // cold-start restore from arming — and it depends on the store emitting
+  // `set({ session })` and `set({ isBootstrapping: false })` in SEPARATE
+  // renders (use-session-store.ts restore): if a future refactor coalesced
+  // them, the restore flip would look interactive. See the reducer's doc
+  // comment. Applying its result via a render-phase setState keeps the
+  // documented "adjusting state during render" pattern.
+  const nextHandoff = reduceHandoff(
+    { latched: handoffLatched },
+    {
+      prevSessionWasNull: prevSession.current === null,
+      hasSession: session != null,
+      onAuthSurface,
+      isBootstrapping,
+    },
+  );
+  if (nextHandoff.latched !== handoffLatched) {
+    setHandoffLatched(nextHandoff.latched);
+  }
+
+  const showAuthOverlay = shouldShowAuthOverlay({
+    hasSession: session != null,
+    pathname,
+    authFlowInFlight,
+    isBootstrapping,
+    flipDetectedThisRender,
+    handoffLatched,
+  });
 
   return (
     // GestureHandlerRootView must wrap the entire app: gesture-handler
@@ -337,14 +404,14 @@ export default function RootLayout() {
             });
           }}
         />
-        {/* Sign-in handoff overlay: after the OS browser returns from Google
-            OAuth, `session` stays null until the PKCE code exchange resolves
-            (~1s). Without this, the root gate keeps `(auth)` committed and the
-            sign-in screen flashes. `authFlowInFlight` is the reactive flag that
-            covers exactly that window — it never shows during launch boot (no
-            flow) or once a session exists, and the flow's `finally` clears it on
-            success, cancel, and error. */}
-        {session == null && authFlowInFlight && !isBootstrapping ? (
+        {/* Sign-in handoff overlay (see `showAuthOverlay` above and
+            `shouldShowAuthOverlay`): covers the post-OAuth window while the
+            PKCE exchange resolves AND the frame after the session lands but
+            the post-paint replace has not yet left the auth surface (#215).
+            It never shows during launch boot (BootSplash owns that) and is
+            gone the moment the route leaves the auth surface, so `(tabs)`
+            first paint is never masked. */}
+        {showAuthOverlay ? (
           <View style={styles.authFlowOverlay}>
             <Spinner size="lg" color={colors.primary} />
           </View>
