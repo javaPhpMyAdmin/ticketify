@@ -35,6 +35,14 @@ let _readMonthlyPurchasesTotal = async (yearMonth, householdId) => ({
   data: [],
 });
 
+// The budget READ (profiles.monthly_budget + currency). Added for the
+// budget-currency-mismatch harness, which mounts the REAL `useBudget` and must
+// control the viewer currency + limit per scenario.
+let _readMonthlyBudgetRow = async (userId) => ({
+  status: 'ok',
+  data: { monthly_budget: 0, currency: 'USD' },
+});
+
 let _readCategoryBudgets = async (userId, yearMonth) => ({
   status: 'ok',
   data: [],
@@ -75,6 +83,10 @@ exports.__setReadCategoryTotals = function (fn) {
 
 exports.__setReadMonthlyPurchasesTotal = function (fn) {
   _readMonthlyPurchasesTotal = fn;
+};
+
+exports.__setReadMonthlyBudgetRow = function (fn) {
+  _readMonthlyBudgetRow = fn;
 };
 
 exports.__setReadCategoryBudgets = function (fn) {
@@ -128,6 +140,10 @@ exports.__reset = function () {
   _triggerMonthlyRecalc = async () => ({ status: 'ok', data: undefined });
   _readCategoryTotals = async () => ({ status: 'ok', data: [] });
   _readMonthlyPurchasesTotal = async () => ({ status: 'ok', data: [] });
+  _readMonthlyBudgetRow = async () => ({
+    status: 'ok',
+    data: { monthly_budget: 0, currency: 'USD' },
+  });
   _readCategoryBudgets = async () => ({ status: 'ok', data: [] });
   _upsertCategoryBudgets = async () => ({ status: 'ok', data: null });
   _markCategoryBudgetRollover = async () => ({ status: 'ok', data: null });
@@ -172,6 +188,10 @@ exports.readMonthlyPurchasesTotal = async function readMonthlyPurchasesTotal(
   householdId,
 ) {
   return _readMonthlyPurchasesTotal(yearMonth, householdId);
+};
+
+exports.readMonthlyBudgetRow = async function readMonthlyBudgetRow(userId) {
+  return _readMonthlyBudgetRow(userId);
 };
 
 exports.readCategoryBudgets = async function readCategoryBudgets(

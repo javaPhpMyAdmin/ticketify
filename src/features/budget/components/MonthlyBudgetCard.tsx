@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native';
 
 import { BudgetCard, Card, Pressable, Text, View } from '@/components';
+import type { BudgetUnitTotal } from '@/components/organisms/BudgetCard/BudgetCard';
 import { formatCurrency } from '@/lib/format';
 import { colors, spacing } from '@/theme';
 
@@ -9,6 +10,17 @@ export interface MonthlyBudgetCardProps {
   spent: number;
   limit: number;
   currency: string;
+  /**
+   * 0..1, or `null` when no honest percentage exists (viewer currency has no
+   * receipts but other units do — issue #214). Forwarded straight to
+   * `BudgetCard`, which must never recompute it.
+   */
+  percent: number | null;
+  /**
+   * The real per-unit totals (units other than the viewer currency) to show in
+   * the mismatch state. Forwarded to `BudgetCard`.
+   */
+  foreignUnitTotals?: BudgetUnitTotal[];
   /** When true, also renders a "Wants / Snacks" callout under the card. */
   showCallout?: boolean;
   wantsSnacksTotal?: number;
@@ -35,6 +47,8 @@ export function MonthlyBudgetCard({
   spent,
   limit,
   currency,
+  percent,
+  foreignUnitTotals,
   showCallout = false,
   wantsSnacksTotal = 0,
   onPressSnacks,
@@ -76,7 +90,13 @@ export function MonthlyBudgetCard({
 
   return (
     <View style={styles.wrap}>
-      <BudgetCard spent={spent} limit={limit} currency={currency} />
+      <BudgetCard
+        spent={spent}
+        limit={limit}
+        currency={currency}
+        percent={percent}
+        foreignUnitTotals={foreignUnitTotals}
+      />
       {showCallout ? (
         onPressSnacks ? (
           <Card style={styles.calloutCard}>

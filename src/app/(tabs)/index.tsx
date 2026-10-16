@@ -76,6 +76,9 @@ export default function HomeScreen() {
   const {
     budget,
     spent,
+    percent: budgetPercent,
+    unitTotals: budgetUnitTotals,
+    currencyMismatch: budgetCurrencyMismatch,
     error: budgetError,
     isLoading: budgetLoading,
     hasData: budgetHasData,
@@ -335,6 +338,10 @@ export default function HomeScreen() {
                   spent={spent}
                   limit={budget.amount}
                   currency={currency}
+                  percent={budgetPercent}
+                  foreignUnitTotals={
+                    budgetCurrencyMismatch ? budgetUnitTotals : undefined
+                  }
                   showCallout
                   wantsSnacksTotal={monthFeed.wantsSnacksTotal}
                   onPressSnacks={() => setSnacksOpen(true)}

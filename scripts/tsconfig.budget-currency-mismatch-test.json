@@ -1,0 +1,62 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020", "dom"],
+    "jsx": "react-jsx",
+    "strict": false,
+    "noImplicitAny": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "..",
+    "paths": {
+      "@/features/auth": ["./scripts/test-stubs/auth.ts"],
+      "@/features/home/hooks/useHomeFeed": ["./scripts/test-stubs/useHomeFeed.ts"],
+      "@/lib/supabase": ["./scripts/test-stubs/supabase.ts"],
+      "@/lib/supabase/storage-adapter": ["./scripts/test-stubs/storage-adapter.ts"],
+      "@/components/atoms": ["./scripts/test-stubs/budget-card-atoms.tsx"],
+      "@/components/molecules/AmountDisplay": [
+        "./scripts/test-stubs/budget-card-amount-display.tsx"
+      ],
+      "@/components/molecules/Card": ["./scripts/test-stubs/budget-card-card.tsx"],
+      "@/components/molecules/ProgressBar": [
+        "./scripts/test-stubs/budget-card-progress-bar.tsx"
+      ],
+      "react-native": ["./scripts/test-stubs/react-native.ts"],
+      "react-i18next": ["./scripts/test-stubs/budget-card-i18next.ts"],
+      "@/*": ["./src/*"]
+    },
+    "rootDir": ".."
+  },
+  "include": [
+    "../src/features/budget/hooks/useBudget.ts",
+    "../src/features/budget/api.ts",
+    "../src/components/organisms/BudgetCard/BudgetCard.tsx",
+    "../src/lib/query-keys.ts",
+    "../src/lib/money.ts",
+    "../src/lib/format.ts",
+    "../src/lib/supabase/feature-access.ts",
+    "../src/lib/supabase/query-adapters.ts",
+    "../src/lib/supabase/config-status.ts",
+    "../src/theme/index.ts",
+    "../src/theme/colors.ts",
+    "../src/theme/motion.ts",
+    "../src/theme/radii.ts",
+    "../src/theme/spacing.ts",
+    "../src/theme/typography.ts",
+    "../src/types/index.ts",
+    "../scripts/test-stubs/globals.d.ts",
+    "../scripts/test-stubs/auth.ts",
+    "../scripts/test-stubs/useHomeFeed.ts",
+    "../scripts/test-stubs/supabase.ts",
+    "../scripts/test-stubs/storage-adapter.ts",
+    "../scripts/test-stubs/react-native.ts",
+    "../scripts/test-stubs/budget-card-atoms.tsx",
+    "../scripts/test-stubs/budget-card-amount-display.tsx",
+    "../scripts/test-stubs/budget-card-card.tsx",
+    "../scripts/test-stubs/budget-card-progress-bar.tsx",
+    "../scripts/test-stubs/budget-card-i18next.ts"
+  ]
+}
