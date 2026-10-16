@@ -140,6 +140,8 @@ let storageMod;
 let browserMod;
 let queryClientMod;
 let sessionNavMod;
+let authOverlayMod;
+let handoffLatchMod;
 
 async function run() {
   console.log('\n[tests] compiling modules with isolated tsconfig…');
@@ -161,6 +163,8 @@ async function run() {
   browserMod = await load('scripts/test-stubs/web-browser.js');
   queryClientMod = await load('src/lib/query-client.js');
   sessionNavMod = await load('src/lib/auth/session-nav.js');
+  authOverlayMod = await load('src/lib/auth/auth-overlay.js');
+  handoffLatchMod = await load('src/lib/auth/handoff-latch.js');
 
   console.log('\n[tests] session restore\n');
 
@@ -975,6 +979,337 @@ async function run() {
       shouldNavigate: false,
       target: '/',
     });
+  });
+
+  console.log('\n[tests] sign-in handoff overlay decision\n');
+
+  const overlay = (input) => authOverlayMod.shouldShowAuthOverlay(input);
+  // A signed-in render with NO session transition: this is the navigated-in /
+  // deep-linked case (no null→session flip, no armed handoff latch).
+  const NO_TRANSITION = { flipDetectedThisRender: false, handoffLatched: false };
+
+  await test('issue #215: session FLIPS null→session while on /sign-in → overlay SHOWN', () => {
+    // The regression: OAuth completes, `session` lands while the current
+    // route is still /sign-in (the post-paint replace to `/` has not run
+    // yet). The flip arms the handoff, so the overlay must stay UP.
+    assert.equal(
+      overlay({
+        hasSession: true,
+        pathname: '/sign-in',
+        authFlowInFlight: false,
+        isBootstrapping: false,
+        flipDetectedThisRender: true,
+        handoffLatched: false,
+      }),
+      true,
+      'a session FLIP on the auth surface must keep the overlay up',
+    );
+  });
+
+  await test('session FLIPS on /sign-up or /forgot-password → overlay SHOWN (whole auth group)', () => {
+    for (const pathname of ['/sign-up', '/forgot-password']) {
+      assert.equal(
+        overlay({
+          hasSession: true,
+          pathname,
+          authFlowInFlight: false,
+          isBootstrapping: false,
+          flipDetectedThisRender: true,
+          handoffLatched: false,
+        }),
+        true,
+        `${pathname} flip must keep the overlay up`,
+      );
+    }
+  });
+
+  await test('handoff latch: flip already consumed, route has not left the auth surface → overlay SHOWN', () => {
+    // The frame(s) between the session landing and `router.replace('/')`
+    // committing (e.g. `authFlowInFlight` clears in a separate render):
+    // flipDetectedThisRender is already false, but the latch holds the cover.
+    assert.equal(
+      overlay({
+        hasSession: true,
+        pathname: '/sign-in',
+        authFlowInFlight: false,
+        isBootstrapping: false,
+        flipDetectedThisRender: false,
+        handoffLatched: true,
+      }),
+      true,
+    );
+  });
+
+  await test('REGRESSION: signed-in user NAVIGATES to /sign-in with no flip → overlay HIDDEN (soft, never a dead-end)', () => {
+    // Reachable via the /legal/* footer (`LegalScreen` router.replace('/sign-in'))
+    // from the signed-in profile, or a `ticketify://sign-in` deep link.
+    // `decideSessionNavigation` never navigates (no flip, not /oauth), so an
+    // overlay here would be a permanent, affordance-less cover — the defect
+    // this case pins. With no transition the pre-existing soft behaviour
+    // (sign-in form visible) must win.
+    assert.equal(
+      overlay({
+        hasSession: true,
+        pathname: '/sign-in',
+        authFlowInFlight: false,
+        isBootstrapping: false,
+        ...NO_TRANSITION,
+      }),
+      false,
+      'no transition → the sign-in screen must stay visible (soft route)',
+    );
+  });
+
+  await test('REGRESSION: deep-linked /sign-up and /forgot-password while signed in, no flip → overlay HIDDEN', () => {
+    for (const pathname of ['/sign-up', '/forgot-password']) {
+      assert.equal(
+        overlay({
+          hasSession: true,
+          pathname,
+          authFlowInFlight: false,
+          isBootstrapping: false,
+          ...NO_TRANSITION,
+        }),
+        false,
+        `${pathname} with no transition must stay visible`,
+      );
+    }
+  });
+
+  await test('FORK: identical hasSession + pathname, result decided ONLY by the transition state', () => {
+    const base = {
+      hasSession: true,
+      pathname: '/sign-in',
+      authFlowInFlight: false,
+      isBootstrapping: false,
+    };
+    const navigated = overlay({ ...base, ...NO_TRANSITION });
+    const flipped = overlay({ ...base, flipDetectedThisRender: true, handoffLatched: false });
+    const latched = overlay({ ...base, flipDetectedThisRender: false, handoffLatched: true });
+    assert.deepEqual(
+      { navigated, flipped, latched },
+      { navigated: false, flipped: true, latched: true },
+      'the transition state alone must fork the decision',
+    );
+  });
+
+  await test('signed in, route off the auth surface (tabs) → overlay HIDDEN', () => {
+    assert.equal(
+      overlay({
+        hasSession: true,
+        pathname: '/',
+        authFlowInFlight: false,
+        isBootstrapping: false,
+        ...NO_TRANSITION,
+      }),
+      false,
+    );
+  });
+
+  await test('/reset-password owns its exit: a recovery session must NOT be covered', () => {
+    // The recovery exchange signs in with a session while the user still
+    // needs the new-password form; `decideSessionNavigation` deliberately
+    // does not navigate away. The overlay must stay hidden or the form is
+    // unreachable — even though this IS a null→session flip.
+    assert.equal(
+      overlay({
+        hasSession: true,
+        pathname: '/reset-password',
+        authFlowInFlight: false,
+        isBootstrapping: false,
+        flipDetectedThisRender: true,
+        handoffLatched: false,
+      }),
+      false,
+    );
+  });
+
+  await test('no session + OAuth in flight + bootstrap done → overlay SHOWN (#206 window)', () => {
+    assert.equal(
+      overlay({
+        hasSession: false,
+        pathname: '/sign-in',
+        authFlowInFlight: true,
+        isBootstrapping: false,
+        ...NO_TRANSITION,
+      }),
+      true,
+    );
+  });
+
+  await test('no session + OAuth in flight + STILL bootstrapping → overlay HIDDEN (BootSplash owns it)', () => {
+    assert.equal(
+      overlay({
+        hasSession: false,
+        pathname: '/sign-in',
+        authFlowInFlight: true,
+        isBootstrapping: true,
+        ...NO_TRANSITION,
+      }),
+      false,
+    );
+  });
+
+  await test('no session + no flow → overlay HIDDEN (sign-in visible)', () => {
+    assert.equal(
+      overlay({
+        hasSession: false,
+        pathname: '/sign-in',
+        authFlowInFlight: false,
+        isBootstrapping: false,
+        ...NO_TRANSITION,
+      }),
+      false,
+    );
+  });
+
+  await test('cold start while already signed in → overlay HIDDEN during bootstrap (BootSplash owns boot)', () => {
+    // restore() sets the session while isBootstrapping is still true; the
+    // branded splash covers that window and its condition is untouched.
+    assert.equal(
+      overlay({
+        hasSession: true,
+        pathname: '/sign-in',
+        authFlowInFlight: false,
+        isBootstrapping: true,
+        flipDetectedThisRender: true,
+        handoffLatched: false,
+      }),
+      false,
+    );
+  });
+
+  await test('auth surface helper: sign-in group covered, reset-password excluded', () => {
+    assert.equal(authOverlayMod.isAuthSurfacePathname('/sign-in'), true);
+    assert.equal(authOverlayMod.isAuthSurfacePathname('/sign-up'), true);
+    assert.equal(authOverlayMod.isAuthSurfacePathname('/forgot-password'), true);
+    assert.equal(authOverlayMod.isAuthSurfacePathname('/reset-password'), false);
+    assert.equal(authOverlayMod.isAuthSurfacePathname('/'), false);
+    assert.equal(authOverlayMod.isAuthSurfacePathname('/oauth'), false);
+  });
+
+  console.log('\n[tests] handoff latch reducer (render sequences)\n');
+
+  // The transition tracker was extracted into a pure reducer so the #215
+  // latch is tested as a SEQUENCE of renders, not by pinning source text.
+  // `_layout.tsx` feeds each render's inputs through this reducer and applies
+  // the returned `latched` via a render-phase setState.
+  const reduceHandoff = handoffLatchMod.reduceHandoff;
+  const INITIAL_LATCH = handoffLatchMod.INITIAL_HANDOFF_STATE;
+  // A signed-in render on the auth surface by default; each test overrides the
+  // fields that matter. `onAuthSurface` is derived from isAuthSurfacePathname
+  // so the /sign-up and /forgot-password sequences exercise the same helper
+  // the layout uses (not just /sign-in).
+  const step = (over = {}) => ({
+    prevSessionWasNull: false,
+    hasSession: true,
+    onAuthSurface: isAuthSurfacePathnameForTest('/sign-in'),
+    isBootstrapping: false,
+    ...over,
+  });
+  function isAuthSurfacePathnameForTest(pathname) {
+    return authOverlayMod.isAuthSurfacePathname(pathname);
+  }
+  const latchedOf = (state) => state.latched;
+
+  await test('cold start / idle: latch never arms (no session, no auth surface)', () => {
+    // Fresh mount: no session yet, still bootstrapping → stays unlatched.
+    assert.equal(latchedOf(reduceHandoff(INITIAL_LATCH, step({ hasSession: false }))), false);
+    // Signed-in on the tabs, no transition → stays unlatched.
+    assert.equal(latchedOf(reduceHandoff(INITIAL_LATCH, step({ onAuthSurface: false }))), false);
+    // The initial state constant itself is unlatched.
+    assert.equal(INITIAL_LATCH.latched, false);
+  });
+
+  await test('SEQUENCE flip lands on the auth surface → latch ARMS (#215 fix)', () => {
+    const next = reduceHandoff(INITIAL_LATCH, step({ prevSessionWasNull: true }));
+    assert.equal(latchedOf(next), true, 'a null→session flip on the auth surface must arm');
+  });
+
+  await test('SEQUENCE flip already consumed, route still on the auth surface → latch HOLDS (no flash)', () => {
+    const armed = reduceHandoff(INITIAL_LATCH, step({ prevSessionWasNull: true }));
+    // Next render: session is no longer "new", route has not left yet
+    // (e.g. authFlowInFlight cleared first). Must stay latched.
+    const held = reduceHandoff(armed, step({ prevSessionWasNull: false }));
+    assert.equal(latchedOf(held), true, 'the cover must outlive the pre-commit frames');
+  });
+
+  await test('SEQUENCE route leaves the auth surface → latch DISARMS', () => {
+    const armed = reduceHandoff(INITIAL_LATCH, step({ prevSessionWasNull: true }));
+    const left = reduceHandoff(armed, step({ onAuthSurface: false })); // router.replace('/') committed
+    assert.equal(latchedOf(left), false, 'the cover must drop once the tabs route commits');
+  });
+
+  await test('SEQUENCE signed-in NAVIGATES in with no flip → latch stays UNLATCHED (CRITICAL guard)', () => {
+    // Reachable via the /legal/* footer router.replace('/sign-in') from the
+    // signed-in profile, or a `ticketify://sign-in` deep link. No flip → the
+    // reducer must NOT arm, or the overlay is a permanent dead-end.
+    let state = INITIAL_LATCH;
+    state = reduceHandoff(state, step({ prevSessionWasNull: false }));
+    state = reduceHandoff(state, step({ prevSessionWasNull: false }));
+    assert.equal(latchedOf(state), false, 'a navigation with no transition must never arm the latch');
+  });
+
+  await test('SEQUENCE the same three transitions hold on /sign-up and /forgot-password', () => {
+    for (const pathname of ['/sign-up', '/forgot-password']) {
+      const onSurface = isAuthSurfacePathnameForTest(pathname);
+      assert.equal(onSurface, true, `${pathname} must be on the auth surface`);
+      // flip → arms
+      const armed = reduceHandoff(INITIAL_LATCH, step({ onAuthSurface: onSurface, prevSessionWasNull: true }));
+      assert.equal(latchedOf(armed), true, `${pathname} flip must arm`);
+      // hold → stays
+      const held = reduceHandoff(armed, step({ onAuthSurface: onSurface, prevSessionWasNull: false }));
+      assert.equal(latchedOf(held), true, `${pathname} must hold across the pre-commit frame`);
+      // navigated in, no flip → stays unlatched
+      const nav = reduceHandoff(INITIAL_LATCH, step({ onAuthSurface: onSurface, prevSessionWasNull: false }));
+      assert.equal(latchedOf(nav), false, `${pathname} navigation with no flip must not arm`);
+      // leave → disarms
+      const left = reduceHandoff(armed, step({ onAuthSurface: false, prevSessionWasNull: false }));
+      assert.equal(latchedOf(left), false, `${pathname} must disarm on leaving`);
+    }
+  });
+
+  await test('SEQUENCE session clears while on the auth surface → latch DISARMS', () => {
+    const armed = reduceHandoff(INITIAL_LATCH, step({ prevSessionWasNull: true }));
+    const cleared = reduceHandoff(armed, step({ hasSession: false, prevSessionWasNull: false }));
+    assert.equal(latchedOf(cleared), false, 'no session → nothing to cover');
+  });
+
+  await test('SEQUENCE cold start (F2): restore flip during bootstrap NEVER arms, post-bootstrap stays unlatched', () => {
+    // restore() sets the session while isBootstrapping is still true; the
+    // branded splash owns that window. The `!isBootstrapping` arm guard must
+    // keep the opaque overlay off — even though this IS a null→session flip.
+    const duringBoot = reduceHandoff(
+      INITIAL_LATCH,
+      step({ prevSessionWasNull: true, isBootstrapping: true }),
+    );
+    assert.equal(latchedOf(duringBoot), false, 'the restore flip must not arm during bootstrap');
+    // The post-bootstrap render: prevSession has been updated, so no flip.
+    const afterBoot = reduceHandoff(
+      duringBoot,
+      step({ prevSessionWasNull: false, isBootstrapping: false }),
+    );
+    assert.equal(latchedOf(afterBoot), false, 'cold start must stay byte-for-byte unlatched');
+  });
+
+  await test('SEQUENCE /reset-password: recovery flip must NOT arm the handoff', () => {
+    // The recovery exchange signs in with a session while the form must stay
+    // visible; /reset-password is excluded from the auth surface.
+    const onSurface = isAuthSurfacePathnameForTest('/reset-password');
+    assert.equal(onSurface, false);
+    const state = reduceHandoff(INITIAL_LATCH, step({ onAuthSurface: onSurface, prevSessionWasNull: true }));
+    assert.equal(latchedOf(state), false);
+  });
+
+  await test('FORK (sequence): identical inputs, only the flip field differs → arm vs stay', () => {
+    // The two cases that MUST differ, driven through the reducer end-to-end.
+    const flipped = reduceHandoff(INITIAL_LATCH, step({ prevSessionWasNull: true }));
+    const navigated = reduceHandoff(INITIAL_LATCH, step({ prevSessionWasNull: false }));
+    assert.deepEqual(
+      { flipped: latchedOf(flipped), navigated: latchedOf(navigated) },
+      { flipped: true, navigated: false },
+      'the transition alone must fork the latch',
+    );
   });
 
   console.log('');
