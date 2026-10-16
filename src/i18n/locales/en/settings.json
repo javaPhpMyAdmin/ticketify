@@ -73,6 +73,7 @@
   "budgetCardKicker": "MONTHLY BUDGET",
   "budgetLimitLabel": "Limit:",
   "budgetPercentUsed": "{{percent}}% used",
+  "budgetCurrencyMismatch": "No spending in {{currency}} this month",
   "snacksCalloutKicker": "MICRO-SPENDING",
   "snacksCalloutLabel": "Wants/Impulse",
   "snacksThisMonth": "this month",

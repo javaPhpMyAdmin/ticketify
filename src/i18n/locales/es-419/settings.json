@@ -75,6 +75,7 @@
   "budgetCardKicker": "PRESUPUESTO MENSUAL",
   "budgetLimitLabel": "Límite:",
   "budgetPercentUsed": "{{percent}}% usado",
+  "budgetCurrencyMismatch": "Sin gastos en {{currency}} este mes",
   "snacksCalloutKicker": "MICROGASTOS",
   "snacksCalloutLabel": "Antojos/Impulsos",
   "snacksThisMonth": "este mes",
