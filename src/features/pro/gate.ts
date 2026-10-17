@@ -51,12 +51,15 @@ export function resolveGateState(
  * Safety: the env var name carries the `EXPO_PUBLIC_` prefix so Expo
  * inlines it into the bundle at build time — there is no runtime
  * configuration attack surface (it cannot be flipped on at runtime by an
- * attacker without rebuilding the binary). Still, before any production
- * release the override MUST be left as `false` (or unset), otherwise the
- * gate opens for every user, paid or not.
+ * attacker without rebuilding the binary). The read is additionally
+ * gated on React Native's `__DEV__` global, so production (Release)
+ * bundles ignore the flag entirely even if it leaks into a release
+ * build environment (e.g. a local Gradle release or
+ * `eas build --local`). `Boolean(__DEV__)` (not a bare `__DEV__ &&`)
+ * keeps the return value a strict boolean on every runtime.
  */
 export function isProOverrideEnabled(): boolean {
-  return process.env.EXPO_PUBLIC_PRO_OVERRIDE === 'true';
+  return Boolean(__DEV__) && process.env.EXPO_PUBLIC_PRO_OVERRIDE === 'true';
 }
 
 /**
@@ -73,9 +76,15 @@ export function isProOverrideEnabled(): boolean {
  *
  * Same production-safety contract as `isProOverrideEnabled`: the env var
  * carries the `EXPO_PUBLIC_` prefix so Expo inlines it into the bundle at
- * build time — there is no runtime configuration attack surface. Leave it
- * unset (or `false`) in every production release.
+ * build time — there is no runtime configuration attack surface. The read
+ * is additionally gated on React Native's `__DEV__` global, so production
+ * (Release) bundles ignore the flag entirely even if it leaks into a
+ * release build environment (e.g. a local Gradle release or
+ * `eas build --local`). `Boolean(__DEV__)` (not a bare `__DEV__ &&`)
+ * keeps the return value a strict boolean on every runtime.
  */
 export function isProExpiredOverrideEnabled(): boolean {
-  return process.env.EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE === 'true';
+  return (
+    Boolean(__DEV__) && process.env.EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE === 'true'
+  );
 }

@@ -523,10 +523,20 @@ console.log('\n[tests] root layout gate (onboarding preview override)\n');
 
 const layout = readComponent('src/app/_layout.tsx');
 
-test('root layout reads EXPO_PUBLIC_ONBOARDING_PREVIEW env', () => {
+test('root layout reads EXPO_PUBLIC_ONBOARDING_PREVIEW env behind a __DEV__ guard', () => {
   assert.ok(
     /process\.env\.EXPO_PUBLIC_ONBOARDING_PREVIEW\s*===\s*['"]true['"]/.test(layout),
     'root layout must derive onboardingPreview from process.env.EXPO_PUBLIC_ONBOARDING_PREVIEW === "true"',
+  );
+  // Hardening: the env read alone is not enough — a production build fed
+  // by an environment that leaks the flag would route every user into the
+  // wizard. The derivation must short-circuit on React Native's `__DEV__`
+  // (`Boolean(__DEV__) && …`) so release bundles ignore the flag even if
+  // it is set. `Boolean(__DEV__)` (not a bare `__DEV__ &&`) also keeps
+  // the result a strict boolean for the boolean-typed derivation.
+  assert.ok(
+    /Boolean\(__DEV__\)\s*&&\s*process\.env\.EXPO_PUBLIC_ONBOARDING_PREVIEW\s*===\s*['"]true['"]/.test(layout),
+    'root layout must gate the onboarding preview env read on Boolean(__DEV__) so production bundles ignore the flag',
   );
 });
 

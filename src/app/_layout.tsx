@@ -110,7 +110,12 @@ export default function RootLayout() {
   // Dev-only preview (EXPO_PUBLIC_ONBOARDING_PREVIEW=true): always route
   // to the wizard on boot regardless of session or the completed flag, so
   // design iteration doesn't require signing out or clearing storage.
-  const onboardingPreview = process.env.EXPO_PUBLIC_ONBOARDING_PREVIEW === 'true';
+  // The read is gated on React Native's `__DEV__` global so production
+  // (Release) bundles ignore the flag entirely even if it leaks into a
+  // release build environment (e.g. `eas build --local`). `Boolean(__DEV__)`
+  // (not a bare `__DEV__ &&`) keeps the derivation a strict boolean.
+  const onboardingPreview =
+    Boolean(__DEV__) && process.env.EXPO_PUBLIC_ONBOARDING_PREVIEW === 'true';
 
   const onboardingChecked = useRef(false);
   useEffect(() => {

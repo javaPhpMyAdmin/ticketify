@@ -21,6 +21,12 @@
  * via a parametric loop so the contract is pinned in code, not just in
  * design prose.
  *
+ * The dev-override escape hatches (`isProOverrideEnabled`,
+ * `isProExpiredOverrideEnabled`) are additionally pinned against the
+ * `__DEV__` guard: the env-driven behavior only applies when React
+ * Native's `__DEV__` global is true; production (Release-like) runs
+ * ignore the flags entirely.
+ *
  * Usage: pnpm test:pro-gating
  */
 import assert from 'node:assert/strict';
@@ -85,6 +91,11 @@ function installRequireHook() {
 async function run() {
   console.log('\n[tests] compiling gate module…');
   await compile();
+  // The app reads React Native's `__DEV__` global for dev-only behavior
+  // (the Pro override escape hatches are gated on it); plain node has
+  // none. Declared for tsc via test-stubs/globals.d.ts; defined here so
+  // the compiled modules behave like a Release build.
+  globalThis.__DEV__ = false;
   console.log('[tests] loading compiled module…');
   installRequireHook();
   const { resolveGateState, isProOverrideEnabled, isProExpiredOverrideEnabled } =
@@ -104,41 +115,92 @@ async function run() {
     }
   }
 
+  // The override reads are gated on `__DEV__` (`Boolean(__DEV__) && …`),
+  // so any assertion that expects the env var to flip the gate must run
+  // in a simulated DEV runtime — the harness default above is Release.
+  // Scoped set/restore keeps both sides of the matrix honest.
+  // SYNC-ONLY contract: `finally` restores `__DEV__` when `fn()` returns,
+  // so an async callback would keep running after the restore under the
+  // harness default. Pass a synchronous function only.
+  function withDev(devFlag, fn) {
+    const previous = globalThis.__DEV__;
+    globalThis.__DEV__ = devFlag;
+    try {
+      return fn();
+    } finally {
+      globalThis.__DEV__ = previous;
+    }
+  }
+
   await test('unset → false (safe default for production builds)', () => {
     setOverride(undefined);
     assert.equal(isProOverrideEnabled(), false);
   });
 
   await test('"true" → true (developer flips the gate on for a local build)', () => {
+    withDev(true, () => {
+      setOverride('true');
+      assert.equal(isProOverrideEnabled(), true);
+    });
+  });
+
+  await test('__DEV__=false → "true" env is ignored (production bundle hardening)', () => {
+    // The env read is gated on React Native's `__DEV__` global: even if
+    // the flag leaks into a release build environment (e.g. a local
+    // Gradle release), production bundles must keep the gate locked.
     setOverride('true');
-    assert.equal(isProOverrideEnabled(), true);
+    assert.equal(withDev(false, () => isProOverrideEnabled()), false);
+  });
+
+  await test('__DEV__=undefined → return value is a real boolean false (not undefined)', () => {
+    // The ONLY cell where the two forms diverge: a bare
+    // `return __DEV__ && process.env.X === "true"` yields `undefined`
+    // when `__DEV__` is explicitly undefined, while the
+    // `Boolean(__DEV__)` coercion pins a strict boolean contract.
+    // (Under `__DEV__ = false` both forms return `false`, so that cell
+    // cannot distinguish them.)
+    setOverride('true');
+    assert.strictEqual(withDev(undefined, () => isProOverrideEnabled()), false);
+  });
+
+  await test('__DEV__=true, env unset → false (unset cell under DEV)', () => {
+    withDev(true, () => {
+      setOverride(undefined);
+      assert.equal(isProOverrideEnabled(), false);
+    });
   });
 
   await test('"false" → false (explicit off, e.g. after a test that toggled it on)', () => {
-    setOverride('false');
-    assert.equal(isProOverrideEnabled(), false);
+    withDev(true, () => {
+      setOverride('false');
+      assert.equal(isProOverrideEnabled(), false);
+    });
   });
 
   await test('any non-"true" string → false (defensive: "TRUE" / "1" / "yes" do not flip the gate)', () => {
     // The contract is strict — only the literal string "true" turns the
     // gate on. A developer who types "TRUE" or "1" by accident gets the
     // safe default, and the gate stays locked.
-    for (const value of ['TRUE', 'True', '1', 'yes', 'on', ' true', 'true ']) {
-      setOverride(value);
-      assert.equal(
-        isProOverrideEnabled(),
-        false,
-        `value=${JSON.stringify(value)} must NOT enable the override`,
-      );
-    }
+    withDev(true, () => {
+      for (const value of ['TRUE', 'True', '1', 'yes', 'on', ' true', 'true ']) {
+        setOverride(value);
+        assert.equal(
+          isProOverrideEnabled(),
+          false,
+          `value=${JSON.stringify(value)} must NOT enable the override`,
+        );
+      }
+    });
     setOverride(originalOverride);
   });
 
   await test('re-call with the same env returns the same result (pure projection of process.env)', () => {
-    setOverride('true');
-    const a = isProOverrideEnabled();
-    const b = isProOverrideEnabled();
-    assert.equal(a, b, 'divergent result for the same env value');
+    withDev(true, () => {
+      setOverride('true');
+      const a = isProOverrideEnabled();
+      const b = isProOverrideEnabled();
+      assert.equal(a, b, 'divergent result for the same env value');
+    });
     setOverride(originalOverride);
   });
 
@@ -164,26 +226,55 @@ async function run() {
   });
 
   await test('"true" → true (developer simulates an expired entitlement for downgrade QA)', () => {
+    withDev(true, () => {
+      setExpired('true');
+      assert.equal(isProExpiredOverrideEnabled(), true);
+    });
+  });
+
+  await test('__DEV__=false → "true" env is ignored (production bundle hardening)', () => {
+    // Same `__DEV__` gate as `isProOverrideEnabled`: the downgrade-QA
+    // escape hatch must never fire in a production bundle, even if the
+    // flag leaks into a release build environment.
     setExpired('true');
-    assert.equal(isProExpiredOverrideEnabled(), true);
+    assert.equal(withDev(false, () => isProExpiredOverrideEnabled()), false);
+  });
+
+  await test('__DEV__=undefined → return value is a real boolean false (not undefined)', () => {
+    // Same divergence cell as above: only an explicitly-undefined
+    // `__DEV__` distinguishes bare `__DEV__ && …` (yields `undefined`)
+    // from the `Boolean(__DEV__) && …` coercion (yields `false`).
+    setExpired('true');
+    assert.strictEqual(withDev(undefined, () => isProExpiredOverrideEnabled()), false);
+  });
+
+  await test('__DEV__=true, env unset → false (unset cell under DEV)', () => {
+    withDev(true, () => {
+      setExpired(undefined);
+      assert.equal(isProExpiredOverrideEnabled(), false);
+    });
   });
 
   await test('"false" → false (explicit off, e.g. after a test that toggled it on)', () => {
-    setExpired('false');
-    assert.equal(isProExpiredOverrideEnabled(), false);
+    withDev(true, () => {
+      setExpired('false');
+      assert.equal(isProExpiredOverrideEnabled(), false);
+    });
   });
 
   await test('any non-"true" string → false (defensive: "TRUE" / "1" / "yes" do not flip the override)', () => {
     // Same strict-literal contract as `isProOverrideEnabled` — only the
     // literal string "true" turns the override on.
-    for (const value of ['TRUE', 'True', '1', 'yes', 'on', ' true', 'true ']) {
-      setExpired(value);
-      assert.equal(
-        isProExpiredOverrideEnabled(),
-        false,
-        `value=${JSON.stringify(value)} must NOT enable the expired override`,
-      );
-    }
+    withDev(true, () => {
+      for (const value of ['TRUE', 'True', '1', 'yes', 'on', ' true', 'true ']) {
+        setExpired(value);
+        assert.equal(
+          isProExpiredOverrideEnabled(),
+          false,
+          `value=${JSON.stringify(value)} must NOT enable the expired override`,
+        );
+      }
+    });
     setExpired(originalExpired);
   });
 
@@ -192,17 +283,19 @@ async function run() {
     // implicitly flip the other. The contradiction when BOTH are on is
     // resolved at the WIRING level (the EXPIRED override wins — the
     // conservative/locked default), pinned by test-pro-bootstrap.mjs.
-    setOverride('true');
-    setExpired('true');
-    assert.equal(isProOverrideEnabled(), true);
-    assert.equal(isProExpiredOverrideEnabled(), true);
-    setExpired('false');
-    assert.equal(
-      isProOverrideEnabled(),
-      true,
-      'the true override stays on when the expired one is toggled off',
-    );
-    assert.equal(isProExpiredOverrideEnabled(), false);
+    withDev(true, () => {
+      setOverride('true');
+      setExpired('true');
+      assert.equal(isProOverrideEnabled(), true);
+      assert.equal(isProExpiredOverrideEnabled(), true);
+      setExpired('false');
+      assert.equal(
+        isProOverrideEnabled(),
+        true,
+        'the true override stays on when the expired one is toggled off',
+      );
+      assert.equal(isProExpiredOverrideEnabled(), false);
+    });
     setOverride(originalOverride);
     setExpired(originalExpired);
   });
