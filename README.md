@@ -116,9 +116,9 @@ The Supabase client deliberately does **not** throw on import when these are mis
 | Variable | Effect |
 |---|---|
 | `EXPO_PUBLIC_REVENUECAT_API_KEY` | Blank in development leaves the Pro gate locked |
-| `EXPO_PUBLIC_PRO_OVERRIDE` | Forces `isPro` without touching RevenueCat |
-| `EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE` | Simulates an expired entitlement. Not present in `.env.example`. |
-| `EXPO_PUBLIC_ONBOARDING_PREVIEW` | Forces the onboarding wizard on every launch |
+| `EXPO_PUBLIC_PRO_OVERRIDE` | Dev-only: forces `isPro` without touching RevenueCat. Ignored in production bundles (gated on `__DEV__`). |
+| `EXPO_PUBLIC_PRO_EXPIRED_OVERRIDE` | Dev-only: simulates an expired entitlement. Ignored in production bundles (gated on `__DEV__`). Not present in `.env.example`. |
+| `EXPO_PUBLIC_ONBOARDING_PREVIEW` | Dev-only: forces the onboarding wizard on every launch. Ignored in production bundles (gated on `__DEV__`). |
 
 ### Edge-function secrets
 
