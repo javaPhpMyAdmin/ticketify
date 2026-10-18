@@ -12,6 +12,7 @@ import { DialogHost, Spinner, ToastHost, View } from '@/components';
 import { BootSplash, BootSplashErrorBoundary } from '@/components/molecules/BootSplash';
 import { useSessionStore } from '@/features/auth';
 import { getOnboardingCompleted } from '@/features/onboarding/onboarding-storage';
+import { resolveOnboardingPreview } from '@/features/onboarding/onboarding-preview';
 import { ConsentGate } from '@/features/legal/components/ConsentGate';
 import { ProBootstrap } from '@/features/pro';
 import { ProfileHydration } from '@/features/profile';
@@ -110,12 +111,13 @@ export default function RootLayout() {
   // Dev-only preview (EXPO_PUBLIC_ONBOARDING_PREVIEW=true): always route
   // to the wizard on boot regardless of session or the completed flag, so
   // design iteration doesn't require signing out or clearing storage.
-  // The read is gated on React Native's `__DEV__` global so production
-  // (Release) bundles ignore the flag entirely even if it leaks into a
-  // release build environment (e.g. `eas build --local`). `Boolean(__DEV__)`
-  // (not a bare `__DEV__ &&`) keeps the derivation a strict boolean.
-  const onboardingPreview =
-    Boolean(__DEV__) && process.env.EXPO_PUBLIC_ONBOARDING_PREVIEW === 'true';
+  // The derivation lives in `resolveOnboardingPreview`
+  // (src/features/onboarding/onboarding-preview.ts): it gates the env
+  // read on React Native's `__DEV__` global so production (Release)
+  // bundles ignore the flag entirely even if it leaks into a release
+  // build environment, and coerces to a strict boolean on every
+  // runtime. Dev/prod matrix: scripts/test-onboarding-preview.mjs.
+  const onboardingPreview = resolveOnboardingPreview();
 
   const onboardingChecked = useRef(false);
   useEffect(() => {
