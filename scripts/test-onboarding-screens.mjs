@@ -516,27 +516,41 @@ test('OnboardingShell renders the setup pill (onboardingSetupBadge key)', () => 
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// Root layout gate (source-pin) — onboarding preview override
+// Root layout gate (source-pin) — onboarding preview override wiring.
+// The BEHAVIOR matrix lives in test-onboarding-preview.mjs (compiled
+// helper); this section pins that the layout actually USES the helper
+// (issue #220 — extraction from the hook-heavy root layout).
 // ─────────────────────────────────────────────────────────────────────
 
 console.log('\n[tests] root layout gate (onboarding preview override)\n');
 
 const layout = readComponent('src/app/_layout.tsx');
 
-test('root layout reads EXPO_PUBLIC_ONBOARDING_PREVIEW env behind a __DEV__ guard', () => {
+test('root layout imports resolveOnboardingPreview from the pure helper module', () => {
   assert.ok(
-    /process\.env\.EXPO_PUBLIC_ONBOARDING_PREVIEW\s*===\s*['"]true['"]/.test(layout),
-    'root layout must derive onboardingPreview from process.env.EXPO_PUBLIC_ONBOARDING_PREVIEW === "true"',
+    /import\s*\{[^}]*\bresolveOnboardingPreview\b[^}]*\}\s*from\s*['"]@\/features\/onboarding\/onboarding-preview['"]/.test(layout),
+    'root layout must import resolveOnboardingPreview from "@/features/onboarding/onboarding-preview"',
   );
-  // Hardening: the env read alone is not enough — a production build fed
-  // by an environment that leaks the flag would route every user into the
-  // wizard. The derivation must short-circuit on React Native's `__DEV__`
-  // (`Boolean(__DEV__) && …`) so release bundles ignore the flag even if
-  // it is set. `Boolean(__DEV__)` (not a bare `__DEV__ &&`) also keeps
-  // the result a strict boolean for the boolean-typed derivation.
+});
+
+test('root layout derives onboardingPreview by CALLING the helper (no inline derivation)', () => {
   assert.ok(
-    /Boolean\(__DEV__\)\s*&&\s*process\.env\.EXPO_PUBLIC_ONBOARDING_PREVIEW\s*===\s*['"]true['"]/.test(layout),
-    'root layout must gate the onboarding preview env read on Boolean(__DEV__) so production bundles ignore the flag',
+    /const\s+onboardingPreview\s*=\s*resolveOnboardingPreview\(\)\s*;/.test(layout),
+    'root layout must derive onboardingPreview via `const onboardingPreview = resolveOnboardingPreview();`',
+  );
+  // Removing or bypassing the helper call must fail this pin: a raw env
+  // read (with or without a `Boolean(__DEV__)` guard) in the layout
+  // reintroduces the untested inline derivation this harness used to
+  // source-pin. The helper's safety contract (dev-gated, strict boolean)
+  // is executed in test-onboarding-preview.mjs — the layout must not
+  // carry a second copy of it.
+  assert.ok(
+    !/process\.env\.EXPO_PUBLIC_ONBOARDING_PREVIEW/.test(layout),
+    'root layout must NOT read process.env.EXPO_PUBLIC_ONBOARDING_PREVIEW inline — the derivation belongs in resolveOnboardingPreview()',
+  );
+  assert.ok(
+    !/Boolean\(__DEV__\)/.test(layout),
+    'root layout must NOT inline the Boolean(__DEV__) guard — it lives inside resolveOnboardingPreview()',
   );
 });
 
