@@ -4,6 +4,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 
+import { BrandWordmark } from '@/components/atoms/BrandWordmark';
 import { SplashBrandMark } from '@/components/atoms/SplashBrandMark';
 import { colors, radii, spacing, typography } from '@/theme';
 
@@ -261,7 +262,9 @@ export function BootSplash({
         </Animated.View>
 
         <View style={styles.headlineRow}>
-          <Text style={styles.headline}>Ticketify</Text>
+          {/* <BrandWordmark> owns the Android trailing-glyph clip slack —
+              see src/components/atoms/BrandWordmark/BrandWordmark.tsx. */}
+          <BrandWordmark style={styles.headline} />
           <Animated.View
             style={[styles.pulseDot, { opacity: anim.pulseDot }]}
             accessibilityElementsHidden

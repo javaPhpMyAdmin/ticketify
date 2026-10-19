@@ -53,6 +53,22 @@ export const StyleSheet = {
   create: <T extends Record<string, unknown>>(styles: T): T => styles,
 };
 
+// --- Brand-wordmark harness surface (render) ---------------------------
+// `BrandWordmark` renders a single `<Text>` with the Android clip slack.
+// The stub emits it as a passthrough host element (children preserved) so
+// react-test-renderer can walk the tree and assert the flattened strings.
+export function Text(props: {
+  children?: React.ReactNode;
+  style?: unknown;
+  accessibilityLabel?: string;
+}): React.ReactElement {
+  return React.createElement(
+    'Text',
+    { accessibilityLabel: props.accessibilityLabel, style: props.style },
+    props.children,
+  );
+}
+
 export function Pressable(props: {
   children?: React.ReactNode;
   onPress?: () => void;

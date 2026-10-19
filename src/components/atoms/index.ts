@@ -31,6 +31,9 @@ export type { LogoProps } from './Logo';
 export { SplashBrandMark } from './SplashBrandMark';
 export type { SplashBrandMarkProps } from './SplashBrandMark';
 
+export { BrandWordmark } from './BrandWordmark';
+export type { BrandWordmarkProps } from './BrandWordmark';
+
 export { GoogleG } from './GoogleG';
 export type { GoogleGProps } from './GoogleG';
 

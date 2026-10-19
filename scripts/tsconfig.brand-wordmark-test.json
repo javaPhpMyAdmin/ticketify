@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020", "dom"],
+    "jsx": "react-jsx",
+    "strict": false,
+    "noImplicitAny": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "..",
+    "paths": {
+      "react-native": ["./scripts/test-stubs/react-native.ts"],
+      "@/*": ["./src/*"]
+    },
+    "rootDir": ".."
+  },
+  "include": [
+    "../src/components/atoms/BrandWordmark/BrandWordmark.tsx",
+    "../scripts/test-stubs/react-native.ts",
+    "../scripts/test-stubs/globals.d.ts"
+  ]
+}
