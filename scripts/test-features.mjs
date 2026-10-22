@@ -2554,7 +2554,7 @@ async function run() {
 
     await test('ReceiptCategoryItemsModal renders ONLY its currency prop (never the profile itself)', () => {
     const src = readFileSync(
-      join(root, 'src/app/receipts/ReceiptCategoryItemsModal.tsx'),
+      join(root, 'src/features/receipts/components/ReceiptCategoryItemsModal.tsx'),
       'utf8',
     );
     const hits = src.match(/formatCurrency\([^,]+, currency\)/g) ?? [];
