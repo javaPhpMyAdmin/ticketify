@@ -1,7 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
 
+import { BrandWordmark } from '@/components/atoms/BrandWordmark';
 import { colors } from '@/theme';
 
 export interface BootSplashErrorBoundaryProps {
@@ -35,15 +36,15 @@ interface State {
  * BootSplash re-throws and React unmounts it — the user is left
  * staring at the native splash close with nothing painted behind
  * it. This boundary catches that throw, paints a single bare
- * `<Text>` fallback ("Ticketify"), then calls `onFinish` so the
+ * `<BrandWordmark>` fallback ("Ticketify"), then calls `onFinish` so the
  * parent's `bootSplashVisible` flips false and the underlying layout
  * mounts. The app proceeds.
  *
  * The fallback has NO SVG, NO worklet runtime, NO `Animated` — it
  * is the absolute simplest surface that can paint, which is
  * exactly the point: even if every other component on the boot
- * path is broken, a `<Text>` with the brand word still gets the
- * user off the native splash.
+ * path is broken, a `<BrandWordmark>` (one `Text` with the brand
+ * word) still gets the user off the native splash.
  *
  * Kept as a class component because functional ErrorBoundaries are
  * not supported by React (the `componentDidCatch` lifecycle has no
@@ -94,8 +95,10 @@ export class BootSplashErrorBoundary extends Component<
     if (this.state.hasError) {
       // The fallback exists for exactly one render cycle — the parent
       // reads `onFinish` synchronously and unmounts the boundary
-      // before the next paint. The Text ensures we never serve a
-      // white frame in that window.
+      // before the next paint. BrandWordmark ensures we never serve a
+      // white frame in that window AND that the brand text carries the
+      // same Android clip slack as the real overlay (this surface can
+      // render on the same cold start).
       return (
         <View
           style={styles.fallback}
@@ -103,7 +106,7 @@ export class BootSplashErrorBoundary extends Component<
           accessibilityLabel="Cargando"
           pointerEvents="none"
         >
-          <Text style={styles.fallbackText}>Ticketify</Text>
+          <BrandWordmark style={styles.fallbackText} />
         </View>
       );
     }

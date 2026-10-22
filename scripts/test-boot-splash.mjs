@@ -58,6 +58,14 @@ const root = join(__dirname, '..');
 function readComponent(filePath) {
   return readFileSync(join(root, filePath), 'utf8');
 }
+
+// Strip block comments before pinning JSX shapes, so a pin cannot
+// false-positive on a comment that merely MENTIONS the pattern (e.g. a
+// `{/* old: <Text>Ticketify</Text> */}` note). Line comments are left as-is:
+// JSX has no `//` comment form, so the raw shape only appears in real code.
+function stripComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '');
+}
 const tscBin = require.resolve('typescript/bin/tsc');
 const harnessConfig = join(__dirname, 'tsconfig.boot-splash-test.json');
 
@@ -320,6 +328,9 @@ async function run() {
   const bootSplash = readComponent(
     'src/components/molecules/BootSplash/BootSplash.tsx',
   );
+  const bootSplashBoundary = readComponent(
+    'src/components/molecules/BootSplash/BootSplashErrorBoundary.tsx',
+  );
 
   // The dep-bug class: when `statusIndex` is in the cycle `useEffect`'s
   // deps array, every `setStatusIndex(...)` call re-creates the interval
@@ -443,20 +454,59 @@ async function run() {
     );
   });
 
-  await test('BootSplash headline: no bare letterSpacing: -0.01 (must use em-aware -0.01 * 16)', () => {
+  await test('BootSplash headline: no bare letterSpacing: -0.01 (must use the -0.01 * 16 px convention)', () => {
     // Negative: the bare literal ANYWHERE on the line (NO end anchor) — the
     // old `$`-anchored patterns missed trailing-content forms such as
     // `letterSpacing: -0.01, color: colors.textPrimary`. The lookahead
-    // `(?!\s*\*)` excludes the correct em-aware form because `-0.01 * 16`
+    // `(?!\s*\*)` excludes the correct computed form because `-0.01 * 16`
     // has ` * ` right after `0.01`.
     assert.ok(
       !/letterSpacing\s*:\s*-0\.01(?!\s*\*)/m.test(bootSplash),
       'styles.headline must NOT contain bare letterSpacing: -0.01 (anywhere on the line)',
     );
-    // Positive: the em-aware form must be present.
+    // Positive: the computed form must be present. NOTE: this is a codebase
+    // CONVENTION guard (bare literal vs computed-from-16 spacing), NOT the fix
+    // for the clipped "y". It is a px value, not an em — `-0.01 * 16 = -0.16px`,
+    // whereas `-0.01em` at fontSize 24 would resolve to `-0.24px`. The real fix
+    // lives in the shared BrandWordmark atom and is asserted by RENDERING it in
+    // `pnpm test:brand-wordmark`; the wiring pins below keep both surfaces on
+    // that atom.
     assert.ok(
       /letterSpacing\s*:\s*-0\.01\s*\*\s*16/m.test(bootSplash),
       'styles.headline must contain letterSpacing: -0.01 * 16',
+    );
+  });
+
+  await test('BootSplash headline: renders the shared BrandWordmark atom', () => {
+    // The atom is the load-bearing invariant and its RENDERED output is
+    // asserted in scripts/test-brand-wordmark.mjs — why the trailing-space
+    // token is not re-grepped from source is explained there. This pin guards
+    // the WIRING only: a refactor back to a raw brand <Text> (which would
+    // silently bypass the slack, as in #202) fails here.
+    assert.ok(
+      /<BrandWordmark\b[^>]*style=\{styles\.headline\}/.test(stripComments(bootSplash)),
+      'the headline must render <BrandWordmark style={styles.headline} /> (shared atom owns the slack)',
+    );
+    assert.ok(
+      !/>\s*Ticketify\s*[<{]/.test(stripComments(bootSplash)),
+      'BootSplash must NOT render a raw "Ticketify" text node inline (bypasses the shared clip slack)',
+    );
+  });
+
+  await test('BootSplashErrorBoundary fallback: renders the shared BrandWordmark atom', () => {
+    // Same brand text on the same cold-start path (the boundary can paint on
+    // the frame a crashing overlay is torn down), so it carries the same
+    // Android clip risk and must go through the atom too — otherwise the slack
+    // is present in one surface and silently absent in the other.
+    assert.ok(
+      /<BrandWordmark\b[^>]*style=\{styles\.fallbackText\}/.test(
+        stripComments(bootSplashBoundary),
+      ),
+      'the error-boundary fallback must render <BrandWordmark style={styles.fallbackText} />',
+    );
+    assert.ok(
+      !/>\s*Ticketify\s*[<{]/.test(stripComments(bootSplashBoundary)),
+      'the error-boundary fallback must NOT render a raw "Ticketify" text node inline',
     );
   });
 
