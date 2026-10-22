@@ -32,6 +32,7 @@ import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatal
 import { readPurchaseListByMonth } from '@/features/home/api';
 import { resolveCategoryDisplay } from '@/features/home/categories';
 import { getMonthKey, previousMonthKey } from '@/features/home/hooks/useHomeFeed';
+import { ReceiptCategoryItemsModal } from '@/features/receipts';
 import type { PurchaseWithItems } from '@/features/tickets';
 import {
   deleteReceipt,
@@ -50,7 +51,6 @@ import { useDialogStore } from '@/stores/use-dialog-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
-import { ReceiptCategoryItemsModal } from './ReceiptCategoryItemsModal';
 
 /**
  * View-only receipt detail: the ticket photo the user took, plus the

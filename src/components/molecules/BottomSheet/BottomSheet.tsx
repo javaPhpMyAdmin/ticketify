@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Divider, Icon, Text } from '@/components';
+import { Divider, Icon, Text } from '@/components/atoms';
 import { colors, radii, spacing, typography } from '@/theme';
 
 export type BottomSheetCloseIcon = 'xmark' | 'text';

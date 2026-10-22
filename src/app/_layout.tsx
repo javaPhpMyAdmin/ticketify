@@ -399,18 +399,25 @@ export default function RootLayout() {
         {/* Blocking legal-consent gate (legal-compliance U5, AD-6): covers
             the app while a session exists without current-version acceptance
             rows, hides on /legal/*, and offers the documents + sign-out —
-            no dead-ends. userId null (no session) → gate stays hidden. */}
-        <ConsentGate
-          userId={session?.user?.id ?? null}
-          onSignOut={() => {
-            // The gate's escape hatch; sign-out failures surface where the
-            // profile screen handles them — never block the overlay on it.
-            void signOut().catch((err) => {
-              // eslint-disable-next-line no-console -- sign-out diagnostic
-              console.warn('[consent-gate] sign-out failed', err);
-            });
-          }}
-        />
+            no dead-ends. userId null (no session) → gate stays hidden.
+            Gated on `booted` (i18n initialized) because this overlay sits
+            OUTSIDE `I18nProvider`: rendering it earlier calls
+            `useTranslation` with no instance yet (react-i18next
+            `NO_I18NEXT_INSTANCE`) and paints raw consent copy. The native
+            splash covers the few ms until i18next resolves. */}
+        {booted ? (
+          <ConsentGate
+            userId={session?.user?.id ?? null}
+            onSignOut={() => {
+              // The gate's escape hatch; sign-out failures surface where the
+              // profile screen handles them — never block the overlay on it.
+              void signOut().catch((err) => {
+                // eslint-disable-next-line no-console -- sign-out diagnostic
+                console.warn('[consent-gate] sign-out failed', err);
+              });
+            }}
+          />
+        ) : null}
         {/* Sign-in handoff overlay (see `showAuthOverlay` above and
             `shouldShowAuthOverlay`): covers the post-OAuth window while the
             PKCE exchange resolves AND the frame after the session lands but
