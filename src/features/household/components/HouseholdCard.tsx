@@ -183,73 +183,68 @@ export function HouseholdCard({
           pointerEvents="none"
           style={[StyleSheet.absoluteFillObject, styles.tint]}
         />
-        <View style={styles.info}>
-          {memberCount > 1 ? (
-            <View
-              style={{
-                flexDirection: 'row',
-                gap: spacing.md,
-                backgroundColor: 'transparent',
-                alignItems: 'flex-end',
-                alignSelf: 'flex-start',
-                justifyContent: 'center',
-              }}
-            >
-              <HouseholdAvatarStack
-                members={members}
-                currentUserId={userId ?? undefined}
-              />
-              {memberLabel ? (
-                <Text style={styles.members}>{memberLabel}</Text>
-              ) : null}
-            </View>
-          ) : (
-            <View style={styles.iconCircle}>
-              <Icon name="house.fill" size={22} color={colors.primaryDark} />
-            </View>
-          )}
-          <Text style={styles.label}>{t('household:householdSpendingLabel')}</Text>
-          <Text style={styles.name} numberOfLines={1}>
-            {household.name}
-          </Text>
-        </View>
-        <View style={styles.amountContainer}>
-          {isLoading ? (
-            <Text style={styles.amount}>…</Text>
-          ) : (
-            householdTotals.map((group) => (
-              <Text key={group.currency ?? 'viewer'} style={styles.amount}>
-                {formatCurrency(group.total, group.currency ?? currency)}
-              </Text>
-            ))
-          )}
-        </View>
         {changePct != null ? (
-          <View
-            style={[
-              styles.badge,
-              { backgroundColor: up ? '#fbe3e3' : colors.primaryContainer },
-            ]}
-          >
-            <Icon
-              name={up ? 'arrow.up.right' : 'arrow.down.right'}
-              size={14}
-              color={up ? 'red' : colors.primaryDark}
-            />
-            <Text
+          <View style={styles.badgeRow}>
+            <View
               style={[
-                styles.badgeText,
-                { color: up ? 'red' : colors.primaryDark },
+                styles.badge,
+                { backgroundColor: up ? '#fbe3e3' : colors.primaryContainer },
               ]}
             >
-              {deltaPrefix}
-              {changePct}%{' '}
-              {t('analytics:runRateBadge', {
-                source: t('analytics:runRateSourceMom'),
-              })}
-            </Text>
+              <Icon
+                name={up ? 'arrow.up.right' : 'arrow.down.right'}
+                size={14}
+                color={up ? 'red' : colors.primaryDark}
+              />
+              <Text
+                style={[
+                  styles.badgeText,
+                  { color: up ? 'red' : colors.primaryDark },
+                ]}
+              >
+                {deltaPrefix}
+                {changePct}%{' '}
+                {t('analytics:runRateBadge', {
+                  source: t('analytics:runRateSourceMom'),
+                })}
+              </Text>
+            </View>
           </View>
         ) : null}
+        {memberCount > 1 ? (
+          <View style={styles.membersRow}>
+            <HouseholdAvatarStack
+              members={members}
+              currentUserId={userId ?? undefined}
+            />
+            {memberLabel ? (
+              <Text style={styles.members}>{memberLabel}</Text>
+            ) : null}
+          </View>
+        ) : (
+          <View style={styles.iconCircle}>
+            <Icon name="house.fill" size={22} color={colors.primaryDark} />
+          </View>
+        )}
+        <View style={styles.bottomRow}>
+          <View style={styles.info}>
+            <Text style={styles.label}>{t('household:householdSpendingLabel')}</Text>
+            <Text style={styles.name} numberOfLines={1}>
+              {household.name}
+            </Text>
+          </View>
+          <View style={styles.amountContainer}>
+            {isLoading ? (
+              <Text style={styles.amount}>…</Text>
+            ) : (
+              householdTotals.map((group) => (
+                <Text key={group.currency ?? 'viewer'} style={styles.amount}>
+                  {formatCurrency(group.total, group.currency ?? currency)}
+                </Text>
+              ))
+            )}
+          </View>
+        </View>
       </Card>
     </Pressable>
   );
@@ -258,10 +253,14 @@ export function HouseholdCard({
 const styles = StyleSheet.create({
   // Accent border mirrors the sibling BudgetCard on Home so the household
   // card reads as part of the same brand family, not a flat orphan row.
+  // Column flow (badge → members → label/name + amount) keeps a long trend
+  // badge from overlapping the avatar stack: every block reserves its own
+  // space instead of floating over the card.
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: spacing.sm,
+    paddingVertical: spacing.xl,
     borderLeftWidth: 4,
     borderLeftColor: colors.primary,
   },
@@ -288,6 +287,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
+    backgroundColor: 'transparent',
+  },
+  // Avatars + member-count label share their own row under the trend badge.
+  membersRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+    gap: spacing.md,
+    backgroundColor: 'transparent',
+  },
+  // "Gasto del hogar" label + household name on the left, amount on the
+  // right. The info column keeps `flex: 1` so a long name ellipsizes instead
+  // of pushing the amount off the card.
+  bottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
     backgroundColor: 'transparent',
   },
   avatarWrap: {
@@ -344,32 +361,36 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'flex-start',
     backgroundColor: 'transparent',
-    top: 40,
   },
   amount: {
     fontSize: 23,
     fontWeight: '900',
     color: colors.primary,
   },
-  // Floats in the card's top-right corner (RunRateCard pattern), relative to
-  // the Card's padding box. Anchored just below the top edge so it clears the
-  // downward-shifted amount column (`amountContainer.top`).
+  // First row of the card: a content-sized pill. `flexShrink: 1` + a
+  // shrinkable label let an extreme delta wrap inside the card instead of
+  // overflowing it.
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
   badge: {
-    position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: radii.full,
+    maxWidth: '100%',
+    flexShrink: 1,
   },
   badgeText: {
     fontWeight: '900',
     fontSize: 14,
     fontStyle: 'normal',
     color: 'red',
+    flexShrink: 1,
   },
   members: {
     // ...typography.labelSm,
