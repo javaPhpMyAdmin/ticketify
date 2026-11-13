@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Card, EmptyState, Text, View } from '@/components';
 import { formatCurrency, formatPercentLabel } from '@/lib/format';
+import { categoryRowKey } from '../category-row-key';
 import { colors, spacing } from '@/theme';
 import type { CategoryMonthlyTotal } from '@/types';
 
@@ -39,7 +40,7 @@ export function CategoryBreakdownList({
         <EmptyState title={t('noCategories')} />
       ) : (
         rows.map((row) => (
-          <Card key={row.category_id}>
+          <Card key={categoryRowKey(row.category_id, row.currency)}>
             <View style={styles.row}>
               <View style={{ backgroundColor: colors.surface }}>
                 <Text style={styles.kicker}>{row.category_slug.toUpperCase()}</Text>

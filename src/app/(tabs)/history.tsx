@@ -25,6 +25,7 @@ import {
 } from '@/components';
 import {
   budgetBySlug,
+  categoryRowKey,
   useCategoryBudgets,
   useMonthlyTotals,
 } from '@/features/analytics';
@@ -505,7 +506,7 @@ export default function HistoryScreen() {
                 );
                 return (
                   <CategoryBudgetCard
-                    key={t.category_id}
+                    key={categoryRowKey(t.category_id, t.currency)}
                     categoryKey={t.category_slug}
                     name={t.category_name}
                     amount={t.total}

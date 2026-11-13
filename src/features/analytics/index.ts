@@ -15,6 +15,7 @@ export type { InsightBannerProps } from './components/InsightBanner';
 export { MetricSummaryCard } from './components/MetricSummaryCard';
 export type { MetricSummaryCardProps } from './components/MetricSummaryCard';
 export { CategoryBudgetRow } from './components/CategoryBudgetRow';
+export { categoryRowKey } from './category-row-key';
 export {
   BUDGET_COLOR,
   budgetBySlug,

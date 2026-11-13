@@ -131,6 +131,7 @@ async function run() {
 
   const hookMod = await load('src/features/analytics/hooks/useMonthlyCache.js');
   const { transformCacheToCategoryTotals, useMonthlyCache } = hookMod;
+  const { categoryRowKey } = await load('src/features/analytics/category-row-key.js');
 
   const authStub = await load('scripts/test-stubs/auth.js');
   if (typeof authStub.__setUserId === 'function') {
@@ -288,8 +289,43 @@ async function run() {
     assert.equal(result[0].budget_limit, null);
   });
 
-  await test('percent_of_total computed correctly', () => {
-    const row = makeCacheRow({
+  await test('mixed units: same slug yields distinct categoryRowKey values', () => {
+    // A mixed-currency month stores one cache row per unit, so the same
+    // category slug appears once per currency. The React key must differ or
+    // FlatList/React logs "two children with the same key".
+    const uyu = transformCacheToCategoryTotals(
+      makeCacheRow({
+        total: 1000,
+        currency: 'UYU',
+        category_totals: {
+          snacks: makeCategoryEntry('snacks', 'Snacks', 600, 5),
+        },
+      }),
+    )[0];
+    const cop = transformCacheToCategoryTotals(
+      makeCacheRow({
+        total: 5000,
+        currency: 'COP',
+        category_totals: {
+          snacks: makeCategoryEntry('snacks', 'Snacks', 4000, 3),
+        },
+      }),
+    )[0];
+
+    assert.equal(uyu.category_id, cop.category_id);
+    assert.notEqual(
+      categoryRowKey(uyu.category_id, uyu.currency),
+      categoryRowKey(cop.category_id, cop.currency),
+    );
+    // Legacy unit-less rows fall back to the viewer currency at render time,
+    // so their key must also stay unique against a unit-bearing row.
+    assert.notEqual(
+      categoryRowKey('snacks', undefined),
+      categoryRowKey('snacks', 'UYU'),
+    );
+  });
+
+  await test('percent_of_total computed correctly', () => {    const row = makeCacheRow({
       total: 1000,
       category_totals: {
         food: makeCategoryEntry('food', 'Food', 333, 2),

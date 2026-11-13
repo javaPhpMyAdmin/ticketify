@@ -41,6 +41,7 @@ import {
 } from '@/components';
 import {
   CategoryBudgetRow,
+  categoryRowKey,
   InsightBanner,
   MetricSummaryCard,
   buildOverviewHeadline,
@@ -934,7 +935,7 @@ function ChartsBody() {
                     );
                     return (
                       <CategoryBudgetRow
-                        key={t.category_id}
+                        key={categoryRowKey(t.category_id, t.currency)}
                         categoryKey={t.category_slug}
                         name={t.category_name}
                         amount={t.total}

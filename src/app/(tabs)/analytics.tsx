@@ -12,6 +12,7 @@ import type { PriceAlert } from '@/features/analytics';
 import {
   buildOverviewHeadline,
   CategoryBudgetRow,
+  categoryRowKey,
   MonthlyOverviewCard,
   TopItemsBreakdown,
   useMonthlyOverview,
@@ -341,7 +342,7 @@ export default function AnalyticsScreen() {
                   );
                   return (
                     <CategoryBudgetRow
-                      key={t.category_id}
+                      key={categoryRowKey(t.category_id, t.currency)}
                       categoryKey={t.category_slug}
                       name={t.category_name}
                       amount={t.total}
@@ -418,7 +419,7 @@ export default function AnalyticsScreen() {
                         const visual = resolveCategoryDisplay(catalog, t.category_slug);
                         return (
                           <CategoryBudgetRow
-                            key={t.category_id}
+                            key={categoryRowKey(t.category_id, t.currency)}
                             categoryKey={t.category_slug}
                             name={t.category_name}
                             amount={t.total}
