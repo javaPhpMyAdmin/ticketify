@@ -54,6 +54,14 @@ interface SessionState {
   session: Session | null;
   /** True while `restore()` runs at launch; the root gate holds the splash. */
   isBootstrapping: boolean;
+  /**
+   * True once the sign-in-time profile chain (`seedThenEnsureProfile`) has
+   * settled — the `profiles` row is ensured and the profile-backed queries
+   * were invalidated. `useBudget` reads it to keep the loading skeleton up
+   * instead of surfacing a definitive `missing-profile` error while the row
+   * is still being created on a fresh account.
+   */
+  profileReady: boolean;
   restore: () => Promise<void>;
   signInWithEmail: (
     email: string,
@@ -147,16 +155,35 @@ function isDuplicateAccountError(
  * it: with no rejection to handle, a bare `void` is the complete
  * fire-and-forget form and neither sign-in path waits on the write.
  */
-async function seedThenEnsureProfile(user: AuthUser): Promise<void> {
-  await ensureProfileCurrency(user.id, detectDeviceDefaultCurrency());
-  await ensureProfile(user);
-  await queryClient.invalidateQueries({ queryKey: queryKeys.profile(user.id) });
+async function seedThenEnsureProfile(
+  user: AuthUser,
+  markReady: () => void = () => {},
+): Promise<void> {
+  try {
+    await ensureProfileCurrency(user.id, detectDeviceDefaultCurrency());
+    await ensureProfile(user);
+    // Refetch BOTH profile-backed reads once the row exists. `profile` covers
+    // the header identity; `budget` is the Home budget read — it maps a 0-row
+    // profiles result to `missing-profile`, a DEFINITIVE error that
+    // `shouldRetry` never retries. Without this invalidation a budget query
+    // that raced the row creation stays stuck on "Tu perfil aún no está
+    // configurado" until an unrelated write (e.g. changing the currency)
+    // invalidates the key.
+    await queryClient.invalidateQueries({ queryKey: queryKeys.profile(user.id) });
+    await queryClient.invalidateQueries({ queryKey: queryKeys.budget(user.id) });
+  } finally {
+    // The flag means "the chain settled", not "it succeeded": if a writer
+    // throws, the budget read still surfaces its error instead of leaving the
+    // skeleton up forever.
+    markReady();
+  }
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
   // Real auth: start signed out until restore() finds a stored session.
   session: null,
   isBootstrapping: true,
+  profileReady: false,
   // Cross-route typed-confirmation draft (REQ-HOUSE-DEL-2). Always starts
   // null; the delete-account screen seeds it from local state when it
   // mounts and writes through on every keystroke. Cleared on success or
@@ -207,7 +234,7 @@ export const useSessionStore = create<SessionState>((set) => ({
           }
           if (session) {
             if (stale()) return;
-            set({ session });
+            set({ session, profileReady: false });
             if (session.user) {
               // Region-derived currency seed FIRST (currency-universality
               // REQ-5.2): it is a create-only INSERT, so it must fire before
@@ -222,7 +249,9 @@ export const useSessionStore = create<SessionState>((set) => ({
               // their own failures), so there is no rejection to handle and
               // sign-in is not blocked on the write. Ordering rationale and
               // the never-rejects guarantee live in its JSDoc above.
-              void seedThenEnsureProfile(session.user);
+              void seedThenEnsureProfile(session.user, () =>
+                set({ profileReady: true }),
+              );
             }
           }
           // No stored session: stay signed out; the gate shows the sign-in
@@ -352,7 +381,7 @@ export const useSessionStore = create<SessionState>((set) => ({
     // Same reasoning as the SIGNED_OUT listener above: the deleted account's
     // confirmed currency must not survive as the next user's default.
     useSettingsStore.getState().resetHydration();
-    useSessionStore.setState({ session: null });
+    useSessionStore.setState({ session: null, profileReady: false });
 
     // Drop the typed-confirmation draft — the next user on this device
     // must never see the previous user's typed value when the screen is
@@ -413,7 +442,7 @@ function initAuthStateListener(): void {
         // own profile lands must fail closed rather than inherit the last
         // user's unit.
         useSettingsStore.getState().resetHydration();
-        useSessionStore.setState({ session: null });
+        useSessionStore.setState({ session: null, profileReady: false });
         return;
       }
       if (session) {
@@ -421,6 +450,11 @@ function initAuthStateListener(): void {
         // USER_UPDATED carry newer token/user data the store must reflect.
         useSessionStore.setState({ session });
         if (event === 'SIGNED_IN') {
+          // A fresh identity means the profile row may not exist yet: hold the
+          // profile-backed reads in their loading state until the chain
+          // settles, so the budget query never surfaces `missing-profile`
+          // while the row is being created.
+          useSessionStore.setState({ profileReady: false });
           // Identity changed: backfill the profile row, then invalidate the
           // profile query so the UI re-renders with the fresh identity (the
           // bootstrap restore handles the relaunch case separately).
@@ -431,7 +465,9 @@ function initAuthStateListener(): void {
             // swallow their own failures), so there is nothing to handle and
             // the sign-in is not blocked on the write. Ordering rationale and
             // the never-rejects guarantee live in its JSDoc above.
-            void seedThenEnsureProfile(session.user);
+            void seedThenEnsureProfile(session.user, () =>
+              useSessionStore.setState({ profileReady: true }),
+            );
             // Legal-consent queue-then-flush (legal-compliance U5, AD-2):
             // replay any pending acceptances the sign-up screen queued BEFORE
             // the network sign-up call — the email on the flag may differ from

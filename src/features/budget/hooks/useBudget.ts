@@ -4,12 +4,13 @@ import {
   fetchMonthlyBudget,
   type MonthlyBudget,
 } from '../api';
-import { useSessionUser } from '@/features/auth';
+import { useSessionStore, useSessionUser } from '@/features/auth';
 import { currentMonthKey } from '@/features/home/hooks/useHomeFeed';
 import { bindViewerRows } from '@/lib/money';
 import { queryKeys } from '@/lib/query-keys';
 import { readMonthlyPurchasesTotal } from '@/lib/supabase/feature-access';
 import {
+  FeatureQueryError,
   toQueryData,
   toQueryErrorMessage,
 } from '@/lib/supabase/query-adapters';
@@ -92,12 +93,24 @@ const NEUTRAL_BUDGET: MonthlyBudget = { amount: 0, currency: 'USD' };
  */
 export function useBudget(monthKey: string = currentMonthKey()): BudgetSnapshot {
   const { userId } = useSessionUser();
+  const profileReady = useSessionStore((s) => s.profileReady);
 
   const budgetQuery = useQuery({
     queryKey: queryKeys.budget(userId!),
     enabled: !!userId,
     queryFn: () => fetchMonthlyBudget(userId!).then(toQueryData),
   });
+
+  // A fresh account races the sign-in profile chain: the budget read can
+  // resolve to `missing-profile` before the `profiles` row exists. That kind
+  // is DEFINITIVE (never retried), so without this guard the red error sticks
+  // until an unrelated profile write invalidates the key. While the chain has
+  // not settled, report the state as loading — Home shows the skeleton and
+  // the chain's budget invalidation refetches once the row lands.
+  const missingProfilePending =
+    budgetQuery.error instanceof FeatureQueryError &&
+    budgetQuery.error.kind === 'missing-profile' &&
+    !profileReady;
 
   // Resolve the budget (and its unit) BEFORE the spent query: `spent` binds to
   // the VIEWER-currency group only — a budget is expressed in one unit, so a
@@ -162,12 +175,15 @@ export function useBudget(monthKey: string = currentMonthKey()): BudgetSnapshot 
     percent,
     unitTotals,
     currencyMismatch,
-    error: budgetQuery.error
-      ? toQueryErrorMessage(budgetQuery.error)
-      : spentQuery.error
-        ? toQueryErrorMessage(spentQuery.error)
-        : null,
-    isLoading: budgetQuery.isLoading || spentQuery.isLoading,
+    error: missingProfilePending
+      ? null
+      : budgetQuery.error
+        ? toQueryErrorMessage(budgetQuery.error)
+        : spentQuery.error
+          ? toQueryErrorMessage(spentQuery.error)
+          : null,
+    isLoading:
+      budgetQuery.isLoading || spentQuery.isLoading || missingProfilePending,
     hasData: budgetQuery.data !== undefined,
     isRefetching: budgetQuery.isRefetching || spentQuery.isRefetching,
   };

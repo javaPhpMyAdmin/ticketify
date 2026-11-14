@@ -128,7 +128,11 @@ function resetAll() {
   storageMod.__resetStorage();
   browserMod.__setNextBrowserResult({ type: 'cancel' });
   storeMod.__setAuthRestoreTimeout(10_000);
-  storeMod.useSessionStore.setState({ session: null, isBootstrapping: true });
+  storeMod.useSessionStore.setState({
+    session: null,
+    isBootstrapping: true,
+    profileReady: false,
+  });
 }
 
 let storeMod;
@@ -193,6 +197,38 @@ async function run() {
     const s = storeMod.useSessionStore.getState();
     assert.equal(s.session, FAKE_SESSION);
     assert.equal(s.isBootstrapping, false);
+  });
+
+  await test('valid stored session: invalidates BOTH profile and budget keys after the row is ensured', async () => {
+    resetAll();
+    supabaseMod.__setSupabaseBehavior({
+      getSession: async () => ({ data: { session: FAKE_SESSION }, error: null }),
+    });
+    const keys = [];
+    const client = queryClientMod.queryClient;
+    const original = client.invalidateQueries;
+    client.invalidateQueries = async (opts) => {
+      keys.push(opts.queryKey);
+    };
+    try {
+      await storeMod.useSessionStore.getState().restore();
+      // `seedThenEnsureProfile` is fire-and-forget: let its insert → upsert →
+      // invalidation chain settle before asserting.
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    } finally {
+      client.invalidateQueries = original;
+    }
+    // The budget key is the regression guard: a Home budget read that raced
+    // the row creation maps to `missing-profile` (never retried), so it only
+    // recovers if this sign-in chain invalidates it once the row exists.
+    assert.deepEqual(keys, [
+      ['profile', FAKE_SESSION.user.id],
+      ['budget', FAKE_SESSION.user.id],
+    ]);
+    // The chain also marks the profile ready — the flag `useBudget` reads to
+    // keep its skeleton up instead of surfacing the definitive
+    // `missing-profile` error while the row is being created.
+    assert.equal(storeMod.useSessionStore.getState().profileReady, true);
   });
 
   await test('expired stored session: cleared, sign-in gate kept', async () => {

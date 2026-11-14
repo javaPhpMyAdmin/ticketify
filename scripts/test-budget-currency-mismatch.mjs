@@ -345,6 +345,52 @@ async function run() {
     }
   });
 
+  await test('A5 missing-profile before the profile row lands is suppressed (skeleton path, no red error)', async () => {
+    faMock.__reset();
+    authStub.__setProfileReady(false);
+    faMock.__setReadMonthlyBudgetRow(async () => ({ status: 'missing-profile' }));
+    setRows([]);
+    const mount = mountBudget('2026-08');
+    try {
+      // Let the query settle so a missing suppression would surface its error.
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 50));
+      });
+      const s = await mount.waitFor(
+        (snap) => snap.isLoading === true && snap.error === null,
+      );
+      assert.equal(
+        s.error,
+        null,
+        'the missing-profile error must be withheld while profileReady is false',
+      );
+      assert.equal(
+        s.isLoading,
+        true,
+        'the skeleton keeps rendering until the profile row lands',
+      );
+    } finally {
+      authStub.__setProfileReady(true);
+      mount.unmount();
+    }
+  });
+
+  await test('A6 once profileReady, the same failure surfaces the missing-profile copy', async () => {
+    faMock.__reset();
+    authStub.__setProfileReady(true);
+    faMock.__setReadMonthlyBudgetRow(async () => ({ status: 'missing-profile' }));
+    setRows([]);
+    const mount = mountBudget('2026-08');
+    try {
+      const s = await mount.waitFor(
+        (snap) => snap.isLoading === false && snap.error !== null,
+      );
+      assert.match(String(s.error), /perfil/i);
+    } finally {
+      mount.unmount();
+    }
+  });
+
   // -----------------------------------------------------------------------
   // B. BudgetCard — the render contract for the mismatch state
   // -----------------------------------------------------------------------
