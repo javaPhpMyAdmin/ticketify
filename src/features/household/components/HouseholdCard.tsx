@@ -13,18 +13,18 @@ import { useTranslation } from 'react-i18next';
 
 import { Card, Icon, Pressable, Text, View } from '@/components';
 import { useSessionUser } from '@/features/auth';
-import { formatCurrency } from '@/lib/format';
+import { formatCurrency, formatCurrencyAmount } from '@/lib/format';
 import { useHouseholdStore } from '@/stores/use-household-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing } from '@/theme';
 import type { CurrencyTotal } from '@/types';
+import { splitHouseholdTotals } from '../household-currency-split';
 
 interface HouseholdCardProps {
   /**
-   * Household spend for the current month, one figure PER UNIT (decision 9):
-   * a mixed month renders one labeled figure per currency, never a
-   * cross-currency sum (R1). Empty array = resolved-but-empty month (the
-   * caller folds a viewer-unit zero so the card still states a real "0").
+   * Household spend for the current month, one figure PER UNIT (decision 9).
+   * The viewer unit is the headline figure; any other unit renders as a
+   * secondary note. Amounts are never summed across units (R1).
    */
   householdTotals: CurrencyTotal[];
   /**
@@ -165,6 +165,12 @@ export function HouseholdCard({
   // compare (changePct non-null).
   const up = changePct != null && changePct > 0;
   const deltaPrefix = changePct != null && changePct > 0 ? '+' : '';
+  // Viewer unit = headline figure; other units = secondary note. Never a
+  // cross-currency sum (money-integrity spec).
+  const { viewerTotal, foreignTotals } = splitHouseholdTotals(
+    householdTotals,
+    currency,
+  );
 
   return (
     <Pressable
@@ -237,14 +243,24 @@ export function HouseholdCard({
             {isLoading ? (
               <Text style={styles.amount}>…</Text>
             ) : (
-              householdTotals.map((group) => (
-                <Text key={group.currency ?? 'viewer'} style={styles.amount}>
-                  {formatCurrency(group.total, group.currency ?? currency)}
-                </Text>
-              ))
+              <Text style={styles.amount}>
+                {formatCurrency(viewerTotal, currency)}
+              </Text>
             )}
           </View>
         </View>
+        {!isLoading && foreignTotals.length > 0 ? (
+          <Text style={styles.otherUnits} numberOfLines={2}>
+            {t('household:otherUnitsNote', {
+              amounts: foreignTotals
+                .map(
+                  (group) =>
+                    `${group.currency} ${formatCurrencyAmount(group.total, group.currency)}`,
+                )
+                .join(' · '),
+            })}
+          </Text>
+        ) : null}
       </Card>
     </Pressable>
   );
@@ -366,6 +382,13 @@ const styles = StyleSheet.create({
     fontSize: 23,
     fontWeight: '900',
     color: colors.primary,
+  },
+  // Secondary line: the household's other recorded units, shown as recorded
+  // (never converted or summed into the headline).
+  otherUnits: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textSecondary,
   },
   // First row of the card: a content-sized pill. `flexShrink: 1` + a
   // shrinkable label let an extreme delta wrap inside the card instead of

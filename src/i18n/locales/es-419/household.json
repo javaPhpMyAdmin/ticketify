@@ -9,6 +9,7 @@
     "mySpending": "Mi gasto",
     "household": "Hogar",
     "householdSpendingLabel": "Gasto del hogar",
+    "otherUnitsNote": "También {{amounts}}",
     "householdCardA11y": "Hogar {{name}}. Tocar para ver detalles.",
     "householdMemberCount_one": "1 miembro",
     "householdMemberCount_other": "{{count}} miembros",

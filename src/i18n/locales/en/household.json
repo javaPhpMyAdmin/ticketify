@@ -9,6 +9,7 @@
   "mySpending": "My spending",
   "household": "Household",
   "householdSpendingLabel": "Household spending",
+  "otherUnitsNote": "Also {{amounts}}",
   "householdCardA11y": "Household {{name}}. Tap to see details.",
   "householdMemberCount_one": "1 member",
   "householdMemberCount_other": "{{count}} members",

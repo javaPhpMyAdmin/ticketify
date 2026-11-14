@@ -1116,16 +1116,20 @@ function currencySymbolPrefix(upperCode: string, rawCode: string): string {
  * localized currency label or a kanji "¥" suffix without changing the
  * signature. Today's implementation does not branch on the language.
  */
-export function formatCurrency(value: number, currencyCode: string): string {
-  const upperCode = currencyCode.toUpperCase();
-  // While the gate is shut the code is only the store's PLACEHOLDER SEED, so
-  // it is not an input to the format at all: LATAM vs INTL grouping and the
-  // minor-unit rule both encode a unit the profile row has not confirmed.
-  // The formatters deliberately IGNORE the code and emit a bare number
-  // (`1234.56`) until the gate opens. See the gate doc above for the 1000x
-  // misread this prevents.
+/**
+ * The shared number body of `formatCurrency` / `formatCurrencyAmount`.
+ * While the gate is shut the code is only the store's PLACEHOLDER SEED, so
+ * it is not an input to the format at all: LATAM vs INTL grouping and the
+ * minor-unit rule both encode a unit the profile row has not confirmed. The
+ * formatters deliberately IGNORE the code and emit a bare number
+ * (`1234.56`) until the gate opens. See the gate doc above for the 1000x
+ * misread this prevents.
+ */
+function formatAmountParts(
+  value: number,
+  upperCode: string,
+): { sign: string; number: string } {
   const gateShut = !currencySymbolGateOpen;
-  const symbolPrefix = currencySymbolPrefix(upperCode, currencyCode);
   // The override WINS over group membership: a LATAM-classified code in the
   // override set renders with INTL separators. The override is a SET read, not
   // a mutation of `LATAM_CURRENCIES` (REQ-005).
@@ -1163,7 +1167,31 @@ export function formatCurrency(value: number, currencyCode: string): string {
     ? `${withSeparators}${decSep}${decPart}`
     : withSeparators;
   const sign = value < 0 ? '-' : '';
+  return { sign, number };
+}
+
+export function formatCurrency(value: number, currencyCode: string): string {
+  const upperCode = currencyCode.toUpperCase();
+  const symbolPrefix = currencySymbolPrefix(upperCode, currencyCode);
+  const { sign, number } = formatAmountParts(value, upperCode);
   return `${sign}${symbolPrefix}${number}`;
+}
+
+/**
+ * The same amount formatting as `formatCurrency`, WITHOUT the symbol.
+ * Use where a unit code is the label (e.g. the household card's
+ * "También COP 12.198,09" secondary line) so code and symbol never
+ * duplicate. Same grouping, precision, and fail-closed gate.
+ */
+export function formatCurrencyAmount(
+  value: number,
+  currencyCode: string,
+): string {
+  const { sign, number } = formatAmountParts(
+    value,
+    currencyCode.toUpperCase(),
+  );
+  return `${sign}${number}`;
 }
 
 /**
