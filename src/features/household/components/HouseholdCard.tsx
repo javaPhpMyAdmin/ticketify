@@ -390,12 +390,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textSecondary,
   },
-  // First row of the card: a content-sized pill. `flexShrink: 1` + a
-  // shrinkable label let an extreme delta wrap inside the card instead of
-  // overflowing it.
+  // First row of the card: a content-sized pill anchored to the RIGHT edge
+  // (inside the card padding) so it sits above the amount instead of floating
+  // at the left. `flexShrink: 1` + a shrinkable label let an extreme delta
+  // wrap inside the card instead of overflowing it.
   badgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-end',
     backgroundColor: 'transparent',
   },
   badge: {

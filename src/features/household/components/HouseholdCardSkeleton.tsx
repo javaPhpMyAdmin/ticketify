@@ -53,19 +53,24 @@ const styles = StyleSheet.create({
   badgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-end',
+    backgroundColor: 'transparent',
   },
   membersRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: spacing.md,
+    backgroundColor: 'transparent',
   },
   bottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
+    backgroundColor: 'transparent',
   },
   info: {
     flex: 1,
     gap: 2,
+    backgroundColor: 'transparent',
   },
 });
