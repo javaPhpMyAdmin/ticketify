@@ -24,7 +24,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -158,6 +158,31 @@ async function run() {
     assert.equal(s.exhausted, true);
     assert.equal(s.showUpgradeCta, true);
     assert.equal(s.ratio, 1, 'ratio is clamped at 1, never above');
+    assert.equal(
+      s.displayUsed,
+      15,
+      'the free meter prints the cap, never an impossible 20/15',
+    );
+  });
+
+  await test('displayUsed clamps the free numerator but keeps the raw count for Pro', () => {
+    // The Pro→free downgrade case: 18 scans used under Pro, then the
+    // plan expires and scans_limit flips back to 15. The DB keeps 18
+    // (monthly history), the free meter must read 15/15.
+    assert.equal(computeQuotaState(18, 15, false).displayUsed, 15);
+    assert.equal(computeQuotaState(10, 15, false).displayUsed, 10);
+    assert.equal(computeQuotaState(15, 15, false).displayUsed, 15);
+    assert.equal(computeQuotaState(0, null, false).displayUsed, 0);
+    assert.equal(
+      computeQuotaState(18, null, true).displayUsed,
+      18,
+      'Pro is unlimited and keeps the raw count',
+    );
+    assert.equal(
+      computeQuotaState(5, 0, false).displayUsed,
+      5,
+      'a zero cap is a defensive edge, not a clamp to 0',
+    );
   });
 
   console.log('\n[tests] NULL/zero edge cases\n');
@@ -234,6 +259,38 @@ async function run() {
         `ratio out of [0,1] for (used=${used}, limit=${limit}, isPro=${isPro}): ${s.ratio}`,
       );
     }
+  });
+
+  await test('free meters print displayUsed, never the raw used (source pin)', () => {
+    const meter = readFileSync(
+      join(root, 'src/components/organisms/UsageMeter/UsageMeter.tsx'),
+      'utf8',
+    );
+    assert.match(
+      meter,
+      /\{state\.displayUsed\}\/\{state\.effectiveLimit\}/,
+      'UsageMeter free branch must print the clamped count',
+    );
+    assert.doesNotMatch(
+      meter,
+      /\{used\}\/\{state\.effectiveLimit\}/,
+      'UsageMeter must not print the raw count over the cap',
+    );
+
+    const card = readFileSync(
+      join(root, 'src/features/home/components/ScanQuotaCard.tsx'),
+      'utf8',
+    );
+    assert.match(
+      card,
+      /\{state\.displayUsed\}\/\{state\.effectiveLimit\} usados/,
+      'ScanQuotaCard free branches must print the clamped count',
+    );
+    assert.doesNotMatch(
+      card,
+      /\{usage\.used\}\/\{state\.effectiveLimit\}/,
+      'ScanQuotaCard must not print the raw count over the cap',
+    );
   });
 
   console.log('');

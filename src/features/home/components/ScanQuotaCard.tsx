@@ -52,7 +52,7 @@ export function ScanQuotaCard() {
         <View style={styles.row}>
           <Text style={styles.kicker}>Escaneos este mes</Text>
           <Text style={styles.detail}>
-            {usage.used}/{state.effectiveLimit} usados
+            {state.displayUsed}/{state.effectiveLimit} usados
           </Text>
         </View>
         <View style={styles.remainingWrap}>
@@ -77,7 +77,7 @@ export function ScanQuotaCard() {
       <View style={styles.row}>
         <Text style={styles.kicker}>Escaneos este mes</Text>
         <Text style={styles.detail}>
-          {usage.used}/{state.effectiveLimit} usados
+          {state.displayUsed}/{state.effectiveLimit} usados
         </Text>
       </View>
       <View style={styles.remainingWrap}>

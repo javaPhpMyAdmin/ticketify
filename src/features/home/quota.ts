@@ -33,6 +33,12 @@
  *                  exhausted state can only fire on a positive cap.
  *   - `ratio`: `0` when unlimited, else `min(1, used / eff)`. Clamped
  *              so the progress bar never overflows past 100%.
+ *   - `displayUsed`: the count the FREE meter prints. Clamped to the
+ *                    cap (`min(used, eff)`) so a Pro→free downgrade
+ *                    never renders an impossible `18/15` — the raw
+ *                    `scans_used` is monthly history and stays intact.
+ *                    Pro keeps the raw count (unlimited, so `18 usados`
+ *                    is truthful and never a ratio).
  *   - `showUpgradeCta`: `!isPro && exhausted` — REQ-GATE-4. Pro users
  *                       NEVER see the paywall CTA, even if a stale
  *                       numeric row would otherwise push them past it.
@@ -46,6 +52,12 @@ export interface QuotaState {
   exhausted: boolean;
   /** Fill for `<ProgressBar />`: 0..1, capped at 1; 0 if unlimited. */
   ratio: number;
+  /**
+   * The count the FREE meter prints: `min(used, effectiveLimit)` so an
+   * over-limit month (e.g. Pro expired mid-month with 18 used) reads
+   * `15/15`, never `18/15`. Pro keeps the raw `used` (unlimited).
+   */
+  displayUsed: number;
   /** True only for free + exhausted: render the paywall CTA. */
   showUpgradeCta: boolean;
   /**
@@ -76,6 +88,14 @@ export function computeQuotaState(
     !unlimited && effectiveLimit > 0 && used >= effectiveLimit;
   const ratio =
     unlimited || effectiveLimit <= 0 ? 0 : Math.min(1, used / effectiveLimit);
+  // Free meters never print an impossible `18/15` after a Pro→free
+  // downgrade: the raw `scans_used` is monthly history (kept intact in
+  // the DB for analytics), but the free-plan meter caps the numerator.
+  // Pro keeps the raw count — it is unlimited and renders no ratio.
+  const displayUsed =
+    unlimited || effectiveLimit <= 0
+      ? used
+      : Math.min(used, effectiveLimit);
   const showUpgradeCta = !isPro && exhausted;
 
   return {
@@ -83,6 +103,7 @@ export function computeQuotaState(
     remaining,
     exhausted,
     ratio,
+    displayUsed,
     showUpgradeCta,
     effectiveLimit,
   };

@@ -113,7 +113,7 @@ export function UsageMeter({
       <View style={styles.row}>
         <Text style={styles.used}>{t('settings:usageScansUsed')}</Text>
         <Text style={styles.usedValue}>
-          {used}/{state.effectiveLimit}
+          {state.displayUsed}/{state.effectiveLimit}
         </Text>
       </View>
       <View style={styles.progressWrap}>
