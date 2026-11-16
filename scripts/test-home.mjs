@@ -1150,6 +1150,31 @@ async function run() {
     );
   });
 
+  // The run-rate trend badge must not overlap the "RITMO DEL MES" kicker
+  // on narrow screens: it lives in its own top-right flow row instead of
+  // floating absolutely over the content.
+  await test('run-rate badge owns its own top-right row (source pin)', () => {
+    const src = readFileSync(
+      join(root, 'src/features/home/components/RunRateCard.tsx'),
+      'utf8',
+    );
+    assert.match(
+      src,
+      /styles\.badgeRow/,
+      'the badge must render inside the dedicated badge row',
+    );
+    assert.match(
+      src,
+      /badgeRow:\s*\{[\s\S]*?justifyContent: 'flex-end'/,
+      'the badge row must right-align the badge',
+    );
+    assert.doesNotMatch(
+      src,
+      /position: 'absolute'/,
+      'the badge must not float over the kicker',
+    );
+  });
+
   await test('store + item drill-down purchases carry the receipt unit (source pin)', () => {
     const src = readFileSync(
       join(root, 'src/features/home/hooks/useHomeFeed.ts'),

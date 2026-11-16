@@ -82,30 +82,36 @@ export function RunRateCard({ result, currency, monthKey }: RunRateCardProps) {
       accessibilityHint={t('a11y:openAnalytics')}
     >
       <Card>
-        <View style={[styles.content, styles.contentWithBadge]}>
-          <Text style={styles.kicker}>{t('runRateKicker')}</Text>
-          <Text style={styles.total}>{mtd}</Text>
-        </View>
-        <View
-          style={[
-            styles.badge,
-            { backgroundColor: up ? '#fbe3e3' : colors.primaryContainer },
-          ]}
-        >
-          <Icon
-            name={trendIcon}
-            size={14}
-            color={up ? 'red' : colors.primaryDark}
-          />
-          <Text
+        {/* The trend badge owns its own top-right row. A floating
+            absolute badge overlapped the kicker ("RITMO DEL MES") on
+            narrow screens once the source copy widened it; a flow row
+            right-aligns it and keeps the kicker clear at every width. */}
+        <View style={styles.badgeRow}>
+          <View
             style={[
-              styles.badgeText,
-              { color: up ? 'red' : colors.primaryDark },
+              styles.badge,
+              { backgroundColor: up ? '#fbe3e3' : colors.primaryContainer },
             ]}
           >
-            {deltaPrefix}
-            {result.deltaPct}% {t('runRateBadge', { source: sourceCopy })}
-          </Text>
+            <Icon
+              name={trendIcon}
+              size={14}
+              color={up ? 'red' : colors.primaryDark}
+            />
+            <Text
+              style={[
+                styles.badgeText,
+                { color: up ? 'red' : colors.primaryDark },
+              ]}
+            >
+              {deltaPrefix}
+              {result.deltaPct}% {t('runRateBadge', { source: sourceCopy })}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.content}>
+          <Text style={styles.kicker}>{t('runRateKicker')}</Text>
+          <Text style={styles.total}>{mtd}</Text>
         </View>
         <Text style={styles.body}>
           {t('runRateProjection', { projection })}
@@ -120,10 +126,13 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     backgroundColor: colors.surface,
   },
-  // Reserves room on the right for the floating badge so a wide amount
-  // never slides underneath it (MonthlyOverviewCard pattern).
-  contentWithBadge: {
-    paddingRight: 120,
+  // The badge owns the top-right row; the kicker/total flow below it,
+  // so the two can never collide at any card width.
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    backgroundColor: 'transparent',
   },
   kicker: {
     fontSize: 17,
@@ -137,19 +146,15 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginTop: spacing.xs + 15,
   },
-  // Floats in the card's top-right corner, relative to the Card's padding
-  // box (the Card view is the nearest positioned ancestor) — same geometry
-  // as MonthlyOverviewCard's badge.
   badge: {
-    position: 'absolute',
-    top: spacing.xl,
-    right: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: radii.full,
+    maxWidth: '100%',
+    flexShrink: 1,
   },
   badgeText: {
     fontWeight: '900',
