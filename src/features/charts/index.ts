@@ -43,6 +43,22 @@ export type {
 
 export { categoryDetailHref } from './categoryHref';
 
+export {
+  chartCacheRowForMonth,
+  householdRowsToReceipts,
+} from './householdSeries';
+export type { ChartCacheRow } from './householdSeries';
+export {
+  annualTrendFromCacheRows,
+  resolveChartFamilyState,
+  yearlyPointsFromCacheRows,
+} from './resolvedSources';
+export type {
+  ChartFamilyState,
+  ResolvedCacheRow,
+} from './resolvedSources';
+export { useHouseholdChartSeries } from './hooks/useHouseholdChartSeries';
+
 export { CapsuleBarChart } from './components/CapsuleBarChart';
 export type {
   CapsuleBarChartItem,

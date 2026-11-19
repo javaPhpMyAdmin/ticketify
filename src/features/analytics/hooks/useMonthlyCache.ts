@@ -85,6 +85,7 @@ export function transformCacheToCategoryTotals(
 export function useMonthlyCache(
   yearMonth = currentMonthKey(),
   householdId?: string | null,
+  enabled = true,
 ): {
   totals: CategoryMonthlyTotal[];
   monthTotal: number;
@@ -109,7 +110,7 @@ export function useMonthlyCache(
   // disabled (`rolloverEnabled = !isHousehold`): household limits come from
   // the server-side aggregation (migration 0026 nulls `budget_limit` there),
   // so per-member copying must not happen (R3-S1 — household unchanged).
-  const { budgets } = useCategoryBudgets(yearMonth, !isHousehold);
+  const { budgets } = useCategoryBudgets(yearMonth, enabled && !isHousehold);
 
   // All query keys must be stable regardless of mode (React hooks rules).
   const cacheKey = queryKeys.monthlyCache(userId ?? '', yearMonth);
@@ -128,7 +129,7 @@ export function useMonthlyCache(
   // table per unit — a month holds one row per effective currency).
   const cacheQuery = useQuery({
     queryKey: cacheKey,
-    enabled: !!userId && !isHousehold,
+    enabled: enabled && !!userId && !isHousehold,
     queryFn: () =>
       readMonthlyCacheRowsForMonth(userId!, yearMonth).then(toQueryData),
   });
@@ -136,7 +137,7 @@ export function useMonthlyCache(
   // Household mode: fall through to the category totals RPC directly.
   const householdQuery = useQuery({
     queryKey: householdKey,
-    enabled: !!userId && isHousehold,
+    enabled: enabled && !!userId && isHousehold,
     queryFn: () =>
       fetchMonthlyTotals(yearMonth, householdId).then(toQueryData),
   });
@@ -147,7 +148,7 @@ export function useMonthlyCache(
   // attributed per category, 0029 §3).
   const netTotalQuery = useQuery({
     queryKey: householdNetKey,
-    enabled: !!userId && isHousehold,
+    enabled: enabled && !!userId && isHousehold,
     queryFn: () =>
       readMonthlyPurchasesTotal(yearMonth, householdId).then(toQueryData),
   });
@@ -183,6 +184,7 @@ export function useMonthlyCache(
   const lastRecalcAttemptFor = useRef<string | null>(null);
   useEffect(() => {
     if (
+      enabled &&
       !isHousehold &&
       !!userId &&
       !cacheQuery.isError &&
@@ -194,7 +196,7 @@ export function useMonthlyCache(
       lastRecalcAttemptFor.current = yearMonth;
       triggerMutation.mutate();
     }
-  }, [rows.length, cacheQuery.isLoading, cacheQuery.isError, isHousehold, userId, yearMonth, queryClient]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows.length, cacheQuery.isLoading, cacheQuery.isError, enabled, isHousehold, userId, yearMonth, queryClient]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // AD-5: personal mode merges the month's budgets into the cache-backed
   // totals (post-step — the transform keeps its `budget_limit: null`

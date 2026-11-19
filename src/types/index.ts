@@ -410,6 +410,23 @@ export interface MonthlyTotalsCacheRow {
 }
 
 /**
+ * One row from `household_chart_series(uuid, text[])` (migration 0048).
+ * The RPC is the household equivalent of a `monthly_user_totals` cache row:
+ * one row per (month, effective currency) with the same jsonb shapes, but no
+ * user_id/items_count/updated_at because it never writes the personal cache.
+ */
+export interface HouseholdChartSeriesRow {
+  year_month: string;
+  currency: string;
+  total: number;
+  category_totals: Record<string, { total: number; count: number; name: string }>;
+  store_totals: Record<string, { total: number; count: number }>;
+  daily_totals: Record<string, number>;
+  /** Gross line-item sums per day and category slug; discounts stay unattributed. */
+  daily_category_totals: Record<string, Record<string, number>>;
+}
+
+/**
  * Level B household receipt feed item (get_household_feed RPC).
  * Totals + category breakdown + store name, no individual items.
  */

@@ -216,6 +216,22 @@ async function run() {
     pathToFileURL(join(outDir, 'src/features/charts/categoryHref.js')).href
   );
   const { categoryDetailHref } = categoryHrefMod;
+  const householdSeriesMod = await import(
+    pathToFileURL(join(outDir, 'src/features/charts/householdSeries.js')).href
+  );
+  const {
+    chartCacheRowForMonth,
+    householdRowsToReceipts,
+    toChartCacheRows,
+  } = householdSeriesMod;
+  const resolvedSourcesMod = await import(
+    pathToFileURL(join(outDir, 'src/features/charts/resolvedSources.js')).href
+  );
+  const {
+    annualTrendFromCacheRows,
+    resolveChartFamilyState,
+    yearlyPointsFromCacheRows,
+  } = resolvedSourcesMod;
   const { aggregateCategoriesByMonth: directAggregate, monthKeyToMonthName } =
     homeFeedMod;
   // The charts tsconfig compiles `src/lib/format.ts` too; reuse its
@@ -1698,6 +1714,361 @@ async function run() {
       // pt-BR native-speaker pass (B3): "{{weekday}}, dia {{day}}" — the
       // comma + "dia" disambiguate the weekday from the day number.
       'Seu dia mais caro foi Segunda, dia 3 (US$ 20,289.51 · 6x sua média)',
+    );
+  });
+
+  console.log('\n[tests] resolved chart sources (personal byte-identical gates)\n');
+
+  const months2026 = Array.from({ length: 12 }, (_, i) =>
+    `2026-${String(i + 1).padStart(2, '0')}`,
+  );
+  const fallbackReceipts = [
+    { id: 'personal-1', purchase_date: '2026-08-15', total: 100, currency: 'USD' },
+  ];
+
+  await test('a RESOLVED empty personal cache keeps zero-filled annual bars', () => {
+    const points = annualTrendFromCacheRows({
+      rows: [],
+      fallbackRows: fallbackReceipts,
+      monthKeys: months2026,
+      currency: 'USD',
+    });
+    assert.equal(points.length, 12);
+    assert.equal(points.find((p) => p.month === '2026-08').total, 0);
+  });
+
+  await test('an UNRESOLVED personal cache still falls back to the receipt list', () => {
+    const points = annualTrendFromCacheRows({
+      rows: undefined,
+      fallbackRows: fallbackReceipts,
+      monthKeys: months2026,
+      currency: 'USD',
+    });
+    assert.equal(points.find((p) => p.month === '2026-08').total, 100);
+  });
+
+  await test('household annual rows bind the viewer unit without a cross-unit sum', () => {
+    const points = annualTrendFromCacheRows({
+      rows: [
+        { year_month: '2026-08', currency: 'UYU', total: 100 },
+        { year_month: '2026-08', currency: 'CLP', total: 50 },
+      ],
+      fallbackRows: fallbackReceipts,
+      monthKeys: months2026,
+      currency: 'UYU',
+    });
+    assert.equal(points.find((p) => p.month === '2026-08').total, 100);
+  });
+
+  await test('a resolved empty personal year cache does NOT resurrect list points', () => {
+    const points = yearlyPointsFromCacheRows({
+      rows: [],
+      fallbackRows: fallbackReceipts,
+      currency: 'USD',
+    });
+    assert.equal(points.length, 0);
+  });
+
+  await test('an unresolved personal year cache keeps the list fallback', () => {
+    const points = yearlyPointsFromCacheRows({
+      rows: undefined,
+      fallbackRows: fallbackReceipts,
+      currency: 'USD',
+    });
+    assert.equal(points.length, 1);
+    assert.equal(points[0].total, 100);
+  });
+
+  await test('chart family state: personal is never blocked by household gates', () => {
+    assert.equal(
+      resolveChartFamilyState({
+        isHouseholdView: false,
+        failed: true,
+        hasData: false,
+        hasViewerData: false,
+      }),
+      'ready',
+    );
+  });
+
+  await test('chart family state: household error > pending > no-data > ready', () => {
+    assert.equal(
+      resolveChartFamilyState({
+        isHouseholdView: true,
+        failed: true,
+        hasData: false,
+        hasViewerData: false,
+      }),
+      'error',
+    );
+    assert.equal(
+      resolveChartFamilyState({
+        isHouseholdView: true,
+        failed: false,
+        hasData: false,
+        hasViewerData: false,
+      }),
+      'pending',
+    );
+    assert.equal(
+      resolveChartFamilyState({
+        isHouseholdView: true,
+        failed: false,
+        hasData: true,
+        hasViewerData: false,
+      }),
+      'no-data',
+    );
+    assert.equal(
+      resolveChartFamilyState({
+        isHouseholdView: true,
+        failed: false,
+        hasData: true,
+        hasViewerData: true,
+      }),
+      'ready',
+    );
+  });
+
+  console.log('\n[tests] household chart series adapter\n');
+
+  const householdRpcRows = [
+    {
+      year_month: '2026-08',
+      currency: 'UYU',
+      total: 150,
+      daily_totals: { '2026-08-05': 100, '2026-08-07': 50 },
+      store_totals: {
+        'Agg Store': { total: 150, count: 3 },
+      },
+      category_totals: {
+        lacteos: { total: 120, count: 2, name: 'Lácteos' },
+        servicios: { total: 30, count: 1, name: 'Servicios' },
+      },
+      daily_category_totals: {
+        '2026-08-05': { lacteos: 80, servicios: 30 },
+        '2026-08-07': { lacteos: 40 },
+      },
+    },
+    {
+      year_month: '2026-08',
+      currency: 'CLP',
+      total: 270,
+      daily_totals: { '2026-08-06': 200, '2026-08-08': 70 },
+      store_totals: {
+        'Agg Store': { total: 270, count: 2 },
+      },
+      category_totals: {
+        lacteos: { total: 270, count: 2, name: 'Lácteos' },
+      },
+      daily_category_totals: {
+        '2026-08-06': { lacteos: 200 },
+        '2026-08-08': { lacteos: 70 },
+      },
+    },
+    {
+      year_month: '2026-09',
+      currency: 'CLP',
+      total: 500,
+      daily_totals: { '2026-09-01': 500 },
+      store_totals: {
+        'Agg Store': { total: 500, count: 1 },
+      },
+      category_totals: {
+        lacteos: { total: 500, count: 1, name: 'Lácteos' },
+      },
+      daily_category_totals: {
+        '2026-09-01': { lacteos: 500 },
+      },
+    },
+  ];
+
+  await test('toChartCacheRows keeps one row per (month, unit), never a cross-unit sum', () => {
+    const rows = toChartCacheRows(householdRpcRows);
+    assert.equal(rows.length, 3);
+    assert.deepEqual(
+      rows.map((r) => `${r.year_month}:${r.currency}:${r.total}`),
+      [
+        '2026-08:CLP:270',
+        '2026-08:UYU:150',
+        '2026-09:CLP:500',
+      ],
+    );
+    assert.equal(rows[1].daily_totals['2026-08-05'], 100);
+    assert.equal(rows[1].category_totals.servicios.total, 30);
+  });
+
+  await test('chartCacheRowForMonth binds the viewer unit only', () => {
+    const uyu = chartCacheRowForMonth(householdRpcRows, '2026-08', 'UYU');
+    assert.equal(uyu?.currency, 'UYU');
+    assert.equal(uyu?.total, 150);
+    const eur = chartCacheRowForMonth(householdRpcRows, '2026-08', 'EUR');
+    assert.equal(eur, null);
+  });
+
+  await test('householdRowsToReceipts allocates categories per day without summing units', () => {
+    const receipts = householdRowsToReceipts(householdRpcRows, '2026-08', 'UYU');
+    assert.equal(receipts.length, 2);
+    assert.deepEqual(
+      receipts.map((r) => r.purchase_date),
+      ['2026-08-05', '2026-08-07'],
+    );
+    assert.equal(receipts[0].total, 100);
+    assert.equal(receipts[0].category_totals.servicios, 30);
+    assert.equal(receipts[0].category_totals.lacteos, 80);
+    assert.equal(receipts[1].category_totals.lacteos, 40);
+    assert.equal(receipts[1].category_totals.servicios ?? 0, 0);
+    // The other unit's days never leak into the viewer-unit series.
+    assert.ok(!receipts.some((r) => r.purchase_date === '2026-08-06'));
+  });
+
+  await test('household receipts keep servicios in hero, exclude it from weekly/average', () => {
+    const receipts = householdRowsToReceipts(householdRpcRows, '2026-08', 'UYU');
+    const hero = aggregateDailySpend(receipts, '2026-08');
+    assert.equal(
+      hero.reduce((sum, p) => sum + p.total, 0),
+      150,
+    );
+    const week = aggregateWeeklySpend(
+      receipts,
+      '2026-08-03',
+      ['servicios'],
+      'en',
+    );
+    assert.equal(
+      week.reduce((sum, p) => sum + p.amount, 0),
+      120,
+    );
+    assert.equal(aggregateDailyAverage(receipts, '2026-08', ['servicios']), 60);
+    const dayItems = aggregateDayItems(receipts, '2026-08-05', ['servicios']);
+    assert.ok(dayItems.length > 0);
+    assert.ok(!dayItems.some((item) => item.name === 'servicios'));
+  });
+
+  await test('household servicios exclusion is per-day, not a month-wide allocation', () => {
+    const rows = [
+      {
+        year_month: '2026-08',
+        currency: 'UYU',
+        total: 200,
+        daily_totals: { '2026-08-05': 100, '2026-08-06': 100 },
+        store_totals: {},
+        category_totals: {
+          servicios: { total: 200, count: 1, name: 'Servicios' },
+          lacteos: { total: 100, count: 1, name: 'Lácteos' },
+        },
+        daily_category_totals: {
+          '2026-08-05': { servicios: 200 },
+          '2026-08-06': { lacteos: 100 },
+        },
+      },
+    ];
+    const receipts = householdRowsToReceipts(rows, '2026-08', 'UYU');
+    assert.equal(receipts.length, 2);
+    const week = aggregateWeeklySpend(receipts, '2026-08-03', ['servicios'], 'en');
+    assert.equal(week.reduce((sum, p) => sum + p.amount, 0), 100);
+  });
+
+  await test('household source pins: charts screen reads the new RPC only in household mode', () => {
+    const chartsSource = readFileSync(
+      join(root, 'src', 'app', 'pro', 'charts.tsx'),
+      'utf8',
+    );
+    assert.match(chartsSource, /readHouseholdChartSeries/);
+    assert.match(chartsSource, /queryKeys\.householdChartSeries/);
+    assert.match(chartsSource, /useHouseholdChartSeries/);
+    assert.match(chartsSource, /householdRowsToReceipts/);
+    // Personal is derived as the exact complement of household, and every
+    // personal-only query/thread must be gated by that one flag. These pins
+    // fail if someone reintroduces an unconditional personal read.
+    assert.match(chartsSource, /const isHouseholdView = viewMode === 'household'/);
+    assert.match(chartsSource, /const isPersonalView = !isHouseholdView/);
+    assert.match(chartsSource, /enabled: !!userId && isPersonalView/);
+    assert.match(chartsSource, /useMonthlyOverview\(monthKey, isPersonalView\)/);
+    // Console is the canonical reporter in this app (no Sentry dependency).
+    // The RPC failure must still produce one explicit, searchable warning.
+    const featureAccessSource = readFileSync(
+      join(root, 'src', 'lib', 'supabase', 'feature-access.ts'),
+      'utf8',
+    );
+    assert.doesNotMatch(featureAccessSource, /captureException/);
+    assert.doesNotMatch(featureAccessSource, /globalThis\.Sentry/);
+    assert.match(
+      featureAccessSource,
+      /console\.warn\('\[feature-access\] household_chart_series failed', error\)/,
+    );
+    assert.match(
+      featureAccessSource,
+      /console is the canonical reporter[\s\S]{0,200}console\.warn\('\[feature-access\] household_chart_series failed', error\)/,
+    );
+  });
+
+  await test('household source pins: month-scoped surfaces are gated by trendFamily, not capsuleFamily', () => {
+    const chartsSource = readFileSync(
+      join(root, 'src', 'app', 'pro', 'charts.tsx'),
+      'utf8',
+    );
+    assert.match(
+      chartsSource,
+      /const capsuleFamily = period === 'year' \? yearlyFamily : trendFamily/,
+    );
+    assert.match(chartsSource, /<ChartFamilyNotice\s+state=\{trendFamily\}/);
+    assert.match(
+      chartsSource,
+      /\{trendFamily === 'ready' \? \([\s\S]{0,320}<InsightHeroCard/,
+    );
+    assert.match(
+      chartsSource,
+      /\{trendFamily === 'ready' \? \([\s\S]{0,520}<MetricSummaryCard/,
+    );
+    const capsuleGateIdx = chartsSource.indexOf("{capsuleFamily === 'ready' ? (");
+    const capsuleChartIdx = chartsSource.indexOf('<CapsuleBarChart', capsuleGateIdx);
+    const nextReadyGateIdx = chartsSource.indexOf(
+      "=== 'ready' ? (",
+      capsuleGateIdx + "{capsuleFamily === 'ready' ? (".length,
+    );
+    assert.ok(capsuleGateIdx > -1, 'the capsule card must keep its own gate');
+    assert.ok(capsuleChartIdx > capsuleGateIdx, 'CapsuleBarChart stays gated');
+    assert.ok(
+      nextReadyGateIdx === -1 || capsuleChartIdx < nextReadyGateIdx,
+      'CapsuleBarChart must belong to the capsuleFamily gate, not a later one',
+    );
+    assert.match(
+      chartsSource,
+      /\{trendFamily === 'ready' \? \([\s\S]{0,520}<StoreBars/,
+    );
+  });
+
+  await test('household source pins: the year selector survives a non-ready annual family', () => {
+    const chartsSource = readFileSync(
+      join(root, 'src', 'app', 'pro', 'charts.tsx'),
+      'utf8',
+    );
+    const selectorIdx = chartsSource.indexOf('<View style={styles.yearSelector}>');
+    const annualGateIdx = chartsSource.indexOf("{annualFamily === 'ready' ? (");
+    assert.ok(selectorIdx > -1, 'the year selector must be rendered');
+    assert.ok(annualGateIdx > -1, 'the annual bars still have a ready gate');
+    assert.ok(
+      selectorIdx < annualGateIdx,
+      'the selector must live outside the annualFamily ready gate',
+    );
+  });
+
+  await test('chart cleanups source pins: named handler, comments and capsule indentation', () => {
+    const chartsSource = readFileSync(
+      join(root, 'src', 'app', 'pro', 'charts.tsx'),
+      'utf8',
+    );
+    assert.match(chartsSource, /const handleStorePress = \(store: StoreBar\) => \{/);
+    assert.match(chartsSource, /if \(isHouseholdView\) return;/);
+    assert.match(chartsSource, /onRowPress=\{handleStorePress\}/);
+    assert.match(
+      chartsSource,
+      /no raw viewer-unit receipt for this month in `activeViewerList`/,
+    );
+    assert.match(
+      chartsSource,
+      /\{capsuleFamily === 'ready' \? \(\n\s{8}<Card>\n\s{10}<View style=\{styles\.chartHeader\}>/,
     );
   });
 

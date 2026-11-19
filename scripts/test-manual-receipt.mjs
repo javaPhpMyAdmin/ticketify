@@ -363,6 +363,7 @@ function compile() {
       monthlyPurchasesTotalPrefix: p('monthly-purchases-total'),
       householdMonthlyPurchasesTotal: p('household-purchases-total'),
       householdMonthlyPurchasesTotalPrefix: p('household-purchases-total'),
+      householdChartSeriesPrefix: p('household-chart-series'),
       monthlyImpulseTotalPrefix: p('monthly-impulse-total'),
       monthlyImpulseItemsPrefix: p('monthly-impulse-items'),
       monthlyCachePrefix: p('monthly-cache'),
@@ -405,11 +406,14 @@ function compile() {
   writeFileSync(
     join(workdir, 'lib-stubs/use-household-store.ts'),
     `
-    // Minimal Zustand-shaped stub: api.ts only reads getState().household?.id
-    // via invalidateHouseholdNetTotal (no-op when not in a household).
+    // Minimal Zustand-shaped stub: api.ts reads getState().household?.id via
+    // invalidateHouseholdNetTotal. Tests can join a household to assert the
+    // household chart series cache is invalidated on save.
     type Household = { id: string } | null;
+    let household: Household = null;
     export const useHouseholdStore = {
-      getState: (): { household: Household } => ({ household: null }),
+      getState: (): { household: Household } => ({ household }),
+      setHousehold: (next: Household): void => { household = next; },
     };
   `,
   );
@@ -912,6 +916,42 @@ async function run() {
       assert.ok(prefixes.includes('scan-usage'), 'scan usage cache invalidated');
       assert.ok(prefixes.includes('home-feed'), 'home feed cache invalidated');
       assert.ok(prefixes.includes('budget'), 'budget cache invalidated');
+    });
+
+    await test('household member: save invalidates the household chart series cache', async () => {
+      const { useHouseholdStore } = await load('lib-stubs/use-household-store.js');
+      globalThis.__rpcResult = {
+        data: { ok: true, purchase_id: 'purchase-household', scans_used: 1, scans_limit: 15 },
+        error: null,
+      };
+      globalThis.__invalidateCalls = [];
+      useHouseholdStore.setHousehold({ id: 'h-1' });
+      try {
+        await saveManualReceipt('user-1', draft());
+      } finally {
+        useHouseholdStore.setHousehold(null);
+      }
+      const keys = globalThis.__invalidateCalls;
+      assert.ok(
+        keys.some(
+          (key) => key[0] === 'household-chart-series' && key[1] === 'h-1',
+        ),
+        'a household save must invalidate its household-scoped chart series',
+      );
+    });
+
+    await test('non-member: save does not invalidate the household chart series cache', async () => {
+      globalThis.__rpcResult = {
+        data: { ok: true, purchase_id: 'purchase-personal', scans_used: 1, scans_limit: 15 },
+        error: null,
+      };
+      globalThis.__invalidateCalls = [];
+      await saveManualReceipt('user-1', draft());
+      const keys = globalThis.__invalidateCalls;
+      assert.ok(
+        !keys.some((key) => key[0] === 'household-chart-series'),
+        'a personal save must not invalidate household chart windows',
+      );
     });
 
     await test('parity: refactored saveReceipt returns the same { id } shape', async () => {

@@ -7,8 +7,11 @@
  * dependency-free) into a temp directory, then asserts the CONTRACT at the
  * query-key level with a trivial fake client:
  *
- *   - `invalidateHouseholdAfterJoin` calls `invalidateQueries` EXACTLY twice,
- *     with the exact household and profile query keys for the userId,
+ *   - `invalidateHouseholdAfterJoin` calls `invalidateQueries` EXACTLY three
+ *     times, with the household/profile keys and the broad chart prefix,
+ *   - the leave/disband React call sites also invalidate the broad chart
+ *     prefix (pinned as source assertions, since the harness cannot mount
+ *     those screens),
  *   - the helper only needs the `invalidateQueries` surface — a fake client
  *     is a one-method spy, so the helper is trivially testable,
  *   - the returned promises are fire-and-forget (`void`), matching how the
@@ -23,7 +26,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -111,14 +114,17 @@ async function run() {
       assert.deepEqual(fake.calls, [
         ['household', 'u1'],
         ['profile', 'u1'],
+        // Broad prefix: invalidates every household chart-series window for
+        // every household, since the join helper does not know the id yet.
+        ['analytics', 'household-chart-series'],
       ]);
     },
   );
 
-  await test('calls invalidateQueries EXACTLY twice (household + profile)', () => {
+  await test('calls invalidateQueries EXACTLY three times (household + profile + chart prefix)', () => {
     const fake = makeFakeClient();
     mod.invalidateHouseholdAfterJoin(fake, 'abc-123');
-    assert.equal(fake.calls.length, 2);
+    assert.equal(fake.calls.length, 3);
   });
 
   await test('keys are user-scoped: different userId → different keys', () => {
@@ -138,6 +144,21 @@ async function run() {
     // Resolve the recorded promises to prove they are well-formed.
     return Promise.all(
       fake.calls.map(() => Promise.resolve()),
+    );
+  });
+
+  console.log('\n[tests] leave/disband chart invalidation source pins\n');
+
+  await test('source pin: profile leave path invalidates the broad chart prefix', () => {
+    const src = readFileSync(join(root, 'src/app/(tabs)/profile.tsx'), 'utf8');
+    assert.match(src, /leaveHousehold\(\)[\s\S]{0,500}householdChartSeriesPrefix\(\)/);
+  });
+
+  await test('source pin: settings disband path invalidates the broad chart prefix', () => {
+    const src = readFileSync(join(root, 'src/app/settings/household.tsx'), 'utf8');
+    assert.match(
+      src,
+      /disbandHousehold\(household\.id\)[\s\S]{0,500}householdChartSeriesPrefix\(\)/,
     );
   });
 

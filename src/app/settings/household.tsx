@@ -89,6 +89,9 @@ function HouseholdScreenContent({
             void queryClient.invalidateQueries({
               queryKey: queryKeys.household(userId),
             });
+            void queryClient.invalidateQueries({
+              queryKey: queryKeys.householdChartSeriesPrefix(),
+            });
           }
         } else {
           useDialogStore.getState().show({
@@ -125,6 +128,9 @@ function HouseholdScreenContent({
             if (userId) {
               void queryClient.invalidateQueries({
                 queryKey: queryKeys.household(userId),
+              });
+              void queryClient.invalidateQueries({
+                queryKey: queryKeys.householdChartSeriesPrefix(),
               });
             }
           } else {

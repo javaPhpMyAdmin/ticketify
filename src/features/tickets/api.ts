@@ -909,6 +909,9 @@ function invalidateHouseholdNetTotal(): void {
   void queryClient.invalidateQueries({
     queryKey: queryKeys.householdMonthlyPurchasesTotalPrefix(householdId),
   });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.householdChartSeriesPrefix(householdId),
+  });
 }
 
 /**

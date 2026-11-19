@@ -24,6 +24,7 @@
     "dailyAverageSubtext": "Por día en el mes",
     "noSpending": "Sin gastos",
     "noSpendingYear": "Sin gastos este año",
+    "householdNoData": "Todavía no hay datos del hogar para esta vista.",
     "byCategory": "Por categoría",
     "byStore": "Por tienda",
     "dayLabel": "{{weekday}} {{day}}",

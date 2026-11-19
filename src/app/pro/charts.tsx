@@ -54,17 +54,23 @@ import {
   CapsuleBarChart,
   DayDetailModal,
   StoreBars,
+  type StoreBar,
   bindViewerRows,
   aggregateDayItems,
   aggregateDayTotal,
-  aggregateSpendTrend,
   aggregateWeeklySpend,
   aggregateYearlySpend,
   availableYearsFromCache,
-  yearlyPointsFromCache,
+  annualTrendFromCacheRows,
+  yearlyPointsFromCacheRows,
+  resolveChartFamilyState,
+  type ChartFamilyState,
   categoryDetailHref,
   getMondayOfWeek,
   pickMaxSpendIndex,
+  chartCacheRowForMonth,
+  householdRowsToReceipts,
+  useHouseholdChartSeries,
 } from '@/features/charts';
 import { useSessionUser } from '@/features/auth';
 import { resolveCategoryDisplay, resolveHouseholdCategoryVisuals } from '@/features/home/categories';
@@ -92,7 +98,6 @@ import { useHouseholdStore } from '@/stores/use-household-store';
 import { useReceiptsStore } from '@/stores/use-receipts-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
-import type { MonthlyTotalsCacheRow } from '@/types';
 
 /**
  * Build a chronological window of `count` months ending at `monthKey`.
@@ -165,7 +170,7 @@ export default function ChartsScreen() {
   // in every screen file. Falls back to the es-AR literal during the
   // brief pre-init window.
   const chartsTitle = useScreenTitle('pro:chartsTitle');
-  const { t } = useTranslation(['pro', 'analytics', 'common']);
+  const { t } = useTranslation(['pro', 'analytics', 'common', 'errors']);
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <Stack.Screen options={{ title: chartsTitle }} />
@@ -181,6 +186,49 @@ export default function ChartsScreen() {
 }
 
 /**
+ * Inline state for ONE chart family. Returning `null` for 'ready' lets every
+ * resolved surface keep rendering while a different family is still pending
+ * or failed — the old single screen-wide gate hid all three windows.
+ */
+function ChartFamilyNotice({
+  state,
+  errorTitle,
+  loadingLabel,
+  noDataTitle,
+  retryLabel,
+  onRetry,
+}: {
+  state: ChartFamilyState;
+  errorTitle: string;
+  loadingLabel: string;
+  noDataTitle: string;
+  retryLabel: string;
+  onRetry: () => void;
+}) {
+  if (state === 'ready') return null;
+  if (state === 'error') {
+    return (
+      <EmptyState
+        framed
+        icon="exclamationmark.triangle.fill"
+        title={errorTitle}
+        actionLabel={retryLabel}
+        onAction={onRetry}
+      />
+    );
+  }
+  if (state === 'pending') {
+    return (
+      <View style={styles.householdPending}>
+        <BreakdownRowSkeleton />
+        <Text style={styles.emptyYear}>{loadingLabel}</Text>
+      </View>
+    );
+  }
+  return <EmptyState framed icon="chart.pie.fill" title={noDataTitle} />;
+}
+
+/**
  * Charts body. Pulled out so the `<ProRouteGuard>` doesn't re-mount the
  * scroll view + month selector every time the gate flips — the lock is
  * the only thing that swaps.
@@ -190,7 +238,7 @@ function ChartsBody() {
   // 'common'])` call covers every hardcoded string the screen renders —
   // trend copy, view toggle, period selector, summary cards, section
   // headings, a11y labels.
-  const { t } = useTranslation(['pro', 'analytics', 'common']);
+  const { t } = useTranslation(['pro', 'analytics', 'common', 'errors']);
   // The home feed hook owns the `records` query and hydrates the
   // receipts store; reading the store directly is the same data path
   // the History tab takes, so all screens stay in sync.
@@ -201,6 +249,8 @@ function ChartsBody() {
   // swaps (`getState()` outside a selector would miss those renders).
   const locale = useLocaleStore((s) => s.activeLocale);
   const [monthKey, setMonthKey] = useState(currentMonthKey);
+  const currentYear = String(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState(currentYear);
   const [period, setPeriod] = useState<ChartPeriod>('week');
   // ISO date of the day whose detail sheet is open (`null` = closed).
   const [tappedDay, setTappedDay] = useState<string | null>(null);
@@ -209,6 +259,10 @@ function ChartsBody() {
   const [tappedFromHero, setTappedFromHero] = useState(false);
   // Personal vs household view toggle. Only shown when the user has a household.
   const [viewMode, setViewMode] = useState<'personal' | 'household'>('personal');
+  // Single source for every mode gate below: derive the household flag first
+  // so personal is always its exact complement (no half-switched reads).
+  const isHouseholdView = viewMode === 'household';
+  const isPersonalView = !isHouseholdView;
 
   const householdId = useHouseholdStore((s) => s.household?.id);
   const hasHousehold = !!householdId;
@@ -227,12 +281,16 @@ function ChartsBody() {
   // detail aggregations are always accurate.
   const monthReceiptsQuery = useQuery({
     queryKey: queryKeys.monthReceipts(userId!, monthKey),
-    enabled: !!userId,
+    enabled: !!userId && isPersonalView,
     queryFn: () =>
       readPurchaseListByMonth(userId!, monthKey).then(toQueryData),
   });
-  // Use full month data for detail views; fall back to store list.
-  const monthList = monthReceiptsQuery.data ?? list;
+  // Use full month data for detail views; fall back to store list. Household
+  // mode has NO personal fallback — its cache-shaped source is the 0048 RPC.
+  const monthList = useMemo(
+    () => (isPersonalView ? monthReceiptsQuery.data ?? list : []),
+    [isPersonalView, monthReceiptsQuery.data, list],
+  );
   // Single-series binding (decision 9 / pass-3 §3): the trend, weekly/daily
   // bars, store bars, day-detail, donut and top-category each render ONE
   // figure, so they consume the VIEWER-unit rows only. A row with no recorded
@@ -244,7 +302,7 @@ function ChartsBody() {
     [monthList, currency],
   );
 
-  const monthKeys = useAvailableMonthKeys(userId);
+  const monthKeys = useAvailableMonthKeys(userId, isPersonalView);
 
   // Monday of the current week, derived from the LOCAL today. Single source
   // of truth for the weekly bars, the today highlight, and the tap → day
@@ -263,58 +321,121 @@ function ChartsBody() {
     refetch,
   } = useMonthlyTotals(
     monthKey,
-    viewMode === 'household' ? householdId : null,
+    isHouseholdView ? householdId : null,
   );
-  const overview = useMonthlyOverview(monthKey);
+  // Personal cache reads/recalc writes are disabled in household mode: the
+  // 0048 RPC is the only household source and must never mutate the personal
+  // cache.
+  const overview = useMonthlyOverview(monthKey, isPersonalView);
 
   // ── Cache data ──────────────────────────────────────────────────────
-  const cacheRow = useMonthlyCacheData(monthKey);
+  const cacheRow = useMonthlyCacheData(monthKey, isPersonalView);
 
-  // 6-month spend trend from the materialized cache (personal mode).
+  // The 36-month cache window is anchored to the CURRENT month (not the
+  // selected `monthKey`): `aggregateYearlySpend` always renders
+  // [currentYear-2 .. currentYear], so a window ending at an older selected
+  // month would slice the newest year's buckets to $0 while the annual card
+  // (keyed on `selectedYear`) still shows real totals.
+  const monthKeys36 = useMemo(() => lastNMonths(currentMonthKey(), 36), []);
   const monthKeys6 = lastNMonths(monthKey, 6);
+  const monthsOfYear = useMemo(
+    () =>
+      Array.from({ length: 12 }, (_, i) =>
+        `${selectedYear}-${String(i + 1).padStart(2, '0')}`,
+      ),
+    [selectedYear],
+  );
+
+  // Household mode: one read-only RPC window per chart family. The hook calls
+  // `readHouseholdChartSeries` (migration 0048) and never writes the personal
+  // cache. The query keys embed the sorted month list so the three windows
+  // cache independently and a write invalidates all of them through
+  // `queryKeys.householdChartSeriesPrefix`.
+  const householdTrend = useHouseholdChartSeries(
+    householdId,
+    monthKeys6,
+    isHouseholdView,
+  );
+  const householdYearly = useHouseholdChartSeries(
+    householdId,
+    monthKeys36,
+    isHouseholdView,
+  );
+  const householdAnnual = useHouseholdChartSeries(
+    householdId,
+    monthsOfYear,
+    isHouseholdView,
+  );
+
+  // Household mode substitutes the 0048 RPC row/receipts for BOTH the personal
+  // cache row and the personal receipt list. Personal mode keeps the exact
+  // previous references, so its renders remain byte-identical.
+  const householdCacheRow = useMemo(
+    () => chartCacheRowForMonth(householdTrend.rows, monthKey, currency),
+    [householdTrend.rows, monthKey, currency],
+  );
+  const householdReceipts = useMemo(
+    () => householdRowsToReceipts(householdTrend.rows, monthKey, currency),
+    [householdTrend.rows, monthKey, currency],
+  );
+  const activeCacheRow = isHouseholdView ? householdCacheRow : cacheRow;
+  const activeViewerList = isHouseholdView ? householdReceipts : viewerList;
+
+  // Per-family gates: a slow/failed RPC window must not hide windows that
+  // already resolved. Personal mode is always 'ready', so this block has no
+  // effect on the byte-identical personal render path.
+  const householdTrendHasViewerData =
+    householdCacheRow !== null || householdReceipts.length > 0;
+  const householdYearlyHasViewerData =
+    bindViewerRows(householdYearly.cacheRows, currency).length > 0;
+  const householdAnnualHasViewerData =
+    bindViewerRows(householdAnnual.cacheRows, currency).length > 0;
+
+  const trendFamily = resolveChartFamilyState({
+    isHouseholdView,
+    failed: !!householdTrend.error,
+    hasData: householdTrend.hasData,
+    hasViewerData: householdTrendHasViewerData,
+  });
+  const yearlyFamily = resolveChartFamilyState({
+    isHouseholdView,
+    failed: !!householdYearly.error,
+    hasData: householdYearly.hasData,
+    hasViewerData: householdYearlyHasViewerData,
+  });
+  const annualFamily = resolveChartFamilyState({
+    isHouseholdView,
+    failed: !!householdAnnual.error,
+    hasData: householdAnnual.hasData,
+    hasViewerData: householdAnnualHasViewerData,
+  });
+  // The capsule card switches family with its period selector.
+  const capsuleFamily = period === 'year' ? yearlyFamily : trendFamily;
+
   const trendQuery = useQuery({
     queryKey: queryKeys.monthlyCache(userId ?? '', `trend:${monthKey}`),
-    enabled: !!userId,
+    enabled: !!userId && isPersonalView,
     queryFn: () =>
       readMonthlyCacheRows(userId!, monthKeys6).then(toQueryData),
   });
-  const spendTrend = useMemo(() => {
-    if (trendQuery.data) {
-      const byMonth = new Map<string, MonthlyTotalsCacheRow>();
-      // Single-series binding: viewer-currency cache row only (decision 9).
-      for (const row of bindViewerRows(trendQuery.data, currency)) {
-        byMonth.set(row.year_month, row);
-      }
-      return monthKeys6.map((m) => ({
-        month: m,
-        total: byMonth.get(m)?.total ?? 0,
-      }));
-    }
-    // Household mode or cache not loaded: fall back to list aggregation.
-    const totalsByMonth = new Map<string, number>();
-    for (const receipt of viewerList) {
-      const key = getMonthKey(receipt.purchase_date);
-      totalsByMonth.set(key, (totalsByMonth.get(key) ?? 0) + (receipt.total ?? 0));
-    }
-    return monthKeys6.map((m) => ({
-      month: m,
-      total: totalsByMonth.get(m) ?? 0,
-    }));
-  }, [trendQuery.data, viewerList, monthKeys6, currency]);
+  const spendTrend = useMemo(
+    () =>
+      annualTrendFromCacheRows({
+        rows: isHouseholdView ? householdTrend.cacheRows : trendQuery.data,
+        fallbackRows: viewerList,
+        monthKeys: monthKeys6,
+        currency,
+      }),
+    [isHouseholdView, householdTrend.cacheRows, trendQuery.data, viewerList, monthKeys6, currency],
+  );
 
   // 3-year spend from the materialized cache (personal mode). The store
   // list only holds optimistic scan-flow rows and is empty in practice,
-  // so the "Por año" hero chart and the annual card's year navigator must
-  // read the cache instead — mirroring `trendQuery` / `yearQuery`. The
-  // 36-month cache window is anchored to the CURRENT month (not the
-  // selected `monthKey`): `aggregateYearlySpend` always renders
-  // [currentYear-2 .. currentYear], so a window ending at an older
-  // selected month would slice the newest year's buckets to $0 while the
-  // annual card (keyed on `selectedYear`) still shows real totals.
-  const monthKeys36 = useMemo(() => lastNMonths(currentMonthKey(), 36), []);
+  // so the "Por año" hero chart and the annual card's year navigator read
+  // the cache instead — mirroring `trendQuery` / `yearQuery`.
   const yearlyQuery = useQuery({
     queryKey: queryKeys.monthlyCache(userId ?? '', `yearly:${monthKey}`),
-    enabled: !!userId,
+    enabled: !!userId && isPersonalView,
     queryFn: () =>
       readMonthlyCacheRows(userId!, monthKeys36).then(toQueryData),
   });
@@ -322,7 +443,7 @@ function ChartsBody() {
   // Daily spend curve for the hero line chart: read from cache
   // (`daily_totals` jsonb, servicios included) or fall back to list.
   const dailySpend = useMemo(() => {
-    if (cacheRow) {
+    if (activeCacheRow) {
       const [year, month] = monthKey.split('-').map(Number);
       const daysInMonth = new Date(year, month, 0).getDate();
       return Array.from({ length: daysInMonth }, (_, i) => {
@@ -330,15 +451,15 @@ function ChartsBody() {
         const dateKey = `${monthKey}-${dd}`;
         return {
           day: i + 1,
-          total: cacheRow.daily_totals[dateKey] ?? 0,
+          total: activeCacheRow.daily_totals[dateKey] ?? 0,
         };
       });
     }
-    // Household mode or cache not loaded: aggregate from list.
+    // Cache not loaded: fall back to list aggregation (personal only).
     const [year, month] = monthKey.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
     const totalsByDay = new Map<number, number>();
-    for (const receipt of viewerList) {
+    for (const receipt of activeViewerList) {
       if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
       const day = Number(receipt.purchase_date.slice(8, 10));
       totalsByDay.set(day, (totalsByDay.get(day) ?? 0) + (receipt.total ?? 0));
@@ -347,12 +468,12 @@ function ChartsBody() {
       day: i + 1,
       total: totalsByDay.get(i + 1) ?? 0,
     }));
-  }, [cacheRow, viewerList, monthKey]);
+  }, [activeCacheRow, activeViewerList, monthKey]);
 
   // Per-store totals from cache (`store_totals` jsonb) or list aggregation.
   const stores = useMemo(() => {
-    if (cacheRow) {
-      const entries = Object.entries(cacheRow.store_totals);
+    if (activeCacheRow) {
+      const entries = Object.entries(activeCacheRow.store_totals);
       if (entries.length === 0) return [];
       return entries
         .map(([name, { total }]) => ({
@@ -363,7 +484,7 @@ function ChartsBody() {
         .sort((a, b) => b.total - a.total);
     }
     const totalsByStore = new Map<string, { storeName: string; total: number }>();
-    for (const receipt of viewerList) {
+    for (const receipt of activeViewerList) {
       if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
       const rawName = receipt.store_name ?? '';
       const displayName = rawName.trim() || 'Sin tienda';
@@ -381,7 +502,7 @@ function ChartsBody() {
         if (b.total !== a.total) return b.total - a.total;
         return a.storeName.localeCompare(b.storeName);
       });
-  }, [cacheRow, viewerList, monthKey]);
+  }, [activeCacheRow, activeViewerList, monthKey]);
 
   // Daily average from list aggregation or cache fallback: the month's
   // services-excluded total divided by the number of DISTINCT days actually
@@ -398,7 +519,7 @@ function ChartsBody() {
     const excluded = new Set(['servicios']);
     let total = 0;
     const spendDays = new Set<number>();
-    for (const receipt of viewerList) {
+    for (const receipt of activeViewerList) {
       if (getMonthKey(receipt.purchase_date) !== monthKey) continue;
       let excludedAmount = 0;
       for (const slug of excluded) {
@@ -414,22 +535,22 @@ function ChartsBody() {
     // month. A month whose spend is entirely servicios legitimately yields 0
     // (still the correct list-derived value), so presence of receipts — not a
     // positive result — decides whether the list is authoritative.
-    const monthHasReceipts = viewerList.some(
+    const monthHasReceipts = activeViewerList.some(
       (receipt) => getMonthKey(receipt.purchase_date) === monthKey,
     );
     if (monthHasReceipts) {
       return spendDays.size > 0 ? total / spendDays.size : 0;
     }
-    // Fallback path: no raw viewer-unit receipt for this month in `viewerList` yet (the
+    // Fallback path: no raw viewer-unit receipt for this month in `activeViewerList` yet (the
     // monthly query is still loading and the store is empty, or a cache-only
     // imported month without raw receipts). Best effort from the cache.
-    if (cacheRow) {
+    if (activeCacheRow) {
       const [year, month] = monthKey.split('-').map(Number);
       const daysInMonth = new Date(year, month, 0).getDate();
       // The cache total includes servicios; category_totals carries the
       // per-slug totals, so subtract servicios before averaging (same
       // exclusion as the primary list path).
-      const serviciosTotal = cacheRow.category_totals?.['servicios']?.total ?? 0;
+      const serviciosTotal = activeCacheRow.category_totals?.['servicios']?.total ?? 0;
       // LIMITATION: the cache has no PER-DAY category breakdown, so the
       // spend-day count uses the closest per-day signal — every distinct day
       // with a positive `daily_totals` entry (servicios included). A day
@@ -439,19 +560,19 @@ function ChartsBody() {
       let spendDayCount = 0;
       for (let i = 1; i <= daysInMonth; i += 1) {
         const dd = String(i).padStart(2, '0');
-        if ((cacheRow.daily_totals[`${monthKey}-${dd}`] ?? 0) > 0) {
+        if ((activeCacheRow.daily_totals[`${monthKey}-${dd}`] ?? 0) > 0) {
           spendDayCount += 1;
         }
       }
-      return spendDayCount > 0 ? (cacheRow.total - serviciosTotal) / spendDayCount : 0;
+      return spendDayCount > 0 ? (activeCacheRow.total - serviciosTotal) / spendDayCount : 0;
     }
     return 0;
-  }, [cacheRow, viewerList, monthKey]);
+  }, [activeCacheRow, activeViewerList, monthKey]);
 
   // Top category from cache `category_totals` or list aggregation.
   const topCategory = useMemo(() => {
-    if (cacheRow) {
-      const entries = Object.entries(cacheRow.category_totals);
+    if (activeCacheRow) {
+      const entries = Object.entries(activeCacheRow.category_totals);
       if (entries.length === 0) return null;
       const sorted = entries.sort(([, a], [, b]) => b.total - a.total);
       const [slug, { total }] = sorted[0];
@@ -463,9 +584,9 @@ function ChartsBody() {
         icon: cat.icon,
       };
     }
-    const categories = aggregateCategoriesByMonth(viewerList, monthKey, catalog);
+    const categories = aggregateCategoriesByMonth(activeViewerList, monthKey, catalog);
     return categories[0] ?? null;
-  }, [cacheRow, viewerList, monthKey, catalog]);
+  }, [activeCacheRow, activeViewerList, monthKey, catalog]);
 
   // Check if any budgets are configured for the selected month
   const hasAnyBudgets = useMemo(
@@ -478,8 +599,8 @@ function ChartsBody() {
     if (!tappedDay) return [];
     // Hero includes servicios; weekly excludes them.
     const exclude = tappedFromHero ? [] : ['servicios'];
-    return aggregateDayItems(viewerList, tappedDay, exclude);
-  }, [viewerList, tappedDay, tappedFromHero]);
+    return aggregateDayItems(activeViewerList, tappedDay, exclude);
+  }, [activeViewerList, tappedDay, tappedFromHero]);
   // Headline total for the open day-detail sheet — the EXACT number the
   // weekly bar showed for that day (`aggregateDayTotal`: receipt totals
   // minus servicios, clamped at 0). The item list alone can't reproduce
@@ -488,51 +609,44 @@ function ChartsBody() {
   const tappedDayTotal = useMemo(() => {
     if (!tappedDay) return 0;
     const exclude = tappedFromHero ? [] : ['servicios'];
-    return aggregateDayTotal(viewerList, tappedDay, exclude);
-  }, [viewerList, tappedDay, tappedFromHero]);
+    return aggregateDayTotal(activeViewerList, tappedDay, exclude);
+  }, [activeViewerList, tappedDay, tappedFromHero]);
 
   // ── Annual trend card ──────────────────────────────────────────────
-  const currentYear = String(new Date().getFullYear());
-  const [selectedYear, setSelectedYear] = useState(currentYear);
-  // Years present in the materialized cache (the 36-month window read by
-  // `yearlyQuery`), unioned with the current year so prev-year navigation
-  // stays enabled even before the cache has data for the current year.
-  // Falls back to the store list, which only holds optimistic scan-flow
-  // rows and is empty in practice.
+  // Years present in the cache-shaped source (the 36-month window), unioned
+  // with the current year so prev-year navigation stays enabled even before
+  // data for the current year exists. Household mode uses the 0048 RPC rows.
   const availableYears = useMemo(() => {
+    if (isHouseholdView) {
+      return availableYearsFromCache(
+        bindViewerRows(householdYearly.cacheRows, currency),
+        currentYear,
+      );
+    }
     if (yearlyQuery.data) {
       return availableYearsFromCache(yearlyQuery.data, currentYear);
     }
     return [...new Set(list.map((r) => r.purchase_date.slice(0, 4)))].sort();
-  }, [yearlyQuery.data, list, currentYear]);
-  const monthsOfYear = useMemo(() => {
-    const y = selectedYear;
-    return Array.from({ length: 12 }, (_, i) =>
-      `${y}-${String(i + 1).padStart(2, '0')}`,
-    );
-  }, [selectedYear]);
+  }, [isHouseholdView, householdYearly.cacheRows, yearlyQuery.data, list, currentYear, currency]);
 
-  // Annual trend from the materialized cache (personal mode).
+  // Annual trend from the materialized cache (personal mode) or the household
+  // series RPC. Both bind to the viewer unit; neither sums across units.
   const yearQuery = useQuery({
     queryKey: queryKeys.monthlyCache(userId ?? '', `annual:${selectedYear}`),
-    enabled: !!userId,
+    enabled: !!userId && isPersonalView,
     queryFn: () =>
       readMonthlyCacheRows(userId!, monthsOfYear).then(toQueryData),
   });
-  const annualTrend = useMemo(() => {
-    if (yearQuery.data) {
-      const byMonth = new Map<string, MonthlyTotalsCacheRow>();
-      // Single-series binding: viewer-currency cache row only (decision 9).
-      for (const row of bindViewerRows(yearQuery.data, currency)) {
-        byMonth.set(row.year_month, row);
-      }
-      return monthsOfYear.map((m) => ({
-        month: m,
-        total: byMonth.get(m)?.total ?? 0,
-      }));
-    }
-    return aggregateSpendTrend(viewerList, monthsOfYear);
-  }, [yearQuery.data, viewerList, monthsOfYear, currency]);
+  const annualTrend = useMemo(
+    () =>
+      annualTrendFromCacheRows({
+        rows: isHouseholdView ? householdAnnual.cacheRows : yearQuery.data,
+        fallbackRows: viewerList,
+        monthKeys: monthsOfYear,
+        currency,
+      }),
+    [isHouseholdView, householdAnnual.cacheRows, yearQuery.data, viewerList, monthsOfYear, currency],
+  );
   const hasAnnualData = annualTrend.some((p) => p.total > 0);
   const currentMonthIdx = new Date().getMonth(); // 0–11
   const highlightIdx = selectedYear === currentYear ? currentMonthIdx : -1;
@@ -544,6 +658,15 @@ function ChartsBody() {
     setSelectedYear(String(Number(selectedYear) - 1));
   const goNextYear = () =>
     setSelectedYear(String(Number(selectedYear) + 1));
+
+  /** Store rows are only drillable for personal, named stores. */
+  const handleStorePress = (store: StoreBar) => {
+    if (isHouseholdView) return;
+    if (store.storeId === 'sin tienda') return;
+    router.push(
+      `/stores/${encodeURIComponent(store.storeId)}?month=${monthKey}`,
+    );
+  };
 
   /**
    * Items for the capsule bar chart card, derived from the selected
@@ -558,7 +681,7 @@ function ChartsBody() {
       // week start comes from `weekStartISO` (local-derived, shared with
       // the tap→day mapping), so bars and the detail sheet stay aligned.
       const weekPoints = aggregateWeeklySpend(
-        viewerList,
+        activeViewerList,
         weekStartISO,
         ['servicios'],
         locale,
@@ -589,15 +712,21 @@ function ChartsBody() {
         })),
       };
     }
-    const currentYear = String(new Date().getFullYear());
     // Cache-backed path: monthly cache rows become minimal
     // `ReceiptSpendRecord`-shaped points (first-of-month dates) so the
-    // same aggregator feeds both sources. Falls back to the store list,
-    // which only holds optimistic scan-flow rows and is empty in practice.
+    // same aggregator feeds both sources. Household mode uses the 0048 rows;
+    // personal mode keeps its cache path and empty-store fallback unchanged.
     // Single-series binding (decision 9): viewer-currency rows only.
-    const yearlyPoints = yearlyQuery.data
-      ? yearlyPointsFromCache(bindViewerRows(yearlyQuery.data, currency))
-      : bindViewerRows(list, currency);
+    // A resolved empty personal window stays empty; only `undefined` falls
+    // back to the list. Household never uses the personal list.
+    if (isHouseholdView && householdYearly.cacheRows.length === 0) {
+      return { title: t('pro:periodByYear'), items: [] };
+    }
+    const yearlyPoints = yearlyPointsFromCacheRows({
+      rows: isHouseholdView ? householdYearly.cacheRows : yearlyQuery.data,
+      fallbackRows: list,
+      currency,
+    });
     return {
       title: t('pro:periodByYear'),
       items: aggregateYearlySpend(yearlyPoints).map((point) => ({
@@ -606,13 +735,33 @@ function ChartsBody() {
         highlight: point.year === currentYear,
       })),
     };
-  }, [period, spendTrend, weekStartISO, yearlyQuery.data, list, locale, t, viewerList, currency]);
+  }, [period, spendTrend, weekStartISO, isHouseholdView, householdYearly.cacheRows, yearlyQuery.data, list, locale, t, activeViewerList, currency, currentYear]);
 
-  // `monthKeys` is newest-first. The selected month may not be in it (e.g.
-  // the current month with no receipts yet): `useMonthNavigation` synthesizes
-  // the current month at the front so it stays reachable via "newer".
+  // Household month keys come from the RPC windows, never the personal
+  // `month-keys` query. Sorted newest-first, same contract as `monthKeys`.
+  const householdMonthKeys = useMemo(
+    () =>
+      [
+        ...new Set(
+          [
+            ...bindViewerRows(householdTrend.cacheRows, currency),
+            ...bindViewerRows(householdYearly.cacheRows, currency),
+            ...bindViewerRows(householdAnnual.cacheRows, currency),
+          ].map((row) => row.year_month),
+        ),
+      ]
+        .sort()
+        .reverse(),
+    [householdTrend.cacheRows, householdYearly.cacheRows, householdAnnual.cacheRows, currency],
+  );
+  const effectiveMonthKeys = isHouseholdView ? householdMonthKeys : monthKeys;
+
+  // `effectiveMonthKeys` is newest-first. The selected month may not be in it
+  // (e.g. the current month with no receipts yet): `useMonthNavigation`
+  // synthesizes the current month at the front so it stays reachable via
+  // "newer".
   const { canGoNewer, canGoOlder, goOlder, goNewer } = useMonthNavigation(
-    monthKeys,
+    effectiveMonthKeys,
     monthKey,
     setMonthKey,
   );
@@ -639,10 +788,10 @@ function ChartsBody() {
             total: g.total,
           }))
         : [{ currency, total: 0 }];
-    return viewMode === 'household' ? groups : [];
-  }, [householdTotals, currency, viewMode]);
+    return isHouseholdView ? groups : [];
+  }, [householdTotals, currency, isHouseholdView]);
   const overviewTotals = useMemo(() => {
-    if (viewMode === 'household') return [];
+    if (isHouseholdView) return [];
     const totals = groupTotalsByUnit(
       monthList
         .filter((r) => r.purchase_date.slice(0, 7) === monthKey)
@@ -650,7 +799,7 @@ function ChartsBody() {
       currency,
     );
     return totals.length > 0 ? totals : [{ currency, total: 0 }];
-  }, [monthList, monthKey, currency, viewMode]);
+  }, [monthList, monthKey, currency, isHouseholdView]);
   const headline = buildOverviewHeadline(viewMode, {
     householdTotals: householdHeadlineTotals,
     overviewTotals,
@@ -725,100 +874,141 @@ function ChartsBody() {
         </Pressable>
       </View>
 
-      <InsightHeroCard
-        monthLabel={monthKeyToLabel(locale, monthKey)}
-        monthKey={monthKey}
-        totals={headline.headlineTotals}
-        deltaPct={headline.headlineChangePct}
-        previousMonthName={previousMonthName}
-        dailyData={dailySpend}
-        currency={currency}
-        onDayPress={(dayIndex) => {
-          const day = String(dayIndex + 1).padStart(2, '0');
-          setTappedFromHero(true);
-          setTappedDay(`${monthKey}-${day}`);
-        }}
+      {/* Month-scoped surfaces read the trend window. The capsule card
+          switches source with `period`, so it has its own family gate. */}
+      <ChartFamilyNotice
+        state={trendFamily}
+        errorTitle={t('errors:featureAccess.generic')}
+        loadingLabel={t('common:loading')}
+        noDataTitle={t('pro:householdNoData')}
+        retryLabel={t('common:retry')}
+        onRetry={() => { void householdTrend.refetch(); }}
       />
-      <InsightBanner
-        deltaPct={headline.headlineChangePct}
-        previousMonthName={previousMonthName}
-      />
-      <Card>
-        <View style={styles.chartHeader}>
-          <Text style={styles.chartTitle} numberOfLines={1}>
-            {chartData.title}
-          </Text>
-          <View style={styles.segmentedControl}>
-            {(['week', 'month', 'year'] as const).map((key) => {
-              const active = period === key;
-              return (
-                <Pressable
-                  key={key}
-                  onPress={() => setPeriod(key)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  style={[styles.segment, active && styles.segmentActive]}
-                >
-                  <Text
-                    style={[
-                      styles.segmentLabel,
-                      active && styles.segmentLabelActive,
-                    ]}
+      {trendFamily === 'ready' ? (
+        <>
+          <InsightHeroCard
+            monthLabel={monthKeyToLabel(locale, monthKey)}
+            monthKey={monthKey}
+            totals={headline.headlineTotals}
+            deltaPct={headline.headlineChangePct}
+            previousMonthName={previousMonthName}
+            dailyData={dailySpend}
+            currency={currency}
+            onDayPress={(dayIndex) => {
+              const day = String(dayIndex + 1).padStart(2, '0');
+              setTappedFromHero(true);
+              setTappedDay(`${monthKey}-${day}`);
+            }}
+          />
+          <InsightBanner
+            deltaPct={headline.headlineChangePct}
+            previousMonthName={previousMonthName}
+          />
+        </>
+      ) : null}
+
+      {capsuleFamily !== trendFamily || period === 'year' ? (
+        <ChartFamilyNotice
+          state={capsuleFamily}
+          errorTitle={t('errors:featureAccess.generic')}
+          loadingLabel={t('common:loading')}
+          noDataTitle={t('pro:householdNoData')}
+          retryLabel={t('common:retry')}
+          onRetry={() => {
+            if (period === 'year') void householdYearly.refetch();
+            else void householdTrend.refetch();
+          }}
+        />
+      ) : null}
+      {capsuleFamily === 'ready' ? (
+        <Card>
+          <View style={styles.chartHeader}>
+            <Text style={styles.chartTitle} numberOfLines={1}>
+              {chartData.title}
+            </Text>
+            <View style={styles.segmentedControl}>
+              {(['week', 'month', 'year'] as const).map((key) => {
+                const active = period === key;
+                return (
+                  <Pressable
+                    key={key}
+                    onPress={() => setPeriod(key)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    style={[styles.segment, active && styles.segmentActive]}
                   >
-                    {key === 'week'
-                      ? t('pro:periodDay')
-                      : key === 'month'
-                        ? t('pro:periodMonth')
-                        : t('pro:periodYear')}
-                  </Text>
-                </Pressable>
-              );
-            })}
+                    <Text
+                      style={[
+                        styles.segmentLabel,
+                        active && styles.segmentLabelActive,
+                      ]}
+                    >
+                      {key === 'week'
+                        ? t('pro:periodDay')
+                        : key === 'month'
+                          ? t('pro:periodMonth')
+                          : t('pro:periodYear')}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
+          {/* The weekly bars exclude servicios (utility bills); the caption
+              documents that so the card title isn't read as the full daily
+              spend. Month/year views include servicios, so the note only
+              renders for the week period. */}
+          {period === 'week' ? (
+            <Text style={styles.weeklyCaption}>{t('pro:weeklyCaption')}</Text>
+          ) : null}
+          <CapsuleBarChart
+            items={chartData.items}
+            currency={currency}
+            onPressItem={
+              period === 'week'
+                ? (_item, index) => {
+                    setTappedFromHero(false);
+                    setTappedDay(weekDayISO(weekStartISO, index));
+                  }
+                : undefined
+            }
+          />
+        </Card>
+      ) : null}
+
+      {trendFamily === 'ready' ? (
+        <View style={styles.summaryRow}>
+          <MetricSummaryCard
+            label={t('pro:topCategory')}
+            value={topCategory?.name ?? t('pro:topCategoryDash')}
+            subtext={
+              topCategory
+                ? // Single-series binding (decision 9) — see the `viewerList`
+                  // comment above for the full rationale.
+                  formatCurrency(topCategory.amount, currency)
+                : t('pro:noSpending')
+            }
+            icon="chart.pie.fill"
+          />
+          <MetricSummaryCard
+            label={t('pro:dailyAverage')}
+            // Single-series binding (decision 9); see `viewerList` above.
+            value={formatCurrency(dailyAverage, currency)}
+            subtext={t('pro:dailyAverageSubtext')}
+            icon="calendar"
+          />
         </View>
-        {/* The weekly bars exclude servicios (utility bills); the caption
-            documents that so the card title isn't read as the full daily
-            spend. Month/year views include servicios, so the note only
-            renders for the week period. */}
-        {period === 'week' ? (
-          <Text style={styles.weeklyCaption}>{t('pro:weeklyCaption')}</Text>
-        ) : null}
-        <CapsuleBarChart
-          items={chartData.items}
-          currency={currency}
-          onPressItem={
-            period === 'week'
-              ? (_item, index) => {
-                  setTappedFromHero(false);
-                  setTappedDay(weekDayISO(weekStartISO, index));
-                }
-              : undefined
-          }
-        />
-      </Card>
-      <View style={styles.summaryRow}>
-        <MetricSummaryCard
-          label={t('pro:topCategory')}
-          value={topCategory?.name ?? t('pro:topCategoryDash')}
-          subtext={
-            topCategory
-              ? // Single-series binding (decision 9) — see the `viewerList`
-                // comment above for the full rationale.
-                formatCurrency(topCategory.amount, currency)
-              : t('pro:noSpending')
-          }
-          icon="chart.pie.fill"
-        />
-        <MetricSummaryCard
-          label={t('pro:dailyAverage')}
-          // Single-series binding (decision 9); see `viewerList` above.
-          value={formatCurrency(dailyAverage, currency)}
-          subtext={t('pro:dailyAverageSubtext')}
-          icon="calendar"
-        />
-      </View>
+      ) : null}
 
       {/* ── Tendencia anual ──────────────────────────────────────────── */}
+      <ChartFamilyNotice
+        state={annualFamily}
+        errorTitle={t('errors:featureAccess.generic')}
+        loadingLabel={t('common:loading')}
+        noDataTitle={t('pro:householdNoData')}
+        retryLabel={t('common:retry')}
+        onRetry={() => { void householdAnnual.refetch(); }}
+      />
       <Card>
         <View style={styles.yearSelector}>
           <Pressable
@@ -851,28 +1041,30 @@ function ChartsBody() {
             />
           </Pressable>
         </View>
-        {hasAnnualData ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ minWidth: 12 * 44 }}
-          >
-            <CapsuleBarChart
-              items={annualTrend.map((point, i) => ({
-                label: shortMonthLabel(point.month),
-                value: point.total,
-                highlight: i === highlightIdx,
-              }))}
-              currency={currency}
-              onPressItem={(_item, index) => {
-                const monthKey = monthsOfYear[index];
-                setMonthKey(monthKey);
-              }}
-            />
-          </ScrollView>
-        ) : (
-          <Text style={styles.emptyYear}>{t('pro:noSpendingYear')}</Text>
-        )}
+        {annualFamily === 'ready' ? (
+          hasAnnualData ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ minWidth: 12 * 44 }}
+            >
+              <CapsuleBarChart
+                items={annualTrend.map((point, i) => ({
+                  label: shortMonthLabel(point.month),
+                  value: point.total,
+                  highlight: i === highlightIdx,
+                }))}
+                currency={currency}
+                onPressItem={(_item, index) => {
+                  const monthKey = monthsOfYear[index];
+                  setMonthKey(monthKey);
+                }}
+              />
+            </ScrollView>
+          ) : (
+            <Text style={styles.emptyYear}>{t('pro:noSpendingYear')}</Text>
+          )
+        ) : null}
       </Card>
 
       <View style={styles.section}>
@@ -955,6 +1147,7 @@ function ChartsBody() {
                               t.category_slug,
                               monthKey,
                               currentMonthKey(),
+                              isHouseholdView ? 'household' : 'personal',
                             ),
                           )
                         }
@@ -972,25 +1165,24 @@ function ChartsBody() {
         )}
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t('pro:byStore')}</Text>
-        <Card padding={spacing.lg}>
-          <StoreBars
-            data={stores}
-            // Receipts with no store name aggregate to the `sin tienda`
-            // fallback, whose drill-down screen can't reproduce the bar's
-            // total (empty store_name normalizes to '' on that screen).
-            // Tapping it would open a $0 page — so the row is inert.
-            onRowPress={(store) =>
-              store.storeId === 'sin tienda'
-                ? undefined
-                : router.push(
-                    `/stores/${encodeURIComponent(store.storeId)}?month=${monthKey}`,
-                  )
-            }
-          />
-        </Card>
-      </View>
+      {trendFamily === 'ready' ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('pro:byStore')}</Text>
+          <Card padding={spacing.lg}>
+            <StoreBars
+              data={stores}
+              // Receipts with no store name aggregate to the `sin tienda`
+              // fallback, whose drill-down screen can't reproduce the bar's
+              // total (empty store_name normalizes to '' on that screen).
+              // Tapping it would open a $0 page — so the row is inert.
+              // The /stores/[name] drill-down is personal-scoped, so household
+              // bars stay informational — tapping one would show another user's
+              // data under the wrong scope. See `handleStorePress`.
+              onRowPress={handleStorePress}
+            />
+          </Card>
+        </View>
+      ) : null}
 
       <Pressable
         onPress={() => router.back()}
@@ -1105,6 +1297,10 @@ const styles = StyleSheet.create({
     ...typography.bodyMd,
     color: colors.textSecondary,
     textAlign: 'center',
+    paddingVertical: spacing.lg,
+  },
+  householdPending: {
+    gap: spacing.md,
     paddingVertical: spacing.lg,
   },
   chartHeader: {

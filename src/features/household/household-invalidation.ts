@@ -29,4 +29,11 @@ export function invalidateHouseholdAfterJoin(
 ): void {
   void queryClient.invalidateQueries({ queryKey: queryKeys.household(userId) });
   void queryClient.invalidateQueries({ queryKey: queryKeys.profile(userId) });
+  // Membership changed, so every cached household chart-series window is
+  // potentially stale (including the previously joined household's windows).
+  // React Query partial-matches the shorter prefix, so no household id is
+  // needed here.
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.householdChartSeriesPrefix(),
+  });
 }

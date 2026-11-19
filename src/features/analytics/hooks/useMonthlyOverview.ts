@@ -12,11 +12,14 @@ import { useMonthlyCache } from './useMonthlyCache';
  * totals regardless of how much of the paginated receipt feed has been
  * loaded. Cache misses trigger a one-time recalculation automatically.
  */
-export function useMonthlyOverview(monthKey = currentMonthKey()) {
+export function useMonthlyOverview(monthKey = currentMonthKey(), enabled = true) {
   const prevMonth = previousMonthKey(monthKey);
 
-  const current = useMonthlyCache(monthKey);
-  const previous = useMonthlyCache(prevMonth);
+  // Household mode must not read or recalculate the personal cache: the
+  // 0048 RPC is its single source. Gating here keeps this hook's callers
+  // unchanged while threading the mode down to both cache windows.
+  const current = useMonthlyCache(monthKey, undefined, enabled);
+  const previous = useMonthlyCache(prevMonth, undefined, enabled);
 
   return useMemo(() => {
     const currentTotal = current.monthTotal;

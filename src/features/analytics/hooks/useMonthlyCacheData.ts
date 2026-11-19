@@ -24,13 +24,14 @@ import { useSettingsStore } from '@/stores/use-settings-store';
  */
 export function useMonthlyCacheData(
   yearMonth = currentMonthKey(),
+  enabled = true,
 ): MonthlyTotalsCacheRow | null {
   const { userId } = useSessionUser();
   const currency = useSettingsStore((s) => s.currency);
 
   const cacheQuery = useQuery({
     queryKey: queryKeys.monthlyCache(userId ?? '', yearMonth),
-    enabled: !!userId,
+    enabled: enabled && !!userId,
     queryFn: () =>
       readMonthlyCacheRowsForMonth(userId!, yearMonth).then(toQueryData),
   });

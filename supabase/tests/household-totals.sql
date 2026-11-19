@@ -120,6 +120,16 @@ declare
   v_ag_gate_rows_after int;
   v_ag_gate_before   text;
   v_ag_gate_after    text;
+
+  -- §4d household chart series RPC (Pro Stats household mode).
+  v_hcs_secdef      boolean;
+  v_hcs_owner       text;
+  v_hcs_cols        int;
+  v_hcs_rows        int;
+  v_hcs_total       numeric;
+  v_hcs_day_total   numeric;
+  v_hcs_nonmember_rows int;
+  v_hcs_cap_rows    int;
 begin
   -- -------------------------------------------------------------------------
   -- 1. Catalog — migration 0031 contract
@@ -957,6 +967,124 @@ begin
     'a rejected cross-user recalc must not change the target cache row count';
   assert v_ag_gate_after = v_ag_gate_before,
     'a rejected cross-user recalc must leave the target cache rows unchanged (same currency rows)';
+
+  -- -------------------------------------------------------------------------
+  -- 4d. Household chart series RPC (Pro Stats household mode, migration 0048).
+  --
+  --     The Pro charts screen reads ONE read-only RPC for every cache-shaped
+  --     surface (hero curve, weekly capsule, 6-month trend, annual card,
+  --     store ranking, day detail). It must mirror 0044's SELECT-side
+  --     aggregation exactly: one row per (year_month, effective unit),
+  --     confirmed-only, membership-gated, net purchase totals plus the same
+  --     daily/store/category jsonb shapes as monthly_user_totals. Empty months
+  --     and non-members yield ZERO rows (no fabricated zeros, no errors).
+  -- -------------------------------------------------------------------------
+
+  assert to_regprocedure('public.household_chart_series(uuid, text[])') is not null,
+    'household_chart_series(uuid, text[]) is missing (expected from 0048)';
+
+  select p.prosecdef, pg_get_userbyid(p.proowner)
+    into v_hcs_secdef, v_hcs_owner
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname = 'household_chart_series'
+     and p.pronargs = 2;
+  assert v_hcs_secdef, 'household_chart_series must be SECURITY DEFINER';
+  assert v_hcs_owner = 'postgres', 'household_chart_series must be owned by postgres';
+
+  select count(*) into v_hcs_cols
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    left join lateral unnest(p.proargmodes) as m(mode) on true
+   where n.nspname = 'public'
+     and p.proname = 'household_chart_series'
+     and p.pronargs = 2
+     and m.mode in ('o', 't');
+  assert v_hcs_cols = 7,
+    'household_chart_series must return exactly (year_month, currency, total, daily_totals, store_totals, category_totals, daily_category_totals)';
+
+  assert not has_function_privilege('anon', 'public.household_chart_series(uuid, text[])', 'EXECUTE'),
+    'anon must NOT be able to execute household_chart_series (least privilege)';
+  assert not has_function_privilege('public', 'public.household_chart_series(uuid, text[])', 'EXECUTE'),
+    'public must NOT be able to execute household_chart_series (least privilege)';
+  assert has_function_privilege('authenticated', 'public.household_chart_series(uuid, text[])', 'EXECUTE'),
+    'authenticated must be able to execute household_chart_series';
+
+  -- Act as member A; the §4c fixture rows survive the orphan-prune assertions.
+  perform set_config('request.jwt.claims', '{"sub":"a9000000-0000-0000-0000-000000000001"}', true);
+
+  select count(*) into v_hcs_rows
+    from public.household_chart_series(
+      v_ag_hid,
+      array['2026-08', '2026-09', '2025-01']::text[]
+    );
+  assert v_hcs_rows = 3,
+    'household_chart_series must return one row per (month, unit), and ZERO for the empty month (got ' || v_hcs_rows || ')';
+
+  select total into v_hcs_total
+    from public.household_chart_series(v_ag_hid, array['2026-08']::text[])
+   where year_month = '2026-08' and currency = 'UYU';
+  assert v_hcs_total = 150.00, 'household chart series UYU net must be 150.00';
+
+  select total into v_hcs_total
+    from public.household_chart_series(v_ag_hid, array['2026-08']::text[])
+   where year_month = '2026-08' and currency = 'CLP';
+  assert v_hcs_total = 70.00,
+    'household chart series CLP net must be 70.00 after §4c orphan-prune removed A''s 70 purchase';
+
+  select total into v_hcs_total
+    from public.household_chart_series(v_ag_hid, array['2026-09']::text[])
+   where year_month = '2026-09' and currency = 'CLP';
+  assert v_hcs_total = 500.00, 'household chart series 2026-09 CLP net must be 500.00';
+
+  select (daily_totals ->> '2026-08-05')::numeric into v_hcs_day_total
+    from public.household_chart_series(v_ag_hid, array['2026-08']::text[])
+   where currency = 'UYU';
+  assert v_hcs_day_total = 100.00, 'daily_totals must mirror 0044 (UYU 2026-08-05 = 100)';
+
+  select (daily_category_totals -> '2026-08-05' ->> 'lacteos')::numeric into v_hcs_day_total
+    from public.household_chart_series(v_ag_hid, array['2026-08']::text[])
+   where currency = 'UYU';
+  assert v_hcs_day_total = 100.00,
+    'daily_category_totals must carry the day-own gross lacteos amount (UYU 2026-08-05 = 100)';
+
+  select (daily_category_totals -> '2026-08-07' ->> 'panaderia')::numeric into v_hcs_day_total
+    from public.household_chart_series(v_ag_hid, array['2026-08']::text[])
+   where currency = 'UYU';
+  assert v_hcs_day_total = 50.00,
+    'daily_category_totals must carry the day-own gross panaderia amount (UYU 2026-08-07 = 50)';
+
+  select (category_totals -> 'lacteos' ->> 'total')::numeric into v_hcs_total
+    from public.household_chart_series(v_ag_hid, array['2026-08']::text[])
+   where currency = 'CLP';
+  assert v_hcs_total = 70.00, 'category_totals must mirror 0044 (CLP lacteos = 70 after prune)';
+
+  select coalesce(sum((value ->> 'total')::numeric), 0) into v_hcs_total
+    from public.household_chart_series(v_ag_hid, array['2026-08']::text[]) x,
+         jsonb_each(x.store_totals)
+   where x.currency = 'UYU';
+  assert v_hcs_total = 150.00, 'store_totals must mirror 0044 (UYU store sum = 150)';
+
+  -- A 37-month window (one month over the documented cap) must resolve to
+  -- zero rows even when it contains a month with spend, so an oversized
+  -- request can never turn into an unbounded payload.
+  select count(*) into v_hcs_cap_rows
+    from public.household_chart_series(
+      v_ag_hid,
+      (select array_agg(to_char(d, 'YYYY-MM'))
+         from generate_series(date '2023-08-01', date '2026-08-01', interval '1 month') d)::text[]
+    );
+  assert v_hcs_cap_rows = 0,
+    'a 37-month window must be capped (zero rows, no oversized payload)';
+
+  -- Non-member: zero rows, not an error. v_user_a belongs to a DIFFERENT
+  -- household (§2) and is deliberately not a member of v_ag_hid.
+  perform set_config('request.jwt.claims', '{"sub":"a0000000-0000-0000-0000-00000000000a"}', true);
+  select count(*) into v_hcs_nonmember_rows
+    from public.household_chart_series(v_ag_hid, array['2026-08']::text[]);
+  assert v_hcs_nonmember_rows = 0,
+    'a non-member must get zero household_chart_series rows (membership gate)';
 
   -- -------------------------------------------------------------------------
   -- 5. Anon denial (LAST: SET ROLE persists for the rest of the transaction).

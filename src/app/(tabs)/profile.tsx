@@ -86,6 +86,9 @@ export default function ProfileScreen() {
         void queryClient.invalidateQueries({
           queryKey: queryKeys.household(userId),
         });
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.householdChartSeriesPrefix(),
+        });
       }
     }
   };

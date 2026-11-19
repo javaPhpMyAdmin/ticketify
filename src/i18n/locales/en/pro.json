@@ -24,6 +24,7 @@
   "dailyAverageSubtext": "Per day in the month",
   "noSpending": "No spending",
   "noSpendingYear": "No spending this year",
+  "householdNoData": "No household data for this view yet.",
   "byCategory": "By category",
   "byStore": "By store",
   "dayLabel": "{{weekday}} {{day}}",

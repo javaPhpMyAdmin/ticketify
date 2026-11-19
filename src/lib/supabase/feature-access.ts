@@ -34,6 +34,7 @@ import type {
   CategoryMonthlyTotal,
   CurrencyTotal,
   Household,
+  HouseholdChartSeriesRow,
   HouseholdFeedItem,
   HouseholdMember,
   InviteCode,
@@ -871,6 +872,32 @@ export async function readHouseholdFeed(
     return { status: 'error', message: READ_ERROR_MESSAGE() };
   }
   return { status: 'ok', data: (data ?? []) as HouseholdFeedItem[] };
+}
+
+/**
+ * Read the cache-shaped household chart series for Pro Stats (migration
+ * 0048). One row per (year_month, effective currency) with the same jsonb
+ * aggregate shapes as `monthly_user_totals`, but scoped to the household and
+ * READ-ONLY — never call `recalculate_monthly_totals` with a household id,
+ * which writes the caller's personal cache. Membership is checked inside the
+ * RPC; non-members and empty windows resolve to an empty array.
+ */
+export async function readHouseholdChartSeries(
+  householdId: string,
+  yearMonths: string[],
+): Promise<FeatureReadResult<HouseholdChartSeriesRow[]>> {
+  if (!isSupabaseConfigured) return { status: 'unconfigured' };
+  if (yearMonths.length === 0) return { status: 'ok', data: [] };
+  const { data, error } = await supabase.rpc('household_chart_series', {
+    p_household_id: householdId,
+    p_year_months: yearMonths,
+  });
+  if (error) {
+    // console is the canonical reporter in this app (no Sentry dependency).
+    console.warn('[feature-access] household_chart_series failed', error);
+    return { status: 'error', message: READ_ERROR_MESSAGE() };
+  }
+  return { status: 'ok', data: (data ?? []) as HouseholdChartSeriesRow[] };
 }
 
 /**

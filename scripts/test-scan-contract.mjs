@@ -219,8 +219,14 @@ function compile() {
   writeFileSync(
     join(workdir, 'lib-stubs/query-client.ts'),
     `
+    // Records every invalidateQueries call so the household chart cache
+    // invalidation can be asserted at runtime on save.
+    const globalObj: any = globalThis;
+    if (!Array.isArray(globalObj.__invalidateCalls)) globalObj.__invalidateCalls = [];
     export const queryClient = {
-      invalidateQueries: async (_opts: { queryKey: unknown }) => {},
+      invalidateQueries: async (opts: { queryKey: unknown }) => {
+        globalObj.__invalidateCalls.push(opts.queryKey);
+      },
     };
   `,
   );
@@ -242,6 +248,7 @@ function compile() {
       monthlyPurchasesTotalPrefix: p('monthly-purchases-total'),
       householdMonthlyPurchasesTotal: p('household-purchases-total'),
       householdMonthlyPurchasesTotalPrefix: p('household-purchases-total'),
+      householdChartSeriesPrefix: p('household-chart-series'),
       monthlyImpulseTotalPrefix: p('monthly-impulse-total'),
       monthlyImpulseItemsPrefix: p('monthly-impulse-items'),
       monthlyCachePrefix: p('monthly-cache'),
@@ -292,11 +299,14 @@ function compile() {
   writeFileSync(
     join(workdir, 'lib-stubs/use-household-store.ts'),
     `
-    // Minimal Zustand-shaped stub: api.ts only reads getState().household?.id
-    // via invalidateHouseholdNetTotal (no-op when not in a household).
+    // Minimal Zustand-shaped stub: api.ts reads getState().household?.id via
+    // invalidateHouseholdNetTotal. Tests can join a household to assert the
+    // household chart series cache is invalidated on save.
     type Household = { id: string } | null;
+    let household: Household = null;
     export const useHouseholdStore = {
-      getState: (): { household: Household } => ({ household: null }),
+      getState: (): { household: Household } => ({ household }),
+      setHousehold: (next: Household): void => { household = next; },
     };
   `,
   );
@@ -805,6 +815,30 @@ async function run() {
         };
         const res = await saveReceipt('user-uuid', minDraft);
         assert.deepEqual(res, { id: 'purchase-123' });
+      },
+    );
+
+    await test(
+      'saveReceipt (household member) invalidates the household chart series cache',
+      async () => {
+        const { useHouseholdStore } = await load('lib-stubs/use-household-store.js');
+        globalThis.__rpcResult = {
+          data: { ok: true, purchase_id: 'purchase-household', scans_used: 1, scans_limit: 15 },
+          error: null,
+        };
+        globalThis.__invalidateCalls = [];
+        useHouseholdStore.setHousehold({ id: 'h-1' });
+        try {
+          await saveReceipt('user-uuid', minDraft);
+        } finally {
+          useHouseholdStore.setHousehold(null);
+        }
+        assert.ok(
+          globalThis.__invalidateCalls.some(
+            (key) => key[0] === 'household-chart-series' && key[1] === 'h-1',
+          ),
+          'a household scan save must invalidate its household-scoped chart series',
+        );
       },
     );
 

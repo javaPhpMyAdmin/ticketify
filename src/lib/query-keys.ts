@@ -186,6 +186,28 @@ export const queryKeys = {
     yearMonth: string,
   ) => ['analytics', 'household-totals', householdId, yearMonth] as const,
   /**
+   * Cache-shaped Pro Stats series for a household over a set of months
+   * (migration 0048). The sorted month list is embedded so each window
+   * (6-month trend, 36-year window, selected year) is cached independently.
+   */
+  householdChartSeries: (householdId: string, yearMonths: string[]) =>
+    [
+      'analytics',
+      'household-chart-series',
+      householdId,
+      [...yearMonths].sort().join(','),
+    ] as const,
+  /**
+   * Prefix of householdChartSeries windows. With an id it targets one
+   * household; without one it is a broad prefix that matches every
+   * household's windows (used on membership changes, where the id is not yet
+   * in the client cache).
+   */
+  householdChartSeriesPrefix: (householdId?: string) =>
+    (householdId
+      ? ['analytics', 'household-chart-series', householdId]
+      : ['analytics', 'household-chart-series']) as readonly string[],
+  /**
    * Raw purchase_items rows for one category across the household
    * (migration 0028 — `get_household_category_items`). Distinct from the
    * user-scoped month-receipts key so personal and household drill-downs
