@@ -1115,13 +1115,14 @@ async function run() {
     );
   });
 
-  // ── Bug #185 scan-quota gate (REQ-GATE-4): the Home scan FAB must not
-  // reach the camera while the free monthly cap is exhausted. RN screen
-  // internals are unreachable from a node harness, so the branching is
-  // pinned at the source: `handleScanPress` must gate on the exhausted
-  // state, show the quota dialog, and early-return BEFORE
-  // `router.push('/ticket/camera')`.
-  await test('home FAB blocks an exhausted quota before the camera (source pin)', () => {
+  // ── Bug #185 scan-quota gate (REQ-GATE-4): BOTH creation paths (camera
+  // and manual) must not open while the free monthly cap is exhausted.
+  // RN screen internals are unreachable from a node harness, so the
+  // branching is pinned at the source: each FAB goes through a handler
+  // that awaits the shared `ensureCanScan()` gate and early-returns BEFORE
+  // pushing its route; the gate itself shows the quota dialog with the
+  // Pro paywall CTA.
+  await test('home FABs gate camera and manual entry through the quota check (source pin)', () => {
     const src = readFileSync(join(root, 'src/app/(tabs)/index.tsx'), 'utf8');
     assert.match(
       src,
@@ -1130,23 +1131,73 @@ async function run() {
     );
     assert.match(
       src,
+      /onPress=\{handleManualPress\}/,
+      'the manual FAB must route through the gating handler',
+    );
+    assert.match(
+      src,
+      /const handleScanPress = useCallback\(async \(\) => \{[\s\S]*?if \(!\(await ensureCanScan\(\)\)\) return;[\s\S]*?router\.push\('\/ticket\/camera'\)/,
+      'the camera handler must await the gate and early-return before the camera push',
+    );
+    assert.match(
+      src,
+      /const handleManualPress = useCallback\(async \(\) => \{[\s\S]*?if \(!\(await ensureCanScan\(\)\)\) return;[\s\S]*?router\.push\('\/ticket\/manual'\)/,
+      'the manual handler must await the gate and early-return before the manual push',
+    );
+    assert.match(
+      src,
+      /useScanQuotaGate/,
+      'the screen must use the shared quota gate',
+    );
+
+    const gate = readFileSync(
+      join(root, 'src/features/home/hooks/useScanQuotaGate.ts'),
+      'utf8',
+    );
+    assert.match(
+      gate,
       /if \(state\.exhausted\)[\s\S]*?useDialogStore\.getState\(\)\.show\([\s\S]*?'Alcanzaste el límite gratuito'/,
       'the exhausted branch must show the quota dialog',
     );
     assert.match(
-      src,
-      /'Alcanzaste el límite gratuito'[\s\S]*?return;/,
-      'the exhausted branch must early-return before the camera push',
+      gate,
+      /'Alcanzaste el límite gratuito'[\s\S]*?return false;/,
+      'the exhausted branch must return false before either route pushes',
     );
     assert.match(
-      src,
+      gate,
       /formatQuotaRenewalLabel\(\)/,
       'the dialog must state the quota renewal date (1st of next month)',
     );
     assert.match(
+      gate,
+      /onPrimary: \(\) => router\.push\('\/pro'\)/,
+      'the dialog primary action must suggest the Pro paywall',
+    );
+  });
+
+  // The household card has TWO async inputs: the household/members read
+  // (`useHousehold`) and the month-total read (`useHouseholdMonthTotal`).
+  // The skeleton must own the footprint while EITHER is pending — otherwise
+  // the card pops in fully formed when one read is cached and the other
+  // lands. `householdLoading` is only true while the enabled query is
+  // pending, so users without a household never see a phantom skeleton.
+  await test('home household card skeletons both loading reads (source pin)', () => {
+    const src = readFileSync(join(root, 'src/app/(tabs)/index.tsx'), 'utf8');
+    assert.match(
       src,
-      /router\.push\('\/ticket\/camera'\)/,
-      'the non-blocked path must still reach the camera',
+      /isLoading: householdLoading/,
+      'the household info loading flag must be read from useHousehold',
+    );
+    assert.match(
+      src,
+      /\{household \|\| householdLoading \? \(/,
+      'the card slot must also render while the household info is pending',
+    );
+    assert.match(
+      src,
+      /householdLoading \|\| feedLoading \? \([\s\S]*?<HouseholdCardSkeleton \/>/,
+      'the skeleton must cover both the info read and the total read',
     );
   });
 

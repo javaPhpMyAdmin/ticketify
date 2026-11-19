@@ -35,19 +35,14 @@ import {
   useMonthNavigation,
   useMonthReceipts,
   useRunRate,
-  useScanQuota,
+  useScanQuotaGate,
 } from '@/features/home';
-import { computeQuotaState } from '@/features/home/quota';
 import {
   HouseholdCard,
   HouseholdCardSkeleton,
   useHousehold,
 } from '@/features/household';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
-import { formatQuotaRenewalLabel } from '@/lib/format';
-import { queryClient } from '@/lib/query-client';
-import { queryKeys, utcYearMonth } from '@/lib/query-keys';
-import { useDialogStore } from '@/stores/use-dialog-store';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { colors, radii, spacing, typography } from '@/theme';
 import { useSessionStore, useSessionUser } from '../../features/auth';
@@ -99,50 +94,20 @@ export default function HomeScreen() {
   // view never flashes an empty state as a false empty month.
   const { data: monthList, isLoading: monthLoading } =
     useMonthReceipts(monthKey);
-  const { userId } = useSessionUser();
-  // Scan quota for the FAB gate (pro-subscription spec — REQ-GATE-4):
-  // free users at the monthly cap must not reach the camera. Fetches the
-  // current-month row for the FAB decision; shares the scanUsage query
-  // key with the profile meter, so the two never double-fetch
-  // (SCAN_USAGE_STALE_TIME).
-  const { usage: scanUsage, isPro } = useScanQuota();
+  // Both creation paths (camera + manual) share one quota gate so a free
+  // user at the monthly cap cannot enter either screen; the gate shows the
+  // Pro paywall dialog and returns false.
+  const ensureCanScan = useScanQuotaGate();
 
-  // FAB gate: free users at the monthly cap see the quota dialog instead
-  // of the camera. `scanUsage === null` means the row is still loading —
-  // OR a brand-new month with no row yet (scan_usage rows are created on
-  // first consume). Never block on unknown state: Pro always reaches the
-  // camera; free users wait for the pending read and decide once, so an
-  // existing at-cap row (bug #185) still blocks while a fresh-month
-  // null row lets the scan through. The server-side `save_receipt` gate
-  // remains the backstop for genuine free rows.
   const handleScanPress = useCallback(async () => {
-    let used = scanUsage?.used ?? null;
-    let limit = scanUsage?.limit ?? null;
-    if (used === null && !isPro) {
-      const key = queryKeys.scanUsage(userId!, utcYearMonth());
-      await queryClient.refetchQueries({ queryKey: key });
-      const fresh = queryClient.getQueryData<{
-        scans_used: number;
-        scans_limit: number | null;
-      }>(key);
-      used = fresh?.scans_used ?? null;
-      limit = fresh?.scans_limit ?? null;
-    }
-    if (used !== null) {
-      const state = computeQuotaState(used, limit, isPro);
-      if (state.exhausted) {
-        useDialogStore.getState().show({
-          title: 'Alcanzaste el límite gratuito',
-          message: `Tu plan gratuito incluye ${state.effectiveLimit} escaneos por mes. Se renueva ${formatQuotaRenewalLabel()}.`,
-          primaryLabel: 'Mejorar a Pro',
-          onPrimary: () => router.push('/pro'),
-          secondaryLabel: 'Ahora no',
-        });
-        return;
-      }
-    }
+    if (!(await ensureCanScan())) return;
     router.push('/ticket/camera');
-  }, [scanUsage, isPro, userId]);
+  }, [ensureCanScan]);
+
+  const handleManualPress = useCallback(async () => {
+    if (!(await ensureCanScan())) return;
+    router.push('/ticket/manual');
+  }, [ensureCanScan]);
 
   // Display convergence (REQ-008): the merged catalog converges the Home
   // feed's category rows with the other tabs — same hook, same query key,
@@ -150,7 +115,12 @@ export default function HomeScreen() {
   const { catalog } = useCategoryCatalog();
   const insets = useSafeAreaInsets();
   const { session } = useSessionStore();
-  const { household, members: householdMembers } = useHousehold();
+  const { userId } = useSessionUser();
+  const {
+    household,
+    members: householdMembers,
+    isLoading: householdLoading,
+  } = useHousehold();
 
   // Reset to the current month whenever the Home tab re-focuses (REQ-11):
   // month navigation is deliberately NOT persisted across navigations.
@@ -358,11 +328,15 @@ export default function HomeScreen() {
             {/* Household summary card — only when the user has a household.
                 Shown even for solo households: the user's visual styling on
                 this card should always stay visible (per user preference),
-                and the card disappears once no household exists. While the
-                household-total read is in flight a neutral skeleton keeps
-                the card's footprint so the layout doesn't jump. */}
-            {household ? (
-              feedLoading ? (
+                and the card disappears once no household exists. The card
+                has two async inputs: the household/members read (`useHousehold`)
+                and the month total (`useHouseholdMonthTotal`). While EITHER
+                is in flight the skeleton owns the footprint so the card
+                never pops in fully formed; `householdLoading` is true only
+                when the household query is enabled and pending, so users
+                without a household never see a phantom skeleton. */}
+            {household || householdLoading ? (
+              householdLoading || feedLoading ? (
                 <HouseholdCardSkeleton />
               ) : (
                 <HouseholdCard
@@ -438,11 +412,9 @@ export default function HomeScreen() {
         <Fab
           icon="plus"
           iconSize={32}
-          onPress={() =>
-            // `/ticket/manual` is now registered on disk (ticket/manual.tsx),
-            // so typed routes resolve it without a cast.
-            router.push('/ticket/manual')
-          }
+          // Manual entry consumes a scan too, so it goes through the same
+          // quota gate as the camera FAB.
+          onPress={handleManualPress}
           accessibilityLabel={t('tickets:manualTitle')}
           style={styles.fabCircle}
         />

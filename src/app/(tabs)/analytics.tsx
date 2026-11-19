@@ -302,6 +302,7 @@ export default function AnalyticsScreen() {
           changePct={headline.headlineChangePct}
           currency={currency}
           previousMonthName={previousMonthName}
+          isLoading={viewMode === 'household' && monthTotalsLoading}
         />
         <ChartsEntryCard isPro={isPro} />
         {alerts.map((alert) => (

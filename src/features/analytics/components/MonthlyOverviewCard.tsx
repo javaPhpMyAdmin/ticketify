@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { StyleSheet } from 'react-native';
+import { ActivityIndicator, StyleSheet } from 'react-native';
 
 import { Card, Icon, Text, View, type IconName } from '@/components';
 import { formatCurrency } from '@/lib/format';
@@ -21,6 +21,12 @@ export interface MonthlyOverviewCardProps {
   previousMonthName: string;
   /** Viewer currency fallback for groups without a unit (legacy rows). */
   currency: string;
+  /**
+   * True while the unresolved household headline is still loading. Renders
+   * a spinner + "Loading household data…" instead of the bare "—" dash;
+   * on error (false) the neutral dash stays and the body shows the error.
+   */
+  isLoading?: boolean;
 }
 
 /**
@@ -35,6 +41,7 @@ export function MonthlyOverviewCard({
   changePct,
   previousMonthName,
   currency: viewerCurrency,
+  isLoading = false,
 }: MonthlyOverviewCardProps) {
   const { t } = useTranslation('analytics');
   const hasChange = changePct !== null;
@@ -47,7 +54,14 @@ export function MonthlyOverviewCard({
       <View style={[styles.content, hasChange && styles.contentWithBadge]}>
         <Text style={styles.kicker}>{t('overviewKicker')}</Text>
         {totals === null ? (
-          <Text style={styles.total}>—</Text>
+          isLoading ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.loadingText}>{t('loadingHousehold')}</Text>
+            </View>
+          ) : (
+            <Text style={styles.total}>—</Text>
+          )
         ) : (
           groups.map((group) => (
             <Text key={group.currency ?? 'viewer'} style={styles.total}>
@@ -104,6 +118,20 @@ const styles = StyleSheet.create({
     lineHeight: 40,
     color: colors.textPrimary,
     marginTop: spacing.xs + 15,
+  },
+  // Loading placeholder keeps the headline's footprint (same top margin +
+  // 40pt line) so swapping in the real figure doesn't shift the card.
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 40,
+    marginTop: spacing.xs + 15,
+  },
+  loadingText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textSecondary,
   },
   // Floats in the card's top-right corner (matches the reference capture:
   // the badge is NOT in the same row as the amount). The Card view is the

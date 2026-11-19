@@ -26,6 +26,7 @@ export {
 } from './hooks/useHomeFeed';
 export { useScanQuota } from './hooks/useScanQuota';
 export type { ScanQuotaResult } from './hooks/useScanQuota';
+export { useScanQuotaGate } from './hooks/useScanQuotaGate';
 export { ScanQuotaCard } from './components/ScanQuotaCard';
 export { CategoryBudgetCard } from './components/CategoryBudgetCard';
 export type { CategoryBudgetCardProps } from './components/CategoryBudgetCard';

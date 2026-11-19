@@ -30,7 +30,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import Module, { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -351,6 +351,32 @@ async function run() {
     );
     assert.notEqual(usdTotal, 512, 'the viewer figure is never the cross-unit sum');
     assert.equal(usdTotal, 12);
+  });
+
+  await test('household headline shows a loading spinner instead of a bare dash (source pin)', () => {
+    const card = readFileSync(
+      join(root, 'src/features/analytics/components/MonthlyOverviewCard.tsx'),
+      'utf8',
+    );
+    assert.match(
+      card,
+      /totals === null \? \([\s\S]*?isLoading \? \([\s\S]*?ActivityIndicator/,
+      'the unresolved headline must render a spinner while loading',
+    );
+    assert.match(
+      card,
+      /t\('loadingHousehold'\)/,
+      'the spinner must carry the localized loading copy',
+    );
+    const screen = readFileSync(
+      join(root, 'src/app/(tabs)/analytics.tsx'),
+      'utf8',
+    );
+    assert.match(
+      screen,
+      /isLoading=\{viewMode === 'household' && monthTotalsLoading\}/,
+      'the screen must pass the household loading flag to the headline card',
+    );
   });
 
   console.log(`\n[tests] ${passed} passed, ${failed} failed`);
