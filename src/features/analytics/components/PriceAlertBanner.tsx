@@ -109,6 +109,11 @@ export function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
   );
 }
 
+// Softer than the theme's saturated green so the DOWN card is as subtle as the
+// pale-red UP card (#f9e9e9 / #fbbbbb). The icon and title keep primaryDark.
+const DROP_BACKGROUND = '#edf7f0';
+const DROP_BORDER = '#c8e6d2';
+
 const styles = StyleSheet.create({
   alertBanner: {
     height: 100,
@@ -124,13 +129,15 @@ const styles = StyleSheet.create({
     borderColor: '#fbbbbb',
   },
   alertBannerDown: {
-    backgroundColor: colors.primaryContainer,
-    borderColor: colors.primary,
+    backgroundColor: DROP_BACKGROUND,
+    borderColor: DROP_BORDER,
   },
   alertBannerPressed: {
     opacity: 0.85,
   },
   alertTextWrap: {
+    // Override the themed View's theme.background default so the tint shows.
+    backgroundColor: 'transparent',
     flex: 1,
     width: '90%',
   },
@@ -141,6 +148,8 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   alertTitleRow: {
+    // Override the themed View's theme.background default so the tint shows.
+    backgroundColor: 'transparent',
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
@@ -170,6 +179,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   wrapTextIcon: {
+    // Override the themed View's theme.background default so the tint shows.
+    backgroundColor: 'transparent',
     flexDirection: 'column',
     paddingLeft: 5,
     // alignItems: 'center',

@@ -946,6 +946,34 @@ async function run() {
     return { renderer, unmount: () => act(async () => renderer.unmount()) };
   };
 
+  /**
+   * The themed View injects `theme.background` ahead of caller styles, so the
+   * three inner text wrappers must resolve to a transparent background or they
+   * paint an opaque rectangle over the banner tint. `isPro: true` hides the
+   * Pro pill, leaving exactly three Views in render order: wrapTextIcon,
+   * alertTitleRow, then alertTextWrap.
+   */
+  const assertTransparentTextWrappers = (renderer) => {
+    const views = renderer.root.findAllByType('View');
+    assert.equal(views.length, 3, 'three inner text wrapper host Views must render');
+    const [wrapTextIcon, alertTitleRow, alertTextWrap] = views;
+    assert.equal(
+      flattenStyle(wrapTextIcon.props.style).backgroundColor,
+      'transparent',
+      'wrapTextIcon must override the themed View background',
+    );
+    assert.equal(
+      flattenStyle(alertTitleRow.props.style).backgroundColor,
+      'transparent',
+      'alertTitleRow must override the themed View background',
+    );
+    assert.equal(
+      flattenStyle(alertTextWrap.props.style).backgroundColor,
+      'transparent',
+      'alertTextWrap must override the themed View background',
+    );
+  };
+
   await test('PriceAlertBanner renders the red UP variant for an increase', async () => {
     const { renderer, unmount } = await renderBanner(8);
     try {
@@ -971,6 +999,8 @@ async function run() {
       const text = flattenStrings(renderer.toJSON()).join('\n');
       assert.ok(text.includes('analytics:priceAlertUp'), 'UP label');
       assert.ok(!text.includes('analytics:priceAlertDown'), 'no DOWN label on an increase');
+
+      assertTransparentTextWrappers(renderer);
     } finally {
       await unmount();
     }
@@ -984,13 +1014,13 @@ async function run() {
       );
       assert.equal(
         bannerStyle.backgroundColor,
-        colorsMod.colors.primaryContainer,
-        'DOWN background is light green',
+        '#edf7f0',
+        'DOWN background is the softened pale green',
       );
       assert.equal(
         bannerStyle.borderColor,
-        colorsMod.colors.primary,
-        'DOWN border is green',
+        '#c8e6d2',
+        'DOWN border is the softened pale green',
       );
 
       const icon = renderer.root.findByType('Icon');
@@ -1009,6 +1039,8 @@ async function run() {
       const text = flattenStrings(renderer.toJSON()).join('\n');
       assert.ok(text.includes('analytics:priceAlertDown'), 'DOWN label');
       assert.ok(!text.includes('analytics:priceAlertUp'), 'no UP label on a drop');
+
+      assertTransparentTextWrappers(renderer);
     } finally {
       await unmount();
     }
