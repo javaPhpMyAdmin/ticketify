@@ -80,7 +80,11 @@ export function Pressable(props: {
 }): React.ReactElement {
   return React.createElement(
     'Pressable',
-    { onPress: props.onPress, accessibilityLabel: props.accessibilityLabel },
+    {
+      onPress: props.onPress,
+      accessibilityLabel: props.accessibilityLabel,
+      style: props.style,
+    },
     props.children,
   );
 }

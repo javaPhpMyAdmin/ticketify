@@ -5,7 +5,7 @@
     "target": "es2020",
     "lib": ["es2020", "dom"],
     "strict": true,
-    "jsx": "react",
+    "jsx": "react-jsx",
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
@@ -15,6 +15,8 @@
       "@/lib/supabase": ["./scripts/test-stubs/supabase.ts"],
       "@/lib/supabase/storage-adapter": ["./scripts/test-stubs/storage-adapter.ts"],
       "expo-localization": ["./scripts/test-stubs/expo-localization.ts"],
+      "expo-router": ["./scripts/test-stubs/expo-router.ts"],
+      "react-i18next": ["./scripts/test-stubs/react-i18next.ts"],
       "react-native": ["./scripts/test-stubs/react-native.ts"],
       "@/*": ["./src/*"]
     },
@@ -22,6 +24,7 @@
   },
   "include": [
     "../src/features/analytics/price-alerts.ts",
+    "../src/features/analytics/components/PriceAlertBanner.tsx",
     "../src/features/analytics/hooks/usePriceAlerts.ts",
     "../src/features/home/hooks/useHomeFeed.ts",
     "../src/features/home/categories.ts",
@@ -35,8 +38,11 @@
     "../src/stores/use-receipts-store.ts",
     "../src/stores/use-settings-store.ts",
     "../src/types/index.ts",
+    "../src/theme/colors.ts",
     "../scripts/test-stubs/globals.d.ts",
     "../scripts/test-stubs/components.ts",
+    "../scripts/test-stubs/react-i18next.ts",
+    "../scripts/test-stubs/expo-router.ts",
     "../scripts/test-stubs/supabase.ts",
     "../scripts/test-stubs/storage-adapter.ts",
     "../scripts/test-stubs/react-native.ts"

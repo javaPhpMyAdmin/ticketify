@@ -70,6 +70,36 @@ async function test(name, fn) {
   }
 }
 
+/**
+ * Resolve an RN style value the way the runtime does: a Pressable's callback
+ * style is invoked at rest, arrays are flattened, false/null entries skipped,
+ * and the last object wins.
+ */
+function flattenStyle(style) {
+  const resolved = typeof style === 'function' ? style({ pressed: false }) : style;
+  const entries = Array.isArray(resolved) ? resolved.flat(Infinity) : [resolved];
+  const out = {};
+  for (const entry of entries) {
+    if (entry && typeof entry === 'object') Object.assign(out, entry);
+  }
+  return out;
+}
+
+/** Collect every string leaf from a react-test-renderer tree (host or JSON). */
+function flattenStrings(node, acc = []) {
+  if (node == null) return acc;
+  if (typeof node === 'string') {
+    acc.push(node);
+    return acc;
+  }
+  if (Array.isArray(node)) {
+    for (const child of node) flattenStrings(child, acc);
+    return acc;
+  }
+  if (node.children) flattenStrings(node.children, acc);
+  return acc;
+}
+
 function installRequireHook() {
   const originalResolve = Module._resolveFilename;
   Module._resolveFilename = function rewrittenResolve(request, ...rest) {
@@ -85,6 +115,12 @@ function installRequireHook() {
       request = join(outDir, 'scripts', 'test-stubs', 'expo-localization.js');
     } else if (request === 'react-native') {
       request = join(outDir, 'scripts', 'test-stubs', 'react-native.js');
+    } else if (request === 'react-i18next') {
+      request = join(outDir, 'scripts', 'test-stubs', 'react-i18next.js');
+    } else if (request === 'expo-router') {
+      request = join(outDir, 'scripts', 'test-stubs', 'expo-router.js');
+    } else if (request === '@/components') {
+      request = join(outDir, 'scripts', 'test-stubs', 'components.js');
     } else if (request.startsWith('@/')) {
       request = join(outDir, 'src', request.slice(2));
     }
@@ -224,6 +260,7 @@ async function run() {
   receiptsStoreMod = await load('src/stores/use-receipts-store.js');
   usePriceAlerts = alertsHookMod.usePriceAlerts;
   computePriceAlerts = alertsMod.computePriceAlerts;
+  const colorsMod = await load('src/theme/colors.js');
 
   // ── PART 1: pure computation (existing contract) ────────────────────────
   // (all assertions are below in the original block; kept intact)
@@ -843,13 +880,19 @@ async function run() {
     }
   });
 
-  await test('analytics PriceAlertBanner enforces 3-case tap routing (source pin)', async () => {
+  await test('PriceAlertBanner enforces 3-case tap routing (source pin)', async () => {
     const fs = await import('node:fs/promises');
-    const pathMod = await import('node:path');
-    const root = pathMod.join(process.cwd(), 'src', 'app', '(tabs)', 'analytics.tsx');
-    const src = await fs.readFile(root, 'utf8');
+    const srcPath = join(
+      root,
+      'src',
+      'features',
+      'analytics',
+      'components',
+      'PriceAlertBanner.tsx',
+    );
+    const src = await fs.readFile(srcPath, 'utf8');
     const m = src.match(/const handlePress\s*=\s*\(\)\s*=>\s*\{([\s\S]*?)^\s*  \};/m);
-    assert.ok(m, 'handlePress function must exist in analytics.tsx');
+    assert.ok(m, 'handlePress function must exist in PriceAlertBanner.tsx');
     const body = m[1];
     // /pro is reachable ONLY through the free-user guard...
     assert.ok(
@@ -878,6 +921,97 @@ async function run() {
       /accessibilityRole=\{canAct \? 'button' : undefined\}/.test(src),
       'the inert state must drop accessibilityRole (no announced dead action)',
     );
+  });
+
+  const renderBanner = async (changePct) => {
+    const bannerMod = await load(
+      'src/features/analytics/components/PriceAlertBanner.js',
+    );
+    let renderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(bannerMod.PriceAlertBanner, {
+          alert: {
+            name: 'Leche entera 1L',
+            receiptId: 'r1',
+            changePct,
+            currentPrice: 1200,
+            previousPrice: 1100,
+            category: 'lacteos',
+          },
+          isPro: true,
+        }),
+      );
+    });
+    return { renderer, unmount: () => act(async () => renderer.unmount()) };
+  };
+
+  await test('PriceAlertBanner renders the red UP variant for an increase', async () => {
+    const { renderer, unmount } = await renderBanner(8);
+    try {
+      const bannerStyle = flattenStyle(
+        renderer.root.findByType('Pressable').props.style,
+      );
+      assert.equal(bannerStyle.backgroundColor, '#f9e9e9', 'UP keeps the red-ish background');
+      assert.equal(bannerStyle.borderColor, '#fbbbbb', 'UP keeps the red-ish border');
+
+      const icon = renderer.root.findByType('Icon');
+      assert.equal(icon.props.color, colorsMod.colors.danger, 'UP icon stays danger');
+
+      const title = renderer.root.findAllByType('Text').find((node) =>
+        flattenStrings(node).some((s) => s.includes('analytics:priceAlertTitle')),
+      );
+      assert.ok(title, 'title text must render');
+      assert.equal(
+        flattenStyle(title.props.style).color,
+        colorsMod.colors.danger,
+        'UP title stays danger',
+      );
+
+      const text = flattenStrings(renderer.toJSON()).join('\n');
+      assert.ok(text.includes('analytics:priceAlertUp'), 'UP label');
+      assert.ok(!text.includes('analytics:priceAlertDown'), 'no DOWN label on an increase');
+    } finally {
+      await unmount();
+    }
+  });
+
+  await test('PriceAlertBanner renders the green DOWN variant for a drop', async () => {
+    const { renderer, unmount } = await renderBanner(-8);
+    try {
+      const bannerStyle = flattenStyle(
+        renderer.root.findByType('Pressable').props.style,
+      );
+      assert.equal(
+        bannerStyle.backgroundColor,
+        colorsMod.colors.primaryContainer,
+        'DOWN background is light green',
+      );
+      assert.equal(
+        bannerStyle.borderColor,
+        colorsMod.colors.primary,
+        'DOWN border is green',
+      );
+
+      const icon = renderer.root.findByType('Icon');
+      assert.equal(icon.props.color, colorsMod.colors.primaryDark, 'DOWN icon is dark green');
+
+      const title = renderer.root.findAllByType('Text').find((node) =>
+        flattenStrings(node).some((s) => s.includes('analytics:priceAlertTitle')),
+      );
+      assert.ok(title, 'title text must render');
+      assert.equal(
+        flattenStyle(title.props.style).color,
+        colorsMod.colors.primaryDark,
+        'DOWN title is dark green',
+      );
+
+      const text = flattenStrings(renderer.toJSON()).join('\n');
+      assert.ok(text.includes('analytics:priceAlertDown'), 'DOWN label');
+      assert.ok(!text.includes('analytics:priceAlertUp'), 'no UP label on a drop');
+    } finally {
+      await unmount();
+    }
   });
 
     console.log(`\n[tests] ${passed} passed, ${failed} failed`);

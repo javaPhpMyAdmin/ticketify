@@ -8,12 +8,12 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { Card, EmptyState, Icon, Pressable, Text } from '@/components';
-import type { PriceAlert } from '@/features/analytics';
 import {
   buildOverviewHeadline,
   CategoryBudgetRow,
   categoryRowKey,
   MonthlyOverviewCard,
+  PriceAlertBanner,
   TopItemsBreakdown,
   useMonthlyOverview,
   useMonthlyTotals,
@@ -484,18 +484,6 @@ const styles = StyleSheet.create({
     ...typography.headlineMd,
     color: colors.background,
   },
-  wrapTextIcon: {
-    flexDirection: 'column',
-    paddingLeft: 5,
-    // alignItems: 'center',
-    // justifyContent: 'space-between',
-  },
-  priceAlert: {
-    fontSize: 20,
-    fontWeight: 900,
-    color: colors.danger,
-    padding: 2,
-  },
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
@@ -609,28 +597,6 @@ const styles = StyleSheet.create({
     ...typography.labelSm,
     color: colors.danger,
   },
-  alertBanner: {
-    height: 100,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    backgroundColor: '#f9e9e9',
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: '#fbbbbb',
-    padding: spacing.md,
-  },
-  alertTextWrap: {
-    flex: 1,
-    width: '90%',
-  },
-  alertText: {
-    // ...typography.bodyMd,
-    fontSize: 15.5,
-    fontWeight: '500',
-    color: colors.textPrimary,
-    flexWrap: 'wrap',
-  },
   entryPressable: {
     // Card already paints its own background/border; the pressable only
     // needs to fade on press for tactile feedback.
@@ -685,19 +651,6 @@ const styles = StyleSheet.create({
     color: colors.onPrimary,
     letterSpacing: 0.05 * 16,
     textTransform: 'uppercase',
-  },
-  proPillRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  alertTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  alertBannerPressed: {
-    opacity: 0.85,
   },
 });
 
@@ -785,96 +738,6 @@ function ChartsEntryCard({ isPro }: ChartsEntryCardProps) {
           <Icon name="chevron.right" size={22} color={colors.textSecondary} />
         </View>
       </Card>
-    </Pressable>
-  );
-}
-
-/**
- * Price-alert banner (pro-subscription spec — REQ-GATE-2). One alert per
- * `(identity, current-month)` tuple that crossed the 5% threshold; the
- * banner is always visible (REQ-GATE-1: Pro features shown with a lock,
- * not hidden) so free users see that an alert exists and the Pro pill
- * makes the upsell explicit.
- *
- * Tap routing (three cases):
- *
- * - `!isPro`: `onPress` pushes the paywall (`/pro`). The banner
- *   content still renders so the user understands what they would unlock.
- * - `isPro && alert.receiptId`: `onPress` navigates to the source receipt detail
- *   at `/receipts/${alert.receiptId}`. The id is captured deterministically
- *   by `computePriceAlerts` (S2: latest `purchase_date`, tie-break `id`
- *   ascending) so two runs on the same data land on the same receipt.
- * - `isPro && !alert.receiptId`: no-op (do nothing; never the paywall).
- */
-interface PriceAlertBannerProps {
-  alert: PriceAlert;
-  isPro: boolean;
-}
-
-function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
-  const { t } = useTranslation(['analytics']);
-  // A Pro user with an id-less alert has nothing to open (receiptId is
-  // optional and can be an empty string). The banner stays readable, but it
-  // must not announce a dead action to assistive tech.
-  const canAct = !isPro || !!alert.receiptId;
-  const handlePress = () => {
-    if (!isPro) {
-      router.push('/pro');
-      return;
-    }
-    if (alert.receiptId) {
-      router.push(`/receipts/${alert.receiptId}`);
-    }
-  };
-  return (
-    <Pressable
-      onPress={canAct ? handlePress : undefined}
-      disabled={!canAct}
-      accessibilityRole={canAct ? 'button' : undefined}
-      accessibilityHint={
-        canAct
-          ? isPro
-            ? t('analytics:priceAlertA11yHint')
-            : t('analytics:priceAlertProA11yHint')
-          : undefined
-      }
-      accessibilityLabel={
-        canAct
-          ? isPro
-            ? t('analytics:priceAlertA11y')
-            : t('analytics:priceAlertProA11y')
-          : undefined
-      }
-      style={({ pressed }) => [
-        styles.alertBanner,
-        pressed && styles.alertBannerPressed,
-      ]}
-    >
-      <Icon
-        name="exclamationmark.triangle.fill"
-        size={26}
-        color={colors.danger}
-      />
-      <View style={styles.wrapTextIcon}>
-        <View style={styles.alertTitleRow}>
-          <Text style={styles.priceAlert}>{t('analytics:priceAlertTitle')}</Text>
-          {!isPro ? (
-            <View style={[styles.proPill, styles.proPillRow]}>
-              <Icon name="lock.fill" size={11} color={colors.onPrimary} />
-              <Text style={styles.proPillText}>{t('analytics:proPill')}</Text>
-            </View>
-          ) : null}
-        </View>
-        <View style={styles.alertTextWrap}>
-          <Text style={styles.alertText}>
-            {alert.name} {alert.changePct >= 0 ? t('analytics:priceAlertUp') : t('analytics:priceAlertDown')}{' '}
-            <Text style={{ fontSize: 17.5, fontWeight: 900, color: 'black' }}>
-              {Math.abs(alert.changePct)}%
-            </Text>{' '}
-            {t('analytics:priceAlertSince')}
-          </Text>
-        </View>
-      </View>
     </Pressable>
   );
 }

@@ -10,6 +10,8 @@ export { TopItemsBreakdown } from './components/TopItemsBreakdown';
 export type { TopItemsBreakdownProps } from './components/TopItemsBreakdown';
 export { MonthlyOverviewCard } from './components/MonthlyOverviewCard';
 export type { MonthlyOverviewCardProps } from './components/MonthlyOverviewCard';
+export { PriceAlertBanner } from './components/PriceAlertBanner';
+export type { PriceAlertBannerProps } from './components/PriceAlertBanner';
 export { InsightBanner } from './components/InsightBanner';
 export type { InsightBannerProps } from './components/InsightBanner';
 export { MetricSummaryCard } from './components/MetricSummaryCard';

@@ -21,7 +21,11 @@ export interface TextProps {
 }
 
 export function Text(props: TextProps): React.ReactElement {
-  return React.createElement('Text', { numberOfLines: props.numberOfLines }, props.children);
+  return React.createElement(
+    'Text',
+    { numberOfLines: props.numberOfLines, style: props.style },
+    props.children,
+  );
 }
 
 export interface ViewProps {
@@ -40,7 +44,11 @@ export interface IconProps {
 }
 
 export function Icon(props: IconProps): React.ReactElement {
-  return React.createElement('Icon', { name: props.name, size: props.size });
+  return React.createElement('Icon', {
+    name: props.name,
+    size: props.size,
+    color: props.color,
+  });
 }
 
 export function Divider(): React.ReactElement {
@@ -89,13 +97,19 @@ export interface PressableProps {
   onPress?: () => void;
   disabled?: boolean;
   hitSlop?: number | Record<string, number>;
-  style?: unknown | ((state: { pressed: boolean }) => unknown);
+  style?:
+    | Record<string, unknown>
+    | ReadonlyArray<unknown>
+    | false
+    | null
+    | ((state: { pressed: boolean }) => ReadonlyArray<unknown>);
   accessibilityRole?: string;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
 }
 
 export function Pressable(props: PressableProps): React.ReactElement {
-  return React.createElement('Pressable', null, props.children);
+  return React.createElement('Pressable', { style: props.style }, props.children);
 }
 
 export interface CardProps {
