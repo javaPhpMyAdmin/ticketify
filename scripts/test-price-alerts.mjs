@@ -614,6 +614,215 @@ async function run() {
     assert.deepEqual(names, ['Leche', 'Leche::Promo']);
   });
 
+  console.log('\n[tests] shared price-direction predicate\n');
+
+  await test('isPriceIncrease preserves the >= 0 direction contract', () => {
+    assert.equal(alertsMod.isPriceIncrease(9.1), true, 'positive change is UP');
+    assert.equal(alertsMod.isPriceIncrease(-8.3), false, 'negative change is DOWN');
+    assert.equal(alertsMod.isPriceIncrease(0), true, 'zero stays on the UP branch');
+  });
+
+  console.log(
+    '\n[tests] inline comparison metadata: two tickets from one (identity, unit) bucket\n',
+  );
+
+  await test('both tickets come from the winning source of their OWN month in the same bucket', () => {
+    // Two candidates per month with different stores. The latest
+    // purchase_date wins IN EACH MONTH; the average still uses every receipt.
+    const records = [
+      {
+        id: 'jul-early',
+        store_name: 'Julio Early',
+        purchase_date: '2026-07-02',
+        items: [item('Leche entera 1L', 1000, 'lacteos')],
+        currency: 'UYU',
+      },
+      {
+        id: 'jul-late',
+        store_name: 'Julio Tarde',
+        purchase_date: '2026-07-25',
+        items: [item('Leche entera 1L', 1100, 'lacteos')],
+        currency: 'UYU',
+      },
+      {
+        id: 'aug-early',
+        store_name: 'Agosto Early',
+        purchase_date: '2026-08-03',
+        items: [item('Leche entera 1L', 1300, 'lacteos')],
+        currency: 'UYU',
+      },
+      {
+        id: 'aug-late',
+        store_name: 'Agosto Tarde',
+        purchase_date: '2026-08-27',
+        items: [item('Leche entera 1L', 1400, 'lacteos')],
+        currency: 'UYU',
+      },
+    ];
+    const alerts = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(alerts.length, 1);
+    const [alert] = alerts;
+    assert.equal(alert.receiptId, 'aug-late');
+    assert.equal(
+      alert.previousReceiptId,
+      'jul-late',
+      'previous source is the latest receipt in the previous month',
+    );
+    assert.equal(alert.currentPurchaseDate, '2026-08-27');
+    assert.equal(alert.previousPurchaseDate, '2026-07-25');
+    assert.equal(alert.currentStoreName, 'Agosto Tarde');
+    assert.equal(alert.previousStoreName, 'Julio Tarde');
+    assert.equal(alert.unit, 'UYU', 'the bucket unit travels with the alert');
+    // CRITICAL: the compared prices are MONTHLY AVERAGES, not the winning
+    // source receipt's own unit price (1100 / 1400).
+    assert.equal(alert.previousPrice, 1050);
+    assert.equal(alert.currentPrice, 1350);
+  });
+
+  await test('a same-date tie keeps the lowest id and THAT receipt metadata', () => {
+    const records = [
+      {
+        id: 'jul',
+        store_name: 'Tienda Jul',
+        purchase_date: '2026-07-10',
+        items: [item('Yerba 1kg', 1000, 'alimentos')],
+        currency: 'USD',
+      },
+      {
+        id: 'z-aug',
+        store_name: 'Z Tienda',
+        purchase_date: '2026-08-15',
+        items: [item('Yerba 1kg', 1200, 'alimentos')],
+        currency: 'USD',
+      },
+      {
+        id: 'a-aug',
+        store_name: 'A Tienda',
+        purchase_date: '2026-08-15',
+        items: [item('Yerba 1kg', 1200, 'alimentos')],
+        currency: 'USD',
+      },
+    ];
+    const [alert] = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(alert.receiptId, 'a-aug', 'id-ascending tie-break');
+    assert.equal(alert.currentPurchaseDate, '2026-08-15');
+    assert.equal(alert.currentStoreName, 'A Tienda', 'store follows the winning source');
+    assert.equal(alert.previousReceiptId, 'jul');
+    assert.equal(alert.previousPurchaseDate, '2026-07-10');
+    assert.equal(alert.previousStoreName, 'Tienda Jul');
+  });
+
+  await test('collapse by largest |changePct| keeps the winner dates, stores and unit', () => {
+    const records = [
+      {
+        id: 'usd-jul',
+        store_name: 'USD Jul Store',
+        purchase_date: '2026-07-05',
+        items: [item('Café 1kg', 100, 'alimentos')],
+        currency: 'USD',
+      },
+      {
+        id: 'usd-aug',
+        store_name: 'USD Aug Store',
+        purchase_date: '2026-08-06',
+        items: [item('Café 1kg', 120, 'alimentos')],
+        currency: 'USD',
+      },
+      {
+        id: 'uyu-jul',
+        store_name: 'UYU Jul Store',
+        purchase_date: '2026-07-07',
+        items: [item('Café 1kg', 1000, 'alimentos')],
+        currency: 'UYU',
+      },
+      {
+        id: 'uyu-aug',
+        store_name: 'UYU Aug Store',
+        purchase_date: '2026-08-08',
+        items: [item('Café 1kg', 1080, 'alimentos')],
+        currency: 'UYU',
+      },
+    ];
+    const alerts = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(alerts.length, 1);
+    const [alert] = alerts;
+    assert.equal(alert.changePct, 20, 'USD +20% beats UYU +8%');
+    assert.equal(alert.unit, 'USD', 'the winning bucket unit survives the collapse');
+    assert.equal(alert.receiptId, 'usd-aug');
+    assert.equal(alert.previousReceiptId, 'usd-jul');
+    assert.equal(alert.currentPurchaseDate, '2026-08-06');
+    assert.equal(alert.previousPurchaseDate, '2026-07-05');
+    assert.equal(alert.currentStoreName, 'USD Aug Store');
+    assert.equal(alert.previousStoreName, 'USD Jul Store');
+  });
+
+  await test('collapse tie-break keeps the smaller unit and THAT bucket metadata', () => {
+    const records = [
+      // UYU is inserted FIRST on purpose: keep-the-first would fail.
+      {
+        id: 'uyu-jul',
+        store_name: 'UYU Jul Store',
+        purchase_date: '2026-07-18',
+        items: [item('Café 1kg', 1000, 'alimentos')],
+        currency: 'UYU',
+      },
+      {
+        id: 'uyu-aug',
+        store_name: 'UYU Aug Store',
+        purchase_date: '2026-08-18',
+        items: [item('Café 1kg', 1100, 'alimentos')],
+        currency: 'UYU',
+      },
+      {
+        id: 'usd-jul',
+        store_name: 'USD Jul Store',
+        purchase_date: '2026-07-10',
+        items: [item('Café 1kg', 100, 'alimentos')],
+        currency: 'USD',
+      },
+      {
+        id: 'usd-aug',
+        store_name: 'USD Aug Store',
+        purchase_date: '2026-08-10',
+        items: [item('Café 1kg', 110, 'alimentos')],
+        currency: 'USD',
+      },
+    ];
+    const [alert] = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(alert.changePct, 10);
+    assert.equal(alert.unit, 'USD', 'USD < UYU wins the tie');
+    assert.equal(alert.receiptId, 'usd-aug');
+    assert.equal(alert.previousReceiptId, 'usd-jul');
+    assert.equal(alert.currentPurchaseDate, '2026-08-10');
+    assert.equal(alert.previousPurchaseDate, '2026-07-10');
+    assert.equal(alert.currentStoreName, 'USD Aug Store');
+    assert.equal(alert.previousStoreName, 'USD Jul Store');
+  });
+
+  await test('missing source metadata defaults to empty strings (no crash)', () => {
+    const records = [
+      {
+        // No id, no store_name, no currency: those three fall back to ''.
+        // purchase_date IS present (it drives the month bucket), so the two
+        // dates are carried as-is, not blanked.
+        purchase_date: '2026-07-03',
+        items: [item('Leche entera 1L', 1000, 'lacteos')],
+      },
+      {
+        purchase_date: '2026-08-06',
+        items: [item('Leche entera 1L', 1200, 'lacteos')],
+      },
+    ];
+    const [alert] = alertsMod.computePriceAlerts(records, 0.05, '2026-08');
+    assert.equal(alert.receiptId, '');
+    assert.equal(alert.previousReceiptId, '');
+    assert.equal(alert.currentStoreName, '');
+    assert.equal(alert.previousStoreName, '');
+    assert.equal(alert.unit, '');
+    assert.equal(alert.currentPurchaseDate, '2026-08-06');
+    assert.equal(alert.previousPurchaseDate, '2026-07-03');
+  });
+
   console.log('\n[tests] item price deltas vs the previous month\n');
 
   await test('item delta: same identity + unit across months', () => {
@@ -938,6 +1147,12 @@ async function run() {
             currentPrice: 1200,
             previousPrice: 1100,
             category: 'lacteos',
+            previousReceiptId: 'r0',
+            currentPurchaseDate: '2026-08-06',
+            previousPurchaseDate: '2026-07-03',
+            currentStoreName: 'Store',
+            previousStoreName: 'Store',
+            unit: 'UYU',
           },
           isPro: true,
         }),
@@ -1041,6 +1256,276 @@ async function run() {
       assert.ok(!text.includes('analytics:priceAlertUp'), 'no UP label on a drop');
 
       assertTransparentTextWrappers(renderer);
+    } finally {
+      await unmount();
+    }
+  });
+
+  // ── PART 3: executed PriceAlertComparison (PRO inline comparison) ───────
+  // No source-regex pins: render the real component through
+  // react-test-renderer and assert what a user actually sees.
+  console.log('\n[tests] PriceAlertComparison executed render\n');
+
+  const formatMod = await load('src/lib/format.js');
+
+  const comparisonAlert = (overrides = {}) => ({
+    name: 'Leche entera 1L',
+    category: 'lacteos',
+    receiptId: 'aug-source',
+    previousReceiptId: 'jul-source',
+    currentPurchaseDate: '2025-08-06',
+    previousPurchaseDate: '2025-07-03',
+    currentStoreName: 'Supermercado Sur',
+    previousStoreName: 'Tienda Norte',
+    currentPrice: 1200,
+    previousPrice: 1100,
+    changePct: 9.1,
+    unit: 'UYU',
+    ...overrides,
+  });
+
+  const renderComparison = async (alert, locale = 'en') => {
+    const comparisonMod = await load(
+      'src/features/analytics/components/PriceAlertComparison.js',
+    );
+    let renderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(comparisonMod.PriceAlertComparison, {
+          alert,
+          locale,
+        }),
+      );
+    });
+    return { renderer, unmount: () => act(async () => renderer.unmount()) };
+  };
+
+  /** Find the host Text that shows the delta token and assert its color. */
+  const assertDeltaColor = (renderer, token, expectedColor) => {
+    const deltaText = renderer.root.findAllByType('Text').find((node) =>
+      flattenStrings(node).some((s) => s.includes(token)),
+    );
+    assert.ok(deltaText, `delta text "${token}" must render`);
+    assert.equal(
+      flattenStyle(deltaText.props.style).color,
+      expectedColor,
+      'delta color follows the direction',
+    );
+  };
+
+  await test('PriceAlertComparison shows both monthly averages and a red UP delta', async () => {
+    const { renderer, unmount } = await renderComparison(comparisonAlert());
+    try {
+      const text = flattenStrings(renderer.toJSON()).join('\n');
+      assert.ok(text.includes('analytics:priceAlertCompareTitle'), 'title');
+      assert.ok(
+        text.includes('analytics:priceAlertPreviousMonth'),
+        'PREVIOUS MONTH side label',
+      );
+      assert.ok(
+        text.includes('analytics:priceAlertCurrentMonth'),
+        'THIS MONTH side label',
+      );
+      assert.ok(
+        text.includes(formatMod.formatDate('en', '2025-07-03')),
+        'previous formatted date',
+      );
+      assert.ok(
+        text.includes(formatMod.formatDate('en', '2025-08-06')),
+        'current formatted date',
+      );
+      assert.ok(text.includes('Tienda Norte'), 'previous store name');
+      assert.ok(text.includes('Supermercado Sur'), 'current store name');
+      assert.ok(
+        text.includes(formatMod.formatCurrency(1100, 'UYU')),
+        'previous formatted monthly-average price',
+      );
+      assert.ok(
+        text.includes(formatMod.formatCurrency(1200, 'UYU')),
+        'current formatted monthly-average price',
+      );
+      assert.equal(
+        text.split('analytics:priceAlertMonthlyAverage').length - 1,
+        2,
+        'BOTH sides are explicitly labeled as a monthly average',
+      );
+      assert.ok(
+        text.includes('analytics:priceAlertComparedNote'),
+        'the compared-note copy is shown',
+      );
+      assert.ok(text.includes('+9.1%'), 'signed UP delta');
+      assertDeltaColor(renderer, '+9.1%', colorsMod.colors.danger);
+    } finally {
+      await unmount();
+    }
+  });
+
+  await test('PriceAlertComparison shows both monthly averages and a green DOWN delta', async () => {
+    const alert = comparisonAlert({
+      previousPrice: 1200,
+      currentPrice: 1100,
+      changePct: -8.3,
+      previousPurchaseDate: '2025-07-11',
+      currentPurchaseDate: '2025-08-19',
+      previousStoreName: 'Tienda Vieja',
+      currentStoreName: 'Mercado Nuevo',
+      unit: 'USD',
+    });
+    const { renderer, unmount } = await renderComparison(alert, 'es-419');
+    try {
+      const text = flattenStrings(renderer.toJSON()).join('\n');
+      assert.ok(
+        text.includes(formatMod.formatDate('es-419', '2025-07-11')),
+        'previous formatted date in the requested locale',
+      );
+      assert.ok(
+        text.includes(formatMod.formatDate('es-419', '2025-08-19')),
+        'current formatted date in the requested locale',
+      );
+      assert.ok(text.includes('Tienda Vieja'), 'previous store name');
+      assert.ok(text.includes('Mercado Nuevo'), 'current store name');
+      assert.ok(
+        text.includes(formatMod.formatCurrency(1200, 'USD')),
+        'previous formatted monthly-average price',
+      );
+      assert.ok(
+        text.includes(formatMod.formatCurrency(1100, 'USD')),
+        'current formatted monthly-average price',
+      );
+      assert.equal(
+        text.split('analytics:priceAlertMonthlyAverage').length - 1,
+        2,
+        'BOTH sides are explicitly labeled as a monthly average',
+      );
+      assert.ok(text.includes('-8.3%'), 'signed DOWN delta');
+      assertDeltaColor(renderer, '-8.3%', colorsMod.colors.primaryDark);
+      assert.ok(
+        !text.includes('+8.3%'),
+        'a drop must not be presented as an increase',
+      );
+    } finally {
+      await unmount();
+    }
+  });
+
+  await test('PriceAlertComparison uses placeholders for blank source metadata', async () => {
+    const alert = comparisonAlert({
+      unit: '',
+      previousPurchaseDate: '',
+      currentPurchaseDate: '',
+      previousStoreName: '',
+      currentStoreName: '',
+    });
+    const { renderer, unmount } = await renderComparison(alert);
+    try {
+      const text = flattenStrings(renderer.toJSON()).join('\n');
+      assert.equal(
+        text.split('—').length - 1,
+        6,
+        'both dates, both stores and both prices show a placeholder',
+      );
+      assert.ok(
+        !text.includes(formatMod.formatCurrency(1100, '')),
+        'a symbol-less amount is never shown as a previous price',
+      );
+      assert.ok(
+        !text.includes(formatMod.formatCurrency(1200, '')),
+        'a symbol-less amount is never shown as a current price',
+      );
+      assert.ok(
+        text.includes('analytics:priceAlertCompareTitle'),
+        'the panel still renders with partial source identity',
+      );
+    } finally {
+      await unmount();
+    }
+  });
+
+  await test('PriceAlertComparison keeps real prices when only date/store are blank', async () => {
+    const alert = comparisonAlert({
+      previousPurchaseDate: '',
+      currentPurchaseDate: '',
+      previousStoreName: '',
+      currentStoreName: '',
+      unit: 'UYU',
+    });
+    const { renderer, unmount } = await renderComparison(alert);
+    try {
+      const text = flattenStrings(renderer.toJSON()).join('\n');
+      assert.equal(
+        text.split('—').length - 1,
+        4,
+        'only the four blank date/store fields need placeholders',
+      );
+      assert.ok(
+        text.includes(formatMod.formatCurrency(1100, 'UYU')),
+        'a known unit keeps the previous monthly-average price',
+      );
+      assert.ok(
+        text.includes(formatMod.formatCurrency(1200, 'UYU')),
+        'a known unit keeps the current monthly-average price',
+      );
+    } finally {
+      await unmount();
+    }
+  });
+
+  console.log('\n[tests] PriceAlertGroup executed render (Pro gating)\n');
+
+  const renderGroup = async (isPro) => {
+    const groupMod = await load(
+      'src/features/analytics/components/PriceAlertGroup.js',
+    );
+    let renderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(groupMod.PriceAlertGroup, {
+          alert: comparisonAlert(),
+          isPro,
+          locale: 'en',
+        }),
+      );
+    });
+    return { renderer, unmount: () => act(async () => renderer.unmount()) };
+  };
+
+  await test('PriceAlertGroup renders banner + exactly one comparison for Pro', async () => {
+    const { renderer, unmount } = await renderGroup(true);
+    try {
+      const text = flattenStrings(renderer.toJSON()).join('\n');
+      assert.ok(
+        renderer.root.findAllByType('Pressable').length >= 1,
+        'the banner press surface is present',
+      );
+      assert.ok(text.includes('analytics:priceAlertTitle'), 'the banner is present');
+      assert.equal(
+        text.split('analytics:priceAlertCompareTitle').length - 1,
+        1,
+        'exactly one comparison is shown for Pro',
+      );
+      assert.ok(
+        !text.includes('analytics:proPill'),
+        'the upsell pill is not shown to a Pro user',
+      );
+    } finally {
+      await unmount();
+    }
+  });
+
+  await test('PriceAlertGroup hides comparison but keeps the locked banner for free users', async () => {
+    const { renderer, unmount } = await renderGroup(false);
+    try {
+      const text = flattenStrings(renderer.toJSON()).join('\n');
+      assert.ok(
+        renderer.root.findAllByType('Pressable').length >= 1,
+        'the banner press surface is still present',
+      );
+      assert.ok(text.includes('analytics:priceAlertTitle'), 'the banner is still visible');
+      assert.ok(text.includes('analytics:proPill'), 'the upsell pill is still visible');
+      assert.ok(
+        !text.includes('analytics:priceAlertCompareTitle'),
+        'the comparison is NOT shown to a free user',
+      );
     } finally {
       await unmount();
     }

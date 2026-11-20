@@ -3,7 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native';
 
 import { Icon, Pressable, Text, View } from '@/components';
-import type { PriceAlert } from '@/features/analytics/price-alerts';
+import {
+  isPriceIncrease,
+  type PriceAlert,
+} from '@/features/analytics/price-alerts';
 import { colors, radii, spacing } from '@/theme';
 
 /**
@@ -35,7 +38,7 @@ export function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
   // must not announce a dead action to assistive tech.
   const canAct = !isPro || !!alert.receiptId;
   // red = increase, green = drop
-  const priceIncreased = alert.changePct >= 0;
+  const priceIncreased = isPriceIncrease(alert.changePct);
   const handlePress = () => {
     if (!isPro) {
       router.push('/pro');
@@ -183,7 +186,5 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     flexDirection: 'column',
     paddingLeft: 5,
-    // alignItems: 'center',
-    // justifyContent: 'space-between',
   },
 });

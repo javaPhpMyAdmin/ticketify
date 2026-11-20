@@ -3,7 +3,7 @@ import {
   getMonthKey,
   previousMonthKey,
   type ReceiptSpendRecord,
-} from '@/features/home/hooks/useHomeFeed';
+} from '@/features/home/month-keys';
 
 /**
  * Identity normalization for price alerts. Same pipeline as
@@ -39,6 +39,7 @@ export function normalizePriceIdentity(name: string): string {
 interface SourceReceipt {
   receiptId: string;
   purchaseDate: string;
+  storeName: string;
   id: string;
 }
 
@@ -59,9 +60,9 @@ export interface PriceAlert {
   /** Display name from the current-month receipt (original casing). */
   name: string;
   category: string;
-  /** Unit price this month. */
+  /** MONTHLY AVERAGE unit price this month for the (identity, unit) bucket. */
   currentPrice: number;
-  /** Unit price last month. */
+  /** MONTHLY AVERAGE unit price last month for the same bucket. */
   previousPrice: number;
   /** Signed percentage change, e.g. 9.1 for +9.1%, -3.2 for -3.2%. */
   changePct: number;
@@ -73,9 +74,34 @@ export interface PriceAlert {
    * analytics banner can navigate reliably to `/receipts/:receiptId`.
    */
   receiptId: string;
+  /**
+   * Both sides of the comparison come from the SAME (identity, unit)
+   * bucket, each from its own month's winning source receipt under the
+   * S2 rule. They describe the two source tickets behind the averages —
+   * `currentPrice` / `previousPrice` remain bucket-wide MONTHLY
+   * AVERAGES, never the unit price of these single receipts.
+   * Missing values default to `''`.
+   */
+  previousReceiptId: string;
+  currentPurchaseDate: string;
+  previousPurchaseDate: string;
+  currentStoreName: string;
+  previousStoreName: string;
+  /** Currency unit of the bucket the two averages were computed in. */
+  unit: string;
 }
 
 export const THRESHOLD = 0.05; // 5% — the demo shows one alert, one miss.
+
+/**
+ * Shared direction predicate for the banner and the inline comparison.
+ * Non-negative deltas take the increase branch; negative ones take the drop
+ * branch. Keeping it here prevents the two surfaces from drifting apart.
+ */
+export function isPriceIncrease(changePct: number): boolean {
+  return changePct >= 0;
+}
+
 /**
  * Pure price-alert computation (data-access spec). Groups receipts' line
  * items by normalized identity scoped to currency unit (package size preserved
@@ -94,7 +120,8 @@ export const THRESHOLD = 0.05; // 5% — the demo shows one alert, one miss.
  * While aggregating, the function also tracks the source receipt per
  * `(identity, unit, month)` tuple under the S2 deterministic rule (latest
  * `purchase_date`; tie-break `id` ascending) so each emitted alert carries the
- * receipt id the analytics banner will navigate to. Receipts without an `id`
+ * receipt id the analytics banner will navigate to plus that receipt's date
+ * and store name for the Pro inline comparison. Receipts without an `id`
  * contribute an empty-string candidate — the deterministic comparison still
  * resolves (id is `''`).
  *
@@ -158,6 +185,7 @@ export function computePriceAlerts(
       const candidate: SourceReceipt = {
         receiptId,
         purchaseDate: receipt.purchase_date,
+        storeName: receipt.store_name ?? '',
         id: receiptId,
       };
       const existing = perSource.get(month);
@@ -167,7 +195,6 @@ export function computePriceAlerts(
   }
 
   const previous = previousMonthKey(nowMonth);
-  const nowSources = sourceByIdentityMonth;
 
   const alertsWithUnit: (PriceAlert & { identity: string; unit: string })[] = [];
   for (const [id, perMonth] of byIdentity) {
@@ -185,6 +212,12 @@ export function computePriceAlerts(
     const change = (currentPrice - previousPrice) / previousPrice;
     // Strictly ABOVE the threshold — a change of exactly 5% is not an alert.
     if (Math.abs(change) <= threshold) continue;
+    // Both source tickets come from this SAME (identity, unit) bucket: each
+    // month has its own deterministic winner. The prices above stay the
+    // bucket-wide monthly averages — these are only the two receipts behind
+    // them, shown so a Pro user can see what was compared.
+    const nowSource = sourceByIdentityMonth.get(id)?.get(nowMonth);
+    const previousSource = sourceByIdentityMonth.get(id)?.get(previous);
     alertsWithUnit.push({
       identity: identityKey,
       unit: unitKey,
@@ -193,7 +226,12 @@ export function computePriceAlerts(
       currentPrice,
       previousPrice,
       changePct: Math.round(change * 1000) / 10,
-      receiptId: nowSources.get(id)?.get(nowMonth)?.receiptId ?? '',
+      receiptId: nowSource?.receiptId ?? '',
+      previousReceiptId: previousSource?.receiptId ?? '',
+      currentPurchaseDate: nowSource?.purchaseDate ?? '',
+      previousPurchaseDate: previousSource?.purchaseDate ?? '',
+      currentStoreName: nowSource?.storeName ?? '',
+      previousStoreName: previousSource?.storeName ?? '',
     });
   }
 
@@ -214,14 +252,35 @@ export function computePriceAlerts(
   }
 
   return [...best.values()]
-    .map(({ name, category, currentPrice, previousPrice, changePct, receiptId }) => ({
-      name,
-      category,
-      currentPrice,
-      previousPrice,
-      changePct,
-      receiptId,
-    }))
+    .map(
+      ({
+        name,
+        category,
+        currentPrice,
+        previousPrice,
+        changePct,
+        receiptId,
+        previousReceiptId,
+        currentPurchaseDate,
+        previousPurchaseDate,
+        currentStoreName,
+        previousStoreName,
+        unit,
+      }) => ({
+        name,
+        category,
+        currentPrice,
+        previousPrice,
+        changePct,
+        receiptId,
+        previousReceiptId,
+        currentPurchaseDate,
+        previousPurchaseDate,
+        currentStoreName,
+        previousStoreName,
+        unit,
+      }),
+    )
     .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
 }
 

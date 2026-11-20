@@ -25,6 +25,8 @@
   "include": [
     "../src/features/analytics/price-alerts.ts",
     "../src/features/analytics/components/PriceAlertBanner.tsx",
+    "../src/features/analytics/components/PriceAlertComparison.tsx",
+    "../src/features/analytics/components/PriceAlertGroup.tsx",
     "../src/features/analytics/hooks/usePriceAlerts.ts",
     "../src/features/home/hooks/useHomeFeed.ts",
     "../src/features/home/categories.ts",

@@ -13,7 +13,7 @@ import {
   CategoryBudgetRow,
   categoryRowKey,
   MonthlyOverviewCard,
-  PriceAlertBanner,
+  PriceAlertGroup,
   TopItemsBreakdown,
   useMonthlyOverview,
   useMonthlyTotals,
@@ -306,7 +306,12 @@ export default function AnalyticsScreen() {
         />
         <ChartsEntryCard isPro={isPro} />
         {alerts.map((alert) => (
-          <PriceAlertBanner key={alert.name} alert={alert} isPro={isPro} />
+          <PriceAlertGroup
+            key={alert.name}
+            alert={alert}
+            isPro={isPro}
+            locale={locale}
+          />
         ))}
         {viewMode === 'household' ? (
           monthTotalsLoading ? (
