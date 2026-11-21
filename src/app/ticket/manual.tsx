@@ -11,6 +11,7 @@ import {
   Fab,
   Icon,
   IconButton,
+  ProgressOverlay,
   Text,
   View,
 } from '@/components';
@@ -185,7 +186,7 @@ export default function ManualEntryScreen() {
       await saveManualReceipt(userId, manualDraft);
       clear();
       useToastStore.getState().show(t('tickets:manualSavedToast'), 'success');
-      router.dismiss();
+      router.canGoBack() ? router.dismiss() : router.replace('/');
     } catch (err) {
       savingRef.current = false;
       setSaving(false);
@@ -431,6 +432,7 @@ export default function ManualEntryScreen() {
             disabled={saving}
           />
         </View>
+        {saving ? <ProgressOverlay label={t('tickets:savingLabel')} /> : null}
       </SafeAreaView>
 
       <DatePickerField

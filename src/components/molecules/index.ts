@@ -16,6 +16,9 @@ export type { FieldGroupProps } from './FieldGroup';
 export { PasswordField } from './PasswordField';
 export type { PasswordFieldProps } from './PasswordField';
 
+export { ProgressOverlay } from './ProgressOverlay';
+export type { ProgressOverlayProps } from './ProgressOverlay';
+
 export { Fab } from './Fab';
 export type { FabProps } from './Fab';
 

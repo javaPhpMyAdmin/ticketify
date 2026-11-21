@@ -78,5 +78,7 @@
   "categoryReassignToLabel": "Mover para",
   "categoryDeleteConfirm": "Excluir categoria",
   "categoryDeleteError": "Não foi possível excluir a categoria. Tente novamente.",
-  "categoryReassignError": "Não foi possível mover os gastos. Tente novamente."
+  "categoryReassignError": "Não foi possível mover os gastos. Tente novamente.",
+  "savingLabel": "Salvando",
+  "editingLabel": "Editando"
 }

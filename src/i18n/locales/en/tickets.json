@@ -78,5 +78,7 @@
   "categoryReassignToLabel": "Move to",
   "categoryDeleteConfirm": "Delete category",
   "categoryDeleteError": "Couldn't delete the category. Try again.",
-  "categoryReassignError": "Couldn't move the purchases. Try again."
+  "categoryReassignError": "Couldn't move the purchases. Try again.",
+  "savingLabel": "Saving",
+  "editingLabel": "Editing"
 }

@@ -26,6 +26,7 @@ import {
   Icon,
   IconButton,
   Pressable,
+  ProgressOverlay,
   Text,
   View,
 } from '@/components';
@@ -467,18 +468,17 @@ export default function ReviewReceiptScreen() {
         }
       }
       clear();
-      // Toast BEFORE `router.dismiss()` so the user lands on the previous
-      // screen with a confirmation already on-screen. The `ToastHost` is
-      // mounted at the root in `_layout.tsx`, so it survives the unmount
-      // and renders on the destination route instead of dying with the
-      // review screen.
+      // Toast BEFORE navigation so the confirmation is already on-screen.
+      // The `ToastHost` is mounted at the root in `_layout.tsx`, so it
+      // survives the unmount and renders on the destination route instead
+      // of dying with the review screen.
       useToastStore
         .getState()
         .show(
           editingMode ? t('tickets:reviewSavedToast') : t('tickets:reviewSavedNewToast'),
           'success',
         );
-      router.dismiss();
+      router.canGoBack() ? router.dismiss() : router.replace('/');
     } catch (err) {
       // Writes can reject (network, RLS); the review screen stays up with
       // the draft intact so the user can retry. The toast surfaces the
@@ -800,6 +800,7 @@ export default function ReviewReceiptScreen() {
             />
           </View>
         ) : null}
+        {saving ? <ProgressOverlay label={t(editingMode ? 'tickets:editingLabel' : 'tickets:savingLabel')} /> : null}
       </SafeAreaView>
 
       <CategoryPickerModal

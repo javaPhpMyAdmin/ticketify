@@ -58,13 +58,14 @@
  */
 import { Stack, router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   Icon,
   IconButton,
+  ProgressOverlay,
   Spinner,
   Text,
 } from '@/components';
@@ -289,7 +290,7 @@ export default function PaywallScreen() {
         <TrustStrip />
         <LegalFooter />
       </ScrollView>
-      {redirecting ? <RedirectingOverlay /> : null}
+      {redirecting ? <ProgressOverlay label={t('redirecting')} /> : null}
     </SafeAreaView>
   );
 }
@@ -840,74 +841,6 @@ function LegalFooter() {
   );
 }
 
-function RedirectingOverlay() {
-  const { t } = useTranslation('pro');
-  const dotOpacity = useRef([
-    new Animated.Value(0),
-    new Animated.Value(0),
-    new Animated.Value(0),
-  ]).current;
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.stagger(220, [
-        Animated.timing(dotOpacity[0], {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(dotOpacity[1], {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(dotOpacity[2], {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(dotOpacity[0], {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(dotOpacity[1], {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(dotOpacity[2], {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [dotOpacity]);
-
-  return (
-    <View
-      style={styles.redirectOverlay}
-      accessible
-      accessibilityLiveRegion="polite"
-    >
-      <View style={styles.redirectRow}>
-        <Text style={styles.redirectText}>{t('redirecting')}</Text>
-        {dotOpacity.map((dot, index) => (
-          <Animated.Text
-            key={index}
-            style={[styles.redirectText, styles.redirectDot, { opacity: dot }]}
-          >
-            .
-          </Animated.Text>
-        ))}
-      </View>
-    </View>
-  );
-}
-
 // ─────────────────────────────────────────────────────────────────────────
 // Stylesheet — Kinetic Finance palette, type, and spacing tokens.
 // All color/spacing/typography values come from the theme; alpha is
@@ -1395,24 +1328,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textDecorationLine: 'underline',
     fontWeight: '600',
-  },
-  redirectOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
-  },
-  redirectRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-  },
-  redirectText: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
-    textAlign: 'center',
-  },
-  redirectDot: {
-    marginLeft: 2,
   },
 });

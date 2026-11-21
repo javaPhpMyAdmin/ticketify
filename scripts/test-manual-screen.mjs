@@ -2345,6 +2345,219 @@ async function editorWiringTests() {
 }
 
 // ---------------------------------------------------------------------------
+// In-screen action feedback — shared ProgressOverlay (manual save + edit save)
+// ---------------------------------------------------------------------------
+
+/** Slice one top-level async function body without crossing into the next block. */
+function asyncHandlerBlock(source, signature) {
+  const start = source.indexOf(signature);
+  if (start < 0) return '';
+  const closing = source.indexOf('\n  };', start);
+  assert.ok(closing >= 0, `closing marker for ${signature} not found`);
+  return source.slice(start, closing + '\n  };'.length);
+}
+
+async function progressOverlayTests() {
+  const manualSource = readFileSync(
+    join(root, 'src/app/ticket/manual.tsx'),
+    'utf8',
+  );
+  const reviewSource = readFileSync(
+    join(root, 'src/app/ticket/review/[id].tsx'),
+    'utf8',
+  );
+  const proSource = readFileSync(join(root, 'src/app/pro/index.tsx'), 'utf8');
+  const moleculePath = join(
+    root,
+    'src/components/molecules/ProgressOverlay/ProgressOverlay.tsx',
+  );
+  const moleculeSource = existsSync(moleculePath)
+    ? readFileSync(moleculePath, 'utf8')
+    : '';
+  const moleculeBarrel = readFileSync(
+    join(root, 'src/components/molecules/index.ts'),
+    'utf8',
+  );
+  const componentsBarrel = readFileSync(
+    join(root, 'src/components/index.ts'),
+    'utf8',
+  );
+
+  await test('progress overlay: opaque centered live region with a label prop', () => {
+    assert.ok(moleculeSource.includes('label: string'), 'molecule must take a label: string prop');
+    assert.ok(
+      moleculeSource.includes('StyleSheet.absoluteFillObject'),
+      'overlay must cover the full screen',
+    );
+    assert.ok(
+      moleculeSource.includes('backgroundColor: colors.background'),
+      'overlay must be opaque with a theme token',
+    );
+    assert.ok(moleculeSource.includes('accessible'), 'overlay must be accessible');
+    assert.ok(
+      moleculeSource.includes('accessibilityLiveRegion="polite"'),
+      'overlay must announce politely',
+    );
+    assert.ok(
+      /alignItems:\s*'center'/.test(moleculeSource) &&
+        /justifyContent:\s*'center'/.test(moleculeSource),
+      'label + dots must be centered',
+    );
+  });
+
+  await test('progress overlay: three sibling animated dots with loop cleanup', () => {
+    assert.equal(
+      (moleculeSource.match(/new Animated\.Value\(0\)/g) ?? []).length,
+      3,
+      'exactly three animated dot values must be rendered',
+    );
+    assert.ok(
+      /\{dotOpacity\.map\(\(dot, index\) => \(\s*<Animated\.Text/.test(moleculeSource),
+      'the three values must map to three sibling Animated.Text dots',
+    );
+    const labelIndex = moleculeSource.indexOf('{label}');
+    const firstDotIndex = moleculeSource.indexOf('<Animated.Text');
+    assert.ok(
+      labelIndex >= 0 && firstDotIndex > labelIndex,
+      'dots must be siblings AFTER the label (RN flattens nested Text)',
+    );
+    assert.ok(
+      moleculeSource.includes('Animated.loop(') && moleculeSource.includes('loop.start()'),
+      'dots must loop',
+    );
+    assert.ok(
+      moleculeSource.includes('return () => loop.stop()'),
+      'the loop must stop on unmount',
+    );
+  });
+
+  await test('progress overlay: exported from both component barrels', () => {
+    assert.ok(
+      moleculeBarrel.includes("export { ProgressOverlay } from './ProgressOverlay';"),
+      'molecules barrel must export ProgressOverlay',
+    );
+    assert.ok(
+      componentsBarrel.includes('ProgressOverlay') &&
+        componentsBarrel.includes('ProgressOverlayProps'),
+      'the @/components surface must export the component and its props type',
+    );
+  });
+
+  await test('manual save: conditional overlay uses tickets:savingLabel', () => {
+    assert.ok(
+      manualSource.includes(
+        "{saving ? <ProgressOverlay label={t('tickets:savingLabel')} /> : null}",
+      ),
+      'manual screen must render the ProgressOverlay only while saving',
+    );
+  });
+
+  await test('review save: conditional overlay picks the edit label in editingMode', () => {
+    assert.ok(
+      reviewSource.includes(
+        "{saving ? <ProgressOverlay label={t(editingMode ? 'tickets:editingLabel' : 'tickets:savingLabel')} /> : null}",
+      ),
+      'review screen must show Editando in edit mode and Guardando otherwise',
+    );
+  });
+
+  await test('both save handlers: ref guard first, state second, reset in catch', () => {
+    const handlers = [
+      ['manual', asyncHandlerBlock(manualSource, 'const handleSubmit = async () => {')],
+      ['review', asyncHandlerBlock(reviewSource, 'const handleConfirm = async () => {')],
+    ];
+    for (const [name, block] of handlers) {
+      assert.ok(block.length > 0, `${name} handler block must exist`);
+      const guardIndex = block.indexOf('if (savingRef.current');
+      const refIndex = block.indexOf('savingRef.current = true;');
+      const stateIndex = block.indexOf('setSaving(true);');
+      assert.ok(
+        guardIndex >= 0 && refIndex > guardIndex && stateIndex > refIndex,
+        `${name}: guard must run before savingRef, savingRef before setSaving`,
+      );
+      const catchIndex = block.indexOf('catch (err) {');
+      assert.ok(catchIndex > stateIndex, `${name}: catch block must exist`);
+      assert.ok(
+        block.indexOf('savingRef.current = false;', catchIndex) > catchIndex &&
+          block.indexOf('setSaving(false);', catchIndex) > catchIndex,
+        `${name}: catch must reset BOTH the ref and the state`,
+      );
+    }
+  });
+
+  await test('both save handlers: guarded navigation replaces bare dismiss on success', () => {
+    const cases = [
+      ['manual', asyncHandlerBlock(manualSource, 'const handleSubmit = async () => {')],
+      ['review', asyncHandlerBlock(reviewSource, 'const handleConfirm = async () => {')],
+    ];
+    for (const [name, block] of cases) {
+      assert.ok(block.length > 0, `${name} handler block must exist`);
+      const catchIndex = block.indexOf('catch (err) {');
+      assert.ok(catchIndex > 0, `${name} catch must exist`);
+      const success = block.slice(0, catchIndex);
+      assert.ok(
+        success.includes("router.canGoBack() ? router.dismiss() : router.replace('/')"),
+        `${name}: success must fall back to router.replace('/') with no back stack`,
+      );
+      assert.ok(
+        !/^\s*router\.dismiss\(\);/m.test(success),
+        `${name}: bare router.dismiss() must not remain in the success path`,
+      );
+      const clearIndex = success.indexOf('clear();');
+      const toastIndex = success.indexOf('.show(');
+      const navIndex = success.indexOf('router.canGoBack() ? router.dismiss()');
+      assert.ok(
+        clearIndex >= 0 && toastIndex > clearIndex && navIndex > toastIndex,
+        `${name}: clear() then toast then guarded navigation`,
+      );
+      assert.ok(
+        !success.includes('setSaving(false);', clearIndex) &&
+          !success.includes('savingRef.current = false;', clearIndex),
+        `${name}: no saving reset before navigation — overlay clears by unmount`,
+      );
+    }
+  });
+
+  await test('asyncHandlerBlock: missing closing marker fails loudly (no tail-of-file slice)', () => {
+    const noClose = 'const handleSubmit = async () => {\n  await save();\n';
+    assert.throws(
+      () => asyncHandlerBlock(noClose, 'const handleSubmit = async () => {'),
+      /closing marker .* not found/,
+    );
+    assert.equal(asyncHandlerBlock(noClose, 'const other = async () => {'), '');
+  });
+
+  await test('paywall: redirect feedback delegates to the shared overlay', () => {
+    assert.ok(
+      proSource.includes("<ProgressOverlay label={t('redirecting')} />"),
+      'paywall must render ProgressOverlay with the redirecting label',
+    );
+    assert.ok(
+      !/function RedirectingOverlay\(/.test(proSource),
+      'the local RedirectingOverlay duplicate must be removed',
+    );
+  });
+
+  await test('i18n: savingLabel + editingLabel ship with the pinned copy', () => {
+    const expected = {
+      en: { savingLabel: 'Saving', editingLabel: 'Editing' },
+      'es-419': { savingLabel: 'Guardando', editingLabel: 'Editando' },
+      'pt-BR': { savingLabel: 'Salvando', editingLabel: 'Editando' },
+    };
+    for (const [locale, labels] of Object.entries(expected)) {
+      const catalog = JSON.parse(
+        readFileSync(join(root, 'src/i18n/locales', locale, 'tickets.json'), 'utf8'),
+      );
+      assert.equal(catalog.savingLabel, labels.savingLabel, `${locale} savingLabel`);
+      assert.equal(catalog.editingLabel, labels.editingLabel, `${locale} editingLabel`);
+      for (const value of Object.values(labels)) {
+        assert.ok(!/[.…]$/.test(value), `${locale}: no ellipsis — animated dots own it`);
+      }
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------
 
@@ -2387,6 +2600,8 @@ async function run() {
   // PR 5 (slice 5/7): source pins for the editor wiring (ItemEditorModal,
   // manual.tsx, ReviewItemRow / ReceiptItemsList, review container).
   await editorWiringTests();
+
+  await progressOverlayTests();
 
   console.log('');
   if (failed > 0) {
