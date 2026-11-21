@@ -7,6 +7,7 @@ import {
   isPriceIncrease,
   type PriceAlert,
 } from '@/features/analytics/price-alerts';
+import { currentMonthKey } from '@/features/home/hooks/useHomeFeed';
 import { colors, radii, spacing } from '@/theme';
 
 /**
@@ -21,17 +22,29 @@ import { colors, radii, spacing } from '@/theme';
  * - `!isPro`: `onPress` pushes the paywall (`/pro`). The banner
  *   content still renders so the user understands what they would unlock.
  * - `isPro && alert.receiptId`: `onPress` navigates to the source receipt detail
- *   at `/receipts/${alert.receiptId}`. The id is captured deterministically
- *   by `computePriceAlerts` (S2: latest `purchase_date`, tie-break `id`
- *   ascending) so two runs on the same data land on the same receipt.
+ *   at `/receipts/${id}` carrying the alert identity so that screen can mount
+ *   the comparison that used to live inline: `month` (the `monthKey` prop,
+ *   falling back to `currentMonthKey()`), `name`, `unit` and
+ *   `previousReceiptId`. Query values go through `URLSearchParams`; the path
+ *   id is `encodeURIComponent`-escaped and the typed href is cast `as never`
+ *   (same pattern as `app/items/[name].tsx`). The id is captured
+ *   deterministically by `computePriceAlerts` (S2: latest `purchase_date`,
+ *   tie-break `id` ascending) so two runs on the same data land on the same
+ *   receipt.
  * - `isPro && !alert.receiptId`: no-op (do nothing; never the paywall).
  */
 export interface PriceAlertBannerProps {
   alert: PriceAlert;
   isPro: boolean;
+  /** Month whose alerts produced this banner; defaults to the current month. */
+  monthKey?: string;
 }
 
-export function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
+export function PriceAlertBanner({
+  alert,
+  isPro,
+  monthKey,
+}: PriceAlertBannerProps) {
   const { t } = useTranslation(['analytics']);
   // A Pro user with an id-less alert has nothing to open (receiptId is
   // optional and can be an empty string). The banner stays readable, but it
@@ -45,7 +58,18 @@ export function PriceAlertBanner({ alert, isPro }: PriceAlertBannerProps) {
       return;
     }
     if (alert.receiptId) {
-      router.push(`/receipts/${alert.receiptId}`);
+      // URLSearchParams already escapes each value; encoding them again would
+      // double-escape (expo-router decodes once) and break the alert lookup on
+      // the detail screen. Only the path segment needs explicit escaping.
+      const params = new URLSearchParams({
+        month: monthKey ?? currentMonthKey(),
+        name: alert.name,
+        unit: alert.unit,
+        previousReceiptId: alert.previousReceiptId,
+      });
+      router.push(
+        `/receipts/${encodeURIComponent(alert.receiptId)}?${params.toString()}` as never,
+      );
     }
   };
   return (

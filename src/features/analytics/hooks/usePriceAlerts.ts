@@ -28,9 +28,14 @@ import { computePriceAlerts, type PriceAlert } from '../price-alerts';
  * is only the seed, so the hook passes `''` (null-currency rows then stay in
  * their own bucket instead of being mis-filed under the seed). `monthKey`
  * defaults to the current month; the analytics month selector passes the
- * chosen month so alerts compare that month against its predecessor.
+ * chosen month so alerts compare that month against its predecessor. The
+ * optional `enabled` flag lets a consumer gate BOTH queries behind a resolved
+ * Pro entitlement without changing the default behavior of existing callers.
  */
-export function usePriceAlerts(monthKey = currentMonthKey()): PriceAlert[] {
+export function usePriceAlerts(
+  monthKey = currentMonthKey(),
+  enabled = true,
+): PriceAlert[] {
   const { userId } = useSessionUser();
   const currency = useSettingsStore((s) => s.currency);
   const currencyHydrated = useSettingsStore((s) => s.currencyHydrated);
@@ -39,12 +44,12 @@ export function usePriceAlerts(monthKey = currentMonthKey()): PriceAlert[] {
 
   const currentQuery = useQuery<ReceiptSpendRecord[]>({
     queryKey: queryKeys.monthReceipts(userId!, monthKey),
-    enabled: !!userId,
+    enabled: enabled && !!userId,
     queryFn: () => readPurchaseListByMonth(userId!, monthKey).then(toQueryData),
   });
   const previousQuery = useQuery<ReceiptSpendRecord[]>({
     queryKey: queryKeys.monthReceipts(userId!, previousMonth),
-    enabled: !!userId,
+    enabled: enabled && !!userId,
     queryFn: () =>
       readPurchaseListByMonth(userId!, previousMonth).then(toQueryData),
   });

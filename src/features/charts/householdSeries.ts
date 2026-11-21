@@ -74,6 +74,52 @@ export function chartCacheRowForMonth(
   return bound[0] ?? null;
 }
 
+/** Pure inputs for the household month-over-month badge delta. */
+export interface HouseholdChangeInput {
+  rows: HouseholdChartSeriesRow[];
+  monthKey: string;
+  previousMonthKey: string;
+  currency: string;
+  hasData: boolean;
+  failed: boolean;
+}
+
+/**
+ * Viewer-unit month-over-month percentage for the household hero badge.
+ *
+ * This is ONE series, never a cross-currency sum: both months are resolved
+ * through `chartCacheRowForMonth`, which binds only the viewer's currency. A
+ * foreign-currency row never substitutes for a missing viewer row, and totals
+ * are never summed or redenominated across units. There is deliberately no
+ * personal input — the personal path owns its own delta.
+ *
+ * Returns null while the RPC is unresolved/failed, when the previous
+ * viewer-unit row is missing or its total is non-finite/non-positive, or when
+ * the computed percentage is not finite. Otherwise rounds to 1 decimal.
+ */
+export function computeHouseholdChangePct(
+  input: HouseholdChangeInput,
+): number | null {
+  const { rows, monthKey, previousMonthKey, currency, hasData, failed } = input;
+  if (!hasData || failed) return null;
+
+  const current = chartCacheRowForMonth(rows, monthKey, currency);
+  const previous = chartCacheRowForMonth(rows, previousMonthKey, currency);
+  const currentTotal = current?.total ?? 0;
+  const previousTotal = previous?.total;
+  if (
+    previousTotal == null ||
+    !Number.isFinite(previousTotal) ||
+    previousTotal <= 0
+  ) {
+    return null;
+  }
+
+  const value = ((currentTotal - previousTotal) / previousTotal) * 100;
+  if (!Number.isFinite(value)) return null;
+  return Math.round(value * 10) / 10;
+}
+
 /**
  * Minimal receipt-shaped points for the aggregators that need per-day input
  * (weekly bars, daily average, day detail). The RPC exposes `daily_totals`

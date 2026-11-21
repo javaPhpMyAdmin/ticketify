@@ -126,6 +126,7 @@ async function run() {
           { total: 678, currency: 'CLP' },
         ],
         personalChangePct: 12.5,
+        householdChangePct: 33.3,
         hasHouseholdData: false,
       });
       assert.deepEqual(result, {
@@ -143,6 +144,7 @@ async function run() {
       householdTotals: [],
       overviewTotals: [{ total: 0, currency: 'UYU' }],
       personalChangePct: null,
+      householdChangePct: 33.3,
       hasHouseholdData: false,
     });
     assert.deepEqual(result, {
@@ -154,7 +156,7 @@ async function run() {
   console.log('\n[tests] household mode\n');
 
   await test(
-    'household mode returns householdTotals per unit + changePct null (no scope mix)',
+    'household mode returns householdTotals per unit + household changePct (personal ignored, no scope mix)',
     () => {
       const result = build('household', {
         householdTotals: [
@@ -163,6 +165,7 @@ async function run() {
         ],
         overviewTotals: [{ total: 999999, currency: 'UYU' }],
         personalChangePct: 12.5,
+        householdChangePct: -7.3,
         hasHouseholdData: true,
       });
       assert.deepEqual(result, {
@@ -170,7 +173,7 @@ async function run() {
           { total: 54321, currency: 'UYU' },
           { total: 900, currency: 'CLP' },
         ],
-        headlineChangePct: null,
+        headlineChangePct: -7.3,
       });
     },
   );
@@ -182,11 +185,12 @@ async function run() {
         householdTotals: [{ total: 42, currency: undefined }],
         overviewTotals: [],
         personalChangePct: 12.5,
+        householdChangePct: -7.3,
         hasHouseholdData: true,
       });
       assert.deepEqual(result, {
         headlineTotals: [{ total: 42, currency: undefined }],
-        headlineChangePct: null,
+        headlineChangePct: -7.3,
       });
     },
   );
@@ -198,11 +202,12 @@ async function run() {
         householdTotals: [],
         overviewTotals: [{ total: 999999, currency: 'UYU' }],
         personalChangePct: 12.5,
+        householdChangePct: -7.3,
         hasHouseholdData: true,
       });
       assert.deepEqual(result, {
         headlineTotals: [{ total: 0 }],
-        headlineChangePct: null,
+        headlineChangePct: -7.3,
       });
     },
   );
@@ -217,6 +222,7 @@ async function run() {
         ],
         overviewTotals: [{ total: 999999, currency: 'UYU' }],
         personalChangePct: 12.5,
+        householdChangePct: -7.3,
         hasHouseholdData: true,
       });
       assert.deepEqual(result, {
@@ -224,10 +230,38 @@ async function run() {
           { total: 0, currency: 'UYU' },
           { total: 50, currency: 'UYU' },
         ],
-        headlineChangePct: null,
+        headlineChangePct: -7.3,
       });
     },
   );
+
+  await test('household mode: null household delta → null badge', () => {
+    const result = build('household', {
+      householdTotals: [{ total: 54321, currency: 'UYU' }],
+      overviewTotals: [{ total: 999999, currency: 'UYU' }],
+      personalChangePct: 12.5,
+      householdChangePct: null,
+      hasHouseholdData: true,
+    });
+    assert.deepEqual(result, {
+      headlineTotals: [{ total: 54321, currency: 'UYU' }],
+      headlineChangePct: null,
+    });
+  });
+
+  await test('household mode: NaN household delta → null badge', () => {
+    const result = build('household', {
+      householdTotals: [{ total: 54321, currency: 'UYU' }],
+      overviewTotals: [{ total: 999999, currency: 'UYU' }],
+      personalChangePct: 12.5,
+      householdChangePct: NaN,
+      hasHouseholdData: true,
+    });
+    assert.deepEqual(result, {
+      headlineTotals: [{ total: 54321, currency: 'UYU' }],
+      headlineChangePct: null,
+    });
+  });
 
   console.log('\n[tests] household mode without resolved data\n');
 
@@ -238,6 +272,7 @@ async function run() {
         householdTotals: [],
         overviewTotals: [{ total: 999999, currency: 'UYU' }],
         personalChangePct: 12.5,
+        householdChangePct: -7.3,
         hasHouseholdData: false,
       });
       assert.deepEqual(result, {
@@ -256,6 +291,7 @@ async function run() {
         householdTotals: [],
         overviewTotals: [{ total: 777, currency: 'UYU' }],
         personalChangePct: -5,
+        householdChangePct: -7.3,
         hasHouseholdData: false,
       });
       assert.deepEqual(result, { headlineTotals: null, headlineChangePct: null });
@@ -270,9 +306,27 @@ async function run() {
         householdTotals: [],
         overviewTotals: [{ total: 777, currency: 'UYU' }],
         personalChangePct: null,
+        householdChangePct: -7.3,
         hasHouseholdData: false,
       });
       assert.deepEqual(result, { headlineTotals: null, headlineChangePct: null });
+    },
+  );
+
+  await test(
+    'unresolved household with a delta supplied → still placeholder + null badge',
+    () => {
+      const result = build('household', {
+        householdTotals: [{ total: 54321, currency: 'UYU' }],
+        overviewTotals: [{ total: 999999, currency: 'UYU' }],
+        personalChangePct: 12.5,
+        householdChangePct: 9.1,
+        hasHouseholdData: false,
+      });
+      assert.deepEqual(result, {
+        headlineTotals: null,
+        headlineChangePct: null,
+      });
     },
   );
 

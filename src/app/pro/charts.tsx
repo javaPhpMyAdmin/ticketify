@@ -69,6 +69,7 @@ import {
   getMondayOfWeek,
   pickMaxSpendIndex,
   chartCacheRowForMonth,
+  computeHouseholdChangePct,
   householdRowsToReceipts,
   useHouseholdChartSeries,
 } from '@/features/charts';
@@ -193,14 +194,12 @@ export default function ChartsScreen() {
 function ChartFamilyNotice({
   state,
   errorTitle,
-  loadingLabel,
   noDataTitle,
   retryLabel,
   onRetry,
 }: {
   state: ChartFamilyState;
   errorTitle: string;
-  loadingLabel: string;
   noDataTitle: string;
   retryLabel: string;
   onRetry: () => void;
@@ -221,7 +220,6 @@ function ChartFamilyNotice({
     return (
       <View style={styles.householdPending}>
         <BreakdownRowSkeleton />
-        <Text style={styles.emptyYear}>{loadingLabel}</Text>
       </View>
     );
   }
@@ -380,6 +378,31 @@ function ChartsBody() {
   );
   const activeCacheRow = isHouseholdView ? householdCacheRow : cacheRow;
   const activeViewerList = isHouseholdView ? householdReceipts : viewerList;
+
+  // Viewer-unit month-over-month % for the household hero badge, derived from
+  // the same 0048 RPC trend window the chart uses. The delta math lives in the
+  // pure, tested `computeHouseholdChangePct` helper; personal mode never runs it.
+  const householdChangePct = useMemo(
+    () =>
+      isHouseholdView
+        ? computeHouseholdChangePct({
+            rows: householdTrend.rows,
+            monthKey,
+            previousMonthKey: previousMonthKey(monthKey),
+            currency,
+            hasData: householdTrend.hasData,
+            failed: !!householdTrend.error,
+          })
+        : null,
+    [
+      isHouseholdView,
+      householdTrend.rows,
+      householdTrend.hasData,
+      householdTrend.error,
+      monthKey,
+      currency,
+    ],
+  );
 
   // Per-family gates: a slow/failed RPC window must not hide windows that
   // already resolved. Personal mode is always 'ready', so this block has no
@@ -772,14 +795,15 @@ function ChartsBody() {
   );
 
   // Hero headline decision shared with the analytics overview card: in
-  // household mode the hero total is the household RPC total (one figure
-  // per unit since 0044, decision 9), the change-% badge is dropped (it
-  // has no household baseline), and while the RPC has not resolved
-  // (loading) or errored the headline is null → the card renders a neutral
-  // placeholder instead of a false "$0.00" (pinned by test:analytics-headline).
-  // Personal mode: per-unit groups from the selected month's rows — the
-  // cache `currentTotal` can lag a recalc, so the hero states the true
-  // month sum grouped by unit.
+  // household mode the hero total stays the per-unit household RPC total
+  // (one figure per unit since 0044, decision 9), while the change-% badge
+  // comes from the viewer-unit RPC trend window (same series as the chart);
+  // totals remain per-unit and no scope/currency mix. While the RPC has not
+  // resolved (loading) or errored the headline is null → the card renders a
+  // neutral placeholder instead of a false "$0.00" (pinned by
+  // test:analytics-headline). Personal mode: per-unit groups from the
+  // selected month's rows — the cache `currentTotal` can lag a recalc, so the
+  // hero states the true month sum grouped by unit.
   const householdHeadlineTotals = useMemo(() => {
     const groups =
       householdTotals.length > 0
@@ -804,6 +828,7 @@ function ChartsBody() {
     householdTotals: householdHeadlineTotals,
     overviewTotals,
     personalChangePct: overview.changePct,
+    householdChangePct,
     hasHouseholdData: totalsHasData,
   });
 
@@ -879,7 +904,6 @@ function ChartsBody() {
       <ChartFamilyNotice
         state={trendFamily}
         errorTitle={t('errors:featureAccess.generic')}
-        loadingLabel={t('common:loading')}
         noDataTitle={t('pro:householdNoData')}
         retryLabel={t('common:retry')}
         onRetry={() => { void householdTrend.refetch(); }}
@@ -911,7 +935,6 @@ function ChartsBody() {
         <ChartFamilyNotice
           state={capsuleFamily}
           errorTitle={t('errors:featureAccess.generic')}
-          loadingLabel={t('common:loading')}
           noDataTitle={t('pro:householdNoData')}
           retryLabel={t('common:retry')}
           onRetry={() => {
@@ -1004,7 +1027,6 @@ function ChartsBody() {
       <ChartFamilyNotice
         state={annualFamily}
         errorTitle={t('errors:featureAccess.generic')}
-        loadingLabel={t('common:loading')}
         noDataTitle={t('pro:householdNoData')}
         retryLabel={t('common:retry')}
         onRetry={() => { void householdAnnual.refetch(); }}
@@ -1049,6 +1071,7 @@ function ChartsBody() {
               contentContainerStyle={{ minWidth: 12 * 44 }}
             >
               <CapsuleBarChart
+                cellWidth={44}
                 items={annualTrend.map((point, i) => ({
                   label: shortMonthLabel(point.month),
                   value: point.total,

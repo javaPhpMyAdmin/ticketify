@@ -5,9 +5,11 @@
  * `aggregateStoresByMonth`, `aggregateMonthlyDelta`, `aggregateWeeklySpend`,
  * `aggregateDailyAverage`, `aggregateDailySpend`, `aggregateYearlySpend`,
  * `aggregateDayItems`, `aggregateDayTotal`, `buildVisibleDailySeries`,
- * `weekdayInitialsForMonth`, `buildDailyInsight`, and the
- * `aggregateCategoriesByMonth` re-export parity check; plus
- * `src/features/charts/categoryHref.ts` → `categoryDetailHref`).
+ *   `weekdayInitialsForMonth`, `buildDailyInsight`, and the
+ *   `aggregateCategoriesByMonth` re-export parity check; plus
+ *   `src/features/charts/categoryHref.ts` → `categoryDetailHref`, and the
+ *   `src/features/charts/householdSeries.ts` pure adapters +
+ *   `computeHouseholdChangePct` badge delta).
  *
  * Compiles `aggregate.ts` plus its dependency graph (home feed hook,
  * categories registry, auth/session plumbing, receipts store, react-query)
@@ -72,6 +74,9 @@ import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import React, { act } from 'react';
+import TestRenderer from 'react-test-renderer';
 
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -156,6 +161,19 @@ function installRequireHook() {
       request = join(outDir, 'scripts', 'test-stubs', 'expo-localization.js');
     } else if (request === 'react-native') {
       request = join(outDir, 'scripts', 'test-stubs', 'react-native.js');
+    } else if (request === 'react-i18next') {
+      // The hero render pin needs `t()` without booting the real i18next.
+      request = join(outDir, 'scripts', 'test-stubs', 'react-i18next.js');
+    } else if (request === 'victory-native') {
+      // Real victory-native imports RN Skia; the hero guard keeps the chart
+      // subtree inert and only mounts its header.
+      request = join(outDir, 'scripts', 'test-stubs', 'charts-victory-native.js');
+    } else if (request === '@/i18n/stores/useLocaleStore') {
+      request = join(outDir, 'scripts', 'test-stubs', 'charts-locale-store.js');
+    } else if (request === '@/components') {
+      // The render pins load CapsuleBarChart and InsightHeroCard, whose
+      // `Text`/`Icon` come from the same compiled stub used for host trees.
+      request = join(outDir, 'scripts', 'test-stubs', 'components.js');
     } else if (request.startsWith('@/')) {
       request = join(outDir, 'src', request.slice(2));
     }
@@ -181,10 +199,21 @@ function cats(map) {
   return map;
 }
 
+/** Flatten an RN style array (last entry wins) the way the runtime does. */
+function flattenStyle(style) {
+  const entries = Array.isArray(style) ? style.flat(Infinity) : [style];
+  const out = {};
+  for (const entry of entries) {
+    if (entry && typeof entry === 'object') Object.assign(out, entry);
+  }
+  return out;
+}
+
 async function run() {
   console.log('\n[tests] compiling charts aggregator + dependency graph…');
   await compile();
   globalThis.__DEV__ = false;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   installRequireHook();
   console.log('[tests] loading compiled modules…');
   const chartsMod = await import(
@@ -221,6 +250,7 @@ async function run() {
   );
   const {
     chartCacheRowForMonth,
+    computeHouseholdChangePct,
     householdRowsToReceipts,
     toChartCacheRows,
   } = householdSeriesMod;
@@ -243,6 +273,28 @@ async function run() {
   const catsMod = await import(
     pathToFileURL(join(outDir, 'src/features/home/categories.js')).href
   );
+  const capsuleMod = await import(
+    pathToFileURL(
+      join(outDir, 'src/features/charts/components/CapsuleBarChart.js'),
+    ).href
+  );
+  const { CapsuleBarChart } = capsuleMod;
+  const heroMod = await import(
+    pathToFileURL(
+      join(outDir, 'src/features/charts/components/InsightHeroCard.js'),
+    ).href
+  );
+  const { InsightHeroCard } = heroMod;
+  const insightBannerMod = await import(
+    pathToFileURL(
+      join(outDir, 'src/features/analytics/components/InsightBanner.js'),
+    ).href
+  );
+  const { InsightBanner } = insightBannerMod;
+  const themeMod = await import(
+    pathToFileURL(join(outDir, 'src/theme/index.js')).href
+  );
+  const { colors } = themeMod;
 
   console.log('\n[tests] aggregateSpendTrend\n');
 
@@ -1906,6 +1958,131 @@ async function run() {
     assert.equal(eur, null);
   });
 
+  console.log('\n[tests] computeHouseholdChangePct (pure household badge delta)\n');
+
+  const changeRow = (year_month, total, currency = 'UYU') => ({
+    year_month,
+    currency,
+    total,
+    daily_totals: {},
+    store_totals: {},
+    category_totals: {},
+    daily_category_totals: {},
+  });
+  const changePct = (rows, overrides = {}) =>
+    computeHouseholdChangePct({
+      rows,
+      monthKey: '2026-08',
+      previousMonthKey: '2026-07',
+      currency: 'UYU',
+      hasData: true,
+      failed: false,
+      ...overrides,
+    });
+  const upDownRows = [
+    changeRow('2026-08', 120),
+    changeRow('2026-07', 100),
+  ];
+
+  await test('up: current 120 vs previous 100 → 20', () => {
+    assert.equal(changePct(upDownRows), 20);
+  });
+
+  await test('down: current 80 vs previous 100 → -20', () => {
+    assert.equal(
+      changePct([changeRow('2026-08', 80), changeRow('2026-07', 100)]),
+      -20,
+    );
+  });
+
+  await test('previous viewer-unit row missing → null (no fabricated zero)', () => {
+    assert.equal(changePct([changeRow('2026-08', 120)]), null);
+  });
+
+  await test('previous total zero → null (never divide by zero)', () => {
+    assert.equal(
+      changePct([changeRow('2026-08', 120), changeRow('2026-07', 0)]),
+      null,
+    );
+  });
+
+  await test('unresolved (hasData false) and failed (true) → null', () => {
+    assert.equal(changePct(upDownRows, { hasData: false }), null);
+    assert.equal(changePct(upDownRows, { failed: true }), null);
+  });
+
+  await test('multi-currency rows use ONLY the viewer-unit month totals', () => {
+    const rows = [
+      changeRow('2026-08', 120, 'UYU'),
+      changeRow('2026-08', 9_999_999, 'CLP'),
+      changeRow('2026-07', 100, 'UYU'),
+      changeRow('2026-07', 5_000_000, 'CLP'),
+    ];
+    assert.equal(
+      changePct(rows),
+      20,
+      'the huge CLP totals never reach the UYU badge',
+    );
+    assert.equal(
+      changePct(rows, { currency: 'CLP' }),
+      100,
+      'switching viewer binds the other unit instead — still one series',
+    );
+  });
+
+  await test('a foreign-only previous month → null, never a substituted personal/other-unit figure', () => {
+    // The helper has no personal input at all; a month with only CLP spend
+    // must read as "no viewer-month total", not borrow any other number.
+    const rows = [
+      changeRow('2026-08', 120, 'UYU'),
+      changeRow('2026-07', 5_000, 'CLP'),
+    ];
+    assert.equal(changePct(rows), null);
+  });
+
+  await test('NaN current → null', () => {
+    assert.equal(
+      changePct([changeRow('2026-08', NaN), changeRow('2026-07', 100)]),
+      null,
+    );
+  });
+
+  await test('non-finite previous → null', () => {
+    assert.equal(
+      changePct([changeRow('2026-08', 120), changeRow('2026-07', NaN)]),
+      null,
+    );
+  });
+
+  await test('rounding: 101 vs 300 → -66.3 (1 decimal)', () => {
+    // (101 - 300) / 300 * 100 = -66.333… → Math.round(-663.33…) / 10 = -66.3
+    assert.equal(
+      changePct([changeRow('2026-08', 101), changeRow('2026-07', 300)]),
+      -66.3,
+    );
+  });
+
+  await test('rounding up: 1 vs 3 → -66.7 (1 decimal)', () => {
+    // (1 - 3) / 3 * 100 = -66.666… → Math.round(-666.66…) / 10 = -66.7
+    assert.equal(
+      changePct([changeRow('2026-08', 1), changeRow('2026-07', 3)]),
+      -66.7,
+    );
+  });
+
+  await test('source pin: the screen delegates the delta to the pure helper', () => {
+    const chartsSource = readFileSync(
+      join(root, 'src', 'app', 'pro', 'charts.tsx'),
+      'utf8',
+    );
+    assert.match(chartsSource, /computeHouseholdChangePct\(\{/);
+    assert.doesNotMatch(
+      chartsSource,
+      /const currentTotal = currentRow\?\.total/,
+      'the untested inline delta math must stay out of the screen',
+    );
+  });
+
   await test('householdRowsToReceipts allocates categories per day without summing units', () => {
     const receipts = householdRowsToReceipts(householdRpcRows, '2026-08', 'UYU');
     assert.equal(receipts.length, 2);
@@ -2070,6 +2247,336 @@ async function run() {
       chartsSource,
       /\{capsuleFamily === 'ready' \? \(\n\s{8}<Card>\n\s{10}<View style=\{styles\.chartHeader\}>/,
     );
+  });
+
+  console.log('\n[tests] CapsuleBarChart annual layout (executed render)\n');
+
+  // Reproduces the PRO "Tus tendencias" year card: one 12-cell row per axis,
+  // amount strings of very different lengths. With the old `width: '60%'`
+  // rule the longest amount widened its flex cell and its bar too, while the
+  // label row stayed equal — "Ene" drifted right of its "$U 0" bar.
+  const capsuleItems = [
+    { label: 'Ene', value: 0 },
+    { label: 'Feb', value: 12 },
+    { label: 'Mar', value: 12345, highlight: true },
+    { label: 'Abr', value: 345 },
+  ];
+
+  let capsuleRenderer;
+  await act(async () => {
+    capsuleRenderer = TestRenderer.create(
+      React.createElement(CapsuleBarChart, {
+        items: capsuleItems,
+        currency: 'UYU',
+      }),
+    );
+  });
+
+  const capsuleViews = capsuleRenderer.root.findAllByType('View');
+  const capsuleTexts = capsuleRenderer.root.findAllByType('Text');
+  const styleOf = (node) => flattenStyle(node.props.style);
+  const bars = capsuleViews.filter((node) => {
+    const s = styleOf(node);
+    return 'borderRadius' in s && typeof s.backgroundColor === 'string';
+  });
+  const cells = capsuleViews.filter((node) => styleOf(node).flex === 1);
+  const amountTexts = capsuleTexts.filter(
+    (node) => node.props.numberOfLines !== undefined,
+  );
+  const labelTexts = capsuleTexts.filter(
+    (node) => node.props.numberOfLines === undefined,
+  );
+
+  await test('fixture really has different amount-string lengths', () => {
+    const amounts = amountTexts.map((n) => String(n.props.children));
+    assert.equal(amounts.length, capsuleItems.length);
+    assert.ok(
+      new Set(amounts.map((a) => a.length)).size > 1,
+      `expected varied amount lengths, got ${JSON.stringify(amounts)}`,
+    );
+  });
+
+  await test('all bars share one fixed numeric width (no % / maxWidth)', () => {
+    assert.equal(bars.length, capsuleItems.length, 'one bar per item');
+    const widths = bars.map((n) => styleOf(n).width);
+    assert.ok(widths.every(Number.isFinite), `widths must be numbers: ${widths}`);
+    assert.equal(new Set(widths).size, 1, `bars must match: ${widths}`);
+    assert.equal(widths[0], 28, 'fixed bar width is 28px');
+    assert.ok(
+      bars.every((n) => styleOf(n).maxWidth === undefined),
+      'maxWidth: 32 would let content width still influence the bar',
+    );
+  });
+
+  await test('dynamic height/color and borderRadius stay intact', () => {
+    assert.ok(
+      bars.every((n) => typeof styleOf(n).borderRadius === 'number'),
+      'borderRadius must survive the width change',
+    );
+    assert.equal(styleOf(bars[0]).height, 4, 'zero value keeps the minimal bar');
+    assert.equal(styleOf(bars[2]).height, 96, 'max value keeps the full bar');
+    const fills = bars.map((n) => styleOf(n).backgroundColor);
+    assert.notEqual(fills[2], fills[0], 'highlight still uses the accent color');
+    assert.equal(fills[0], fills[1], 'non-highlight bars still share the muted fill');
+  });
+
+  await test('both rows keep flex:1 cells carrying minWidth: 0', () => {
+    assert.equal(cells.length, capsuleItems.length * 2, 'two rows of cells');
+    assert.ok(cells.every((n) => styleOf(n).flex === 1), 'cells still fill equally');
+    assert.ok(
+      cells.every((n) => styleOf(n).minWidth === 0),
+      'minWidth: 0 keeps long amounts from widening a flex cell',
+    );
+  });
+
+  await test('amount Text wraps to 2 lines; labels/order unchanged', () => {
+    assert.equal(amountTexts.length, capsuleItems.length);
+    assert.ok(amountTexts.every((n) => n.props.numberOfLines === 2));
+    assert.deepEqual(
+      labelTexts.map((n) => String(n.props.children)),
+      capsuleItems.map((i) => i.label),
+      'label strings and ordering must not change',
+    );
+  });
+
+  console.log('\n[tests] CapsuleBarChart fixed cellWidth (executed render)\n');
+
+  const annualCapsuleItems = Array.from({ length: 12 }, (_, index) => ({
+    label: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'][index],
+    value: index === 10 ? 12345 : index * 100,
+    highlight: index === 10,
+  }));
+
+  let fixedCapsuleRenderer;
+  await act(async () => {
+    fixedCapsuleRenderer = TestRenderer.create(
+      React.createElement(CapsuleBarChart, {
+        items: annualCapsuleItems,
+        currency: 'UYU',
+        cellWidth: 44,
+      }),
+    );
+  });
+
+  const fixedViews = fixedCapsuleRenderer.root.findAllByType('View');
+  const fixedTexts = fixedCapsuleRenderer.root.findAllByType('Text');
+  const fixedCellWidth = 44;
+  const fixedAmountTexts = fixedTexts.filter(
+    (node) => node.props.numberOfLines !== undefined,
+  );
+  const fixedLabelTexts = fixedTexts.filter(
+    (node) => node.props.numberOfLines === undefined,
+  );
+  const fixedContainer = fixedViews.find((node) => {
+    const s = styleOf(node);
+    return s.width === fixedCellWidth * annualCapsuleItems.length;
+  });
+  const fixedCells = fixedViews.filter((node) => {
+    const s = styleOf(node);
+    return s.width === fixedCellWidth && s.flex === 0;
+  });
+
+  await test('container width equals cellWidth * items.length', () => {
+    assert.ok(fixedContainer, 'expected fixed-width root container');
+    assert.equal(
+      styleOf(fixedContainer).width,
+      fixedCellWidth * annualCapsuleItems.length,
+    );
+  });
+
+  await test('all 24 cells (12 bar + 12 label) have width 44 and flex 0', () => {
+    assert.equal(
+      fixedCells.length,
+      annualCapsuleItems.length * 2,
+      '12 bar cells + 12 label cells',
+    );
+    assert.ok(
+      fixedCells.every((node) => {
+        const s = styleOf(node);
+        return s.width === fixedCellWidth && s.flex === 0;
+      }),
+      'every cell must be pinned to width 44 and flex 0',
+    );
+  });
+
+  await test('fixed-width render keeps label strings and order unchanged', () => {
+    assert.equal(fixedAmountTexts.length, annualCapsuleItems.length);
+    assert.ok(fixedAmountTexts.every((n) => n.props.numberOfLines === 2));
+    assert.deepEqual(
+      fixedLabelTexts.map((n) => String(n.props.children)),
+      annualCapsuleItems.map((i) => i.label),
+      'label strings and ordering must not change',
+    );
+  });
+
+  console.log('\n[tests] InsightHeroCard delta chip layout (executed render)\n');
+
+  // Mount the REAL hero with a deliberately long comparison-month name.
+  // With the old `row` / `space-between` header, the text block and the chip
+  // were both unconstrained, so this copy pushed the chip past the card on
+  // narrow widths. The chart subtree stays inert (stubbed victory-native):
+  // the header is the surface under test.
+  const LONG_PREVIOUS_MONTH =
+    'Septiembre con un nombre deliberadamente extenso para exponer el desborde';
+  const heroDailyData = Array.from({ length: 31 }, (_, i) => ({
+    day: i + 1,
+    total: i === 4 ? 100 : 0,
+  }));
+
+  let heroRenderer;
+  await act(async () => {
+    heroRenderer = TestRenderer.create(
+      React.createElement(InsightHeroCard, {
+        monthLabel: 'Octubre 2026',
+        monthKey: '2026-10',
+        totals: [{ currency: 'UYU', total: 1234 }],
+        deltaPct: -12,
+        previousMonthName: LONG_PREVIOUS_MONTH,
+        dailyData: heroDailyData,
+      }),
+    );
+  });
+
+  const heroHostNodes = heroRenderer.root.findAll(
+    (node) => typeof node.type === 'string',
+  );
+  const heroViews = heroRenderer.root.findAllByType('View');
+  const heroTexts = heroRenderer.root.findAllByType('Text');
+  const hostText = (node) => {
+    const children = Array.isArray(node.props.children)
+      ? node.props.children
+      : [node.props.children];
+    return children
+      .filter((child) => typeof child === 'string' || typeof child === 'number')
+      .join('');
+  };
+  const chipRow = heroViews.find(
+    (node) => styleOf(node).justifyContent === 'flex-end',
+  );
+  // findAllByType includes the root itself — skip chipRow to get the chip.
+  const chip = chipRow?.findAllByType('View').find((node) => node !== chipRow);
+  const chipText = chipRow?.findAllByType('Text')[0];
+  const kicker = heroTexts.find((node) => hostText(node) === 'Gastado este mes');
+  const month = heroTexts.find((node) => hostText(node) === 'Octubre 2026');
+  const total = heroTexts.find(
+    (node) => hostText(node) === formatCurrency(1234, 'UYU'),
+  );
+  const hostIndex = (node) => heroHostNodes.indexOf(node);
+
+  await test('hero chip owns a flex-end row above kicker, month and total', () => {
+    assert.ok(chipRow, 'expected a dedicated host row for the delta chip');
+    assert.equal(styleOf(chipRow).justifyContent, 'flex-end');
+    assert.ok(chipText, 'the chip Text must live inside that row');
+    assert.ok(
+      hostText(chipText).includes(LONG_PREVIOUS_MONTH),
+      'the long previous-month copy must render inside the chip row',
+    );
+    assert.ok(kicker && month && total, 'kicker, month and total must all render');
+    assert.ok(
+      hostIndex(chipRow) < hostIndex(kicker),
+      'chip row must precede the kicker in tree order',
+    );
+    assert.ok(hostIndex(kicker) < hostIndex(month), 'kicker before month');
+    assert.ok(hostIndex(month) < hostIndex(total), 'month before total');
+  });
+
+  await test('hero chip constrains long locale copy (maxWidth 100%, flexShrink 1)', () => {
+    assert.ok(chip, 'expected the chip host View inside the flex-end row');
+    assert.equal(styleOf(chip).maxWidth, '100%');
+    assert.equal(styleOf(chip).flexShrink, 1);
+  });
+
+  await act(async () => {
+    heroRenderer.unmount();
+  });
+
+  console.log('\n[tests] InsightBanner direction-aware colors (executed render)\n');
+
+  // Mounts the REAL banner through the same compiled module/stub graph as the
+  // hero. Copy is compared against the catalog read from disk and resolved
+  // through the es-419 chain, not a hand-written fixture, so a stub/catalog
+  // drift cannot hide behind a passing color assertion.
+  const insightCatalog = resolveAnalyticsThroughChain('es-419');
+  const insightPreviousMonth = 'Julio';
+  const insightCases = [
+    {
+      name: 'spent more (+12)',
+      deltaPct: 12,
+      catalogKey: 'insightMore',
+      pct: '12',
+      background: '#f9e9e9',
+      accent: colors.danger,
+    },
+    {
+      name: 'spent less (-12)',
+      deltaPct: -12,
+      catalogKey: 'insightLess',
+      pct: '12',
+      background: '#edf7f0',
+      accent: colors.primary,
+    },
+    {
+      name: 'no change (0)',
+      deltaPct: 0,
+      catalogKey: 'insightSame',
+      pct: null,
+      background: colors.chipBg,
+      accent: colors.textSecondary,
+    },
+  ];
+
+  for (const scenario of insightCases) {
+    let bannerRenderer;
+    await act(async () => {
+      bannerRenderer = TestRenderer.create(
+        React.createElement(InsightBanner, {
+          deltaPct: scenario.deltaPct,
+          previousMonthName: insightPreviousMonth,
+        }),
+      );
+    });
+
+    const bannerView = bannerRenderer.root.findByType('View');
+    const bannerIcon = bannerRenderer.root.findByType('Icon');
+    const bannerText = bannerRenderer.root.findByType('Text');
+    const bannerStyle = styleOf(bannerView);
+    const textStyle = styleOf(bannerText);
+    const expectedCopy = insightCatalog[scenario.catalogKey]
+      .replace(/\{\{pct\}\}/g, scenario.pct ?? '')
+      .replace(/\{\{month\}\}/g, insightPreviousMonth);
+
+    await test(`${scenario.name}: background resolves to ${scenario.background}`, () => {
+      assert.equal(bannerStyle.backgroundColor, scenario.background);
+    });
+
+    await test(`${scenario.name}: icon and text share the ${scenario.accent} accent`, () => {
+      assert.equal(bannerIcon.props.color, scenario.accent);
+      assert.equal(textStyle.color, scenario.accent);
+    });
+
+    await test(`${scenario.name}: copy is the real catalog string`, () => {
+      assert.equal(hostText(bannerText), expectedCopy);
+    });
+
+    await act(async () => {
+      bannerRenderer.unmount();
+    });
+  }
+
+  await test('null deltaPct keeps the null gate (renders nothing)', async () => {
+    let nullRenderer;
+    await act(async () => {
+      nullRenderer = TestRenderer.create(
+        React.createElement(InsightBanner, {
+          deltaPct: null,
+          previousMonthName: insightPreviousMonth,
+        }),
+      );
+    });
+    assert.equal(nullRenderer.toJSON(), null);
+    await act(async () => {
+      nullRenderer.unmount();
+    });
   });
 
   console.log('\n[tests] categoryDetailHref\n');

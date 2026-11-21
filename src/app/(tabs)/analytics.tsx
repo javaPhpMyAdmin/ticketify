@@ -158,6 +158,8 @@ export default function AnalyticsScreen() {
     householdTotals: householdHeadlineTotals,
     overviewTotals,
     personalChangePct: overview.changePct,
+    // Analytics tab has no household trend window; household badge is not computed here.
+    householdChangePct: null,
     hasHouseholdData: monthTotalsHasData,
   });
 
@@ -311,6 +313,7 @@ export default function AnalyticsScreen() {
             alert={alert}
             isPro={isPro}
             locale={locale}
+            monthKey={monthKey}
           />
         ))}
         {viewMode === 'household' ? (

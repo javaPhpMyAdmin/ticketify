@@ -21,6 +21,13 @@ export interface CapsuleBarChartProps {
   /** Pixel height of the tallest bar. Defaults to 96. */
   barHeight?: number;
   /**
+   * Optional fixed width for each bar/label cell. When provided, the chart
+   * root becomes `cellWidth * items.length` wide and every cell uses explicit
+   * `{ width: cellWidth, flex: 0 }` geometry. When omitted, cells stay
+   * flexible (`flex: 1`) and the root fills 100% width.
+   */
+  cellWidth?: number;
+  /**
    * When provided, each bar becomes a button that reports the tapped item
    * and its index (e.g. "tap the Monday bar → day detail sheet"). Without
    * it the chart renders as before, plain and non-interactive.
@@ -64,13 +71,20 @@ export function CapsuleBarChart({
   items,
   currency = 'UYU',
   barHeight = 96,
+  cellWidth,
   onPressItem,
 }: CapsuleBarChartProps) {
   const maxValue = items.reduce((max, item) => Math.max(max, item.value), 0);
   const hasSpend = maxValue > 0;
+  const fixedCellStyle = cellWidth != null ? { width: cellWidth, flex: 0 } : null;
 
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        cellWidth != null && { width: cellWidth * items.length },
+      ]}
+    >
       <View style={[styles.barsRow, { height: barHeight + AMOUNT_SPACE }]}>
         {items.map((item, index) => {
           const fillColor = item.highlight ? colors.secondary : BAR_MUTED;
@@ -81,6 +95,7 @@ export function CapsuleBarChart({
           const content = (
             <>
               <Text
+                numberOfLines={2}
                 style={[styles.amount, item.highlight && styles.amountHighlight]}
               >
                 {amountLabel}
@@ -96,7 +111,10 @@ export function CapsuleBarChart({
 
           if (!onPressItem) {
             return (
-              <View key={`${item.label}-${index}`} style={styles.columnWrap}>
+              <View
+                key={`${item.label}-${index}`}
+                style={[styles.columnWrap, fixedCellStyle]}
+              >
                 {content}
               </View>
             );
@@ -107,7 +125,7 @@ export function CapsuleBarChart({
               onPress={() => onPressItem(item, index)}
               accessibilityRole="button"
               accessibilityLabel={`${item.label}: ${amountLabel}`}
-              style={styles.columnWrap}
+              style={[styles.columnWrap, fixedCellStyle]}
             >
               {content}
             </Pressable>
@@ -120,7 +138,10 @@ export function CapsuleBarChart({
           collapses to zero inside this height-less row. */}
       <View style={styles.labelsRow}>
         {items.map((item, index) => (
-          <View key={`${item.label}-${index}`} style={styles.labelWrap}>
+          <View
+            key={`${item.label}-${index}`}
+            style={[styles.labelWrap, fixedCellStyle]}
+          >
             <Text
               style={[
                 styles.label,
@@ -146,10 +167,11 @@ const styles = StyleSheet.create({
   },
   labelsRow: {
     flexDirection: 'row',
-    marginTop: spacing.xs,
+    marginTop: spacing.md,
   },
   columnWrap: {
     flex: 1,
+    minWidth: 0,
     height: '100%',
     // Content packs at the BOTTOM of the fixed-height column: the bar
     // grows upward from the day axis (never hangs from the top), and the
@@ -162,6 +184,7 @@ const styles = StyleSheet.create({
   // '100%'` — that would collapse inside the height-less labels row).
   labelWrap: {
     flex: 1,
+    minWidth: 0,
     alignItems: 'center',
   },
   amount: {
@@ -174,8 +197,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   bar: {
-    width: '60%',
-    maxWidth: 32,
+    width: 28,
     borderRadius: radii.full,
   },
   label: {

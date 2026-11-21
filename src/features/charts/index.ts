@@ -45,9 +45,10 @@ export { categoryDetailHref } from './categoryHref';
 
 export {
   chartCacheRowForMonth,
+  computeHouseholdChangePct,
   householdRowsToReceipts,
 } from './householdSeries';
-export type { ChartCacheRow } from './householdSeries';
+export type { ChartCacheRow, HouseholdChangeInput } from './householdSeries';
 export {
   annualTrendFromCacheRows,
   resolveChartFamilyState,

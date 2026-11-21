@@ -128,6 +128,45 @@ function installRequireHook() {
   };
 }
 
+/**
+ * Route a few imports of the compiled PriceAlertDetailSection to test doubles
+ * while that module is loaded. `Module._load` sees the ORIGINAL request (before
+ * the `@/` resolve hook rewrites it) AND the requesting module, so pinning on
+ * the parent filename leaves every other consumer on the real implementation.
+ * The compiled section caches its imports at load time, so the doubles must be
+ * installed for its FIRST load.
+ */
+function withSectionDoubles(doubles, fn) {
+  const originalLoad = Module._load;
+  const fixed = new Map([
+    ['@tanstack/react-query', { useQuery: doubles.useQuery }],
+    [
+      '@/features/pro/hooks/useProEntitlement',
+      { useProEntitlement: doubles.useProEntitlement },
+    ],
+    ['@/features/tickets/api', { fetchPurchaseDetail: doubles.fetchPurchaseDetail }],
+  ]);
+  Module._load = function sectionDoubleLoad(request, parent, isMain) {
+    if (
+      parent &&
+      typeof parent.filename === 'string' &&
+      parent.filename.endsWith('PriceAlertDetailSection.js')
+    ) {
+      if (/(?:^|\/)hooks\/usePriceAlerts$/.test(request)) {
+        return { usePriceAlerts: doubles.usePriceAlerts };
+      }
+      const fake = fixed.get(request);
+      if (fake) return fake;
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      Module._load = originalLoad;
+    });
+}
+
 async function compile() {
   execFileSync(
     process.execPath,
@@ -1089,7 +1128,7 @@ async function run() {
     }
   });
 
-  await test('PriceAlertBanner enforces 3-case tap routing (source pin)', async () => {
+  await test('PriceAlertBanner routes all three tap cases with receipt context (source pin)', async () => {
     const fs = await import('node:fs/promises');
     const srcPath = join(
       root,
@@ -1103,19 +1142,50 @@ async function run() {
     const m = src.match(/const handlePress\s*=\s*\(\)\s*=>\s*\{([\s\S]*?)^\s*  \};/m);
     assert.ok(m, 'handlePress function must exist in PriceAlertBanner.tsx');
     const body = m[1];
-    // /pro is reachable ONLY through the free-user guard...
+    // Case 1: free users still go straight to the paywall, only inside the guard.
     assert.ok(
       /if\s*\(\s*!isPro\s*\)\s*\{\s*router\.push\(['"]\/pro['"]\)/.test(body),
       'must push /pro only inside `if (!isPro)`',
     );
-    // ...and the receipt route only when an id exists.
+    // Case 2: Pro + id opens the receipt with the four alert-context params.
     assert.ok(
-      /if\s*\(\s*alert\.receiptId\s*\)\s*\{\s*router\.push\(`\/receipts\/\$\{alert\.receiptId\}`\)/.test(
-        body,
-      ),
-      'must push /receipts/:id only inside `if (alert.receiptId)`',
+      /if\s*\(\s*alert\.receiptId\s*\)/.test(body),
+      'the receipt route must be guarded by `if (alert.receiptId)`',
     );
-    // The #191 defect was an `else` falling back to the paywall — forbid it.
+    assert.ok(
+      /new\s+URLSearchParams\(/.test(body),
+      'query params must be assembled with URLSearchParams',
+    );
+    for (const param of ['month', 'name', 'unit', 'previousReceiptId']) {
+      assert.ok(
+        new RegExp(`\\b${param}\\s*:`).test(body),
+        `must carry the ${param} navigation-context param`,
+      );
+    }
+    assert.ok(
+      /encodeURIComponent\(/.test(body),
+      'the typed route href must be URL-encoded',
+    );
+    assert.ok(
+      /router\.push\([^;]*?\bas never\s*,?\s*\)/.test(body),
+      'the typed route href must be cast `as never`',
+    );
+    assert.ok(
+      /monthKey\s*\?\?\s*currentMonthKey\(\)/.test(src),
+      'month param uses the monthKey prop with a currentMonthKey() fallback',
+    );
+    assert.ok(
+      /monthKey\?: string/.test(src),
+      'PriceAlertBannerProps must expose optional monthKey',
+    );
+    assert.ok(
+      /import\s*\{[\s\S]*?currentMonthKey[\s\S]*?\}\s*from\s*['"]@\/features\/home\/hooks\/useHomeFeed['"]/.test(
+        src,
+      ),
+      'currentMonthKey must come from the useHomeFeed hook barrel',
+    );
+    // Case 3: Pro without an id is a no-op. The #191 defect was an `else`
+    // falling back to the paywall — forbid it.
     assert.ok(!/\belse\b/.test(body), 'handler must have no else branch (no paywall fallback)');
     // The no-op state must not advertise an action that never fires.
     assert.ok(
@@ -1132,7 +1202,7 @@ async function run() {
     );
   });
 
-  const renderBanner = async (changePct) => {
+  const renderBanner = async (changePct, monthKey) => {
     const bannerMod = await load(
       'src/features/analytics/components/PriceAlertBanner.js',
     );
@@ -1155,6 +1225,7 @@ async function run() {
             unit: 'UYU',
           },
           isPro: true,
+          monthKey,
         }),
       );
     });
@@ -1319,12 +1390,12 @@ async function run() {
       const text = flattenStrings(renderer.toJSON()).join('\n');
       assert.ok(text.includes('analytics:priceAlertCompareTitle'), 'title');
       assert.ok(
-        text.includes('analytics:priceAlertPreviousMonth'),
-        'PREVIOUS MONTH side label',
+        text.includes('MES ANTERIOR'),
+        'PREVIOUS MONTH side label (prefixed i18n key resolves)',
       );
       assert.ok(
-        text.includes('analytics:priceAlertCurrentMonth'),
-        'THIS MONTH side label',
+        text.includes('ESTE MES'),
+        'THIS MONTH side label (prefixed i18n key resolves)',
       );
       assert.ok(
         text.includes(formatMod.formatDate('en', '2025-07-03')),
@@ -1470,7 +1541,7 @@ async function run() {
     }
   });
 
-  console.log('\n[tests] PriceAlertGroup executed render (Pro gating)\n');
+  console.log('\n[tests] PriceAlertGroup executed render (banner-only composition)\n');
 
   const renderGroup = async (isPro) => {
     const groupMod = await load(
@@ -1483,25 +1554,26 @@ async function run() {
           alert: comparisonAlert(),
           isPro,
           locale: 'en',
+          monthKey: '2026-08',
         }),
       );
     });
     return { renderer, unmount: () => act(async () => renderer.unmount()) };
   };
 
-  await test('PriceAlertGroup renders banner + exactly one comparison for Pro', async () => {
+  await test('PriceAlertGroup renders the banner alone for Pro (no inline comparison)', async () => {
     const { renderer, unmount } = await renderGroup(true);
     try {
       const text = flattenStrings(renderer.toJSON()).join('\n');
-      assert.ok(
-        renderer.root.findAllByType('Pressable').length >= 1,
-        'the banner press surface is present',
+      assert.equal(
+        renderer.root.findAllByType('Pressable').length,
+        1,
+        'exactly one press surface (the banner) is rendered',
       );
       assert.ok(text.includes('analytics:priceAlertTitle'), 'the banner is present');
-      assert.equal(
-        text.split('analytics:priceAlertCompareTitle').length - 1,
-        1,
-        'exactly one comparison is shown for Pro',
+      assert.ok(
+        !text.includes('analytics:priceAlertCompareTitle'),
+        'the comparison must not render inline for Pro',
       );
       assert.ok(
         !text.includes('analytics:proPill'),
@@ -1512,26 +1584,487 @@ async function run() {
     }
   });
 
-  await test('PriceAlertGroup hides comparison but keeps the locked banner for free users', async () => {
+  await test('PriceAlertGroup renders the locked banner alone for free users', async () => {
     const { renderer, unmount } = await renderGroup(false);
     try {
       const text = flattenStrings(renderer.toJSON()).join('\n');
-      assert.ok(
-        renderer.root.findAllByType('Pressable').length >= 1,
-        'the banner press surface is still present',
+      assert.equal(
+        renderer.root.findAllByType('Pressable').length,
+        1,
+        'only the banner press surface remains',
       );
       assert.ok(text.includes('analytics:priceAlertTitle'), 'the banner is still visible');
       assert.ok(text.includes('analytics:proPill'), 'the upsell pill is still visible');
       assert.ok(
         !text.includes('analytics:priceAlertCompareTitle'),
-        'the comparison is NOT shown to a free user',
+        'the comparison is NOT shown inline to a free user',
       );
     } finally {
       await unmount();
     }
   });
 
-    console.log(`\n[tests] ${passed} passed, ${failed} failed`);
+  await test('PriceAlertGroup forwards monthKey and drops the comparison import (source pin)', async () => {
+    const fs = await import('node:fs/promises');
+    const src = await fs.readFile(
+      join(
+        root,
+        'src',
+        'features',
+        'analytics',
+        'components',
+        'PriceAlertGroup.tsx',
+      ),
+      'utf8',
+    );
+    assert.ok(
+      !/PriceAlertComparison/.test(src),
+      'the group must not import or render PriceAlertComparison for any user',
+    );
+    assert.ok(/monthKey\?: string/.test(src), 'the group must accept optional monthKey');
+    assert.ok(
+      /monthKey=\{monthKey\}/.test(src),
+      'the group must forward monthKey to the banner',
+    );
+  });
+
+  console.log('\n[tests] PriceAlertReferenceCard executed render\n');
+
+  const referenceMod = await load(
+    'src/features/analytics/components/PriceAlertReferenceCard.js',
+  );
+
+  const referenceReceipt = (overrides = {}) => ({
+    id: 'jul-source',
+    store_name: 'Tienda Norte',
+    purchase_date: '2025-07-03',
+    total: 8450,
+    currency: 'UYU',
+    is_manual: false,
+    ...overrides,
+  });
+
+  const renderReference = async (props = {}) => {
+    let renderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(referenceMod.PriceAlertReferenceCard, {
+          label: 'analytics:priceAlertPreviousMonth',
+          hasId: true,
+          isLoading: false,
+          currency: 'USD',
+          receipt: referenceReceipt(),
+          ...props,
+        }),
+      );
+    });
+    return { renderer, unmount: () => act(async () => renderer.unmount()) };
+  };
+
+  await test('PriceAlertReferenceCard omits manual receipts entirely', async () => {
+    const { renderer, unmount } = await renderReference({
+      receipt: referenceReceipt({ is_manual: true }),
+    });
+    try {
+      assert.equal(renderer.toJSON(), null, 'a manual ticket must render no reference row');
+      assert.equal(
+        renderer.root.findAllByType('ReceiptRow').length,
+        0,
+        'no ReceiptRow may be mounted for a manual ticket',
+      );
+    } finally {
+      await unmount();
+    }
+  });
+
+  await test('PriceAlertReferenceCard shows unavailable copy for a missing id, never a spinner', async () => {
+    const { renderer, unmount } = await renderReference({
+      hasId: false,
+      receipt: undefined,
+      // Even a pending query must not spin when there is no id to open.
+      isLoading: true,
+    });
+    try {
+      const text = flattenStrings(renderer.toJSON()).join('\n');
+      assert.ok(text.includes('Ticket no disponible'), 'unavailable copy is visible');
+      assert.equal(renderer.root.findAllByType('Spinner').length, 0, 'no spinner for a missing id');
+      assert.equal(renderer.root.findAllByType('ReceiptRow').length, 0, 'no row for a missing id');
+    } finally {
+      await unmount();
+    }
+  });
+
+  await test('PriceAlertReferenceCard passes exact ReceiptRow props for a real previous receipt', async () => {
+    const onPress = () => {};
+    const { renderer, unmount } = await renderReference({ onPress });
+    try {
+      const row = renderer.root.findByType('ReceiptRow');
+      assert.equal(row.props.name, 'Tienda Norte', 'store name from the receipt');
+      assert.equal(row.props.date, '2025-07-03', 'purchase date from the receipt');
+      assert.equal(row.props.amount, 8450, 'single receipt total, not a monthly average');
+      assert.equal(row.props.currency, 'UYU', 'receipt currency wins');
+      assert.equal(row.props.iconName, 'doc.text', 'document icon');
+      assert.equal(row.props.imageUrl, undefined, 'no async photo URL is requested');
+      assert.equal(row.props.onPress, onPress, 'the previous row navigates');
+      const text = flattenStrings(renderer.toJSON()).join('\n');
+      assert.ok(
+        text.includes('analytics:priceAlertPreviousMonth'),
+        'the row is labeled as the previous month',
+      );
+      assert.ok(
+        !text.includes('analytics:priceAlertReferenceMissing'),
+        'the missing copy is not shown for a ready receipt',
+      );
+    } finally {
+      await unmount();
+    }
+  });
+
+  await test('PriceAlertReferenceCard falls back to the viewer unit and omits onPress on the current row', async () => {
+    const { renderer, unmount } = await renderReference({
+      receipt: referenceReceipt({ store_name: null, currency: null }),
+    });
+    try {
+      const row = renderer.root.findByType('ReceiptRow');
+      assert.equal(row.props.name, '—', 'a blank store name shows the placeholder');
+      assert.equal(row.props.currency, 'USD', 'viewer-unit fallback for a legacy receipt');
+      assert.equal(row.props.onPress, undefined, 'the current row is read-only');
+    } finally {
+      await unmount();
+    }
+  });
+
+  await test('PriceAlertReferenceCard spins only while a real-id query is in flight', async () => {
+    const { renderer, unmount } = await renderReference({
+      receipt: undefined,
+      isLoading: true,
+    });
+    try {
+      assert.equal(renderer.root.findAllByType('Spinner').length, 1, 'compact spinner while loading');
+      assert.equal(renderer.root.findAllByType('ReceiptRow').length, 0, 'no row before data arrives');
+      const text = flattenStrings(renderer.toJSON()).join('\n');
+      assert.ok(!text.includes('Ticket no disponible'), 'loading is not the missing state');
+    } finally {
+      await unmount();
+    }
+  });
+
+  // ── PART 4: executed tap routing + PriceAlertDetailSection ────────────
+  // The section is rendered with doubles for usePriceAlerts,
+  // useProEntitlement and useQuery (the previous-receipt read), so the tests
+  // exercise the REAL component tree instead of source regexes.
+  console.log('\n[tests] executed banner tap + PriceAlertDetailSection\n');
+
+  const componentsMod = await load('scripts/test-stubs/components.js');
+  const routerStub = await load('scripts/test-stubs/expo-router.js');
+  const settingsStoreMod = await load('src/stores/use-settings-store.js');
+  const monthKeysMod = await load('src/features/home/month-keys.js');
+
+  await test('PriceAlertBanner Pro tap routes to the receipt with decoded alert context', async () => {
+    routerStub.__resetRouterStub();
+    const { renderer, unmount } = await renderBanner(8, '2026-08');
+    try {
+      const pressable = renderer.root.findByType(componentsMod.Pressable);
+      assert.equal(
+        typeof pressable.props.onPress,
+        'function',
+        'the banner exposes a real onPress',
+      );
+      await act(async () => {
+        pressable.props.onPress();
+      });
+      const nav = routerStub.__lastNav();
+      assert.ok(
+        nav && nav.startsWith('push:/receipts/'),
+        `expected a receipt push, got ${nav}`,
+      );
+      const [href, query = ''] = nav.slice('push:'.length).split('?');
+      assert.equal(
+        decodeURIComponent(href.split('/').pop()),
+        'r1',
+        'the path segment is the alert receipt id',
+      );
+      const params = new URLSearchParams(query);
+      assert.equal(params.get('month'), '2026-08', 'month context');
+      assert.equal(params.get('name'), 'Leche entera 1L', 'name context');
+      assert.equal(params.get('unit'), 'UYU', 'unit context');
+      assert.equal(params.get('previousReceiptId'), 'r0', 'previous id context');
+    } finally {
+      await unmount();
+    }
+  });
+
+  const sectionState = {
+    alerts: [],
+    isPro: true,
+    proLoading: false,
+    previousQuery: {
+      isLoading: false,
+      isError: false,
+      data: undefined,
+      refetch: () => {},
+    },
+    calls: { hooks: [], queries: [] },
+  };
+
+  // Stable doubles: the section caches its imports at module load, so the
+  // state above changes between renders while the function identities stay put.
+  const sectionMod = await withSectionDoubles(
+    {
+      usePriceAlerts: (...args) => {
+        sectionState.calls.hooks.push(args);
+        return sectionState.alerts;
+      },
+      useProEntitlement: () => ({
+        isPro: sectionState.isPro,
+        isLoading: sectionState.proLoading,
+        refresh: async () => {},
+        trialEndsAt: null,
+        everPaid: false,
+      }),
+      useQuery: (options) => {
+        sectionState.calls.queries.push(options);
+        return sectionState.previousQuery;
+      },
+      fetchPurchaseDetail: async () => {
+        throw new Error('queryFn must not run under a stubbed useQuery');
+      },
+    },
+    () => load('src/features/analytics/components/PriceAlertDetailSection.js'),
+  );
+
+  const sectionAlert = (overrides = {}) => ({
+    name: 'Leche entera 1L',
+    category: 'lacteos',
+    receiptId: 'aug-source',
+    previousReceiptId: 'jul-source',
+    currentPurchaseDate: '2025-08-06',
+    previousPurchaseDate: '2025-07-03',
+    currentStoreName: 'Supermercado Sur',
+    previousStoreName: 'Tienda Norte',
+    currentPrice: 1200,
+    previousPrice: 1100,
+    changePct: 9.1,
+    unit: 'UYU',
+    ...overrides,
+  });
+
+  const sectionProps = (overrides = {}) => ({
+    month: '2026-08',
+    name: 'Leche entera 1L',
+    unit: 'UYU',
+    previousReceiptId: 'jul-source',
+    currentReceipt: {
+      id: 'aug-source',
+      store_name: 'Supermercado Sur',
+      purchase_date: '2025-08-06',
+      total: 1200,
+      currency: 'UYU',
+      is_manual: false,
+    },
+    locale: 'en',
+    ...overrides,
+  });
+
+  const renderSection = async (overrides = {}) => {
+    let renderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(
+          sectionMod.PriceAlertDetailSection,
+          sectionProps(overrides),
+        ),
+      );
+    });
+    return { renderer, unmount: () => act(async () => renderer.unmount()) };
+  };
+
+  const resetSectionState = () => {
+    sessionStoreMod.useSessionStore.setState({ session: FAKE_SESSION });
+    settingsStoreMod.useSettingsStore.setState({ currency: 'USD' });
+    routerStub.__resetRouterStub();
+    sectionState.isPro = true;
+    sectionState.proLoading = false;
+    sectionState.alerts = [sectionAlert()];
+    sectionState.previousQuery = {
+      isLoading: false,
+      isError: false,
+      data: undefined,
+      refetch: () => {},
+    };
+    sectionState.calls = { hooks: [], queries: [] };
+  };
+
+  await test('section re-selects the exact five-field alert and rejects same-name decoys', async () => {
+    resetSectionState();
+    sectionState.alerts = [
+      sectionAlert({
+        unit: 'USD',
+        previousReceiptId: 'decoy-prev',
+        currentPrice: 9999,
+        previousPrice: 8888,
+        changePct: 12.5,
+      }),
+      sectionAlert(),
+      sectionAlert({
+        receiptId: 'other-source',
+        unit: 'EUR',
+        previousReceiptId: 'other-prev',
+        currentPrice: 7777,
+        changePct: 15,
+      }),
+    ];
+    const { renderer, unmount } = await renderSection();
+    try {
+      assert.deepEqual(
+        sectionState.calls.hooks,
+        [['2026-08', true]],
+        'the validated month and resolved Pro flag gate usePriceAlerts',
+      );
+      assert.equal(sectionState.calls.queries.length, 1, 'one previous query');
+      assert.equal(sectionState.calls.queries[0].enabled, true, 'Pro + valid id enables it');
+      const text = flattenStrings(renderer.toJSON()).join('\n');
+      assert.ok(
+        text.includes(formatMod.formatCurrency(1200, 'UYU')),
+        'the matching alert current price is shown',
+      );
+      assert.ok(
+        text.includes(formatMod.formatCurrency(1100, 'UYU')),
+        'the matching alert previous price is shown',
+      );
+      assert.ok(
+        !text.includes(formatMod.formatCurrency(9999, 'USD')),
+        'same name but different unit/prevId is rejected',
+      );
+      assert.ok(
+        !text.includes(formatMod.formatCurrency(7777, 'EUR')),
+        'same name but different receiptId is rejected',
+      );
+    } finally {
+      await unmount();
+    }
+  });
+
+  await test('section renders nothing for a free user and never replaces the route', async () => {
+    resetSectionState();
+    sectionState.isPro = false;
+    const { renderer, unmount } = await renderSection();
+    try {
+      assert.equal(renderer.toJSON(), null, 'free users do not see the Pro block');
+      assert.equal(routerStub.__lastNav(), null, 'no router.replace on a receipt deep link');
+      assert.deepEqual(
+        sectionState.calls.hooks,
+        [['2026-08', false]],
+        'the alerts hook is disabled for free users',
+      );
+      assert.equal(sectionState.calls.queries[0].enabled, false, 'no previous query');
+    } finally {
+      await unmount();
+    }
+  });
+
+  await test('section enables the previous query only for Pro + valid month + previousReceiptId', async () => {
+    resetSectionState();
+    let view = await renderSection({ previousReceiptId: undefined });
+    assert.equal(sectionState.calls.queries[0].enabled, false, 'no previous id');
+    await view.unmount();
+
+    sectionState.calls = { hooks: [], queries: [] };
+    view = await renderSection({ month: 'not-a-month' });
+    assert.deepEqual(
+      sectionState.calls.hooks,
+      [[monthKeysMod.currentMonthKey(), false]],
+      'an invalid month falls back to a safe month and disables the hook',
+    );
+    assert.equal(sectionState.calls.queries[0].enabled, false, 'invalid month disables it');
+    await view.unmount();
+
+    sectionState.calls = { hooks: [], queries: [] };
+    view = await renderSection();
+    assert.equal(sectionState.calls.queries[0].enabled, true, 'all three gates allow it');
+    await view.unmount();
+  });
+
+  await test('section omits manual rows and fills an empty bucket with viewer currency', async () => {
+    resetSectionState();
+    settingsStoreMod.useSettingsStore.setState({ currency: 'UYU' });
+    sectionState.alerts = [sectionAlert({ unit: '' })];
+    sectionState.previousQuery = {
+      isLoading: false,
+      isError: false,
+      data: {
+        id: 'jul-source',
+        store_name: 'Tienda Norte',
+        purchase_date: '2025-07-03',
+        total: 1100,
+        currency: null,
+        is_manual: true,
+      },
+      refetch: () => {},
+    };
+    let view = await renderSection({ unit: '' });
+    try {
+      const rows = view.renderer.root.findAllByType('ReceiptRow');
+      assert.equal(rows.length, 1, 'the manual previous receipt is omitted');
+      assert.equal(rows[0].props.currency, 'UYU', 'viewer currency fills the empty bucket');
+    } finally {
+      await view.unmount();
+    }
+
+    sectionState.previousQuery = {
+      ...sectionState.previousQuery,
+      data: { ...sectionState.previousQuery.data, is_manual: false },
+    };
+    view = await renderSection({ unit: '' });
+    try {
+      const rows = view.renderer.root.findAllByType('ReceiptRow');
+      assert.equal(rows.length, 2, 'both real rows render');
+      assert.deepEqual(
+        rows.map((row) => row.props.currency),
+        ['UYU', 'UYU'],
+        'the same viewer fallback reaches both rows',
+      );
+      const text = flattenStrings(view.renderer.toJSON()).join('\n');
+      assert.equal(
+        text.split('Total de un ticket').length - 1,
+        2,
+        'each ready row carries the single-total caption',
+      );
+    } finally {
+      await view.unmount();
+    }
+  });
+
+  await test('section shows unavailable copy and a working retry when the previous query errors', async () => {
+    resetSectionState();
+    let refetches = 0;
+    sectionState.previousQuery = {
+      isLoading: false,
+      isError: true,
+      data: undefined,
+      refetch: () => {
+        refetches += 1;
+      },
+    };
+    const { renderer, unmount } = await renderSection();
+    try {
+      const text = flattenStrings(renderer.toJSON()).join('\n');
+      assert.ok(text.includes('Ticket no disponible'), 'unavailable copy is shown');
+      assert.ok(text.includes('Reintentar'), 'the existing common:retry label is used');
+      const retry = renderer.root
+        .findAllByType(componentsMod.Pressable)
+        .find((node) => flattenStrings(node).some((s) => s.includes('Reintentar')));
+      assert.ok(retry, 'a retry button is mounted');
+      await act(async () => {
+        retry.props.onPress();
+      });
+      assert.equal(refetches, 1, 'retry refetches the previous receipt query');
+    } finally {
+      await unmount();
+    }
+  });
+
+  console.log(`\n[tests] ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
   rmSync(workdir, { recursive: true, force: true });
 }

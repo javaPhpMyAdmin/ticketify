@@ -23,6 +23,7 @@ import {
   Text,
   View,
 } from '@/components';
+import { PriceAlertDetailSection } from '@/features/analytics/components/PriceAlertDetailSection';
 import {
   computeItemPriceDeltas,
   normalizePriceIdentity,
@@ -109,7 +110,14 @@ function purchaseToFeedRow(p: PurchaseWithItems) {
 }
 
 export default function ReceiptDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, month, name, unit, previousReceiptId } = useLocalSearchParams<{
+    id: string;
+    /** Price-alert context forwarded by the analytics banner. */
+    month?: string;
+    name?: string;
+    unit?: string;
+    previousReceiptId?: string;
+  }>();
   const { userId } = useSessionUser();
   // Display convergence (REQ-008): the merged catalog resolves custom
   // category visuals (name/icon/color) at every display site on this
@@ -652,6 +660,20 @@ export default function ReceiptDetailScreen() {
             )}
           </Card>
         </View>
+
+        {/* Price-alert context: the comparison moved out of the inline alert
+            card into the screen the banner opens. Mounted only for a complete
+            context triple; no screen-level Pro guard (deep links stay open). */}
+        {month && name && unit ? (
+          <PriceAlertDetailSection
+            month={month}
+            name={name}
+            unit={unit}
+            previousReceiptId={previousReceiptId}
+            currentReceipt={rawReceipt}
+            locale={activeLocale}
+          />
+        ) : null}
       </ScrollView>
 
       {/* Footer actions */}

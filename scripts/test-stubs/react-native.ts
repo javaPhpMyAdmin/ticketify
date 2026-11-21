@@ -53,6 +53,18 @@ export const StyleSheet = {
   create: <T extends Record<string, unknown>>(styles: T): T => styles,
 };
 
+/**
+ * Passthrough `View` host for component-render harnesses (e.g.
+ * `CapsuleBarChart`). Emits style verbatim so react-test-renderer can walk
+ * and assert the resolved style objects instead of guessing from source.
+ */
+export function View(props: {
+  children?: React.ReactNode;
+  style?: unknown;
+}): React.ReactElement {
+  return React.createElement('View', { style: props.style }, props.children);
+}
+
 // --- Brand-wordmark harness surface (render) ---------------------------
 // `BrandWordmark` renders a single `<Text>` with the Android clip slack.
 // The stub emits it as a passthrough host element (children preserved) so
@@ -92,10 +104,21 @@ export function Pressable(props: {
 export function ScrollView(props: {
   children?: React.ReactNode;
   contentContainerStyle?: unknown;
+  horizontal?: boolean;
+  showsHorizontalScrollIndicator?: boolean;
   showsVerticalScrollIndicator?: boolean;
   keyboardShouldPersistTaps?: string;
+  style?: unknown;
 }): React.ReactElement {
-  return React.createElement('ScrollView', null, props.children);
+  return React.createElement(
+    'ScrollView',
+    {
+      style: props.style,
+      horizontal: props.horizontal,
+      contentContainerStyle: props.contentContainerStyle,
+    },
+    props.children,
+  );
 }
 
 // --- Settings screen surface (budget-month-local harness, compile-only) ---

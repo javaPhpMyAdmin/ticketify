@@ -186,6 +186,36 @@ export function InsightHeroCard({
   return (
     <View style={styles.card}>
       <View style={styles.header}>
+        {/* The delta chip owns its own top-right row (RunRateCard.badgeRow
+            precedent). A row/space-between header let a long localized
+            month name push the chip past the card edge; here the chip is
+            flow-right-aligned above the text block, never beside it. */}
+        {hasChange ? (
+          <View style={styles.chipRow}>
+            <View
+              style={[
+                styles.chip,
+                { backgroundColor: isUp ? '#fbe3e3' : colors.primaryContainer },
+              ]}
+            >
+              <Icon
+                name={isUp ? 'arrow.up.right' : 'arrow.down.right'}
+                size={14}
+                color={isUp ? colors.danger : colors.primary}
+              />
+              <Text
+                style={[
+                  styles.chipText,
+                  { color: isUp ? colors.danger : colors.primary },
+                ]}
+              >
+                {isUp ? '+' : ''}
+                {Math.round(deltaPct)}%{' '}
+                {t('analytics:overviewBadge', { month: previousMonthName ?? '' })}
+              </Text>
+            </View>
+          </View>
+        ) : null}
         <View>
           <Text style={styles.kicker}>{t('analytics:heroKicker')}</Text>
           <Text style={styles.month}>{monthLabel}</Text>
@@ -199,30 +229,6 @@ export function InsightHeroCard({
             ))
           )}
         </View>
-        {hasChange ? (
-          <View
-            style={[
-              styles.chip,
-              { backgroundColor: isUp ? '#fbe3e3' : colors.primaryContainer },
-            ]}
-          >
-            <Icon
-              name={isUp ? 'arrow.up.right' : 'arrow.down.right'}
-              size={14}
-              color={isUp ? colors.danger : colors.primary}
-            />
-            <Text
-              style={[
-                styles.chipText,
-                { color: isUp ? colors.danger : colors.primary },
-              ]}
-            >
-              {isUp ? '+' : ''}
-              {Math.round(deltaPct)}%{' '}
-              {t('analytics:overviewBadge', { month: previousMonthName ?? '' })}
-            </Text>
-          </View>
-        ) : null}
       </View>
 
       {insight ? (
@@ -351,10 +357,15 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.md,
   },
+  // Column flow + full-width rows below: the chip can no longer sit beside
+  // the text block and escape the card on a long locale string.
   header: {
+    flexDirection: 'column',
+    gap: spacing.xs,
+  },
+  chipRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    justifyContent: 'flex-end',
   },
   kicker: {
     ...typography.labelCaps,
@@ -386,7 +397,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: radii.full,
-    right: spacing.xl + spacing.sm,
+    // A long comparison-month name wraps inside the chip instead of
+    // widening it past the card (RunRateCard.badge precedent).
+    maxWidth: '100%',
+    flexShrink: 1,
   },
   chipText: {
     ...typography.labelSm,

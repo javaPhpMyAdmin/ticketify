@@ -2,6 +2,7 @@
   "compilerOptions": {
     "module": "commonjs",
     "moduleResolution": "node",
+    "jsx": "react-jsx",
     "target": "es2020",
     "lib": ["es2020", "dom"],
     "strict": true,
@@ -15,6 +16,9 @@
       "@/lib/supabase/storage-adapter": ["./scripts/test-stubs/storage-adapter.ts"],
       "expo-localization": ["./scripts/test-stubs/expo-localization.ts"],
       "react-native": ["./scripts/test-stubs/react-native.ts"],
+      "react-i18next": ["./scripts/test-stubs/react-i18next.ts"],
+      "victory-native": ["./scripts/test-stubs/charts-victory-native.ts"],
+      "@/i18n/stores/useLocaleStore": ["./scripts/test-stubs/charts-locale-store.ts"],
       "@/*": ["./src/*"]
     },
     "rootDir": ".."
@@ -24,6 +28,10 @@
     "../src/features/charts/categoryHref.ts",
     "../src/features/charts/householdSeries.ts",
     "../src/features/charts/resolvedSources.ts",
+    "../src/features/charts/components/CapsuleBarChart.tsx",
+    "../src/features/charts/components/InsightHeroCard.tsx",
+    "../src/features/analytics/components/InsightBanner.tsx",
+    "../src/theme/index.ts",
     "../src/features/home/hooks/useHomeFeed.ts",
     "../src/features/home/categories.ts",
     "../src/features/auth/use-session-user.ts",
@@ -37,6 +45,9 @@
     "../src/types/index.ts",
     "../scripts/test-stubs/globals.d.ts",
     "../scripts/test-stubs/components.ts",
+    "../scripts/test-stubs/react-i18next.ts",
+    "../scripts/test-stubs/charts-victory-native.ts",
+    "../scripts/test-stubs/charts-locale-store.ts",
     "../scripts/test-stubs/supabase.ts",
     "../scripts/test-stubs/storage-adapter.ts",
     "../scripts/test-stubs/react-native.ts"

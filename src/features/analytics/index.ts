@@ -16,6 +16,8 @@ export { PriceAlertComparison } from './components/PriceAlertComparison';
 export type { PriceAlertComparisonProps } from './components/PriceAlertComparison';
 export { PriceAlertGroup } from './components/PriceAlertGroup';
 export type { PriceAlertGroupProps } from './components/PriceAlertGroup';
+export { PriceAlertDetailSection } from './components/PriceAlertDetailSection';
+export type { PriceAlertDetailSectionProps } from './components/PriceAlertDetailSection';
 export { InsightBanner } from './components/InsightBanner';
 export type { InsightBannerProps } from './components/InsightBanner';
 export { MetricSummaryCard } from './components/MetricSummaryCard';

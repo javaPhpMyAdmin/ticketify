@@ -17,13 +17,20 @@ export type IconName = string;
 export interface TextProps {
   children?: React.ReactNode;
   numberOfLines?: number;
+  adjustsFontSizeToFit?: boolean;
+  minimumFontScale?: number;
   style?: unknown;
 }
 
 export function Text(props: TextProps): React.ReactElement {
   return React.createElement(
     'Text',
-    { numberOfLines: props.numberOfLines, style: props.style },
+    {
+      numberOfLines: props.numberOfLines,
+      adjustsFontSizeToFit: props.adjustsFontSizeToFit,
+      minimumFontScale: props.minimumFontScale,
+      style: props.style,
+    },
     props.children,
   );
 }
@@ -129,4 +136,32 @@ export interface SpinnerProps {
 
 export function Spinner(props: SpinnerProps): React.ReactElement {
   return React.createElement('Spinner');
+}
+
+// --- Price-alert reference rows (executed render guard) -----------------
+// The reference card passes the full ReceiptRow contract; the double emits a
+// host element so the harness can assert the exact props without pulling the
+// real signed-URL / image pipeline into Node.
+export interface ReceiptRowProps {
+  name: string;
+  date: string;
+  amount: number;
+  currency?: string;
+  iconName?: string;
+  onPress?: () => void;
+  imageUrl?: string | null;
+  isManual?: boolean;
+}
+
+export function ReceiptRow(props: ReceiptRowProps): React.ReactElement {
+  return React.createElement('ReceiptRow', {
+    name: props.name,
+    date: props.date,
+    amount: props.amount,
+    currency: props.currency,
+    iconName: props.iconName,
+    onPress: props.onPress,
+    imageUrl: props.imageUrl,
+    isManual: props.isManual,
+  });
 }

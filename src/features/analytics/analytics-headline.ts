@@ -7,9 +7,10 @@
  * the same query key Home's household card uses, so Personal and Household
  * reconcile to the cent. (Previously the headline summed the gross
  * `monthly_category_totals` rows, which over-counted discounts and leaked
- * non-confirmed purchases.) The change-% badge stays personal-scoped (it
- * reads the personal `monthly_user_totals` cache), so it is dropped in
- * household mode.
+ * non-confirmed purchases.) The change-% badge is the viewer-unit
+ * month-over-month delta computed by the caller from the same household RPC
+ * trend window the chart uses — never a cross-currency sum and never the
+ * personal cache.
  *
  * Since 0044 both totals are GROUPED PER UNIT (decision 9): the headline
  * renders one labeled figure per currency — never a cross-currency sum.
@@ -39,6 +40,11 @@ export interface OverviewHeadlineInput {
   overviewTotals: CurrencyTotal[];
   /** Personal month-over-month change % (personal cache); null = no badge. */
   personalChangePct: number | null;
+  /**
+   * Viewer-unit month-over-month %, computed by the caller from the same
+   * household RPC trend window the chart uses; null = no badge.
+   */
+  householdChangePct: number | null;
   /** Whether the household queries have resolved (false while loading/errored). */
   hasHouseholdData: boolean;
 }
@@ -59,6 +65,7 @@ export function buildOverviewHeadline(
     householdTotals,
     overviewTotals,
     personalChangePct,
+    householdChangePct,
     hasHouseholdData,
   }: OverviewHeadlineInput,
 ): OverviewHeadline {
@@ -91,7 +98,7 @@ export function buildOverviewHeadline(
       safeTotals.length > 0
         ? safeTotals.map((t) => ({ total: t.total, currency: t.currency }))
         : [{ total: 0 }],
-    headlineChangePct: null,
+    headlineChangePct: Number.isFinite(householdChangePct) ? householdChangePct : null,
   };
 
 }

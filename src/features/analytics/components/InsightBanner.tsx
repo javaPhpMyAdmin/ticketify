@@ -14,9 +14,10 @@ export interface InsightBannerProps {
 /**
  * Insight banner below the Analytics hero.
  *
- * Renders a light red/pink banner with an icon and localized copy that calls
- * out the month-over-month spend change. Hidden when there is no previous-
- * month base (`deltaPct === null` or no name), per the spec edge case.
+ * Renders a direction-tinted banner with an icon and localized copy that
+ * calls out the month-over-month spend change: more spend is red, less spend
+ * is green, and no change is neutral. Hidden when there is no previous-month
+ * base (`deltaPct === null` or no name), per the spec edge case.
  */
 export function InsightBanner({
   deltaPct,
@@ -39,10 +40,30 @@ export function InsightBanner({
     message = t('insightSame', { month });
   }
 
+  // One tone drives all three surfaces so the color never contradicts the
+  // copy: red for more spend, green for less, neutral for no change.
+  const spentMore = deltaPct > 0;
+  const spentLess = deltaPct < 0;
+  const toneBackgroundStyle = spentMore
+    ? styles.bannerMore
+    : spentLess
+      ? styles.bannerLess
+      : styles.bannerSame;
+  const toneTextStyle = spentMore
+    ? styles.textMore
+    : spentLess
+      ? styles.textLess
+      : styles.textSame;
+  const toneColor = spentMore
+    ? colors.danger
+    : spentLess
+      ? colors.primary
+      : colors.textSecondary;
+
   return (
-    <View style={styles.banner}>
-      <Icon name="chart.bar.fill" size={22} color={colors.danger} />
-      <Text style={styles.text}>{message}</Text>
+    <View style={[styles.banner, toneBackgroundStyle]}>
+      <Icon name="chart.bar.fill" size={22} color={toneColor} />
+      <Text style={[styles.text, toneTextStyle]}>{message}</Text>
     </View>
   );
 }
@@ -52,15 +73,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    backgroundColor: '#fde8e8',
     borderRadius: radii.lg,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
+  bannerMore: { backgroundColor: '#f9e9e9' },
+  bannerLess: { backgroundColor: '#edf7f0' },
+  bannerSame: { backgroundColor: colors.chipBg },
   text: {
     ...typography.bodyMd,
     flex: 1,
-    color: colors.textPrimary,
     fontWeight: '500',
   },
+  textMore: { color: colors.danger },
+  textLess: { color: colors.primary },
+  textSame: { color: colors.textSecondary },
 });
