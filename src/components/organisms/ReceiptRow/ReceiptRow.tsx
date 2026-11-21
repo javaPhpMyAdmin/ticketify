@@ -132,7 +132,14 @@ export function ReceiptRow({
           <Icon name={iconName} size={18} color={iconColor} />
         </View>
       )}
-      <View style={{ width: '80%', minHeight: 78, justifyContent: 'center' }}>
+      <View
+        style={{
+          width: '80%',
+          minHeight: 78,
+          justifyContent: 'center',
+          backgroundColor: 'transparent',
+        }}
+      >
         <View style={styles.middle}>
           {/* Name + origin chip on one line: the name truncates (flex) and
               the label-only "Manual" chip (migration 0029) stays visible. */}
@@ -153,6 +160,7 @@ export function ReceiptRow({
             flexDirection: 'row',
             alignItems: 'center',
             gap: spacing.sm,
+            backgroundColor: 'transparent',
           }}
         >
           {/* The caption rides its own line BELOW date + amount. The old
@@ -209,6 +217,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: 2.5,
     borderColor: '#d8d7d7',
+    backgroundColor: 'transparent',
     gap: spacing.md,
     // Matches the Card base elevation so rows/table cards read as one
     // family of floating surfaces on Home. Light from top-left, so the
@@ -238,15 +247,18 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.chipBg,
   },
   middle: {
     flex: 1,
     gap: 2,
+    backgroundColor: 'transparent',
   },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
+    backgroundColor: 'transparent',
   },
   name: {
     fontWeight: '600',

@@ -72,7 +72,7 @@ const outDir = join(workdir, 'out');
 
 /** Suite cardinality. A pin added without bumping this fails the suite —
  *  otherwise a future harness that drops an assertion ships silently green. */
-const EXPECTED_TEST_COUNT = 21;
+const EXPECTED_TEST_COUNT = 24;
 
 let passed = 0;
 let failed = 0;
@@ -259,6 +259,48 @@ async function run() {
     assert.equal(strong.length, 4, `all 4 confirm buttons must use motion.pressScaleStrong, found ${strong.length}`);
     const optedOut = code.match(/pressScale=\{false\}/g) ?? [];
     assert.equal(optedOut.length, 4, 'every strong-scale button must opt out of the default scale');
+  });
+
+  await test('AccountSettingsList row wrappers and rows stay transparent on themed View', () => {
+    const code = codeOf('src/features/profile/components/AccountSettingsList.tsx');
+    assert.match(
+      code,
+      /rowWrap:\s*\{[\s\S]*?backgroundColor:\s*'transparent'[\s\S]*?\},/,
+      'rowWrap must be transparent to avoid nested card background bleed',
+    );
+    assert.match(
+      code,
+      /row:\s*\{[\s\S]*?backgroundColor:\s*'transparent'[\s\S]*?\},/,
+      'row must be transparent to avoid nested card background bleed',
+    );
+    assert.match(
+      code,
+      /<View key=\{row\.id\} style=\{styles\.rowWrap\}>/,
+      'per-row wrapper must use styles.rowWrap',
+    );
+  });
+
+  await test('AccountSettingsList danger icon bubble inherits surface', () => {
+    const code = codeOf('src/features/profile/components/AccountSettingsList.tsx');
+    assert.match(
+      code,
+      /iconBubbleDanger:\s*\{[\s\S]*?backgroundColor:\s*colors\.surface[\s\S]*?\},/,
+      'danger icon bubble must use colors.surface',
+    );
+    assert.match(
+      code,
+      /style=\{\[styles\.iconBubble,\s*isDanger\s*&&\s*styles\.iconBubbleDanger\]\}/,
+      'danger rows must apply iconBubbleDanger style',
+    );
+  });
+
+  await test('receipt detail footer actions carry shared elevation shadow', () => {
+    const code = codeOf('src/app/receipts/[id].tsx');
+    assert.match(
+      code,
+      /footerAction:\s*\{[\s\S]*?boxShadow:\s*'1px 2px 6px rgba\(0, 0, 0, 0\.3\)'[\s\S]*?\},/,
+      'footerAction must include the shared elevation boxShadow',
+    );
   });
 
   console.log('\n[tests] behavior — the resolved style the atom hands react-native\n');

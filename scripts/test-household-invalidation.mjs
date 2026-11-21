@@ -83,6 +83,13 @@ function load(mod) {
   return import(pathToFileURL(join(outDir, mod)).href);
 }
 
+/** Returns the body of a named `StyleSheet.create` block from source text. */
+function styleBlock(src, name) {
+  const match = src.match(new RegExp(`\\b${name}:\\s*\\{([^}]*)\\}`));
+  assert.ok(match, `style block "${name}" not found`);
+  return match[1];
+}
+
 /** Trivial fake: records every invalidation call, one method only. */
 function makeFakeClient() {
   const calls = [];
@@ -159,6 +166,26 @@ async function run() {
     assert.match(
       src,
       /disbandHousehold\(household\.id\)[\s\S]{0,500}householdChartSeriesPrefix\(\)/,
+    );
+  });
+
+  console.log('\n[tests] household detail style pins\n');
+
+  await test('source pin: memberRow inherits the card surface (transparent background)', () => {
+    const src = readFileSync(join(root, 'src/app/settings/household.tsx'), 'utf8');
+    assert.match(styleBlock(src, 'memberRow'), /backgroundColor:\s*'transparent'/);
+  });
+
+  await test('source pin: memberLeft inherits the card surface (transparent background)', () => {
+    const src = readFileSync(join(root, 'src/app/settings/household.tsx'), 'utf8');
+    assert.match(styleBlock(src, 'memberLeft'), /backgroundColor:\s*'transparent'/);
+  });
+
+  await test('source pin: leaveRow uses the Card boxShadow', () => {
+    const src = readFileSync(join(root, 'src/app/settings/household.tsx'), 'utf8');
+    assert.match(
+      styleBlock(src, 'leaveRow'),
+      /boxShadow:\s*'1px 2px 6px rgba\(0, 0, 0, 0\.3\)'/,
     );
   });
 

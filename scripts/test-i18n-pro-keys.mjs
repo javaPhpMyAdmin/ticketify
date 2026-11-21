@@ -32,7 +32,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 // Resolution, not the file. `es-AR` and `es-ES` are SPARSE regional
 // overrides over the neutral `es-419` base, so a raw read of
-// `es-AR/pro.json` sees 10 keys where the app renders all 86. Every
+// `es-AR/pro.json` sees 10 keys where the app renders the full catalog. Every
 // assertion below is about what a reader SEES, so every read resolves
 // `locale → chain → en` exactly like i18next does.
 import { LOCALES, resolveNamespace } from './lib/i18n-chain.mjs';
@@ -119,6 +119,9 @@ const ADDED_PRO_KEYS = [
   // hardcoded inside the renewal template.
   'autoRenewalPeriodAnnual',
   'autoRenewalPeriodMonthly',
+  // Post-purchase redirect feedback shown after a successful purchase
+  // while the app navigates back to the home screen.
+  'redirecting',
 ];
 
 const REMOVED_SETTINGS_KEYS = [

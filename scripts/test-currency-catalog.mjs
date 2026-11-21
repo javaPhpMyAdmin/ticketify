@@ -854,6 +854,29 @@ async function run() {
     );
   });
 
+  await test('CurrencyPickerList.tsx keeps section/row wrappers transparent on themed View', () => {
+    assert.match(
+      selector,
+      /sectionHeader:\s*\{[\s\S]*?backgroundColor:\s*'transparent'[\s\S]*?\},/,
+      'sectionHeader must be transparent to avoid nested card background bleed',
+    );
+    assert.match(
+      selector,
+      /rowWrap:\s*\{[\s\S]*?backgroundColor:\s*'transparent'[\s\S]*?\},/,
+      'rowWrap must be transparent to avoid nested card background bleed',
+    );
+    assert.match(
+      selector,
+      /row:\s*\{[\s\S]*?backgroundColor:\s*'transparent'[\s\S]*?\},/,
+      'row must be transparent to avoid nested card background bleed',
+    );
+    assert.match(
+      selector,
+      /<View style=\{styles\.rowWrap\}>[\s\S]*?<Pressable[\s\S]*?style=\{styles\.row\}/,
+      'the per-currency wrapper View must use styles.rowWrap',
+    );
+  });
+
   // The picker was extracted into a SHARED component so the settings screen and
   // the review "More" modal cannot drift apart. The screen is therefore pinned
   // as a CONSUMER: it must render the shared list, and must not fall back to

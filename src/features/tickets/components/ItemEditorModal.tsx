@@ -338,6 +338,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     alignItems: 'center',
     justifyContent: 'center',
+    boxShadow: '1px 2px 6px rgba(0, 0, 0, 0.3)',
   },
   cancelButton: {
     backgroundColor: colors.chipBg,
@@ -347,6 +348,8 @@ const styles = StyleSheet.create({
   },
   actionPressed: {
     opacity: 0.85,
+    transform: [{ scale: 0.98 }],
+    boxShadow: '0px 1px 2px rgba(0, 0, 0, 0.2)',
   },
   actionDisabled: {
     opacity: 0.5,

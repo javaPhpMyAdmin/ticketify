@@ -16,6 +16,7 @@ export interface PriceAlertReferenceReceipt {
   total: number;
   currency?: string | null;
   is_manual?: boolean;
+  image_url?: string | null;
 }
 
 export interface PriceAlertReferenceCardProps {
@@ -34,11 +35,11 @@ export interface PriceAlertReferenceCardProps {
 
 /**
  * One side of the reference-receipt pair shown under the price comparison on
- * the receipt detail screen. A manual ticket is not a real source receipt, so
- * its row is omitted entirely — a missing id is a DIFFERENT state and renders
- * the "unavailable" copy instead. The amount in `ReceiptRow` is the SINGLE
- * receipt total (captioned as such); the comparison above it keeps its own
- * monthly-average caption and is never relabeled as a ticket price.
+ * the receipt detail screen. A manual ticket renders a normal row with the
+ * shared "Manual" chip and no photo — a missing id is a DIFFERENT state and
+ * renders the "unavailable" copy instead. The amount in `ReceiptRow` is the
+ * SINGLE receipt total (captioned as such); the comparison above it keeps its
+ * own monthly-average caption and is never relabeled as a ticket price.
  */
 export function PriceAlertReferenceCard({
   label,
@@ -52,10 +53,7 @@ export function PriceAlertReferenceCard({
 }: PriceAlertReferenceCardProps) {
   const { t } = useTranslation(['analytics', 'common']);
 
-  // Origin check first: manual entries are omitted as a whole row, not
-  // downgraded to an "unavailable" row.
-  if (receipt?.is_manual === true) return null;
-
+  const isManual = receipt?.is_manual === true;
   const missingId = !hasId;
   const loading = hasId && isLoading && !receipt;
   const unavailable = missingId || isError || (!loading && !receipt);
@@ -90,6 +88,8 @@ export function PriceAlertReferenceCard({
               amount={receipt!.total}
               currency={receipt!.currency ?? currency}
               iconName="doc.text"
+              imageUrl={isManual ? null : (receipt?.image_url ?? null)}
+              isManual={isManual}
               onPress={onPress}
             />
             <Text style={styles.totalCaption}>

@@ -352,7 +352,7 @@ export default function ManualEntryScreen() {
                       )
                     : t('tickets:noCategory');
                   return (
-                    <View key={item.temp_id}>
+                    <View key={item.temp_id} style={styles.itemBlock}>
                       {idx > 0 ? <View style={styles.rowDivider} /> : null}
                       <View style={styles.itemRow}>
                         <View style={styles.itemMain}>
@@ -507,9 +507,11 @@ const styles = StyleSheet.create({
   },
   fieldStack: {
     gap: spacing.lg,
+    backgroundColor: 'transparent',
   },
   fieldWrap: {
     gap: spacing.xs,
+    backgroundColor: 'transparent',
   },
   kicker: {
     ...typography.labelCaps,
@@ -543,6 +545,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.xs,
     marginTop: spacing.sm,
+    backgroundColor: 'transparent',
   },
   cardTypeRow: {
     flexDirection: 'row',
@@ -550,6 +553,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
     marginTop: spacing.lg,
+    backgroundColor: 'transparent',
   },
   cardTypeLabel: {
     ...typography.labelSm,
@@ -577,9 +581,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radii.md,
+    boxShadow: '1px 2px 6px rgba(0, 0, 0, 0.3)',
   },
   addButtonPressed: {
     opacity: 0.85,
+    transform: [{ scale: 0.98 }],
   },
   addButtonLabel: {
     ...typography.labelSm,
@@ -595,10 +601,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
+    backgroundColor: 'transparent',
   },
   itemMain: {
     flex: 1,
     gap: 2,
+    backgroundColor: 'transparent',
   },
   itemName: {
     ...typography.bodyLg,
@@ -618,6 +626,10 @@ const styles = StyleSheet.create({
   },
   itemCategoryRow: {
     marginTop: spacing.sm,
+    backgroundColor: 'transparent',
+  },
+  itemBlock: {
+    backgroundColor: 'transparent',
   },
   noItems: {
     ...typography.bodyMd,
@@ -651,6 +663,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
+    backgroundColor: 'transparent',
   },
   totalValue: {
     ...typography.headlineLg,

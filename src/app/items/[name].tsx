@@ -206,6 +206,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   headerText: {
+    backgroundColor: 'transparent',
     flex: 1,
     gap: spacing.xs,
   },
@@ -244,6 +245,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   totalAmounts: {
+    backgroundColor: 'transparent',
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',

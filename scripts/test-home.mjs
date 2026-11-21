@@ -1290,6 +1290,33 @@ async function run() {
     );
   });
 
+  // ── themed-View background pin (structural, NOT a behavior test) ─────
+  // `View` injects `backgroundColor: theme.background` ahead of caller
+  // styles, so a themed View nested in a white Card paints a light-gray
+  // rectangle unless it explicitly opts out. RN screen internals are
+  // unreachable from this node harness: pin the SOURCE SHAPE only — all
+  // three drill-downs must declare `transparent` on the total wrapper and
+  // on the header's inner View. No rendering/layout behavior is asserted.
+  await test('all three drill-downs opt themed Views out of the card background (themed-View background pin)', () => {
+    const screens = [
+      'src/app/categories/[key].tsx',
+      'src/app/stores/[name].tsx',
+      'src/app/items/[name].tsx',
+    ];
+    for (const screen of screens) {
+      const src = readFileSync(join(root, screen), 'utf8');
+      for (const style of ['totalAmounts', 'headerText']) {
+        const block = new RegExp(`\\b${style}:\\s*\\{([^}]*)\\}`).exec(src);
+        assert.ok(block, `${screen}: missing ${style} style block`);
+        assert.match(
+          block[1],
+          /backgroundColor:\s*'transparent'/,
+          `${screen} ${style}: themed View must opt out of the card background`,
+        );
+      }
+    }
+  });
+
   console.log('');
   if (failed > 0) {
     console.error(`[tests] ${failed} failed, ${passed} passed`);

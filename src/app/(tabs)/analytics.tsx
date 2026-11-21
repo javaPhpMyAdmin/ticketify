@@ -22,6 +22,7 @@ import {
 import { categoryDetailHref } from '@/features/charts';
 import {
   useAvailableMonthKeys,
+  useHouseholdMonthTotal,
   useMonthNavigation,
   useMonthReceipts,
 } from '@/features/home';
@@ -106,6 +107,10 @@ export default function AnalyticsScreen() {
   const monthKeys = useAvailableMonthKeys(userId);
   const alerts = usePriceAlerts(monthKey);
   const overview = useMonthlyOverview(monthKey);
+  // Shared with Home: the household month-over-month delta in the viewer
+  // currency. Called unconditionally (hook rules) even in personal mode; the
+  // pure headline builder decides which scope reaches the badge.
+  const { changePct: householdChangePct } = useHouseholdMonthTotal(monthKey);
   // "TOTAL GASTADO" derives from the FULL month's receipts already loaded
   // here (same source as Home), not from the monthly cache: on a cache miss
   // the cache-backed `overview` headline can read 0, so this overrides it with
@@ -138,12 +143,12 @@ export default function AnalyticsScreen() {
   // Headline scope follows the view toggle. In household mode "TOTAL GASTADO"
   // is the HOUSEHOLD total (per-unit groups from the net-paid RPC), not the
   // caller's personal receipt sum — a personal figure next to the household
-  // category list below would contradict it. The change-% badge is
-  // personal-scoped (useMonthlyOverview reads the personal
-  // `monthly_user_totals` cache), so it is dropped in household mode. When
-  // the household RPC has not resolved (loading/error) the headline is a
-  // neutral placeholder — never a false "$0.00" — mirroring the body's
-  // loading/error branch.
+  // category list below would contradict it. The change-% badge now uses the
+  // shared `useHouseholdMonthTotal` viewer-unit delta (same RPC as Home), so
+  // the household card shows the same month-over-month badge as "Mi gasto".
+  // When the household RPC has not resolved (loading/error) the headline is a
+  // neutral placeholder — never a false "$0.00" — and the badge stays hidden,
+  // mirroring the body's loading/error branch.
   const householdHeadlineTotals = useMemo(
     () =>
       householdTotals.length > 0
@@ -158,8 +163,7 @@ export default function AnalyticsScreen() {
     householdTotals: householdHeadlineTotals,
     overviewTotals,
     personalChangePct: overview.changePct,
-    // Analytics tab has no household trend window; household badge is not computed here.
-    householdChangePct: null,
+    householdChangePct,
     hasHouseholdData: monthTotalsHasData,
   });
 

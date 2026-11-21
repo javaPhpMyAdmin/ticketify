@@ -2040,11 +2040,39 @@ async function editorWiringTests() {
     );
   });
 
+  // Structural style pin only (no behavior): both footer buttons share
+  // actionButton's Card shadow, and actionPressed sinks on press.
+  await test('editor: action buttons carry Card shadow and pressed sink', () => {
+    assert.match(
+      editorSource,
+      /actionButton:\s*\{[\s\S]*?boxShadow:\s*'1px 2px 6px rgba\(0, 0, 0, 0\.3\)'[\s\S]*?\},/,
+      'actionButton must include the shared Card elevation boxShadow',
+    );
+    assert.match(
+      editorSource,
+      /actionPressed:\s*\{[\s\S]*?opacity:\s*0\.85,[\s\S]*?transform:\s*\[\{\s*scale:\s*0\.98\s*\}\][\s\S]*?boxShadow:\s*'0px 1px 2px rgba\(0, 0, 0, 0\.2\)'[\s\S]*?\},/,
+      'actionPressed must keep opacity, add transform scale 0.98, and tighten the shadow',
+    );
+  });
+
   // ── manual.tsx (5.2): write category_id on add + edit ──────────────────
   const manualSource = readFileSync(
     join(root, 'src/app/ticket/manual.tsx'),
     'utf8',
   );
+
+  await test('manual: add button carries elevation shadow and pressed scale feedback', () => {
+    assert.match(
+      manualSource,
+      /addButton:\s*\{[\s\S]*?boxShadow:\s*'1px 2px 6px rgba\(0, 0, 0, 0\.3\)'[\s\S]*?\},/,
+      'addButton must include the shared elevation boxShadow',
+    );
+    assert.match(
+      manualSource,
+      /addButtonPressed:\s*\{[\s\S]*?opacity:\s*0\.85,[\s\S]*?transform:\s*\[\{\s*scale:\s*0\.98\s*\}\][\s\S]*?\},/,
+      'addButtonPressed must keep opacity and add transform scale 0.98',
+    );
+  });
 
   await test('manual: editor initialValues carry the target category (edit round-trip)', () => {
     assert.ok(
@@ -2083,6 +2111,35 @@ async function editorWiringTests() {
       manualSource,
       /buildManualDraft\([\s\S]{0,400}currency,\s*\)/,
       'handleSubmit must pass the profile currency into buildManualDraft so manual drafts are never born unit-less',
+    );
+  });
+
+  // Visual regression pin: View.tsx injects `backgroundColor: theme.background`
+  // BEFORE caller styles, so every themed View nested inside a white Card (or
+  // the white footer) must opt out. Structural style pin only — no behavior.
+  await test('manual: nested themed Views opt out of the injected theme background', () => {
+    const transparentStyles = [
+      'fieldStack',
+      'fieldWrap',
+      'paymentRow',
+      'cardTypeRow',
+      'itemRow',
+      'itemMain',
+      'itemCategoryRow',
+      'itemBlock',
+      'totalRow',
+    ];
+    for (const name of transparentStyles) {
+      assert.match(
+        manualSource,
+        new RegExp(`\\b${name}:\\s*\\{[^}]*backgroundColor:\\s*'transparent'[^}]*\\}`),
+        `${name} must declare backgroundColor: 'transparent' so it cannot paint a gray box over its white parent`,
+      );
+    }
+    assert.match(
+      manualSource,
+      /<View key=\{item\.temp_id\} style=\{styles\.itemBlock\}>/,
+      'the per-item wrapper must carry style={styles.itemBlock}',
     );
   });
 

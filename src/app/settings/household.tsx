@@ -423,6 +423,7 @@ const styles = StyleSheet.create({
   },
   // ── Member rows ──────────────────────────────────────────────────────
   memberRow: {
+    backgroundColor: 'transparent',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -434,6 +435,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   memberLeft: {
+    backgroundColor: 'transparent',
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
@@ -537,6 +539,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.border,
+    boxShadow: '1px 2px 6px rgba(0, 0, 0, 0.3)',
   },
   leaveRowPressed: {
     opacity: 0.85,

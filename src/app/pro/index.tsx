@@ -57,8 +57,8 @@
  * introPhase=null) — it's a price projection, not a day count.
  */
 import { Stack, router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -87,6 +87,9 @@ import {
 } from '@/lib/revenuecat';
 import { colors, radii, spacing, typography } from '@/theme';
 
+// The Google purchase dialog dismisses back to the paywall before navigation, so hold briefly to show redirect feedback.
+const REDIRECT_FEEDBACK_MS = 900;
+
 export default function PaywallScreen() {
   const { refresh } = useProEntitlement();
   const { t } = useTranslation('pro');
@@ -101,6 +104,16 @@ export default function PaywallScreen() {
   // User-selected plan. Annual is the default (matches the reference
   // design + the screen's "Best value" framing for the annual card).
   const [selectedPlan, setSelectedPlan] = useState<PlanKey>('annual');
+  const [redirecting, setRedirecting] = useState(false);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) {
+        clearTimeout(redirectTimerRef.current);
+      }
+    };
+  }, []);
 
   const loadOfferings = useCallback(async () => {
     setState('loading');
@@ -155,7 +168,10 @@ export default function PaywallScreen() {
     }
     await refresh();
     if (result.isPro) {
-      router.back();
+      setRedirecting(true);
+      redirectTimerRef.current = setTimeout(() => {
+        router.canGoBack() ? router.back() : router.replace('/');
+      }, REDIRECT_FEEDBACK_MS);
     } else {
       setErrorMessage(t('errorSyncDelayed'));
       setState('error');
@@ -273,6 +289,7 @@ export default function PaywallScreen() {
         <TrustStrip />
         <LegalFooter />
       </ScrollView>
+      {redirecting ? <RedirectingOverlay /> : null}
     </SafeAreaView>
   );
 }
@@ -823,6 +840,74 @@ function LegalFooter() {
   );
 }
 
+function RedirectingOverlay() {
+  const { t } = useTranslation('pro');
+  const dotOpacity = useRef([
+    new Animated.Value(0),
+    new Animated.Value(0),
+    new Animated.Value(0),
+  ]).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.stagger(220, [
+        Animated.timing(dotOpacity[0], {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dotOpacity[1], {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dotOpacity[2], {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dotOpacity[0], {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dotOpacity[1], {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dotOpacity[2], {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [dotOpacity]);
+
+  return (
+    <View
+      style={styles.redirectOverlay}
+      accessible
+      accessibilityLiveRegion="polite"
+    >
+      <View style={styles.redirectRow}>
+        <Text style={styles.redirectText}>{t('redirecting')}</Text>
+        {dotOpacity.map((dot, index) => (
+          <Animated.Text
+            key={index}
+            style={[styles.redirectText, styles.redirectDot, { opacity: dot }]}
+          >
+            .
+          </Animated.Text>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Stylesheet — Kinetic Finance palette, type, and spacing tokens.
 // All color/spacing/typography values come from the theme; alpha is
@@ -1310,5 +1395,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textDecorationLine: 'underline',
     fontWeight: '600',
+  },
+  redirectOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  redirectRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  redirectText: {
+    ...typography.headlineMd,
+    color: colors.textPrimary,
+    textAlign: 'center',
+  },
+  redirectDot: {
+    marginLeft: 2,
   },
 });

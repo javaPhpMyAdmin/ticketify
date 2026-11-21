@@ -57,7 +57,7 @@ export function AccountSettingsList({ rows }: AccountSettingsListProps) {
   return (
     <Card padding={spacing.xs}>
       {rows.map((row, idx) => (
-        <View key={row.id}>
+        <View key={row.id} style={styles.rowWrap}>
           {row.onPress ? (
             <Pressable
               onPress={row.onPress}
@@ -83,7 +83,7 @@ function renderRowContent(row: AccountSettingRow) {
   const accent = isDanger ? colors.danger : colors.textPrimary;
   return (
     <>
-      <View style={styles.iconBubble}>
+      <View style={[styles.iconBubble, isDanger && styles.iconBubbleDanger]}>
         <Icon name={row.icon} size={18} color={accent} />
       </View>
       <Text style={[styles.label, isDanger && { color: colors.danger }]}>
@@ -104,12 +104,16 @@ function renderRowContent(row: AccountSettingRow) {
 }
 
 const styles = StyleSheet.create({
+  rowWrap: {
+    backgroundColor: 'transparent',
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.sm,
     gap: spacing.md,
+    backgroundColor: 'transparent',
   },
   iconBubble: {
     width: 32,
@@ -118,6 +122,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.chipBg,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  iconBubbleDanger: {
+    backgroundColor: colors.surface,
   },
   label: {
     flex: 1,

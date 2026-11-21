@@ -155,7 +155,7 @@ export function CurrencyPickerList({
             const label = t(labelKey);
             const isLast = index === section.data.length - 1;
             return (
-              <View>
+              <View style={styles.rowWrap}>
                 <Pressable
                   onPress={() => onSelect(code)}
                   style={styles.row}
@@ -217,10 +217,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingTop: spacing.md,
     paddingBottom: spacing.xs,
+    backgroundColor: 'transparent',
   },
   sectionTitle: {
     ...typography.labelCaps,
     color: colors.textSecondary,
+  },
+  rowWrap: {
+    backgroundColor: 'transparent',
   },
   row: {
     flexDirection: 'row',
@@ -228,6 +232,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.sm,
     gap: spacing.md,
+    backgroundColor: 'transparent',
   },
   label: {
     flex: 1,

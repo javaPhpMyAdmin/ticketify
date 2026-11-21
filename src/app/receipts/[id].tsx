@@ -887,6 +887,7 @@ const styles = StyleSheet.create({
   originRow: {
     alignItems: 'flex-start',
     marginBottom: spacing.sm,
+    backgroundColor: 'transparent',
   },
   metaCol: {
     flex: 1,
@@ -901,7 +902,7 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: spacing.md,
-    // backgroundColor: colors.surface,
+    backgroundColor: 'transparent',
   },
   sectionTitle: {
     ...typography.headlineMd,
@@ -945,6 +946,7 @@ const styles = StyleSheet.create({
   itemRight: {
     alignItems: 'flex-end',
     gap: 2,
+    backgroundColor: 'transparent',
   },
   itemUnit: {
     ...typography.labelSm,
@@ -1002,6 +1004,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
     backgroundColor: colors.primary,
     minHeight: 48,
+    boxShadow: '1px 2px 6px rgba(0, 0, 0, 0.3)',
   },
   footerActionDanger: {
     backgroundColor: colors.danger,

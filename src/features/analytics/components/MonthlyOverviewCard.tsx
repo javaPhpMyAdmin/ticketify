@@ -51,7 +51,32 @@ export function MonthlyOverviewCard({
 
   return (
     <Card>
-      <View style={[styles.content, hasChange && styles.contentWithBadge]}>
+      {hasChange ? (
+        <View style={styles.badgeRow}>
+          <View
+            style={[
+              styles.badge,
+              { backgroundColor: up ? '#fbe3e3' : colors.primaryContainer },
+            ]}
+          >
+            <Icon
+              name={trendIcon}
+              size={14}
+              color={up ? 'red' : colors.primaryDark}
+            />
+            <Text
+              style={[
+                styles.badgeText,
+                { color: up ? 'red' : colors.primaryDark },
+              ]}
+            >
+              {up ? '+' : ''}
+              {changePct}% {t('overviewBadge', { month: previousMonthName })}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+      <View style={styles.content}>
         <Text style={styles.kicker}>{t('overviewKicker')}</Text>
         {totals === null ? (
           isLoading ? (
@@ -70,29 +95,6 @@ export function MonthlyOverviewCard({
           ))
         )}
       </View>
-      {hasChange ? (
-        <View
-          style={[
-            styles.badge,
-            { backgroundColor: up ? '#fbe3e3' : colors.primaryContainer },
-          ]}
-        >
-          <Icon
-            name={trendIcon}
-            size={14}
-            color={up ? 'red' : colors.primaryDark}
-          />
-          <Text
-            style={[
-              styles.badgeText,
-              { color: up ? 'red' : colors.primaryDark },
-            ]}
-          >
-            {up ? '+' : ''}
-            {changePct}% {t('overviewBadge', { month: previousMonthName })}
-          </Text>
-        </View>
-      ) : null}
     </Card>
   );
 }
@@ -101,11 +103,6 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.sm,
     backgroundColor: colors.surface,
-  },
-  // Reserves room on the right for the floating badge so a wide amount
-  // never slides underneath it. Applied only when the badge is shown.
-  contentWithBadge: {
-    paddingRight: 120,
   },
   kicker: {
     fontSize: 17,
@@ -127,20 +124,21 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     minHeight: 40,
     marginTop: spacing.xs + 15,
+    backgroundColor: 'transparent',
   },
   loadingText: {
     fontSize: 15,
     fontWeight: '700',
     color: colors.textSecondary,
   },
-  // Floats in the card's top-right corner (matches the reference capture:
-  // the badge is NOT in the same row as the amount). The Card view is the
-  // nearest positioned ancestor, so top/right are relative to its padding
-  // box — aligned with the content edge (spacing.lg = the Card's padding).
+  // Top chip row: the badge renders first inside the Card, in normal flow,
+  // so it can never overlap the kicker/amount text below it.
+  badgeRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    backgroundColor: 'transparent',
+  },
   badge: {
-    position: 'absolute',
-    top: spacing.xl,
-    right: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,

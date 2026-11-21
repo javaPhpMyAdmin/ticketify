@@ -407,6 +407,79 @@ async function run() {
     assert.equal(usdTotal, 12);
   });
 
+  await test('household headline badge uses the shared Home delta (source pin)', () => {
+    const screen = readFileSync(
+      join(root, 'src/app/(tabs)/analytics.tsx'),
+      'utf8',
+    );
+    assert.match(
+      screen,
+      /useHouseholdMonthTotal\([^)]*monthKey[^)]*\)/,
+      'the screen must call useHouseholdMonthTotal with the selected monthKey',
+    );
+    assert.match(
+      screen,
+      /changePct:\s*householdChangePct\s*\}\s*=\s*useHouseholdMonthTotal\(monthKey\)/,
+      'the hook changePct must be aliased for the headline',
+    );
+    const headlineCall = screen.match(
+      /buildOverviewHeadline\([\s\S]*?\n  \}\);/,
+    );
+    assert.ok(headlineCall, 'the screen must call buildOverviewHeadline');
+    assert.match(
+      headlineCall[0],
+      /\bhouseholdChangePct\b/,
+      'the hook changePct must be passed into buildOverviewHeadline',
+    );
+    assert.doesNotMatch(
+      headlineCall[0],
+      /householdChangePct:\s*null/,
+      'the hardcoded null household badge must be gone',
+    );
+  });
+
+  await test('overview badge sits in a top chip row, not over the text (source pin)', () => {
+    const card = readFileSync(
+      join(root, 'src/features/analytics/components/MonthlyOverviewCard.tsx'),
+      'utf8',
+    );
+    const badgeRowIndex = card.indexOf('styles.badgeRow');
+    const contentIndex = card.indexOf('<View style={styles.content}>');
+    assert.ok(badgeRowIndex !== -1, 'the badge row must be rendered');
+    assert.ok(contentIndex !== -1, 'the content View must be rendered');
+    assert.ok(
+      badgeRowIndex < contentIndex,
+      'the badge row must be the first child of Card, before the content View',
+    );
+    assert.match(
+      card,
+      /badgeRow:\s*\{[\s\S]*?justifyContent:\s*'flex-end'/,
+      'the badge row must right-align the chip',
+    );
+    assert.match(
+      card,
+      /badgeRow:\s*\{[^}]*backgroundColor:\s*'transparent'/,
+      'the badge row must be transparent so the Card background shows through',
+    );
+    assert.match(
+      card,
+      /loadingRow:\s*\{[^}]*backgroundColor:\s*'transparent'/,
+      'the loading row must be transparent so the Card background shows through',
+    );
+    const badgeStyle = card.match(/badge:\s*\{([\s\S]*?)\n  \},/);
+    assert.ok(badgeStyle, 'the badge style must exist');
+    assert.doesNotMatch(
+      badgeStyle[1],
+      /position:\s*'absolute'/,
+      'the badge must stay in normal layout flow',
+    );
+    assert.doesNotMatch(
+      card,
+      /contentWithBadge/,
+      'the absolute-badge padding workaround must be gone',
+    );
+  });
+
   await test('household headline shows a loading spinner instead of a bare dash (source pin)', () => {
     const card = readFileSync(
       join(root, 'src/features/analytics/components/MonthlyOverviewCard.tsx'),

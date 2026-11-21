@@ -665,6 +665,61 @@ async function run() {
     );
   });
 
+  console.log('\n[tests] post-purchase redirect feedback — redirecting overlay\n');
+
+  await test('handlePurchase sets redirecting before navigating back on successful purchase', () => {
+    const purchaseBlock = proScreen.match(
+      /const handlePurchase = async \(plan: PlanKey\) => \{[\s\S]*?^  \};/m,
+    )?.[0] ?? '';
+    assert.ok(purchaseBlock.length > 0, 'sanity: handlePurchase block must exist');
+    const redirectIndex = purchaseBlock.indexOf('setRedirecting(true)');
+    const backIndex = purchaseBlock.indexOf('router.back()');
+    assert.ok(redirectIndex >= 0, 'handlePurchase must set redirecting true on success');
+    assert.ok(backIndex >= 0, 'handlePurchase must navigate back on success');
+    assert.ok(
+      redirectIndex < backIndex,
+      'setRedirecting(true) must appear before router.back() in handlePurchase',
+    );
+  });
+
+  await test('successful purchase uses a timed redirect back', () => {
+    const purchaseBlock = proScreen.match(
+      /const handlePurchase = async \(plan: PlanKey\) => \{[\s\S]*?^  \};/m,
+    )?.[0] ?? '';
+    assert.ok(
+      /setTimeout\(\(\) => \{\s*router\.canGoBack\(\) \? router\.back\(\) : router\.replace\('\/'\);?\s*\},\s*REDIRECT_FEEDBACK_MS\)/.test(
+        purchaseBlock,
+      ),
+      'handlePurchase must delay guarded redirect with REDIRECT_FEEDBACK_MS',
+    );
+  });
+
+  await test('redirect timeout is cleaned up on unmount', () => {
+    assert.ok(
+      /const redirectTimerRef = useRef<ReturnType<typeof setTimeout> \| null>\(null\)/.test(
+        proScreen,
+      ),
+      'screen must track redirect timeout in a ref',
+    );
+    assert.ok(
+      /useEffect\(\(\) => \{\s*return \(\) => \{\s*if \(redirectTimerRef\.current\) \{\s*clearTimeout\(redirectTimerRef\.current\);\s*\}\s*\};\s*\}, \[\]\)/.test(
+        proScreen,
+      ),
+      'screen must clear redirect timeout on unmount',
+    );
+  });
+
+  await test('redirecting overlay renders translated redirecting label', () => {
+    assert.ok(
+      /\bt\(\s*['"]redirecting['"]\s*\)/.test(proScreen),
+      'pro screen must render t(\'redirecting\') for redirect feedback',
+    );
+    assert.ok(
+      /redirecting\s*\?\s*</.test(proScreen),
+      'pro screen must conditionally render redirect feedback when redirecting is true',
+    );
+  });
+
   console.log('');
   if (failed > 0) {
     console.error(`[tests] ${failed} failed, ${passed} passed`);

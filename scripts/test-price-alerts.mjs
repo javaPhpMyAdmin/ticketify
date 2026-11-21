@@ -85,6 +85,35 @@ function flattenStyle(style) {
   return out;
 }
 
+/**
+ * Pull one `StyleSheet.create` entry's object body out of TS source by brace
+ * matching. The themed-View pin below checks declarations directly: these two
+ * components are not compiled by this harness, so a render assertion would
+ * never see their styles.
+ */
+function extractStyleBlock(src, name) {
+  const header = new RegExp(`(?:^|\\n)[ \\t]{2}${name}:[ \\t]*\\{`);
+  const match = src.match(header);
+  assert.ok(match, `${name} style declaration must exist`);
+  let depth = 0;
+  for (let i = match.index + match[0].length - 1; i < src.length; i += 1) {
+    if (src[i] === '{') depth += 1;
+    else if (src[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return src.slice(match.index, i + 1);
+    }
+  }
+  assert.fail(`${name} style block is unterminated`);
+}
+
+function assertStyleBackground(src, name, value, fileLabel) {
+  const block = extractStyleBlock(src, name);
+  assert.ok(
+    block.includes(`backgroundColor: ${value},`),
+    `${fileLabel}: ${name} must declare backgroundColor: ${value}`,
+  );
+}
+
 /** Collect every string leaf from a react-test-renderer tree (host or JSON). */
 function flattenStrings(node, acc = []) {
   if (node == null) return acc;
@@ -1661,16 +1690,19 @@ async function run() {
     return { renderer, unmount: () => act(async () => renderer.unmount()) };
   };
 
-  await test('PriceAlertReferenceCard omits manual receipts entirely', async () => {
+  await test('PriceAlertReferenceCard renders a manual receipt as a chip-only row with the total caption', async () => {
     const { renderer, unmount } = await renderReference({
       receipt: referenceReceipt({ is_manual: true }),
     });
     try {
-      assert.equal(renderer.toJSON(), null, 'a manual ticket must render no reference row');
-      assert.equal(
-        renderer.root.findAllByType('ReceiptRow').length,
-        0,
-        'no ReceiptRow may be mounted for a manual ticket',
+      const rows = renderer.root.findAllByType('ReceiptRow');
+      assert.equal(rows.length, 1, 'a manual ticket renders exactly one reference row');
+      assert.equal(rows[0].props.isManual, true, 'the row renders the shared MANUAL chip');
+      assert.equal(rows[0].props.imageUrl, null, 'a manual ticket never shows a photo');
+      const text = flattenStrings(renderer.toJSON()).join('\n');
+      assert.ok(
+        text.includes('Total de un ticket'),
+        'the single-ticket total caption stays under the row',
       );
     } finally {
       await unmount();
@@ -1696,7 +1728,12 @@ async function run() {
 
   await test('PriceAlertReferenceCard passes exact ReceiptRow props for a real previous receipt', async () => {
     const onPress = () => {};
-    const { renderer, unmount } = await renderReference({ onPress });
+    const { renderer, unmount } = await renderReference({
+      receipt: referenceReceipt({
+        image_url: 'https://example.com/ticket.jpg',
+      }),
+      onPress,
+    });
     try {
       const row = renderer.root.findByType('ReceiptRow');
       assert.equal(row.props.name, 'Tienda Norte', 'store name from the receipt');
@@ -1704,7 +1741,12 @@ async function run() {
       assert.equal(row.props.amount, 8450, 'single receipt total, not a monthly average');
       assert.equal(row.props.currency, 'UYU', 'receipt currency wins');
       assert.equal(row.props.iconName, 'doc.text', 'document icon');
-      assert.equal(row.props.imageUrl, undefined, 'no async photo URL is requested');
+      assert.equal(
+        row.props.imageUrl,
+        'https://example.com/ticket.jpg',
+        'a real receipt photo URL reaches the row',
+      );
+      assert.equal(row.props.isManual, false, 'a real receipt is not labeled manual');
       assert.equal(row.props.onPress, onPress, 'the previous row navigates');
       const text = flattenStrings(renderer.toJSON()).join('\n');
       assert.ok(
@@ -1714,6 +1756,27 @@ async function run() {
       assert.ok(
         !text.includes('analytics:priceAlertReferenceMissing'),
         'the missing copy is not shown for a ready receipt',
+      );
+    } finally {
+      await unmount();
+    }
+  });
+
+  await test('PriceAlertReferenceCard never lets a photo win for a manual receipt', async () => {
+    const { renderer, unmount } = await renderReference({
+      receipt: referenceReceipt({
+        is_manual: true,
+        image_url: 'https://example.com/ticket.jpg',
+      }),
+    });
+    try {
+      const rows = renderer.root.findAllByType('ReceiptRow');
+      assert.equal(rows.length, 1, 'the manual row still renders');
+      assert.equal(rows[0].props.isManual, true, 'the MANUAL chip is shown');
+      assert.equal(
+        rows[0].props.imageUrl,
+        null,
+        'an image_url on a manual receipt is discarded',
       );
     } finally {
       await unmount();
@@ -1747,6 +1810,63 @@ async function run() {
     } finally {
       await unmount();
     }
+  });
+
+  await test('themed-View background pin: nested wrappers in ReceiptRow and receipt detail stay transparent', async () => {
+    // Structural pin only — not a behavior test. The themed View atom injects
+    // `theme.background` ahead of caller styles, so every wrapper nested in a
+    // tinted Card must opt out explicitly or it paints an opaque rectangle.
+    const fs = await import('node:fs/promises');
+    const rowSrc = await fs.readFile(
+      join(root, 'src', 'components', 'organisms', 'ReceiptRow', 'ReceiptRow.tsx'),
+      'utf8',
+    );
+    const detailSrc = await fs.readFile(
+      join(root, 'src', 'app', 'receipts', '[id].tsx'),
+      'utf8',
+    );
+
+    for (const name of ['row', 'middle', 'nameRow']) {
+      assertStyleBackground(rowSrc, name, "'transparent'", 'ReceiptRow.tsx');
+    }
+    // Spinner/photo fallback states use this style with no inline override.
+    assertStyleBackground(rowSrc, 'iconCircle', 'colors.chipBg', 'ReceiptRow.tsx');
+
+    const inlineViews = [...rowSrc.matchAll(/<View\s+style=\{\{([\s\S]*?)\}\}/g)];
+    assert.equal(inlineViews.length, 2, 'both inline View styles must be present');
+    for (const [idx, match] of inlineViews.entries()) {
+      assert.match(
+        match[1],
+        /backgroundColor:\s*'transparent'/,
+        `inline View style #${idx + 1} must override the themed background`,
+      );
+    }
+
+    for (const name of ['itemRight', 'originRow', 'section']) {
+      assertStyleBackground(detailSrc, name, "'transparent'", 'receipts/[id].tsx');
+    }
+  });
+
+  await test('ReceiptRow manual chip pin: label and celeste stay identical to the Home list', async () => {
+    // Structural pin — the real ReceiptRow is not compiled by this harness.
+    // The manual branch must keep the SAME chip the Home ticket list renders.
+    const fs = await import('node:fs/promises');
+    const src = await fs.readFile(
+      join(root, 'src', 'components', 'organisms', 'ReceiptRow', 'ReceiptRow.tsx'),
+      'utf8',
+    );
+    const manualBranch = src.match(/\{isManual\s*\?\s*\(([\s\S]*?)\)\s*:\s*null\}/);
+    assert.ok(manualBranch, 'ReceiptRow must render a manual-only JSX branch');
+    assert.match(
+      manualBranch[1],
+      /backgroundColor:\s*'#a8fbe6'/,
+      'the manual chip must keep the celeste background',
+    );
+    assert.match(
+      manualBranch[1],
+      /label=\{t\('receiptManual'\)\}/,
+      'the manual chip must keep the receiptManual label',
+    );
   });
 
   // ── PART 4: executed tap routing + PriceAlertDetailSection ────────────
@@ -1985,7 +2105,7 @@ async function run() {
     await view.unmount();
   });
 
-  await test('section omits manual rows and fills an empty bucket with viewer currency', async () => {
+  await test('section renders both manual and real rows and fills an empty bucket with viewer currency', async () => {
     resetSectionState();
     settingsStoreMod.useSettingsStore.setState({ currency: 'UYU' });
     sectionState.alerts = [sectionAlert({ unit: '' })];
@@ -2005,8 +2125,12 @@ async function run() {
     let view = await renderSection({ unit: '' });
     try {
       const rows = view.renderer.root.findAllByType('ReceiptRow');
-      assert.equal(rows.length, 1, 'the manual previous receipt is omitted');
-      assert.equal(rows[0].props.currency, 'UYU', 'viewer currency fills the empty bucket');
+      assert.equal(rows.length, 2, 'both the manual previous row and the real current row render');
+      const [manualRow, currentRow] = rows;
+      assert.equal(manualRow.props.isManual, true, 'the previous row carries the MANUAL chip');
+      assert.equal(manualRow.props.imageUrl, null, 'the manual row never shows a photo');
+      assert.equal(currentRow.props.isManual, false, 'the current row is a real receipt');
+      assert.equal(currentRow.props.currency, 'UYU', 'viewer currency fills the empty bucket');
     } finally {
       await view.unmount();
     }

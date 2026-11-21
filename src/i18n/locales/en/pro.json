@@ -96,5 +96,6 @@
   "trustSecurePayment": "Secure payment",
   "trustCancelAnytime": "Cancel anytime",
   "trustSupport247": "24/7 support",
-  "planSelectedA11y": "Selected"
+  "planSelectedA11y": "Selected",
+  "redirecting": "Redirecting"
 }
