@@ -209,7 +209,7 @@ export default function ReceiptDetailScreen() {
   useEffect(() => {
     if (!photoOpen) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (photoScaleJs.current > 1) {
+      if (photoScaleLogical.value > 1) {
         resetPhotoZoom();
       } else {
         setPhotoOpen(false);
@@ -233,9 +233,11 @@ export default function ReceiptDetailScreen() {
   const photoSavedTy = useSharedValue(0);
   const photoContainerW = useSharedValue(0);
   const photoContainerH = useSharedValue(0);
-  // JS-readable mirror of the shared scale value, used by the backdrop
-  // Pressable handler (which runs on the JS thread, not the worklet).
-  const photoScaleJs = useRef(1);
+  // Logical mirror of the animated scale, used by the JS-thread handlers
+  // (backdrop + Android back). It stays in sync with `photoScale` through
+  // `.value` writes; a plain ref captured by the pinch worklet would be
+  // frozen by Reanimated, so its JS writes would be silently discarded.
+  const photoScaleLogical = useSharedValue(1);
 
   const resetPhotoZoom = () => {
     photoScale.value = withTiming(1);
@@ -244,7 +246,7 @@ export default function ReceiptDetailScreen() {
     photoTy.value = withTiming(0);
     photoSavedTx.value = 0;
     photoSavedTy.value = 0;
-    photoScaleJs.current = 1;
+    photoScaleLogical.value = 1;
   };
 
   const photoPinch = Gesture.Pinch()
@@ -252,7 +254,7 @@ export default function ReceiptDetailScreen() {
       const next = photoSavedScale.value * e.scale;
       const clamped = Math.max(1, Math.min(4, next));
       photoScale.value = clamped;
-      photoScaleJs.current = clamped;
+      photoScaleLogical.value = clamped;
     })
     .onEnd(() => {
       photoSavedScale.value = photoScale.value;
@@ -290,8 +292,8 @@ export default function ReceiptDetailScreen() {
   const photoDoubleTap = Gesture.Tap()
     .numberOfTaps(2)
     .onEnd(() => {
-      // Worklet → JS: the reset mutates shared values + a regular ref,
-      // so jump back to JS to keep `photoScaleJs.current` in sync.
+      // Worklet → JS: the reset mutates shared values, so jump back to
+      // JS to keep every mirrored scale write on the same path.
       runOnJS(resetPhotoZoom)();
     });
 
@@ -311,7 +313,7 @@ export default function ReceiptDetailScreen() {
   }));
 
   const handlePhotoBackdropPress = () => {
-    if (photoScaleJs.current > 1) {
+    if (photoScaleLogical.value > 1) {
       resetPhotoZoom();
     } else {
       setPhotoOpen(false);

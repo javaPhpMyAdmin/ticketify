@@ -929,19 +929,20 @@ export async function readHouseholdCategoryItems(
 // ---------------------------------------------------------------------------
 
 /**
- * Optimistically sync subscription_status to the DB after a purchase,
- * restore, or trial activation. Calls `sync_client_subscription` which
- * uses `auth.uid()` to scope the update to the caller's own profile.
+ * Sync a client-claimable subscription status to the DB. Calls
+ * `sync_client_subscription` which uses `auth.uid()` to scope the update
+ * to the caller's own profile.
  *
  * Post-cutover (0039 §9d): the RPC allow-list is narrowed to `('none')` —
  * `startFreeTrial` is gone (no DB trial surface), `expireOverdueTrials`
  * is gone (trial expiry is reconciled by the webhook `EXPIRATION` event).
- * The only client-claimable value is 'none' (set after a successful
- * sync from a free lifecycle event). Paid status is webhook-only.
+ * The RPC rejects any other status with `P0001 invalid subscription
+ * status`, so passing `'active'` is always a bug. Paid state is
+ * webhook-only and authoritative; the local entitlement store is
+ * refreshed from RevenueCat on demand, not from this write.
  *
- * This runs BEFORE the RevenueCat webhook arrives so the local store
- * reflects the new state immediately. The webhook is the authoritative
- * sync path — this helper is a UX optimization.
+ * Retained for possible future free-lifecycle sync ('none' after a
+ * successful free event); currently it has no callers.
  */
 export async function syncSubscriptionStatus(
   status: string,

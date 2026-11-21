@@ -77,7 +77,6 @@ import {
   type PaywallState,
 } from '@/features/pro/paywall-model';
 import { openLegalDocument } from '@/lib/legal-navigation';
-import { syncSubscriptionStatus } from '@/lib/supabase/feature-access';
 import {
   getOfferings,
   isNativeAvailable,
@@ -161,21 +160,31 @@ export default function PaywallScreen() {
       setState('error');
       return;
     }
-    // Optimistically sync subscription_status to the DB before the
-    // RevenueCat webhook arrives. Non-blocking: if this fails, the
-    // webhook will reconcile the state.
     if (result.isPro) {
-      void syncSubscriptionStatus('active');
-    }
-    await refresh();
-    if (result.isPro) {
+      // Raise the overlay FIRST: it opaque-covers the paywall so the
+      // tapped CTA's spinner is replaced immediately, while `state` stays
+      // 'purchasing' to keep the double-purchase guard active during
+      // refresh. Paid status is webhook-only — never client-synced.
       setRedirecting(true);
-      redirectTimerRef.current = setTimeout(() => {
-        router.canGoBack() ? router.back() : router.replace('/');
-      }, REDIRECT_FEEDBACK_MS);
-    } else {
+      setPurchasingPlan(null);
+    }
+    try {
+      await refresh();
+      if (result.isPro) {
+        redirectTimerRef.current = setTimeout(() => {
+          router.canGoBack() ? router.back() : router.replace('/');
+        }, REDIRECT_FEEDBACK_MS);
+      } else {
+        setErrorMessage(t('errorSyncDelayed'));
+        setState('error');
+      }
+    } catch {
+      // A rejected refresh must never leave the tap-blocking overlay up.
+      setRedirecting(false);
+      setPurchasingPlan(null);
       setErrorMessage(t('errorSyncDelayed'));
       setState('error');
+      return;
     }
   };
 
@@ -190,12 +199,13 @@ export default function PaywallScreen() {
       setState('error');
       return;
     }
-    // Optimistically sync subscription_status to the DB after restore.
-    // Non-blocking: the webhook will reconcile if this fails.
-    if (result.isPro) {
-      void syncSubscriptionStatus('active');
+    try {
+      await refresh();
+    } catch {
+      setErrorMessage(t('errorRestoreFailed'));
+      setState('error');
+      return;
     }
-    await refresh();
     if (result.isPro) {
       router.back();
     } else {

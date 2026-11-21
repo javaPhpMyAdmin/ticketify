@@ -2405,6 +2405,13 @@ async function progressOverlayTests() {
     );
   });
 
+  await test('progress overlay: root View blocks taps to the buttons underneath (pointerEvents=box-only)', () => {
+    assert.ok(
+      /<View\s+style=\{styles\.overlay\}[^>]*pointerEvents="box-only"/.test(moleculeSource),
+      'the overlay root View must set pointerEvents="box-only" so taps cannot reach the buttons underneath while the overlay is shown',
+    );
+  });
+
   await test('progress overlay: three sibling animated dots with loop cleanup', () => {
     assert.equal(
       (moleculeSource.match(/new Animated\.Value\(0\)/g) ?? []).length,

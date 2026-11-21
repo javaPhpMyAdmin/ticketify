@@ -2552,6 +2552,59 @@ async function run() {
     }
   });
 
+  await test('receipt photo zoom uses a shared value — no plain ref captured by the pinch worklet', () => {
+    const src = readFileSync(join(root, 'src/app/receipts/[id].tsx'), 'utf8');
+    assert.ok(
+      /const photoScaleLogical = useSharedValue\(1\);/.test(src),
+      'photoScaleLogical must be a Reanimated shared value, readable/writable inside the pinch worklet',
+    );
+    assert.ok(
+      !/const photoScaleLogical = useRef\(/.test(src),
+      'a plain useRef captured by the worklet would be frozen in dev; JS writes to it are silently discarded',
+    );
+    assert.ok(
+      !/photoScaleLogical\.current/.test(src),
+      'no photoScaleLogical.current anywhere — every read/write must go through .value',
+    );
+  });
+
+  await test('receipt zoom handlers all read/write the shared value (.value)', () => {
+    const src = readFileSync(join(root, 'src/app/receipts/[id].tsx'), 'utf8');
+    assert.ok(
+      /photoScaleLogical\.value = 1;/.test(src),
+      'resetPhotoZoom must assign .value',
+    );
+    assert.ok(
+      /photoScaleLogical\.value = clamped;/.test(src),
+      'the pinch worklet must assign .value to the clamped scale',
+    );
+    assert.equal(
+      (src.match(/photoScaleLogical\.value > 1/g) ?? []).length,
+      2,
+      'both the hardware-back handler and the photo backdrop handler must read .value > 1',
+    );
+  });
+
+  await test('DialogHost exit guard reads a shared value, not a captured ref', () => {
+    const src = readFileSync(
+      join(root, 'src/components/atoms/Dialog/DialogHost.tsx'),
+      'utf8',
+    );
+    assert.ok(
+      /const visibleValue = useSharedValue\(false\);/.test(src),
+      'visibleValue must be a Reanimated shared value initialized to false',
+    );
+    const guard = src.match(/if \(finished && ![^\n]+\) \{/)?.[0] ?? '';
+    assert.ok(
+      /if \(finished && !visibleValue\.value\) \{/.test(guard),
+      'the exit worklet guard must read visibleValue.value',
+    );
+    assert.ok(
+      !/\bvisibleRef\b/.test(src) && !/\.current/.test(guard),
+      'no visibleRef / .current pattern may remain for that guard',
+    );
+  });
+
     await test('ReceiptCategoryItemsModal renders ONLY its currency prop (never the profile itself)', () => {
     const src = readFileSync(
       join(root, 'src/features/receipts/components/ReceiptCategoryItemsModal.tsx'),

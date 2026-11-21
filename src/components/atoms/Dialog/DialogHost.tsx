@@ -20,7 +20,7 @@
  * Button presses mirror native alerts: the host hides the dialog first,
  * then runs the button's callback (see the store docs).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BackHandler, StyleSheet } from 'react-native';
 import Animated, {
   Easing,
@@ -48,15 +48,17 @@ export function DialogHost() {
   // unmounted only after the exit animation completes.
   const [rendered, setRendered] = useState(false);
   // Store-visible mirror for the exit callback: `withTiming` callbacks run
-  // on the UI thread, so the unmount guard reads the ref instead of the
-  // effect-closure `visible`, which would be stale.
-  const visibleRef = useRef(visible);
+  // on the UI thread, so the unmount guard reads a shared value instead of
+  // the effect-closure `visible`, which would be stale. A shared value is
+  // safe to read from the worklet; a plain ref gets frozen by Reanimated
+  // in dev and its JS writes are silently discarded.
+  const visibleValue = useSharedValue(false);
 
   const overlayOpacity = useSharedValue(0);
   const cardScale = useSharedValue(0.92);
 
   useEffect(() => {
-    visibleRef.current = visible;
+    visibleValue.value = visible;
     if (!visible) {
       overlayOpacity.value = withTiming(
         0,
@@ -65,7 +67,7 @@ export function DialogHost() {
           // Unmount only when the fade-out ran to completion AND the
           // dialog wasn't re-opened mid-animation (a new `show()` during
           // the fade interrupts it with `finished === false`).
-          if (finished && !visibleRef.current) {
+          if (finished && !visibleValue.value) {
             runOnJS(setRendered)(false);
           }
         },

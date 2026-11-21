@@ -720,6 +720,170 @@ async function run() {
     );
   });
 
+  const purchaseBlock = () =>
+    proScreen.match(/const handlePurchase = async \(plan: PlanKey\) => \{[\s\S]*?^  \};/m)?.[0] ?? '';
+  const restoreBlock = () =>
+    proScreen.match(/const handleRestore = async \(\) => \{[\s\S]*?^  \};/m)?.[0] ?? '';
+
+  console.log('\n[tests] paid status is webhook-only — no client "active" sync\n');
+
+  await test('no syncSubscriptionStatus(\'active\') call remains (deployed RPC only accepts none)', () => {
+    assert.ok(
+      !/syncSubscriptionStatus\s*\(\s*['"]active['"]\s*\)/.test(proScreen),
+      'the P0001 invalid subscription status: active call must be gone — paid status is webhook-only (0039 §9d)',
+    );
+    assert.ok(
+      !/\bsyncSubscriptionStatus\s*\(/.test(proScreen),
+      'the paywall must not call syncSubscriptionStatus at all (both the purchase and restore calls are invalid)',
+    );
+  });
+
+  await test('the now-unused syncSubscriptionStatus import is removed from the paywall', () => {
+    assert.ok(
+      !/import\s*\{[^}]*\bsyncSubscriptionStatus\b[^}]*\}\s*from\s*['"]@\/lib\/supabase\/feature-access['"]/.test(proScreen),
+      'pro screen must not import syncSubscriptionStatus from @/lib/supabase/feature-access',
+    );
+  });
+
+  await test('feature-access keeps the helper but drops the immediate-paid-status claim', () => {
+    const seam = readFileSync(
+      join(root, 'src/lib/supabase/feature-access.ts'),
+      'utf8',
+    );
+    assert.ok(
+      /export async function syncSubscriptionStatus\(/.test(seam),
+      'the helper itself stays — retained for possible future free-lifecycle sync (currently no callers)',
+    );
+    assert.ok(
+      /no callers/i.test(seam),
+      'JSDoc must say the helper currently has no callers',
+    );
+    assert.ok(
+      /possible future free-lifecycle sync/i.test(seam),
+      'JSDoc must describe the helper as retained for possible future free-lifecycle sync',
+    );
+    assert.ok(
+      !/reflects the new state immediately/i.test(seam),
+      'JSDoc must not claim the local store reflects paid status immediately',
+    );
+    assert.ok(
+      !/after a purchase, restore, or trial activation/i.test(seam),
+      'JSDoc must not advertise purchase/restore as callers of this client-claimable helper',
+    );
+    assert.equal(
+      (seam.match(/webhook-only/gi) ?? []).length,
+      1,
+      'the webhook-only paid-state rule must be stated once, not duplicated',
+    );
+  });
+
+  console.log('\n[tests] overlay replaces the plan CTA spinner immediately\n');
+
+  await test('successful purchase sets redirecting BEFORE awaiting refresh, exactly once', () => {
+    const block = purchaseBlock();
+    assert.ok(block.length > 0, 'sanity: handlePurchase block must exist');
+    const redirectIndex = block.indexOf('setRedirecting(true)');
+    const refreshIndex = block.indexOf('await refresh()');
+    assert.ok(redirectIndex >= 0 && refreshIndex >= 0, 'both calls must exist');
+    assert.ok(
+      redirectIndex < refreshIndex,
+      'setRedirecting(true) must run before await refresh() so the overlay replaces the button spinner first',
+    );
+    assert.equal(
+      (block.match(/setRedirecting\(true\)/g) ?? []).length,
+      1,
+      'the duplicate setRedirecting(true) after refresh must be removed',
+    );
+  });
+
+  await test('successful purchase clears the spinner inputs while state stays purchasing', () => {
+    const block = purchaseBlock();
+    const success = block.slice(0, block.indexOf('await refresh()'));
+    assert.ok(
+      /if \(result\.isPro\) \{[\s\S]*?setRedirecting\(true\);[\s\S]*?setPurchasingPlan\(null\);/.test(success),
+      'success must clear purchasingPlan and raise the overlay before refresh',
+    );
+    assert.ok(
+      !/setState\(['"]ready['"]\)/.test(success),
+      'state must stay \'purchasing\' — the guard at the top of handlePurchase still blocks a double purchase while refresh runs',
+    );
+  });
+
+  await test('redirect timer stays AFTER refresh with the guarded back/replace unchanged', () => {
+    const block = purchaseBlock();
+    const refreshIndex = block.indexOf('await refresh()');
+    const timerIndex = block.indexOf('setTimeout(');
+    assert.ok(refreshIndex >= 0 && timerIndex > refreshIndex, 'timer must be scheduled after refresh');
+    assert.ok(
+      /setTimeout\(\(\) => \{\s*router\.canGoBack\(\) \? router\.back\(\) : router\.replace\('\/'\);?\s*\},\s*REDIRECT_FEEDBACK_MS\)/.test(block),
+      'the canGoBack()/replace(\'/\') guard and 900ms feedback delay must stay unchanged',
+    );
+  });
+
+  await test('refresh rejection recovers the overlay and returns to error state (no stranded overlay)', () => {
+    const block = purchaseBlock();
+    assert.ok(/try\s*\{[\s\S]*?await refresh\(\)/.test(block), 'refresh must run inside a try block');
+    const catchBlock = block.match(/catch\s*\{([\s\S]*?)\n    \}/)?.[1] ?? '';
+    assert.ok(catchBlock.length > 0, 'handlePurchase must catch a refresh rejection');
+    assert.ok(
+      /setRedirecting\(false\)/.test(catchBlock),
+      'the catch must clear redirecting so the tap-blocking overlay unmounts',
+    );
+    assert.ok(
+      /setPurchasingPlan\(null\)/.test(catchBlock),
+      'the catch must clear the spinner inputs',
+    );
+    assert.ok(
+      /setErrorMessage\(t\(['"]errorSyncDelayed['"]\)\)/.test(catchBlock),
+      'the catch must show the sync-delayed message',
+    );
+    assert.ok(
+      /setState\(['"]error['"]\)/.test(catchBlock),
+      'the catch must restore error state so the user can retry',
+    );
+    assert.ok(/return;/.test(catchBlock), 'the catch must return before any redirect scheduling');
+    assert.ok(
+      !/setTimeout\(/.test(catchBlock),
+      'no redirect timer may be scheduled on refresh failure',
+    );
+    assert.equal(
+      (block.match(/setTimeout\(/g) ?? []).length,
+      1,
+      'only the success-path timer may exist',
+    );
+  });
+
+  await test('restore refresh rejection surfaces restore error and stays retryable', () => {
+    const block = restoreBlock();
+    assert.ok(block.length > 0, 'sanity: handleRestore block must exist');
+    assert.ok(/try\s*\{[\s\S]*?await refresh\(\)/.test(block), 'restore refresh must run inside a try block');
+    const catchBlock = block.match(/catch\s*\{([\s\S]*?)\n    \}/)?.[1] ?? '';
+    assert.ok(catchBlock.length > 0, 'handleRestore must catch a refresh rejection');
+    assert.ok(
+      /setErrorMessage\(t\(['"]errorRestoreFailed['"]\)\)/.test(catchBlock),
+      'the catch must show the restore-failed message',
+    );
+    assert.ok(
+      /setState\(['"]error['"]\)/.test(catchBlock),
+      'the catch must set error state so retry stays unblocked',
+    );
+    assert.ok(/return;/.test(catchBlock), 'the catch must return before the success/no-pro branches');
+    assert.ok(!/router\.back\(\)/.test(catchBlock), 'no success navigation on refresh failure');
+    assert.ok(!/setRedirecting\(/.test(block), 'restore must not add an overlay');
+    assert.ok(
+      /setRestoring\(false\);[\s\S]*?try\s*\{/.test(block),
+      'restoring must be cleared before refresh so retry stays unblocked',
+    );
+    assert.ok(
+      /if \(result\.isPro\) \{\s*router\.back\(\);\s*\} else \{/.test(block),
+      'success navigation must stay unchanged',
+    );
+    assert.ok(
+      /setErrorMessage\(t\(['"]errorRestoreNone['"]\)\)/.test(block),
+      'the no-pro branch must stay unchanged',
+    );
+  });
+
   console.log('');
   if (failed > 0) {
     console.error(`[tests] ${failed} failed, ${passed} passed`);

@@ -61,7 +61,12 @@ export function ProgressOverlay({ label }: ProgressOverlayProps) {
   }, [dotOpacity]);
 
   return (
-    <View style={styles.overlay} accessible accessibilityLiveRegion="polite">
+    <View
+      style={styles.overlay}
+      pointerEvents="box-only"
+      accessible
+      accessibilityLiveRegion="polite"
+    >
       <View style={styles.row}>
         <Text style={styles.label}>{label}</Text>
         {dotOpacity.map((dot, index) => (
