@@ -27,19 +27,17 @@
  *   1. FOREGROUND entitlement refresh (fix 1 — the real bug). The file
  *      must import `AppState` from react-native and subscribe to its
  *      'change' event. On transition to 'active' with a current user
- *      (`activeUserIdRef.current !== null`), a successfully-bridged
- *      identity (`identityBridgedRef.current === true` — which also
- *      implies the SDK is available AND configured, since the bridge only
- *      succeeds after `logInRevenueCat`, which requires the native module
- *      + API key + configure) and NO dev override, the handler must
- *      re-read `getCustomerInfo()` bounded by
- *      `withTimeout(..., REVENUECAT_CALL_TIMEOUT_MS, null)`, re-check the
- *      per-user race guard AFTER the await, write the store through the
- *      atomic `setProEntitlement` snapshot setter (isPro + trialEndsAt in
- *      one set) plus `isLoading: false`, and invalidate the profile query
- *      (ref-guarded) so the header tier settles. The effect must clean up
- *      its subscription and be keyed on `[userId, setProEntitlement]` so
- *      the per-user race guard stays in scope.
+ *      (`activeUserIdRef.current !== null`) and NO dev override, the
+ *      handler must FIRST await the bounded DB reconciliation (the only
+ *      gate for `isLoading`), then — only when the identity bridge
+ *      succeeded (`identityBridgedRef.current === true`) — invalidate the
+ *      SDK cache and read `getCustomerInfo()` bounded by
+ *      `withTimeout(..., REVENUECAT_CALL_TIMEOUT_MS, ...)`, writing only
+ *      `trialEndsAt` from that cached snapshot. The RC work must never sit
+ *      in front of the DB verdict: a degraded SDK cannot delay a revocation.
+ *      Every await re-checks the per-user race guard. The effect must clean
+ *      up its subscription and be keyed on `[userId]` so the per-user race
+ *      guard stays in scope.
  *
  *   2. EXPIRED-entitlement dev override (fix 2 — downgrade QA).
  *      pro-bootstrap.tsx must import `isProExpiredOverrideEnabled` from
@@ -53,9 +51,10 @@
  *            EXPIRED one wins (the conservative/locked default).
  *
  *   3. DON'T-TOUCH approvals — the existing `customerInfoUpdate` listener
- *      attachment (`attachCustomerInfoListener` + `setProEntitlement(snapshot)`)
- *      and `resolveProSession`'s identity bridge + DB-first resolution
- *      stay intact; the fix only ADDS the foreground path.
+ *      attachment (`attachCustomerInfoListener` + `setProEntitlement(snapshot)`),
+ *      its false → true grant stamping, and the identity bridge's per-user
+ *      scoping stay intact; only the ORDER of the gate work changed so the
+ *      DB authority starts first and the RC trial-pill work is detached.
  *
  * The pure gate-function truth lives in test-pro-gating.mjs (compiled
  * execution); this harness is the source-wiring complement.
@@ -128,20 +127,19 @@ async function run() {
   });
 
   // Extract the foreground effect block: from the AppState 'change'
-  // subscription to its effect close (keyed on [userId, setProEntitlement]).
-  // Effect 1 of the file ends with `}, [userId, setProEntitlement, setEverPaid]);`
-  // and does NOT use AppState, so the first AppState.addEventListener is
-  // unambiguously the foreground effect. Empty string when absent — the
-  // per-contract tests below fail individually on it.
+  // subscription to its effect close. It no longer needs the snapshot setter
+  // (RC may only write trialEndsAt), so the dependency list is [userId].
+  // Effect 1 of the file does NOT use AppState, so the first
+  // AppState.addEventListener is unambiguously the foreground effect.
   const foregroundBlock =
     bootstrapSource.match(
-      /AppState\.addEventListener\(\s*'change'\s*,([\s\S]*?)\}, \[userId, setProEntitlement\]\);/
+      /AppState\.addEventListener\(\s*'change'\s*,([\s\S]*?)\}, \[userId\]\);/
     )?.[0] ?? '';
 
-  await test('the foreground effect subscribes to AppState "change" and is keyed on [userId, setProEntitlement]', () => {
+  await test('the foreground effect subscribes to AppState "change" and is keyed on [userId]', () => {
     assert.ok(
       foregroundBlock.length > 0,
-      'the foreground effect must subscribe to AppState "change" and be keyed on [userId, setProEntitlement]',
+      'the foreground effect must subscribe to AppState "change" and be keyed on [userId]',
     );
   });
 
@@ -149,23 +147,21 @@ async function run() {
     assert.match(foregroundBlock, /status\s*!==\s*'active'/, 'the handler must skip non-active transitions');
   });
 
-  await test('fires only for a current, bridged user with no dev override', () => {
-    // The four guards ALL have to pass before the SDK read runs. The
-    // identityBridgedRef guard also implies "SDK available/configured":
-    // the bridge only succeeds after logInRevenueCat, which requires the
-    // native module + API key + configure (see revenuecat.ts).
-    assert.match(foregroundBlock, /activeUserIdRef\.current === null/, 'no read while signed out');
-    assert.match(foregroundBlock, /!identityBridgedRef\.current/, 'only a bridged identity may read');
-    // Match the two overrides CONJOINED, which only the pre-read guard is.
-    // The post-await re-check (`if (isProOverrideEnabled()) return;`) carries
-    // no `||`, so a bare /isProOverrideEnabled\(\)/ is satisfied by it too and
-    // pins neither this test's name nor the guard it describes.
+  await test('fires only for a current user with no dev override; bridge gates RC work only', () => {
+    assert.match(foregroundBlock, /activeUserIdRef\.current === null/, 'no work while signed out');
+    // Match the two overrides CONJOINED in the top guard. The bridge ref is
+    // deliberately absent here: DB reconciliation must still run when the RC
+    // bridge degraded.
     assert.match(
       foregroundBlock,
       /isProOverrideEnabled\(\)\s*\|\|\s*isProExpiredOverrideEnabled\(\)/,
-      'both dev overrides must block the read BEFORE it starts',
+      'both dev overrides must block the whole refresh BEFORE it starts',
     );
-    assert.match(foregroundBlock, /isProExpiredOverrideEnabled\(\)/, 'the expired dev override also blocks the read');
+    assert.match(
+      foregroundBlock,
+      /if \(identityBridgedRef\.current\) \{/,
+      'the bridge ref may gate only the RC read/invalidation block',
+    );
   });
 
   await test('re-reads CustomerInfo with the same bounded pattern as resolveProSession', () => {
@@ -173,6 +169,20 @@ async function run() {
       foregroundBlock,
       /withTimeout\(\s*getCustomerInfo\(\),\s*REVENUECAT_CALL_TIMEOUT_MS,\s*null,?\s*\)/,
       'the foreground read must be bounded by withTimeout(..., REVENUECAT_CALL_TIMEOUT_MS, null)',
+    );
+  });
+
+  await test('the foreground DB verdict runs before the bounded SDK cache invalidation', () => {
+    assert.match(
+      foregroundBlock,
+      /withTimeout\(\s*invalidateCustomerInfoCache\(\),\s*REVENUECAT_CALL_TIMEOUT_MS,\s*undefined,?\s*\)/,
+      'the optional trial-pill invalidation must stay bounded so a hung SDK call cannot leak',
+    );
+    const invalidatePos = foregroundBlock.indexOf('invalidateCustomerInfoCache()');
+    const dbPos = foregroundBlock.indexOf('reconcileEntitlementFromDB(');
+    assert.ok(
+      invalidatePos >= 0 && dbPos >= 0 && dbPos < invalidatePos,
+      'the authoritative DB read must not wait on the optional RC cache invalidation',
     );
   });
 
@@ -184,31 +194,16 @@ async function run() {
     );
   });
 
-  await test('writes the store through the atomic setProEntitlement snapshot setter and clears isLoading', () => {
-    // Slice C: the snapshot setter writes isPro + trialEndsAt in ONE set so
-    // the gate and the profile pill never disagree mid-update.
+  await test('writes ONLY trialEndsAt from the RC cache and clears isLoading', () => {
     assert.match(
       foregroundBlock,
-      /setProEntitlement\(\s*\{\s*isPro:\s*info\?\.isPro \?\? false/,
-      'isPro must derive from the re-read snapshot (null → free default)',
-    );
-    assert.match(
-      foregroundBlock,
-      /trialEndsAt:\s*info\?\.trialEndsAt \?\? null/,
-      'trialEndsAt must be written atomically with isPro',
+      /useProStore\.setState\(\{\s*trialEndsAt:\s*info\?\.trialEndsAt \?\? null\s*\}\)/,
+      'the cached RC snapshot may settle the trial pill but must not write isPro',
     );
     assert.match(
       foregroundBlock,
       /useProStore\.setState\(\{\s*isLoading: false\s*\}\)/,
       'isLoading must clear so the gate settles (locked on expiry, unlocked on renewal)',
-    );
-  });
-
-  await test('invalidates the profile query (ref-guarded) so the header tier settles', () => {
-    assert.match(
-      foregroundBlock,
-      /queryClient\.invalidateQueries\(\s*\{\s*queryKey:\s*queryKeys\.profile\(userId\),?\s*\}\s*\)/,
-      'the profile query must be invalidated so the header reflects the new tier',
     );
   });
 
@@ -260,11 +255,11 @@ async function run() {
     );
   });
 
-  await test('the per-user effect mirrors the expired branch right after the ref sync (expired wins when both are set)', () => {
+  await test('the per-user effect mirrors the expired branch immediately after the ref sync and grant cleanup', () => {
     assert.match(
       bootstrapSource,
-      /activeUserIdRef\.current = userId;\s*if \(isProExpiredOverrideEnabled\(\)\)\s*\{/,
-      "the per-user effect must check the expired override immediately after syncing the ref",
+      /activeUserIdRef\.current = userId;\s*clearListenerGrants\(\);\s*if \(isProExpiredOverrideEnabled\(\)\)\s*\{/,
+      'expected adjacency: ref sync → clearListenerGrants() → expired-override branch',
     );
   });
 
@@ -317,9 +312,217 @@ async function run() {
     assert.match(resolveBlock, /logInRevenueCat\(userId\)/, 'the identity bridge must stay');
     assert.match(
       resolveBlock,
-      /syncSubscriptionFromDB\(userId, isCurrent\)/,
-      'the DB-first subscription sync must stay',
+      /reconcileEntitlementFromDB\(userId, isCurrent\)/,
+      'the DB-authoritative reconciliation must run on every per-user resolution',
     );
+    assert.doesNotMatch(
+      resolveBlock,
+      /syncSubscriptionFromDB/,
+      'the old ever_paid-only DB read must not survive — it never wrote isPro',
+    );
+  });
+
+  // ---------------------------------------------------------------------
+  // 3b. DB-authoritative revocation (sandbox-expiry fix).
+  // ---------------------------------------------------------------------
+  console.log('\n[tests] pro-bootstrap — DB-authoritative revocation wiring\n');
+
+  const revenueCatSource = readFileSync(
+    join(root, 'src', 'lib', 'revenuecat.ts'),
+    'utf8',
+  );
+  const gateHookSource = readFileSync(
+    join(root, 'src', 'features', 'home', 'hooks', 'useScanQuotaGate.ts'),
+    'utf8',
+  );
+
+  await test('revenuecat.ts wraps the SDK invalidateCustomerInfoCache method', () => {
+    // Verified against node_modules/react-native-purchases/dist/purchases.d.ts
+    // (static invalidateCustomerInfoCache(): Promise<void> at line 524).
+    assert.match(
+      revenueCatSource,
+      /export async function invalidateCustomerInfoCache\(\): Promise<void>/,
+      'a safe wrapper must exist so the bootstrap can force a fresh RC read',
+    );
+    assert.match(
+      revenueCatSource,
+      /Purchases\.invalidateCustomerInfoCache\(\)/,
+      'the wrapper must call the SDK method (not a no-op)',
+    );
+  });
+
+  await test('foreground: DB verdict → bounded invalidate → RC read → trial-only write', () => {
+    const invalidatePos = foregroundBlock.indexOf('invalidateCustomerInfoCache()');
+    const readPos = foregroundBlock.indexOf('getCustomerInfo()');
+    const trialWritePos = foregroundBlock.indexOf(
+      'useProStore.setState({ trialEndsAt:',
+    );
+    const dbPos = foregroundBlock.indexOf('reconcileEntitlementFromDB(');
+    assert.ok(dbPos >= 0, 'the foreground path must reconcile from DB');
+    assert.ok(invalidatePos >= 0, 'the foreground path must still invalidate the RC cache');
+    assert.ok(readPos >= 0, 'the foreground path must read CustomerInfo when bridged');
+    assert.ok(trialWritePos >= 0, 'the RC snapshot must still settle the trial pill');
+    assert.ok(
+      dbPos < invalidatePos && invalidatePos < readPos && readPos < trialWritePos,
+      `order must be DB verdict → invalidate → read → trial-only write (got ${dbPos}/${invalidatePos}/${readPos}/${trialWritePos})`,
+    );
+    assert.doesNotMatch(
+      foregroundBlock,
+      /setProEntitlement\s*\(/,
+      'the cached RC read must never write isPro — a failed DB read would leave stale true in the store',
+    );
+    assert.doesNotMatch(
+      foregroundBlock,
+      /isPro:\s*info\?\.isPro/,
+      'no RC-derived isPro may reach the store on the foreground path',
+    );
+  });
+
+  await test('foreground: degraded bridge skips RC work but NEVER skips DB reconciliation', () => {
+    const guard = foregroundBlock.slice(0, foregroundBlock.indexOf('void (async () =>'));
+    assert.match(
+      guard,
+      /activeUserIdRef\.current === null\s*\|\|\s*isProOverrideEnabled\(\)\s*\|\|\s*isProExpiredOverrideEnabled\(\)/,
+      'signed-out and both dev overrides must block the whole foreground refresh',
+    );
+    assert.doesNotMatch(
+      guard,
+      /identityBridgedRef\.current/,
+      'the top guard must NOT block DB reconciliation when the RC bridge degraded',
+    );
+    assert.match(
+      foregroundBlock,
+      /if \(identityBridgedRef\.current\) \{/,
+      'the bridge ref may only gate the RC read/invalidation block',
+    );
+    assert.equal(
+      foregroundBlock.indexOf('reconcileEntitlementFromDB(') <
+        foregroundBlock.indexOf('if (identityBridgedRef.current) {'),
+      true,
+      'DB reconciliation must run before — and outside — the bridged RC block',
+    );
+  });
+
+  await test('foreground: no second profile invalidation after reconciliation', () => {
+    assert.doesNotMatch(
+      foregroundBlock,
+      /invalidateQueries\s*\(\s*\{\s*queryKey:\s*queryKeys\.profile\(/,
+      'the reconciler already invalidates on a successful read; a second unconditional call is redundant',
+    );
+  });
+
+  await test('resolveProSession starts the DB verdict before any RC read and settles the gate on it', () => {
+    const dbStartPos = resolveBlock.indexOf(
+      'reconcileEntitlementFromDB(userId, isCurrent)',
+    );
+    const loginPos = resolveBlock.indexOf('logInRevenueCat(');
+    const readPos = resolveBlock.indexOf('getCustomerInfo()');
+    const awaitedPos = resolveBlock.indexOf('await reconciliation;');
+    const loadingPos = resolveBlock.indexOf(
+      'useProStore.setState({ isLoading: false })',
+    );
+    assert.ok(dbStartPos >= 0, 'the per-user path must start DB reconciliation');
+    assert.ok(
+      dbStartPos < loginPos && dbStartPos < readPos,
+      'the DB authority must start before the optional RC identity bridge / cache read',
+    );
+    assert.ok(awaitedPos >= 0 && loadingPos > awaitedPos, 'isLoading must clear only after the bounded DB verdict lands');
+    assert.match(
+      resolveBlock,
+      /const bridgedRcWork = \(async \(\) => \{[\s\S]*?logInRevenueCat\(userId\)[\s\S]*?getCustomerInfo\(\)[\s\S]*?\}\)\(\)/,
+      'the trial-pill-only RC work must run in a detached async block, not in the gate path',
+    );
+    assert.match(
+      resolveBlock,
+      /void bridgedRcWork;/,
+      'the RC trial-pill work must be explicitly detached after the verdict settles',
+    );
+    assert.doesNotMatch(
+      resolveBlock,
+      /isPro:\s*info\?\.isPro/,
+      'a generic cached RC read must not grant Pro ahead of the DB verdict',
+    );
+  });
+
+  await test('the customerInfoUpdate listener timestamps only real isPro grants for the active user', () => {
+    const listenerBlock =
+      bootstrapSource.match(
+        /attachCustomerInfoListener\(\(snapshot\) => \{([\s\S]*?)\n\s*\}\);/,
+      )?.[0] ?? '';
+    assert.ok(listenerBlock.length > 0, 'the listener callback body must be present');
+    assert.match(
+      listenerBlock,
+      /recordListenerGrant\(/,
+      'a listener-driven isPro=true grant must be timestamped for the grace rule',
+    );
+    assert.match(
+      listenerBlock,
+      /if \(!snapshot\.isPro\)/,
+      'a revoke callback must clear any pending grant',
+    );
+    assert.match(
+      listenerBlock,
+      /if \(!previous\) recordListenerGrant\(currentUserId\)/,
+      'only a real false → true grant may be timestamped (never repeated true echoes)',
+    );
+    assert.doesNotMatch(
+      resolveBlock,
+      /recordListenerGrant/,
+      'resolveProSession reads the SDK cache — it must NOT stamp a grant',
+    );
+  });
+
+  await test('the listener stamps only false → true transitions and clears the stamp on false', () => {
+    const listenerBlock =
+      bootstrapSource.match(
+        /attachCustomerInfoListener\(\(snapshot\) => \{([\s\S]*?)\n\s*\}\);/,
+      )?.[0] ?? '';
+    assert.match(
+      listenerBlock,
+      /lastListenerIsProRef\.current/,
+      'the listener must track the previous isPro value per mounted session',
+    );
+    assert.match(
+      listenerBlock,
+      /if \(!snapshot\.isPro\)[\s\S]*?clearListenerGrant\(currentUserId\)/,
+      'a false callback must clear the grant stamp before it can be revoked by the DB',
+    );
+    assert.match(
+      listenerBlock,
+      /if \(!previous\)[\s\S]*?recordListenerGrant\(currentUserId\)/,
+      'only a real false → true transition may stamp a 60s grant',
+    );
+  });
+
+  await test('grant timestamps are cleared on sign-out and on user change', () => {
+    const refSync = 'activeUserIdRef.current = userId;';
+    const effectTail = '}, [userId]);';
+    const refSyncPos = bootstrapSource.indexOf(refSync);
+    const effectEndPos = bootstrapSource.indexOf(effectTail, refSyncPos);
+    const effectBody =
+      refSyncPos >= 0 && effectEndPos >= 0
+        ? bootstrapSource.slice(refSyncPos, effectEndPos + effectTail.length)
+        : '';
+    assert.ok(effectBody.length > 0, 'the per-user effect must be present');
+    assert.match(
+      effectBody,
+      /clearListenerGrants\(\)/,
+      'every userId change (including null/sign-out) must drop stale grant timestamps',
+    );
+  });
+
+  await test('no client-side syncSubscriptionStatus write anywhere in the fixed paths', () => {
+    for (const [name, source] of [
+      ['pro-bootstrap.tsx', bootstrapSource],
+      ['revenuecat.ts', revenueCatSource],
+      ['useScanQuotaGate.ts', gateHookSource],
+    ]) {
+      assert.doesNotMatch(
+        source,
+        /syncSubscriptionStatus/,
+        `${name} must not call the webhook-reserved RPC`,
+      );
+    }
   });
 
   // ---------------------------------------------------------------------

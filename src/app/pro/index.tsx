@@ -69,7 +69,9 @@ import {
   Spinner,
   Text,
 } from '@/components';
+import { useSessionUser } from '@/features/auth';
 import { useProEntitlement } from '@/features/pro';
+import { recordListenerGrant } from '@/features/pro/entitlement-reconcile';
 import {
   getCtaCopy,
   isPlanBusy,
@@ -79,12 +81,14 @@ import {
 import { openLegalDocument } from '@/lib/legal-navigation';
 import {
   getOfferings,
+  invalidateCustomerInfoCache,
   isNativeAvailable,
   purchasePackage,
   restorePurchases,
   toUsdLabel,
   type OfferingsSnapshot,
 } from '@/lib/revenuecat';
+import { withTimeout } from '@/lib/with-timeout';
 import { colors, radii, spacing, typography } from '@/theme';
 
 // The Google purchase dialog dismisses back to the paywall before navigation, so hold briefly to show redirect feedback.
@@ -92,6 +96,7 @@ const REDIRECT_FEEDBACK_MS = 900;
 
 export default function PaywallScreen() {
   const { refresh } = useProEntitlement();
+  const { userId } = useSessionUser();
   const { t } = useTranslation('pro');
   const [state, setState] = useState<PaywallState>('loading');
   const [offerings, setOfferings] = useState<OfferingsSnapshot | null>(null);
@@ -169,7 +174,16 @@ export default function PaywallScreen() {
       setPurchasingPlan(null);
     }
     try {
+      // Drop the cached CustomerInfo first: refresh() reads that cache, so a
+      // failed purchase would otherwise leave a stale Pro value in the store.
+      await withTimeout(invalidateCustomerInfoCache(), 2500, undefined);
       await refresh();
+      // The native listener can be missed on some Android builds. Only the
+      // SDK operation's own CustomerInfo is proof of a grant — never the
+      // post-refresh store value. Stamp it for the 60s webhook-lag window.
+      if (userId && result.ok && result.isPro === true) {
+        recordListenerGrant(userId);
+      }
       if (result.isPro) {
         redirectTimerRef.current = setTimeout(() => {
           router.canGoBack() ? router.back() : router.replace('/');
@@ -200,7 +214,11 @@ export default function PaywallScreen() {
       return;
     }
     try {
+      await withTimeout(invalidateCustomerInfoCache(), 2500, undefined);
       await refresh();
+      if (userId && result.ok && result.isPro === true) {
+        recordListenerGrant(userId);
+      }
     } catch {
       setErrorMessage(t('errorRestoreFailed'));
       setState('error');

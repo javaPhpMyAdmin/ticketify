@@ -745,6 +745,41 @@ async function run() {
     );
   });
 
+  console.log('\n[tests] missed-native-listener fallback — stamp grants on confirmed purchase/restore\n');
+
+  await test('purchase and restore stamp only on the verified SDK result, never from the cached store', () => {
+    for (const [name, block] of [
+      ['purchase', purchaseBlock()],
+      ['restore', restoreBlock()],
+    ]) {
+      assert.ok(block.length > 0, `${name} handler must be present`);
+      const invalidatePos = block.indexOf('invalidateCustomerInfoCache()');
+      const refreshPos = block.indexOf('await refresh()');
+      const stampPos = block.indexOf('recordListenerGrant(userId)');
+      assert.ok(invalidatePos >= 0, `${name} must invalidate the RC cache before refreshing`);
+      assert.ok(refreshPos >= 0, `${name} must refresh after the SDK call`);
+      assert.ok(
+        invalidatePos < refreshPos && stampPos > refreshPos,
+        `${name} order must be invalidate → refresh → stamp (got ${invalidatePos}/${refreshPos}/${stampPos})`,
+      );
+      assert.match(
+        block,
+        /withTimeout\(\s*invalidateCustomerInfoCache\(\),\s*2500,\s*undefined,?\s*\)/,
+        `${name} must bound the cache invalidation at 2.5s`,
+      );
+      assert.match(
+        block,
+        /if \(userId && result\.ok && result\.isPro === true\) \{[\s\S]*?recordListenerGrant\(userId\)/,
+        `${name} must stamp only when result.ok && result.isPro === true`,
+      );
+      assert.doesNotMatch(
+        block,
+        /useProStore\.getState\(\)\.isPro/,
+        `${name} must NOT derive a grant from the post-refresh store (refresh reads cached CustomerInfo)`,
+      );
+    }
+  });
+
   await test('feature-access keeps the helper but drops the immediate-paid-status claim', () => {
     const seam = readFileSync(
       join(root, 'src/lib/supabase/feature-access.ts'),

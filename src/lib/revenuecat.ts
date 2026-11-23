@@ -154,6 +154,29 @@ export async function getCustomerInfo(): Promise<CustomerInfoSnapshot | null> {
   }
 }
 
+/**
+ * Drops the SDK's cached `CustomerInfo` so the NEXT `getCustomerInfo()` hits
+ * the store/backend. `getCustomerInfo` is a cached read — after a sandbox
+ * expiry the cache can report a stale active Pro entitlement for minutes,
+ * which is why the foreground refresh calls this before re-reading.
+ *
+ * The installed SDK declares `static invalidateCustomerInfoCache():
+ * Promise<void>` (react-native-purchases 9.x). Older/native-missing builds
+ * are tolerated: a missing method is a no-op and a rejected call is warned,
+ * never thrown to callers. The DB reconciliation that follows is the final
+ * authority either way.
+ */
+export async function invalidateCustomerInfoCache(): Promise<void> {
+  if (!Purchases || typeof Purchases.invalidateCustomerInfoCache !== 'function') {
+    return;
+  }
+  try {
+    await Purchases.invalidateCustomerInfoCache();
+  } catch (err) {
+    console.warn('[revenuecat] invalidateCustomerInfoCache failed:', err);
+  }
+}
+
 /** Result of an identity-bridging call (`logIn` / `logOut`). */
 export interface RevenueCatIdentityResult {
   ok: boolean;

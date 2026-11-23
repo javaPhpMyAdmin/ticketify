@@ -11,18 +11,20 @@
  *      (cached customerInfo, listener registrations), so a session flip
  *      must never re-configure.
  *   2. PER-USER identity bridge + resolution (keyed on `[userId]`, runs
- *      on EVERY userId change): `logInRevenueCat(userId)` before reading
- *      `CustomerInfo` so the snapshot is scoped to the Supabase user, then
- *      DB-first resolution into `useProStore`. This is the webhook
- *      identity bridge — without it every purchase lands on
- *      `$RCAnonymousID` and the server-side tier sync never runs.
- *   3. FOREGROUND entitlement refresh (keyed on `[userId]`, added by the
- *      pro-subscription lifecycle fix): the Play Billing Client does not
- *      reliably push an expired entitlement to `customerInfoUpdate` while
- *      the app is open, so on every transition to AppState `'active'` the
- *      entitlement is re-read (`getCustomerInfo`, bounded) and the store
- *      re-resolved — an expiry mid-session now drops the Pro UI without a
- *      sign-out → sign-in cycle.
+ *      on EVERY userId change): the DB-authoritative reconciliation STARTS
+ *      FIRST and is the only awaited gate; the identity bridge
+ *      (`logInRevenueCat(userId)`) and the scoped `CustomerInfo` snapshot
+ *      then run in a DETACHED parallel block for the trial pill only. This is
+ *      still the webhook identity bridge — without it every purchase lands
+ *      on `$RCAnonymousID` and the server-side tier sync never runs — but a
+ *      degraded/slow SDK can no longer delay the gate verdict.
+ *   3. FOREGROUND entitlement refresh (keyed on `[userId]`): the Play
+ *      Billing Client does not reliably push an expired entitlement to
+ *      `customerInfoUpdate` while the app is open, so on every transition
+ *      to AppState `'active'` the DB verdict is re-read FIRST (bounded);
+ *      only then is the SDK cache invalidated and the entitlement re-read
+ *      (bounded) for the trial pill — an expiry mid-session drops the Pro UI
+ *      without a sign-out → sign-in cycle, with no RC wait in front of it.
  *   4. Tier-transition sync (REQ-PRO-UX): optimistically flips the cached
  *      profile `tier` when the store's `isPro` changes and reconciles the
  *      DB at +5s (the RevenueCat webhook is async).
@@ -34,9 +36,9 @@
  *     null, the store resolves from the DB profile only. The gate locks on
  *     the safe default.
  *   - `logInRevenueCat` fails → `console.warn` and fall through to the
- *     DB-first resolution. A failed bridge must NOT block Pro gating.
- *   - `getCustomerInfo` rejects or overruns its bound → resolved as null
- *     → free default, `isLoading: false`.
+ *     DB reconciliation. A failed bridge must NOT block Pro gating.
+ *   - `getCustomerInfo` rejects or overruns its bound → resolved as null;
+ *     the DB verdict still decides `isPro`, `isLoading: false`.
  *
  * Per-user race guard: `activeUserIdRef` holds the userId the effects are
  * CURRENTLY resolving for. Every await in the per-user path re-checks it
@@ -45,13 +47,14 @@
  * listener (attached once) uses the same ref — a callback from a previous
  * user's session or from the anonymous identity is dropped.
  *
- * Subscription state (post-cutover 0039, revenuecat-trial-migration slice B):
+ * Subscription state (post-cutover 0039 + sandbox-expiry fix):
  *   The DB profile carries `subscription_status` ('none' | 'active')
  *   and `ever_paid` — no `trial_ends_at`, no `'trial'` / `'expired'`.
- *   On every per-user resolution, the profile is read from DB to seed
- *   `everPaid` (the only DB-backed store field beyond `isPro` /
- *   `isLoading`). The pre-cutover `expire_overdue_trials` self-heal
- *   is gone (RPC dropped by 0039 §5).
+ *   `entitlement-reconcile.ts` reads that row on EVERY per-user resolution,
+ *   on the foreground refresh, and at the scan gate: the DB is authoritative
+ *   for revocation (`isPro` is written from the row), while a real
+ *   `customerInfoUpdate` grant stays a fast path protected by a 60s grace
+ *   window. The webhook is the only writer of tier/status (no client RPC).
  */
 import { useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
@@ -61,20 +64,26 @@ import {
   attachCustomerInfoListener,
   configure as configureRevenueCat,
   getCustomerInfo,
+  invalidateCustomerInfoCache,
   isNativeAvailable,
   logInRevenueCat,
   logOutRevenueCat,
   REVENUECAT_CALL_TIMEOUT_MS,
 } from '@/lib/revenuecat';
-import {
-  readProfileRow,
-} from '@/lib/supabase/feature-access';
 import { withTimeout } from '@/lib/with-timeout';
 import { useProStore } from '@/stores/use-pro-store';
 import { queryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
 import type { User } from '@/types';
 
+import {
+  clearEntitlementCache,
+  clearListenerGrant,
+  clearListenerGrants,
+  markRevoked,
+  reconcileEntitlementFromDB,
+  recordListenerGrant,
+} from './entitlement-reconcile';
 import { isProExpiredOverrideEnabled, isProOverrideEnabled } from './gate';
 
 const REVENUECAT_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? '';
@@ -87,48 +96,12 @@ const REVENUECAT_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? '';
 let bootstrapped = false;
 
 /**
- * Read the user's subscription state from the DB profile and push the
- * relevant flags into the store. Called on every per-user resolution
- * path that has a userId. Never throws — a failed read leaves the store
- * defaults (locked).
- * `isCurrent` is the per-user race guard: bails when the user flipped
- * while the profile read was in flight.
- *
- * Post-cutover (0039, revenuecat-trial-migration slice B):
- *   - The trial lifecycle surface is GONE. The DB profile carries
- *     `subscription_status` ('none' | 'active') + `ever_paid` — no
- *     `trial_ends_at` (column dropped by 0039 §7) and no `'trial'` /
- *     `'expired'` values (CHECK narrowed by 0039 §6).
- *   - The bootstrap's job reduces to seeding `everPaid` (the only field
- *     the store still owns besides `isPro` + `isLoading`). The
- *     `isPro` flip is driven by the webhook; this read is purely a
- *     safety net so a returning paid user isn't briefly locked while
- *     waiting for the webhook delivery.
- *   - The pre-cutover `expire_overdue_trials` self-heal call is gone
- *     (RPC dropped by 0039 §5).
- */
-async function syncSubscriptionFromDB(
-  userId: string,
-  isCurrent: () => boolean,
-): Promise<void> {
-  const result = await readProfileRow(userId);
-  if (!isCurrent()) return;
-  if (result.status === 'ok' && result.data) {
-    const { ever_paid } = result.data;
-    // Mirror the DB flag so the paywall + CustomerInfo listener never
-    // offer a free trial to an ever-paid user. `setEverPaid` is monotonic:
-    // a previously-set true (e.g. by the SDK listener) is never reset.
-    if (ever_paid) {
-      useProStore.getState().setEverPaid(true);
-    }
-  }
-}
-
-/**
- * Per-user resolution: bridge the RevenueCat identity, read the scoped
- * CustomerInfo snapshot, then resolve the store DB-first. Runs for EVERY
- * userId change (not just the first), so a sign-out → sign-in cycle in the
- * same process re-bridges the new user's identity.
+ * Per-user resolution: start the DB-authoritative reconciliation FIRST, then
+ * bridge the RevenueCat identity and read the scoped `CustomerInfo` snapshot
+ * (trial pill only) in a DETACHED parallel block. Only the bounded DB verdict
+ * gates `isLoading`, so a slow/degraded SDK cannot hold the gate closed.
+ * Runs for EVERY userId change (not just the first), so a sign-out → sign-in
+ * cycle in the same process re-bridges the new user's identity.
  *
  * `isCurrent` is the per-user race guard (bails after every await when the
  * user flipped); `identityBridged` mirrors `identityBridgedRef` so the
@@ -155,51 +128,54 @@ async function resolveProSession(
     return;
   }
 
-  // Bridge identity FIRST so the CustomerInfo snapshot below is scoped to
-  // this Supabase user. A failed bridge must NOT block Pro gating — warn,
-  // then resolve DB-first (the RC snapshot is not trustworthy for this
-  // user when the bridge failed; it could still belong to the anonymous or
-  // a previous identity).
-  let identityOk = false;
-  if (isNativeAvailable() && REVENUECAT_API_KEY) {
-    const identity = await logInRevenueCat(userId);
-    if (!isCurrent()) return;
-    identityOk = identity.ok;
-    identityBridged.current = identityOk;
-    if (!identityOk) {
-      console.warn(
-        '[pro-bootstrap] RevenueCat logIn failed, continuing:',
-        identity.message,
-      );
+  // DB authority FIRST. Starting the bounded read here — without awaiting RC
+  // — caps gate settling at RECONCILE_TIMEOUT_MS even when the SDK identity
+  // bridge or cache read degrades (each bounded at ~10s). A failed bridge
+  // must NOT skip this: the webhook writes the profile by Supabase user id.
+  const reconciliation = reconcileEntitlementFromDB(userId, isCurrent);
+
+  // Optional RC work runs in PARALLEL and is deliberately detached: the gate
+  // never waits on it. It includes the webhook identity bridge (so purchases
+  // land on the Supabase user, not $RCAnonymousID) and a cached snapshot used
+  // only for the trial-pill UI. A failed bridge is warned, not fatal.
+  const bridgedRcWork = (async () => {
+    let identityOk = false;
+    if (isNativeAvailable() && REVENUECAT_API_KEY) {
+      const identity = await logInRevenueCat(userId);
+      if (!isCurrent()) return;
+      identityOk = identity.ok;
+      identityBridged.current = identityOk;
+      if (!identityOk) {
+        console.warn(
+          '[pro-bootstrap] RevenueCat logIn failed, continuing:',
+          identity.message,
+        );
+      }
     }
-  }
 
-  // CustomerInfo snapshot, bounded so a hung native call cannot keep the
-  // gate locked (isLoading stays true → free users blocked from scanning).
-  // A failure/timeout resolves as null → safe free default.
-  const info = await withTimeout(
-    getCustomerInfo(),
-    REVENUECAT_CALL_TIMEOUT_MS,
-    null,
-  );
+    // CACHED snapshot: feeds only the trial pill, never `isPro`. A sandbox
+    // expiry can leave it reporting an active entitlement for minutes.
+    const info = await withTimeout(
+      getCustomerInfo(),
+      REVENUECAT_CALL_TIMEOUT_MS,
+      null,
+    );
+    if (!isCurrent()) return;
+    if (identityOk) {
+      useProStore.setState({ trialEndsAt: info?.trialEndsAt ?? null });
+    }
+  })().catch((err) => {
+    console.warn('[pro-bootstrap] optional RevenueCat background refresh failed:', err);
+  });
+
+  // The ONLY awaited gate is the bounded DB verdict: it writes `isPro`,
+  // seeds monotonic `ever_paid`, and invalidates the profile query. Clearing
+  // isLoading AFTER it lands keeps the gate locked (not falsely open) while
+  // the authority is unknown.
+  await reconciliation;
   if (!isCurrent()) return;
-
-  // Sync subscription state from DB FIRST — the DB is authoritative for
-  // trial/active status. RevenueCat entitlements are only relevant for paid
-  // subscriptions, not for our custom trial flow.
-  await syncSubscriptionFromDB(userId, isCurrent);
-  if (!isCurrent()) return;
-
-  // Only set isPro from RevenueCat when (a) the identity bridge actually
-  // succeeded (the snapshot is scoped to THIS user) and (b) the DB didn't
-  // already set it (DB trial/active status overrides RC entitlements).
-  const store = useProStore.getState();
-  if (identityOk && !store.isPro) {
-    useProStore.setState({
-      isPro: info?.isPro ?? false,
-    });
-  }
   useProStore.setState({ isLoading: false });
+  void bridgedRcWork;
 }
 
 /**
@@ -221,6 +197,8 @@ export function ProBootstrap(): null {
   const activeUserIdRef = useRef<string | null>(null);
   /** True when the CURRENT user's RevenueCat identity bridge succeeded. */
   const identityBridgedRef = useRef(false);
+  /** Previous listener-reported entitlement — stamps only false → true. */
+  const lastListenerIsProRef = useRef(false);
 
   // Effect 1 — ONE-TIME SDK setup. Configure runs at most once per process;
   // everything else about a session (identity bridge, snapshot, store
@@ -250,17 +228,30 @@ export function ProBootstrap(): null {
     // setter is atomic — both fields are written in a single `set`
     // call so the gate + the profile pill never disagree mid-update.
     attachCustomerInfoListener((snapshot) => {
-      if (activeUserIdRef.current === null || !identityBridgedRef.current) {
+      const currentUserId = activeUserIdRef.current;
+      if (currentUserId === null || !identityBridgedRef.current) {
         return;
       }
+      const previous = lastListenerIsProRef.current;
       setProEntitlement(snapshot);
-      // A real purchase activating the `pro` entitlement is a MONOTONIC
-      // event (migration 0021): the webhook sets ever_paid=true in the DB,
-      // but `syncSubscriptionFromDB` only runs per session — NOT on this
-      // listener. Mirror the DB flag immediately so the store never offers
-      // a free trial the server would reject for an ever-paid user. This
-      // is the only caller of `setEverPaid`.
-      if (snapshot.isPro) setEverPaid(true);
+
+      if (!snapshot.isPro) {
+        // A revoke callback invalidates any pending fast-path grant AND
+        // overwrites the cached verdict: a later failed DB read must not
+        // resurrect an older cached `true` and re-open the gate.
+        clearListenerGrant(currentUserId);
+        markRevoked(currentUserId);
+        lastListenerIsProRef.current = false;
+        return;
+      }
+
+      // Only a REAL false → true transition stamps a 60s grant. Repeated
+      // `isPro=true` callbacks are cache echoes, not fresh purchases.
+      if (!previous) recordListenerGrant(currentUserId);
+      // A real purchase is MONOTONIC (migration 0021): mirror the DB flag
+      // so a paid user is never offered a free trial the server rejects.
+      setEverPaid(true);
+      lastListenerIsProRef.current = true;
     });
   }, [userId, setProEntitlement, setEverPaid]);
 
@@ -269,10 +260,12 @@ export function ProBootstrap(): null {
   // This is what keeps the RevenueCat identity in sync across
   // sign-out → sign-in cycles in the same process.
   useEffect(() => {
-    // Keep the ref in sync FIRST so in-flight resolutions and listener
-    // callbacks compare against the latest identity.
+    // Every userId change (including null/sign-out) drops the previous
+    // user's fast-path grants AND last DB-verified verdict.
+    clearEntitlementCache();
+    lastListenerIsProRef.current = false;
     activeUserIdRef.current = userId;
-
+    clearListenerGrants();
     if (isProExpiredOverrideEnabled()) {
       // DEV-ONLY (downgrade QA): mirror the `isProOverrideEnabled` branch
       // but force the EXPIRED state — the store resolves locked so the
@@ -285,9 +278,9 @@ export function ProBootstrap(): null {
       identityBridgedRef.current = false;
       if (userId) {
         useProStore.setState({ isPro: false, isLoading: false });
-        // Still sync subscription state from DB for frozen-state resolution
-        // (mirror of the true-override branch below).
-        void syncSubscriptionFromDB(
+        // Reconciliation still respects the override (returns false) while
+        // keeping the monotonic ever_paid seed from the profile.
+        void reconcileEntitlementFromDB(
           userId,
           () => activeUserIdRef.current === userId,
         );
@@ -302,8 +295,9 @@ export function ProBootstrap(): null {
       // above wins — the two overrides are mutually exclusive by contract.
       if (userId) {
         useProStore.setState({ isPro: true, isLoading: false });
-        // Still sync subscription state from DB for frozen-state resolution.
-        void syncSubscriptionFromDB(
+        // Reconciliation still respects the override (returns true) while
+        // keeping the monotonic ever_paid seed from the profile.
+        void reconcileEntitlementFromDB(
           userId,
           () => activeUserIdRef.current === userId,
         );
@@ -351,22 +345,11 @@ export function ProBootstrap(): null {
   // transitions to `'active'`, with the same bounded pattern as
   // `resolveProSession`.
   //
-  // Guards (all must pass before the SDK read):
-  //   - `activeUserIdRef.current !== null` — a signed-out app never resolves
-  //   - `identityBridgedRef.current === true` — only a bridged user's
-  //     snapshot is trustworthy; this ALSO implies the SDK is available AND
-  //     configured (the bridge only succeeds after `logInRevenueCat`, which
-  //     requires the native module + API key + `configure` — revenuecat.ts)
-  //   - `!isProOverrideEnabled()` — never touch the store under the dev
-  //     override (same rule as the listener)
-  //   - `!isProExpiredOverrideEnabled()` — a real re-read would fight the
-  //     simulated downgrade (fix 2), so the expired override also blocks it
-  //
-  // After the await the per-user race guard re-checks `userId`, so an
-  // in-flight foreground refresh for user A can never write B's store state
-  // (same pattern as `resolveProSession`). The store write goes through the
-  // slice-C `setProEntitlement` setter — `isPro` + `trialEndsAt` land in one
-  // atomic `set`, keeping the gate + the profile trial pill consistent.
+  // Top guard: signed-out and dev overrides block the whole refresh. The
+  // bridge ref is deliberately NOT here — a degraded RC bridge must never
+  // skip DB reconciliation. It gates only the optional RC read below.
+  // After each await the per-user guard re-checks `userId`, so an in-flight
+  // refresh for user A can never write B's store state.
   useEffect(() => {
     if (!userId) return; // signed out: no subscription (and `userId` narrows to string below)
 
@@ -376,7 +359,6 @@ export function ProBootstrap(): null {
         if (status !== 'active') return;
         if (
           activeUserIdRef.current === null ||
-          !identityBridgedRef.current ||
           isProOverrideEnabled() ||
           isProExpiredOverrideEnabled()
         ) {
@@ -384,35 +366,42 @@ export function ProBootstrap(): null {
         }
 
         void (async () => {
-          const info = await withTimeout(
-            getCustomerInfo(),
-            REVENUECAT_CALL_TIMEOUT_MS,
-            null,
+          // DB verdict FIRST — the only awaited gate. The reconciler
+          // invalidates the profile query on success, so no second
+          // invalidation is needed here. A slow RC cache read must not delay
+          // an expiry from dropping the Pro UI.
+          await reconcileEntitlementFromDB(
+            userId,
+            () => activeUserIdRef.current === userId,
           );
-          if (activeUserIdRef.current !== userId) return; // user flipped mid-flight
-          if (isProOverrideEnabled()) return; // never touch the store under the dev override
-
-          setProEntitlement({
-            isPro: info?.isPro ?? false,
-            trialEndsAt: info?.trialEndsAt ?? null,
-          });
+          if (activeUserIdRef.current !== userId) return;
           useProStore.setState({ isLoading: false });
 
-          // The tier-transition effect below flips the cached `tier`
-          // optimistically when `isPro` changes and reconciles at +5s (the
-          // RevenueCat webhook is async). Invalidating the profile query now
-          // re-reads the webhook-painted DB row so the header settles on the
-          // new tier immediately.
-          if (activeUserIdRef.current === userId) {
-            void queryClient.invalidateQueries({
-              queryKey: queryKeys.profile(userId),
-            });
+          // Cached SDK read for the TRIAL PILL ONLY, bounded and after the
+          // verdict: it must never write `isPro` — a failed DB read would
+          // leave a stale RC true in the store.
+          if (identityBridgedRef.current) {
+            await withTimeout(
+              invalidateCustomerInfoCache(),
+              REVENUECAT_CALL_TIMEOUT_MS,
+              undefined,
+            );
+            if (activeUserIdRef.current !== userId) return;
+
+            const info = await withTimeout(
+              getCustomerInfo(),
+              REVENUECAT_CALL_TIMEOUT_MS,
+              null,
+            );
+            if (activeUserIdRef.current !== userId) return;
+            if (isProOverrideEnabled() || isProExpiredOverrideEnabled()) return;
+            useProStore.setState({ trialEndsAt: info?.trialEndsAt ?? null });
           }
         })();
       },
     );
     return () => subscription.remove();
-  }, [userId, setProEntitlement]);
+  }, [userId]);
 
   // Tier-transition sync (REQ-PRO-UX): when the store reports a tier
   // flip (typically from the customerInfoUpdate listener after a

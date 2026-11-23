@@ -1176,6 +1176,98 @@ async function run() {
     );
   });
 
+  await test('scan gate uses a fresh verdict fast path, awaiting DB only when needed', () => {
+    const gate = readFileSync(
+      join(root, 'src/features/home/hooks/useScanQuotaGate.ts'),
+      'utf8',
+    );
+    const reconcilePos = gate.indexOf('reconcileEntitlementFromDB(');
+    const quotaPos = gate.indexOf('computeQuotaState(');
+    assert.ok(reconcilePos >= 0, 'the gate must still be able to reconcile from DB');
+    assert.ok(
+      quotaPos > reconcilePos,
+      `computeQuotaState must run after the verdict is chosen (got ${reconcilePos}/${quotaPos})`,
+    );
+    assert.match(
+      gate,
+      /import \{[\s\S]*?getFastPathVerdict,[\s\S]*?reconcileEntitlementFromDB,?[\s\S]*?\} from '@\/features\/pro\/entitlement-reconcile';/,
+      'the gate must import the synchronous verdict snapshot alongside reconciliation',
+    );
+    assert.match(
+      gate,
+      /const fastPath = userId \? getFastPathVerdict\(userId\) : null;/,
+      'a fresh verdict must be read synchronously, before any network wait',
+    );
+    assert.match(
+      gate,
+      /const reconciledIsPro = fastPath[\s\S]*?\? fastPath\.isPro[\s\S]*?: userId[\s\S]*?\? await reconcileEntitlementFromDB\(userId,[^)]*\)[\s\S]*?: isPro;/,
+      'a fresh verdict settles the tap; absent/stale verdicts or a pending revoke await a real DB read',
+    );
+    assert.match(
+      gate,
+      /if \(userId && fastPath\) \{[\s\S]*?void reconcileEntitlementFromDB\(userId,[^)]*\);[\s\S]*?\}/,
+      'the background reconcile must refresh the verdict without blocking this tap',
+    );
+    assert.match(
+      gate,
+      /await reconcileEntitlementFromDB\(\s*userId,/,
+      'the forced fresh check must be awaited, not fired and forgotten',
+    );
+    assert.doesNotMatch(
+      gate,
+      /reconcileEntitlementFromDB\(userId,\s*\(\)\s*=>\s*true/,
+      'a fake always-current guard must never be passed — the session store must arbitrate',
+    );
+    assert.match(
+      gate,
+      /useSessionStore\.getState\(\)\.session\?\.user\.id === userId/,
+      'the gate must pass a real session-based race guard from the auth store',
+    );
+    assert.match(
+      gate,
+      /computeQuotaState\(used, limit, reconciledIsPro\)/,
+      'the reconciled flag (not the stale hook value) must drive quota state',
+    );
+    assert.match(
+      gate,
+      /if \(used === null && !reconciledIsPro && userId\)/,
+      'the scan-usage refetch must also use the reconciled flag',
+    );
+    assert.match(
+      gate,
+      /if \(used !== null\)[\s\S]*?computeQuotaState\(/,
+      'unknown scan-usage state must still never block',
+    );
+  });
+
+  await test('scan-usage refetch is bounded by the same 2.5s tap guard', () => {
+    const gate = readFileSync(
+      join(root, 'src/features/home/hooks/useScanQuotaGate.ts'),
+      'utf8',
+    );
+    assert.match(
+      gate,
+      /import \{ withTimeout \} from '@\/lib\/with-timeout';/,
+      'the gate must import the shared bounded-wait helper',
+    );
+    assert.match(
+      gate,
+      /SCAN_USAGE_REFETCH_TIMEOUT_MS = 2_500/,
+      'the scan-usage refetch must use the same 2.5s bound as reconciliation',
+    );
+    assert.match(
+      gate,
+      /withTimeout\(\s*queryClient\.refetchQueries\(\{ queryKey: key \}\),\s*SCAN_USAGE_REFETCH_TIMEOUT_MS,\s*undefined,?\s*\)/,
+      'a hung refetch must settle to cached data instead of blocking the tap',
+    );
+    const refetchPos = gate.indexOf('queryClient.refetchQueries(');
+    const cacheReadPos = gate.indexOf('queryClient.getQueryData<');
+    assert.ok(
+      refetchPos >= 0 && cacheReadPos > refetchPos,
+      'the value already in cache must be read after the bounded refetch settles',
+    );
+  });
+
   // The household card has TWO async inputs: the household/members read
   // (`useHousehold`) and the month-total read (`useHouseholdMonthTotal`).
   // The skeleton must own the footprint while EITHER is pending — otherwise
