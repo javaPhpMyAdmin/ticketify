@@ -1011,7 +1011,7 @@ begin
   assert has_function_privilege('authenticated', 'public.household_chart_series(uuid, text[])', 'EXECUTE'),
     'authenticated must be able to execute household_chart_series';
 
-  -- Act as member A; the §4c fixture rows survive the orphan-prune assertions.
+  -- Act as member A; the surviving §4c fixture rows remain in purchases.
   perform set_config('request.jwt.claims', '{"sub":"a9000000-0000-0000-0000-000000000001"}', true);
 
   select count(*) into v_hcs_rows
@@ -1030,8 +1030,8 @@ begin
   select total into v_hcs_total
     from public.household_chart_series(v_ag_hid, array['2026-08']::text[])
    where year_month = '2026-08' and currency = 'CLP';
-  assert v_hcs_total = 70.00,
-    'household chart series CLP net must be 70.00 after §4c orphan-prune removed A''s 70 purchase';
+  assert v_hcs_total = 200.00,
+    'household chart series CLP net must be 200.00 (B''s surviving purchase) after §4c orphan-prune removed A''s 70 purchase';
 
   select total into v_hcs_total
     from public.household_chart_series(v_ag_hid, array['2026-09']::text[])
@@ -1058,7 +1058,8 @@ begin
   select (category_totals -> 'lacteos' ->> 'total')::numeric into v_hcs_total
     from public.household_chart_series(v_ag_hid, array['2026-08']::text[])
    where currency = 'CLP';
-  assert v_hcs_total = 70.00, 'category_totals must mirror 0044 (CLP lacteos = 70 after prune)';
+  assert v_hcs_total = 200.00,
+    'category_totals must mirror 0044 (CLP lacteos = 200 after prune)';
 
   select coalesce(sum((value ->> 'total')::numeric), 0) into v_hcs_total
     from public.household_chart_series(v_ag_hid, array['2026-08']::text[]) x,
