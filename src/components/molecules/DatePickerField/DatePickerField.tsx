@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { Icon, Text } from '@/components/atoms';
@@ -8,6 +14,8 @@ import { colors, radii, spacing, typography } from '@/theme';
 
 import { todayLocalISO, fullMonthForLocale, type FormatDateLocale } from '@/lib/format';
 import {
+  CALENDAR_COLUMN_GAP,
+  calendarCellSize,
   isoFromParts,
   isFutureISO,
   monthGrid,
@@ -71,6 +79,19 @@ export function DatePickerField({
   // `Date#getMonth`), with today as the fallback seed.
   const [month, setMonth] = useState(seedMonthFromISO(value, today));
   const [day, setDay] = useState<number | null>(initial.day);
+
+  // The header and grid must use the SAME explicit cell size derived from the
+  // measured container width / 7, with the grid's column gap coming from the
+  // same CALENDAR_COLUMN_GAP constant. A percentage width wrapped at six cells
+  // per row on device, shifting every day into the wrong weekday column. Until
+  // onLayout fires, seed from the window width minus both horizontal paddings
+  // of the calendar container (spacing.lg on each side).
+  const { width: windowWidth } = useWindowDimensions();
+  const [containerWidth, setContainerWidth] = useState(
+    Math.max(0, windowWidth - 2 * spacing.lg),
+  );
+  const cellSize = calendarCellSize(containerWidth, CALENDAR_COLUMN_GAP);
+  const cellStyle = { width: cellSize, height: cellSize };
 
   // Re-seed the internal buffer whenever the sheet opens (value may change
   // while closed). `today` is a stable string for the whole day, so it is
@@ -175,49 +196,54 @@ export function DatePickerField({
         contentContainerStyle={styles.calendar}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.headRow}>
-          {weekdayLabels(true).map((label, i) => (
-            <View key={i} style={styles.cell}>
-              <Text style={styles.weekday}>{label}</Text>
-            </View>
-          ))}
-        </View>
-        <View style={styles.grid}>
-          {grid.map((d, i) => {
-            const iso = d != null ? isoFromParts({ year, month: month + 1, day: d }) : null;
-            const isFutureCell = iso !== null && isFutureISO(iso, today);
-            const isSelected = d != null && d === day && !isFuture;
-            return (
-              <View key={i} style={styles.cell}>
-                {d != null ? (
-                  <Pressable
-                    onPress={() => selectDay(d)}
-                    disabled={isFutureCell}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${t('a11y:dayPrefix')} ${d}`}
-                    style={({ pressed }) => [
-                      styles.dayCell,
-                      isSelected && styles.dayCellSelected,
-                      pressed && !isFutureCell && styles.dayCellPressed,
-                      isFutureCell && styles.dayCellDisabled,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.dayText,
-                        isSelected && styles.dayTextSelected,
-                        isFutureCell && styles.dayTextDisabled,
+        <View
+          style={styles.calendarGrid}
+          onLayout={(event) => setContainerWidth(event.nativeEvent.layout.width)}
+        >
+          <View style={styles.headRow}>
+            {weekdayLabels(true).map((label, i) => (
+              <View key={i} style={[styles.cell, cellStyle]}>
+                <Text style={styles.weekday}>{label}</Text>
+              </View>
+            ))}
+          </View>
+          <View style={styles.grid}>
+            {grid.map((d, i) => {
+              const iso = d != null ? isoFromParts({ year, month: month + 1, day: d }) : null;
+              const isFutureCell = iso !== null && isFutureISO(iso, today);
+              const isSelected = d != null && d === day && !isFuture;
+              return (
+                <View key={i} style={[styles.cell, cellStyle]}>
+                  {d != null ? (
+                    <Pressable
+                      onPress={() => selectDay(d)}
+                      disabled={isFutureCell}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${t('a11y:dayPrefix')} ${d}`}
+                      style={({ pressed }) => [
+                        styles.dayCell,
+                        isSelected && styles.dayCellSelected,
+                        pressed && !isFutureCell && styles.dayCellPressed,
+                        isFutureCell && styles.dayCellDisabled,
                       ]}
                     >
-                      {d}
-                    </Text>
-                  </Pressable>
-                ) : (
-                  <View style={styles.dayCell} />
-                )}
-              </View>
-            );
-          })}
+                      <Text
+                        style={[
+                          styles.dayText,
+                          isSelected && styles.dayTextSelected,
+                          isFutureCell && styles.dayTextDisabled,
+                        ]}
+                      >
+                        {d}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <View style={styles.dayCell} />
+                  )}
+                </View>
+              );
+            })}
+          </View>
         </View>
         <Text style={styles.helper}>
           {isFuture ? t('a11y:futureBlocked') : `${t('a11y:maxToday')} (${today})`}
@@ -288,16 +314,20 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
     gap: spacing.sm,
   },
+  calendarGrid: {
+    gap: spacing.sm,
+  },
   headRow: {
     flexDirection: 'row',
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    columnGap: CALENDAR_COLUMN_GAP,
   },
   cell: {
-    width: `${100 / 7}%`,
-    aspectRatio: 1,
+    // Width and height come from the measured `cellStyle` — a percentage
+    // width resolved to six cells per row on device.
     alignItems: 'center',
     justifyContent: 'center',
   },

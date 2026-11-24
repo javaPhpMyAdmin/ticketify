@@ -402,6 +402,9 @@ async function calendarTests(calendar) {
     weekdayLabels,
     fullMonthES,
     seedMonthFromISO,
+    calendarCellSize,
+    calendarColumnsFor,
+    CALENDAR_COLUMN_GAP,
     pad2,
   } = calendar;
 
@@ -517,6 +520,237 @@ async function calendarTests(calendar) {
 
   await test('seedMonthFromISO: no parseable input falls back to now', () => {
     assert.equal(seedMonthFromISO(null, null), new Date().getMonth());
+  });
+
+  await test('calendarColumnsFor: 345px wraps to exactly 7 columns with no gap', () => {
+    // Executed model of RN flexWrap: the helper counts how many whole
+    // (cellSize + gap) columns fit the measured container. Source-only token
+    // pins cannot catch a later `gap` added to styles.grid; executing the
+    // wrap math can.
+    const size = calendarCellSize(345);
+    assert.equal(size, 49);
+    assert.equal(calendarColumnsFor(345, size, CALENDAR_COLUMN_GAP), 7);
+  });
+
+  await test('calendarColumnsFor: sizing adapts when a horizontal gap exists', () => {
+    // If the layout adds an 8px column gap, sizing must solve for
+    // (width - 6*gap) / 7 so the SAME seven columns still fit.
+    const gap = 8;
+    assert.equal(calendarCellSize(345, gap), 42);
+    assert.equal(calendarColumnsFor(345, calendarCellSize(345, gap), gap), 7);
+    // Triangulation at other measured widths: remainders still get dropped.
+    assert.equal(calendarCellSize(293, gap), 35);
+    assert.equal(calendarColumnsFor(293, calendarCellSize(293, gap), gap), 7);
+    assert.equal(calendarCellSize(350, gap), 43);
+    assert.equal(calendarColumnsFor(350, calendarCellSize(350, gap), gap), 7);
+  });
+
+  await test('calendarColumnsFor: decoupling gap from sizing drops to 6 columns', () => {
+    // The exact regression from review: cell size still uses /7 while the
+    // grid adds an 8px gap -> 7*49 + 6*8 = 391 > 345 -> six columns.
+    assert.equal(calendarColumnsFor(345, calendarCellSize(345), 8), 6);
+  });
+
+  await test('calendarCellSize: seven cells fit at measured widths; eighth only where possible', () => {
+    for (const width of [293, 345, 350]) {
+      const size = calendarCellSize(width);
+      assert.equal(Number.isInteger(size), true, `${width}: integer size`);
+      assert.ok(7 * size <= width, `${width}: seven cells must fit`);
+      assert.ok(8 * size > width, `${width}: an eighth cell must not fit`);
+      assert.equal(
+        calendarColumnsFor(width, size, CALENDAR_COLUMN_GAP),
+        7,
+        `${width}: seven columns must fit`,
+      );
+    }
+    // Device-range edges from the report (288-398px) still produce 7 columns
+    // even where an eighth-cell claim is not asserted.
+    for (const width of [288, 398]) {
+      const size = calendarCellSize(width);
+      assert.ok(7 * size <= width, `${width}: seven cells must fit`);
+      assert.equal(
+        calendarColumnsFor(width, size, CALENDAR_COLUMN_GAP),
+        7,
+        `${width}: seven columns must fit`,
+      );
+    }
+  });
+
+  await test('calendarCellSize: tiny widths outside the device range can fit eight cells', () => {
+    // w=48 -> floor(48/7)=6 -> 8*6=48, so a floored size cannot keep an
+    // eighth cell out. Measured device widths are 288-398px; this case only
+    // documents the mathematical limit, not a supported-device regression.
+    const size = calendarCellSize(48);
+    assert.equal(size, 6);
+    assert.ok(7 * size <= 48);
+    assert.equal(8 * size, 48);
+    assert.equal(calendarColumnsFor(48, size, CALENDAR_COLUMN_GAP), 8);
+    assert.equal(calendarCellSize(40), 5);
+    assert.equal(
+      calendarColumnsFor(40, calendarCellSize(40), CALENDAR_COLUMN_GAP),
+      8,
+    );
+  });
+
+  await test('calendarCellSize: invalid widths and non-positive cell size are guarded', () => {
+    for (const bad of [0, -10, Number.NaN, Number.POSITIVE_INFINITY]) {
+      assert.equal(calendarCellSize(bad), 0, `${bad}: invalid width → 0`);
+      assert.equal(
+        calendarColumnsFor(345, calendarCellSize(bad)),
+        0,
+        `${bad}: zero cell size → 0 columns`,
+      );
+    }
+    assert.equal(calendarColumnsFor(345, 0), 0);
+    assert.equal(calendarColumnsFor(345, -1), 0);
+  });
+
+  await test('calendarCellSize: invalid and too-large gaps yield zero', () => {
+    // The helpers are exported, so any caller may pass any number. A
+    // non-finite or negative gap, or one that consumes the whole container,
+    // must not leak NaN / negative sizes into React Native style objects.
+    assert.equal(calendarCellSize(345, Number.NaN), 0);
+    assert.equal(calendarCellSize(345, Number.POSITIVE_INFINITY), 0);
+    assert.equal(calendarCellSize(345, -1), 0);
+    // 345 - 6*60 = -15: no usable width remains for seven cells.
+    assert.equal(calendarCellSize(345, 60), 0);
+  });
+
+  await test('calendarColumnsFor: invalid gaps and non-finite width yield zero', () => {
+    assert.equal(calendarColumnsFor(345, 49, Number.NaN), 0);
+    assert.equal(calendarColumnsFor(345, 49, -1), 0);
+    assert.equal(calendarColumnsFor(Number.NaN, 49, 0), 0);
+  });
+
+  await test('monthGrid: November 2026 keeps 6 blanks, day 24 in the Tuesday column', () => {
+    // Regression pin for the reported screenshot. monthGrid is correct and
+    // must NOT change: 6 leading blanks (Nov 1 is a Sunday), 30 days, so day
+    // 24 sits at index 29 -> column 1 (the second M / Tuesday) and the D
+    // column holds 1, 8, 15, 22, 29.
+    const grid = monthGrid(2026, 10, true);
+    assert.equal(grid.length, 36);
+    assert.equal(grid.filter((d) => d === null).length, 6);
+    const index24 = grid.indexOf(24);
+    assert.equal(index24, 29);
+    assert.equal(index24 % 7, 1);
+    for (const day of [1, 8, 15, 22, 29]) {
+      const index = grid.indexOf(day);
+      assert.ok(index >= 0, `day ${day} must be present`);
+      assert.equal(index % 7, 6, `day ${day} must land in the D column`);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Calendar layout pins
+//
+// The 6-per-row bug manifests on device (percentage width + flexWrap), which
+// the Node harness cannot mount. The executed `calendarColumnsFor` tests above
+// model the wrap math; these pins freeze the style/sizing coupling that keeps
+// the two in sync.
+// ---------------------------------------------------------------------------
+
+async function calendarLayoutTests() {
+  const componentSource = readFileSync(
+    join(root, 'src/components/molecules/DatePickerField/DatePickerField.tsx'),
+    'utf8',
+  );
+  const calendarSource = readFileSync(
+    join(root, 'src/components/molecules/DatePickerField/calendar.ts'),
+    'utf8',
+  );
+
+  await test('calendar layout: sizing and grid gap share one exported constant', () => {
+    assert.ok(
+      /export const CALENDAR_COLUMN_GAP\s*=\s*0\b/.test(calendarSource),
+      'the gap must be exported from calendar.ts as a single source of truth',
+    );
+    const start = calendarSource.indexOf('export function calendarCellSize');
+    assert.ok(start >= 0, 'calendarCellSize must be exported from calendar.ts');
+    const helper = calendarSource.slice(
+      start,
+      calendarSource.indexOf('\n}', start) + 2,
+    );
+    assert.ok(
+      /gap[^,]*=\s*CALENDAR_COLUMN_GAP/.test(helper),
+      'the sizing helper must default its gap to the shared constant',
+    );
+    assert.ok(
+      /containerWidth\s*-\s*6\s*\*\s*gap/.test(helper),
+      'six interior gaps must be removed before dividing by seven',
+    );
+    assert.ok(
+      /\/\s*7\b/.test(helper),
+      'cell size must divide by 7 (seven weekday columns)',
+    );
+    assert.ok(
+      !/\/ 6\b/.test(helper),
+      'a / 6 divisor is the exact 6-cells-per-row regression',
+    );
+    assert.ok(
+      calendarSource.includes('export function calendarColumnsFor'),
+      'the executed wrap model must be exported from calendar.ts',
+    );
+  });
+
+  await test('calendar layout: measured cell size is coupled to styles.grid columnGap', () => {
+    assert.ok(
+      componentSource.includes('useWindowDimensions'),
+      'window width seeds the initial fallback before layout',
+    );
+    assert.ok(
+      /windowWidth\s*-\s*2\s*\*\s*spacing\.lg/.test(componentSource),
+      'fallback subtracts the calendar horizontal padding on both sides',
+    );
+    assert.ok(
+      componentSource.includes('onLayout='),
+      'onLayout measures the real container width on device',
+    );
+    assert.ok(
+      !componentSource.includes('100 / 7'),
+      'percentage cell width must be gone',
+    );
+    assert.ok(
+      !componentSource.includes('aspectRatio'),
+      'aspect-ratio sizing must be gone',
+    );
+    const sharedStyleUses = componentSource.split('[styles.cell, cellStyle]').length - 1;
+    assert.ok(
+      sharedStyleUses >= 2,
+      `header and day cells must share the explicit size (found ${sharedStyleUses})`,
+    );
+
+    const importStart = componentSource.indexOf("import {\n  CALENDAR_COLUMN_GAP,");
+    assert.ok(importStart >= 0, 'component must import CALENDAR_COLUMN_GAP');
+    const calendarImport = componentSource.slice(
+      importStart,
+      componentSource.indexOf("} from './calendar';", importStart),
+    );
+    assert.ok(
+      calendarImport.includes('CALENDAR_COLUMN_GAP'),
+      'the shared gap constant must come from calendar.ts',
+    );
+    assert.ok(
+      componentSource.includes(
+        'calendarCellSize(containerWidth, CALENDAR_COLUMN_GAP)',
+      ),
+      'cell sizing must consume the same gap constant as the grid',
+    );
+
+    const gridStart = componentSource.indexOf('  grid: {');
+    assert.ok(gridStart >= 0, 'styles.grid must exist');
+    const gridStyle = componentSource.slice(
+      gridStart,
+      componentSource.indexOf('\n  },', gridStart) + 5,
+    );
+    assert.ok(
+      /columnGap:\s*CALENDAR_COLUMN_GAP/.test(gridStyle),
+      'styles.grid must use the shared constant for its column gap',
+    );
+    assert.ok(
+      !/(^|\n)\s*gap\s*:/.test(gridStyle),
+      'an extra gap on styles.grid would decouple the layout and wrap at six',
+    );
   });
 }
 
@@ -2580,6 +2814,7 @@ async function run() {
 
   const calendar = await importOut('calendar.js');
   await calendarTests(calendar);
+  await calendarLayoutTests();
   const form = await importOut('manual-form.js');
   await manualFormTests(form);
   const format = await importOut('../lib-stubs/format.js');

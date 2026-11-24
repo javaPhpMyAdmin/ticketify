@@ -1,7 +1,7 @@
 /**
  * Pure date-picker calendar logic — no React, no RN, no Supabase.
  *
- * Node-loadable so the harness (`scripts/test-date-picker.mjs`) compiles and
+ * Node-loadable so the harness (`scripts/test-manual-screen.mjs`) compiles and
  * imports these functions directly to verify the calendar contract without a
  * device. Operates on plain ISO date strings (YYYY-MM-DD) matching the
  * `purchases.purchase_date` format the RPC stores (`p_purchase_date`); no
@@ -83,6 +83,74 @@ export function monthGrid(year: number, month: number, mondayFirst: boolean) {
   const blanks: (number | null)[] = Array.from({ length: lead }, () => null);
   const days: (number | null)[] = Array.from({ length: total }, (_, i) => i + 1);
   return blanks.concat(days);
+}
+
+/**
+ * Horizontal gap between calendar columns. Kept as a single exported
+ * constant so the sizing helper and the `styles.grid` style cannot drift
+ * apart: adding a gap in one place without the other wraps at six columns.
+ */
+export const CALENDAR_COLUMN_GAP = 0;
+
+/**
+ * Explicit size of one calendar cell for a measured container width.
+ *
+ * The header and the day grid both have exactly seven columns
+ * (`L M M J V S D`), so the size must be derived from `/ 7`. A percentage
+ * width combined with `flexWrap` resolved to six cells per row on device,
+ * shifting every day into the wrong weekday column. Flooring keeps seven
+ * whole cells inside the container. When a horizontal gap is present, the
+ * six interior gaps are subtracted before dividing by seven.
+ *
+ * Guarantees SEVEN cells fit. An eighth cell does not fit only for widths
+ * where an integer solution exists (reliably >= 56px, which covers every
+ * measured device width of 288-398px); very small widths such as 48px can
+ * still hold eight floored cells.
+ *
+ * Because the helper is exported, callers can pass any number: a negative
+ * or non-finite gap, or a gap that leaves no usable width, yields 0 instead
+ * of a NaN or negative style value.
+ */
+export function calendarCellSize(
+  containerWidth: number,
+  gap: number = CALENDAR_COLUMN_GAP,
+): number {
+  if (
+    !Number.isFinite(containerWidth) ||
+    containerWidth <= 0 ||
+    !Number.isFinite(gap) ||
+    gap < 0 ||
+    containerWidth - 6 * gap <= 0
+  )
+    return 0;
+  return Math.floor((containerWidth - 6 * gap) / 7);
+}
+
+/**
+ * Number of whole `(cellSize + gap)` columns that fit in the measured
+ * container — the executed model of React Native's `flexWrap`. Used by the
+ * harness to prove the grid stays at seven columns rather than relying on
+ * source-token pins alone. A non-positive (or non-finite) cell size has no
+ * meaningful column count and yields 0. The same gap guards as the sizing
+ * helper apply: a negative or non-finite gap, or a gap that leaves no usable
+ * width, also yields 0 (a negative gap could otherwise divide by zero).
+ */
+export function calendarColumnsFor(
+  containerWidth: number,
+  cellSize: number,
+  gap: number = CALENDAR_COLUMN_GAP,
+): number {
+  if (
+    !Number.isFinite(containerWidth) ||
+    containerWidth <= 0 ||
+    !Number.isFinite(cellSize) ||
+    cellSize <= 0 ||
+    !Number.isFinite(gap) ||
+    gap < 0 ||
+    containerWidth - 6 * gap <= 0
+  )
+    return 0;
+  return Math.floor((containerWidth + gap) / (cellSize + gap));
 }
 
 /**
