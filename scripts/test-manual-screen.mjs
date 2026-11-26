@@ -144,6 +144,18 @@ const PICKER_FORM_REWRITES = [
     /from ['"]@\/features\/home\/categories['"]/g,
     "from './categories'",
   ],
+  // The picker form injects a translator via the pure localization seam; the
+  // workdir has no tsconfig paths, so point it at the compiled real helper.
+  [
+    /from ['"]@\/i18n\/localizedCategoryLabel['"]/g,
+    "from './localizedCategoryLabel'",
+  ],
+];
+const LOCALIZED_LABEL_REWRITES = [
+  [
+    /from ['"]@\/features\/home\/categories['"]/g,
+    "from './categories'",
+  ],
 ];
 
 function compile() {
@@ -188,6 +200,23 @@ function compile() {
     HOME_CATEGORIES_REWRITES,
   );
   writeFileSync(join(srcDir, 'categories.ts'), homeCategoriesSource);
+
+  // --- localizedCategoryLabel.ts — pure seam for category i18n; the
+  // canonical-key membership check comes from the real categories.ts above.
+  const localizedLabelPath = join(
+    root,
+    'src/i18n/localizedCategoryLabel.ts',
+  );
+  if (existsSync(localizedLabelPath)) {
+    const localizedLabelSource = patchImports(
+      readFileSync(localizedLabelPath, 'utf8'),
+      LOCALIZED_LABEL_REWRITES,
+    );
+    writeFileSync(
+      join(srcDir, 'localizedCategoryLabel.ts'),
+      localizedLabelSource,
+    );
+  }
 
   // --- category-picker-form.ts — NEW in slice 3/7; guarded so the RED
   // phase runs cleanly before the module lands (ERR_MODULE_NOT_FOUND is
@@ -1402,7 +1431,7 @@ async function categoryPickerFormTests(picker, catalog, taxonomy) {
     assert.equal(row?.icon, 'sparkles');
   });
 
-  await test('chip row: unknown slug buckets to the canonical otros row (catalog present)', () => {
+  await test('chip row: unknown slug keeps its own identity (catalog present)', () => {
     const catalog = mergeCategoryCatalog(
       [
         { id: 'c-otros', slug: 'otros', name: 'Otros', kind: 'want', icon: 'ellipsis', color: '#4B5563', sort_order: 99, user_id: null },
@@ -1410,8 +1439,10 @@ async function categoryPickerFormTests(picker, catalog, taxonomy) {
       [],
     );
     const row = picker.pickerRowForCategory(catalog, 'no-such-slug');
-    assert.equal(row?.slug, 'otros');
-    assert.equal(row?.label, 'Otros');
+    assert.equal(row?.slug, 'no-such-slug');
+    assert.equal(row?.label, 'no-such-slug');
+    assert.notEqual(row?.label, taxonomy.EXPENSE_CATEGORIES.otros.label);
+    assert.equal(row?.icon, taxonomy.EXPENSE_CATEGORIES.otros.icon);
   });
 
   await test('chip row: null/empty selection stays null (null default kept, never otros)', () => {
@@ -1427,6 +1458,18 @@ async function categoryPickerFormTests(picker, catalog, taxonomy) {
 
   await test('chip row: empty catalog (pre-load) resolves nothing — caller falls back to static', () => {
     assert.equal(picker.pickerRowForCategory(undefined, 'lacteos'), null);
+  });
+
+  await test('chip row label renders the already-localized row verbatim', () => {
+    let calls = 0;
+    const translator = (key) => {
+      calls += 1;
+      return key === 'categories:panaderia' ? 'Bakery' : '';
+    };
+    const row = picker.pickerRowForCategory({}, 'panaderia', translator);
+    assert.equal(picker.categoryRowLabel(row, 'No category'), 'Bakery');
+    assert.equal(calls, 1);
+    assert.equal(picker.categoryRowLabel(null, 'No category'), 'No category');
   });
 
   // ── W-3 parity pins (display convergence) ──────────────────────────────
@@ -2216,7 +2259,7 @@ async function editorWiringTests() {
     );
     assert.ok(
       editorSource.includes("t('tickets:noCategory')"),
-      'null selection must render SIN CATEGORÍA (never the otros fallback)',
+      'null selection must render the localized no-category copy (never the otros fallback)',
     );
   });
 
@@ -2385,12 +2428,16 @@ async function editorWiringTests() {
 
   await test('review: ReviewItemRow resolves chips through the catalog (custom slugs render)', () => {
     assert.ok(
-      rowSource.includes('pickerRowForCategory('),
+      rowSource.includes('reviewChipRowForCategory('),
       'the chip must resolve custom slugs against the merged catalog',
     );
     assert.ok(
+      !rowSource.includes('getExpenseCategory('),
+      'the static registry must not relabel custom slugs as Otros',
+    );
+    assert.ok(
       rowSource.includes("t('tickets:noCategory')"),
-      'a null selection must keep rendering SIN CATEGORÍA',
+      'a null selection must keep rendering the localized no-category copy',
     );
   });
 

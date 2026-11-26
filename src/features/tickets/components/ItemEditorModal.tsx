@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next';
 
 import { BottomSheet, FieldGroup, Icon, Text } from '@/components';
 import { useCategoryCatalog } from '@/features/categories';
+import { useCategoryTranslator } from '@/i18n/hooks/useCategoryLabel';
 import { useSettingsStore } from '@/stores/use-settings-store';
-import { getExpenseCategory } from '@/features/home/categories';
 import { parseQuantity } from '@/features/tickets/manual-form';
 import { truncateCategoryName } from '@/lib/format';
 import { parseMoney } from '@/lib/parse-money';
@@ -14,6 +14,7 @@ import { colors, radii, spacing, typography } from '@/theme';
 import {
   categoryAfterDelete,
   pickerRowForCategory,
+  categoryRowLabel,
 } from '../category-picker-form';
 import { CategoryPickerModal } from './CategoryPickerModal';
 
@@ -74,6 +75,7 @@ export function ItemEditorModal({
   onCategoryDeleted,
 }: ItemEditorModalProps) {
   const { t } = useTranslation(['tickets', 'a11y', 'common']);
+  const categoryTranslator = useCategoryTranslator();
   const { catalog } = useCategoryCatalog();
   const currency = useSettingsStore((s) => s.currency);
   const [name, setName] = useState(initialValues?.name ?? '');
@@ -128,20 +130,18 @@ export function ItemEditorModal({
     onSave({ name: trimmed, quantity, unit_price, category_id: categoryId });
   };
 
-  // The category row label: same consumer pattern as every other chip —
-  // custom slugs render their own name via the catalog; the static registry
-  // fallback covers the pre-load beat while the catalog is still empty; null
-  // (no choice) stays SIN CATEGORÍA, never the 'otros' fallback.
+  // pickerRowForCategory owns the single localization: custom slugs render
+  // their own name from the catalog (or the slug itself pre-load), and a null
+  // choice keeps the localized no-category copy.
   const categoryRow = categoryId
-    ? (pickerRowForCategory(catalog, categoryId) ??
-      getExpenseCategory(categoryId))
+    ? pickerRowForCategory(catalog, categoryId, categoryTranslator)
     : null;
   // Display-only truncation like every other rendered category name (picker
   // grid, review rows, manual list): the sheet's category row stays one line
   // and never pushes the chevron off the right edge.
-  const categoryLabel = categoryRow?.label
-    ? truncateCategoryName(categoryRow.label)
-    : t('tickets:noCategory');
+  const categoryLabel = truncateCategoryName(
+    categoryRowLabel(categoryRow, t('tickets:noCategory')),
+  );
 
   // W1: a delete/reassign resolved inside the stacked picker must (1)
   // rebucket THIS editor's buffer if its own selection was deleted, and
@@ -214,8 +214,8 @@ export function ItemEditorModal({
       </View>
       {/* PR 5 (D6): the category row — opens the stacked picker. The
           label resolves through the merged catalog (custom slugs render
-          their own name); a null choice renders SIN CATEGORÍA, never the
-          'otros' fallback. */}
+          their own name); a null choice renders the localized no-category
+          copy, never the 'otros' fallback. */}
       <FieldGroup label={t('tickets:categoryPickerTitle')}>
         <Pressable
           onPress={() => setCategoryPickerOpen(true)}

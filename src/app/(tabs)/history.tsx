@@ -48,6 +48,7 @@ import {
   resolveCategoryDisplay,
   resolveHouseholdCategoryVisuals,
 } from '@/features/home/categories';
+import { useCategoryLabel } from '@/i18n/hooks/useCategoryLabel';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrency } from '@/lib/format';
 import { bindViewerRows } from '@/lib/money';
@@ -76,6 +77,7 @@ const TAB_BAR_HEIGHT = Platform.select({ ios: 49, android: 80, default: 49 });
  */
 export default function HistoryScreen() {
   const { t } = useTranslation(['household', 'common']);
+  const localizeCategory = useCategoryLabel();
   const list = useReceiptsStore((s) => s.list);
   const currency = useSettingsStore((s) => s.currency);
   // The active UI locale comes from the locale store (set before
@@ -508,7 +510,7 @@ export default function HistoryScreen() {
                   <CategoryBudgetCard
                     key={categoryRowKey(t.category_id, t.currency)}
                     categoryKey={t.category_slug}
-                    name={t.category_name}
+                    name={localizeCategory(t.category_slug, t.category_name)}
                     amount={t.total}
                     percent={t.percent_of_total}
                     currency={t.currency ?? currency}
@@ -547,7 +549,7 @@ export default function HistoryScreen() {
                 <CategoryBudgetCard
                   key={category.key}
                   categoryKey={category.key}
-                  name={category.name}
+                  name={localizeCategory(category.key, category.name)}
                   amount={category.amount}
                   percent={percent}
                   currency={currency}

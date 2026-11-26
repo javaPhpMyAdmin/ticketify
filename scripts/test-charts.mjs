@@ -1332,6 +1332,39 @@ async function run() {
     );
   });
 
+  await test('charts path: empty catalog keeps a custom slug as the top-category label', () => {
+    const records = [
+      receipt({
+        id: 'r1',
+        purchase_date: '2026-08-05',
+        category_totals: cats({ lacteos: 10, 'cafe-deli': 40 }),
+      }),
+    ];
+    const viaCharts = aggregateCategoriesByMonth(records, '2026-08', {});
+    assert.equal(viaCharts[0].key, 'cafe-deli');
+    assert.equal(viaCharts[0].name, 'cafe-deli');
+    assert.notEqual(viaCharts[0].name, catsMod.resolveCategoryDisplay({}, 'cafe-deli').label);
+    assert.equal(viaCharts[0].icon, catsMod.resolveCategoryDisplay({}, 'cafe-deli').icon);
+  });
+
+  await test('charts path: canonical slug still localizes once with an empty catalog', () => {
+    let calls = 0;
+    const translator = (key) => {
+      calls += 1;
+      return key === 'categories:lacteos' ? 'Dairy' : '';
+    };
+    const records = [
+      receipt({
+        id: 'r1',
+        purchase_date: '2026-08-05',
+        category_totals: cats({ lacteos: 25 }),
+      }),
+    ];
+    const viaCharts = aggregateCategoriesByMonth(records, '2026-08', {}, translator);
+    assert.equal(viaCharts[0].name, 'Dairy');
+    assert.equal(calls, 1, 'the aggregator owns the single localization');
+  });
+
   await test('resolveCategoryDisplay: custom/canonical/unknown contract (unit)', () => {
     const custom = catsMod.resolveCategoryDisplay(stubCatalog, 'delivery');
     assert.equal(custom.label, 'Delivery');

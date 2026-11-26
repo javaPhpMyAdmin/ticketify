@@ -31,7 +31,7 @@ import {
 import { useSessionUser } from '@/features/auth';
 import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
 import { readPurchaseListByMonth } from '@/features/home/api';
-import { resolveCategoryDisplay } from '@/features/home/categories';
+import { resolveCategoryIdentity } from '@/features/home/categories';
 import { getMonthKey, previousMonthKey } from '@/features/home/hooks/useHomeFeed';
 import { ReceiptCategoryItemsModal } from '@/features/receipts';
 import type { PurchaseWithItems } from '@/features/tickets';
@@ -40,6 +40,7 @@ import {
   fetchPurchaseDetail,
   purchaseToDraft,
 } from '@/features/tickets';
+import { useCategoryLabel } from '@/i18n/hooks/useCategoryLabel';
 import { useScreenTitle } from '@/i18n/hooks/useScreenTitle';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
@@ -129,6 +130,7 @@ export default function ReceiptDetailScreen() {
   // through `t()` so the receipt detail view reads localized in all
   // three locales. `receipts:detailTitle` drives the Stack header.
   const detailTitle = useScreenTitle('receipts:detailTitle');
+  const localizeCategory = useCategoryLabel();
   const { t, i18n } = useTranslation(['receipts', 'common']);
   const activeLocale = i18n.language as 'en' | 'es-AR' | 'pt-BR';
 
@@ -488,7 +490,7 @@ export default function ReceiptDetailScreen() {
     .map(([key, amount]) => ({
       key,
       amount,
-      def: resolveCategoryDisplay(catalog, key),
+      def: resolveCategoryIdentity(catalog, key),
     }))
     .sort((a, b) => b.amount - a.amount);
   // Items of the open category sheet: THIS receipt's lines filtered by the
@@ -500,7 +502,7 @@ export default function ReceiptDetailScreen() {
     ? categoryTotals[openCategory] ?? 0
     : 0;
   const openCategoryLabel = openCategory
-    ? resolveCategoryDisplay(catalog, openCategory).label
+    ? (resolveCategoryIdentity(catalog, openCategory)?.label ?? '')
     : '';
 
   return (
@@ -580,7 +582,7 @@ export default function ReceiptDetailScreen() {
                     onPress={() => setOpenCategory(entry.key)}
                     accessibilityRole="button"
                     accessibilityLabel={t('receipts:categoryItemsA11y_other', {
-                      category: entry.def.label,
+                      category: localizeCategory(entry.key, entry.def.label),
                     })}
                     style={({ pressed }) => pressed && styles.catRowPressed}
                   >
@@ -593,7 +595,7 @@ export default function ReceiptDetailScreen() {
                         />
                       </View>
                       <Text style={styles.catName} numberOfLines={1}>
-                        {entry.def.label}
+                        {localizeCategory(entry.key, entry.def.label)}
                       </Text>
                       <Text style={styles.catAmount}>
                         {formatCurrency(entry.amount, receipt.currency ?? currency)}
@@ -772,7 +774,9 @@ export default function ReceiptDetailScreen() {
 
       <ReceiptCategoryItemsModal
         visible={openCategory !== null}
+        categorySlug={openCategory}
         categoryLabel={openCategoryLabel}
+        catalog={catalog}
         total={openCategoryTotal}
         items={openCategoryItems}
         currency={receipt.currency ?? currency}

@@ -15,8 +15,12 @@ import { useReceiptsStore } from '@/stores/use-receipts-store';
 import type { CurrencyTotal } from '@/types';
 import type { HomeFeedReceiptRow } from '@/types';
 import type { CategoryCatalog } from '@/features/categories/catalog';
+import {
+  localizedCategoryLabel,
+  type CategoryTranslator,
+} from '@/i18n/localizedCategoryLabel';
 import { readPurchaseListByMonth, readPurchaseMonthKeys, searchPurchaseItems } from '../api';
-import { getExpenseCategory, resolveCategoryDisplay } from '../categories';
+import { getExpenseCategory, resolveCategoryIdentity } from '../categories';
 import {
   currentMonthKey,
   getMonthKey,
@@ -259,14 +263,17 @@ export function useMonthNavigation(
  *
  * REQ-008 (display convergence): when `catalog` is provided, custom slugs
  * render their own name/icon; canonical slugs stay byte-identical with the
- * static taxonomy; unknown slugs fall back to 'otros'. Without a catalog
- * (pre-load state, or callers that never resolve one) the output is
- * unchanged from the static-registry behavior.
+ * static taxonomy. An unknown or empty-catalog custom slug keeps the slug as
+ * its label instead of borrowing 'Otros' — the Pro charts no-cache path and
+ * the Home strip must agree with the identity-bearing surfaces. A missing
+ * catalog argument behaves like the pre-load/read-failure state: canonical
+ * slugs keep their static labels, custom slugs keep their own identity.
  */
 export function aggregateCategoriesByMonth(
   list: ReceiptSpendRecord[],
   monthKey: string,
   catalog?: CategoryCatalog | null,
+  translator?: CategoryTranslator | null,
 ): HomeCategory[] {
   const totalsByCategory = new Map<string, number>();
   for (const receipt of list) {
@@ -277,8 +284,13 @@ export function aggregateCategoriesByMonth(
   }
   return [...totalsByCategory.entries()]
     .map(([key, amount]) => {
-      const visual = resolveCategoryDisplay(catalog, key);
-      return { key, name: visual.label, amount, icon: visual.icon };
+      const identity = resolveCategoryIdentity(catalog, key);
+      return {
+        key,
+        name: localizedCategoryLabel(key, identity.label, translator),
+        amount,
+        icon: identity.icon,
+      };
     })
     .sort((a, b) => b.amount - a.amount);
 }

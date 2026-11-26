@@ -16,7 +16,6 @@ import {
   View,
 } from '@/components';
 import { useSessionUser } from '@/features/auth';
-import { getExpenseCategory } from '@/features/home/categories';
 import { useCategoryCatalog } from '@/features/categories';
 import {
   buildEditorReviewItem,
@@ -39,6 +38,7 @@ import {
   useReceiptDraftDraft,
   buildManualDraft,
   pickerRowForCategory,
+  categoryRowLabel,
 } from '@/features/tickets';
 import {
   formatCurrency,
@@ -46,6 +46,7 @@ import {
   todayLocalISO,
   truncateCategoryName,
 } from '@/lib/format';
+import { useCategoryTranslator } from '@/i18n/hooks/useCategoryLabel';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { useSettingsStore } from '@/stores/use-settings-store';
 import { useToastStore } from '@/stores/use-toast-store';
@@ -65,6 +66,7 @@ import type { CardType, ReviewItem } from '@/types';
  */
 export default function ManualEntryScreen() {
   const { t } = useTranslation(['tickets', 'a11y', 'common']);
+  const categoryTranslator = useCategoryTranslator();
   const { userId } = useSessionUser();
   const currency = useSettingsStore((s) => s.currency);
   // The active UI locale comes from the locale store (set before
@@ -336,22 +338,24 @@ export default function ManualEntryScreen() {
               <Card padding={spacing.sm}>
                 {draft.items.map((item, idx) => {
                   // Resolve the chip label through the merged catalog (PR 5):
-                  // same consumer pattern as every chip — the static registry
-                  // fallback only covers the pre-load beat while the catalog
-                  // is still empty; a choice of NO category always renders
-                  // SIN CATEGORÍA (tickets:noCategory), never 'otros'.
+                  // pickerRowForCategory owns the single localization. With an
+                  // empty catalog a custom slug keeps its own identity; a null
+                  // choice keeps the localized no-category copy.
                   // Display-only truncation: caps long names like the picker
                   // grid and the review rows; the stored name is untouched
                   // and the pressable a11y label keeps the item name.
                   const effectiveCategoryId =
                     item.category_id ?? item.ai_suggested_category_id;
-                  const categoryLabel = effectiveCategoryId
-                    ? truncateCategoryName(
-                        pickerRowForCategory(catalog, effectiveCategoryId)
-                          ?.label ??
-                          getExpenseCategory(effectiveCategoryId).label,
+                  const categoryRow = effectiveCategoryId
+                    ? pickerRowForCategory(
+                        catalog,
+                        effectiveCategoryId,
+                        categoryTranslator,
                       )
-                    : t('tickets:noCategory');
+                    : null;
+                  const categoryLabel = truncateCategoryName(
+                    categoryRowLabel(categoryRow, t('tickets:noCategory')),
+                  );
                   return (
                     <View key={item.temp_id} style={styles.itemBlock}>
                       {idx > 0 ? <View style={styles.rowDivider} /> : null}

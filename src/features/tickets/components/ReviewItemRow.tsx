@@ -2,23 +2,24 @@ import { Pressable, StyleSheet, Switch } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { Chip, Icon, Text, View } from '@/components';
-import { getExpenseCategory } from '@/features/home/categories';
 import type { CategoryCatalog } from '@/features/categories/catalog';
+import { useCategoryTranslator } from '@/i18n/hooks/useCategoryLabel';
 import { formatCurrency, truncateCategoryName } from '@/lib/format';
 import { colors, spacing, typography } from '@/theme';
 import type { ReviewItem } from '@/types';
 
-import { pickerRowForCategory } from '../category-picker-form';
+import { reviewChipRowForCategory } from '../category-picker-form';
 
 export interface ReviewItemRowProps {
   item: ReviewItem;
   /** ISO 4217 code for the line price (defaults to the settings default, UYU). */
   currency?: string;
   /**
-   * PR 5: the merged catalog (user + canonical). When provided, custom
-   * slugs render their own name/icon on the chip; when absent (or still
-   * loading), chips resolve through the static registry exactly like
-   * before — backward compatible with every existing caller.
+   * PR 5: the merged catalog (user + canonical). A custom slug in the catalog
+   * renders its own name/icon. If the catalog is empty (read failure) or a
+   * slug is absent from it, the chip shows the slug verbatim with neutral
+   * 'otros' visuals — never a mislabeled 'Otros' chip. Callers hide the list
+   * while the catalog is still loading instead of showing incomplete chips.
    */
   catalog?: CategoryCatalog;
   /** Called when the user taps the category chip to edit it. */
@@ -37,8 +38,8 @@ export interface ReviewItemRowProps {
 /**
  * One row inside the receipt review list. Top half: name + qty on
  * the left, line price on the right. Bottom half: the effective
- * category chip (user-picked when set, else AI-suggested, else
- * SIN CATEGORÍA) which opens the category picker on tap, plus the
+ * category chip (user-picked when set, else AI-suggested, else the
+ * localized no-category copy) which opens the category picker on tap, plus the
  * impulse-buy switch.
  *
  * The item name doubles as a tap target for renaming: when the parent
@@ -59,14 +60,17 @@ export function ReviewItemRow({
   // namespace (the keys shipped with the change but were never wired).
   // Quantity, category fallback and the impulse switch read from `tickets`.
   const { t } = useTranslation(['a11y', 'tickets']);
+  const categoryTranslator = useCategoryTranslator();
   const categoryId = item.category_id ?? item.ai_suggested_category_id;
-  // PR 5: custom slugs resolve through the merged catalog (own row);
-  // unknown/absent catalogs fall back to the static registry (unknown
-  // buckets into 'otros' there); a null choice stays SIN CATEGORÍA.
-  const chipRow = pickerRowForCategory(catalog, categoryId);
-  const category = categoryId
-    ? (chipRow ?? getExpenseCategory(categoryId))
-    : null;
+  // Canonical → localized static label; custom in the catalog → its own
+  // row; custom/unknown with an empty or incomplete catalog → the slug
+  // itself with neutral 'otros' visuals; null → localized no-category copy.
+  // Custom slugs are identities: they never reach the translator.
+  const category = reviewChipRowForCategory(
+    catalog,
+    categoryId,
+    categoryTranslator,
+  );
 
   return (
     <View style={styles.row}>

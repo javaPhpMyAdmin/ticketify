@@ -997,7 +997,7 @@ async function run() {
     assert.equal(out[0].icon, 'takeoutbag.and.cup.and.straw.fill', 'static icon, not the DB row icon');
   });
 
-  await test('aggregateCategoriesByMonth: unknown slug buckets to otros', () => {
+  await test('aggregateCategoriesByMonth: unknown slug keeps its own identity', () => {
     const list = [
       {
         id: 'r1',
@@ -1007,11 +1007,12 @@ async function run() {
     ];
     const out = homeMod.aggregateCategoriesByMonth(list, '2026-08', stubCatalog);
     assert.equal(out.length, 1);
-    assert.equal(out[0].name, 'Otros');
+    assert.equal(out[0].key, 'zzz-nope');
+    assert.equal(out[0].name, 'zzz-nope');
     assert.equal(out[0].icon, 'sparkles');
   });
 
-  await test('aggregateCategoriesByMonth: no catalog → unchanged output (approval)', () => {
+  await test('aggregateCategoriesByMonth: no catalog keeps custom slug identity (approval)', () => {
     const list = [
       {
         id: 'r1',
@@ -1023,7 +1024,8 @@ async function run() {
     const lacteos = out.find((c) => c.key === 'lacteos');
     const custom = out.find((c) => c.key === 'delivery');
     assert.equal(lacteos.name, 'Lácteos');
-    assert.equal(custom.name, 'Otros', 'no catalog → custom slug renders otros label');
+    assert.equal(custom.name, 'delivery', 'no catalog → custom slug keeps its own label');
+    assert.equal(custom.icon, 'sparkles');
   });
 
   await test('mapPurchaseRowsToHomeFeed: catalog forwarded to home-feed categories', () => {

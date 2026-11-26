@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020", "dom"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "..",
+    "paths": {
+      "@/components": ["./scripts/test-stubs/components.ts"],
+      "@/*": ["./src/*"]
+    },
+    "rootDir": ".."
+  },
+  "include": [
+    "../src/i18n/localizedCategoryLabel.ts",
+    "../src/features/tickets/category-picker-form.ts",
+    "../src/features/home/categories.ts",
+    "../src/features/categories/catalog.ts",
+    "../src/types/index.ts",
+    "../scripts/test-stubs/components.ts",
+    "../scripts/test-stubs/globals.d.ts"
+  ]
+}

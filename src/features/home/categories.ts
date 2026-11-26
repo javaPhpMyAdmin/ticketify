@@ -258,6 +258,75 @@ export function resolveCategoryDisplay(
 }
 
 /**
+ * Render-ready identity for one category slug (custom-category safety).
+ *
+ * `resolveCategoryDisplay` is the legacy display resolver: an unknown slug
+ * buckets to the static 'otros' row. That is correct for aggregate visuals,
+ * but not for an identity — a user-authored slug such as `cafe-deli` must
+ * never be silently relabeled as 'Otros' while the catalog is loading or
+ * after a catalog read failure. This resolver owns every identity-bearing
+ * surface; canonical slugs still hand their static label to the caller's
+ * i18n layer, and custom names are never translation keys.
+ *
+ * - canonical slug → static row (label is the taxonomy's Spanish mirror);
+ * - catalog row → that row's name/icon/color verbatim;
+ * - unknown non-canonical slug or empty catalog → a synthetic row whose
+ *   label IS the slug, with neutral visuals borrowed from static 'otros';
+ * - null/undefined slug → null, so each caller keeps its own no-category
+ *   copy (e.g. `tickets:noCategory`) instead of a forced 'otros'.
+ */
+export function resolveCategoryIdentity(
+  catalog: CategoryCatalog | null | undefined,
+  slug: string,
+): CategoryVisuals;
+export function resolveCategoryIdentity(
+  catalog: CategoryCatalog | null | undefined,
+  slug: string | null | undefined,
+): CategoryVisuals | null;
+export function resolveCategoryIdentity(
+  catalog: CategoryCatalog | null | undefined,
+  slug: string | null | undefined,
+): CategoryVisuals | null {
+  if (!slug) return null;
+
+  if (isCanonicalCategoryKey(slug)) {
+    const entry = EXPENSE_CATEGORIES[slug];
+    return {
+      key: entry.key,
+      label: entry.label,
+      icon: entry.icon,
+      background: entry.background,
+      foreground: entry.foreground,
+    };
+  }
+
+  // Own-property lookup: production catalogs use a null prototype, but a
+  // plain-literal catalog must not leak Object.prototype members either.
+  const custom =
+    catalog && Object.prototype.hasOwnProperty.call(catalog, slug)
+      ? catalog[slug]
+      : undefined;
+  if (custom) {
+    return {
+      key: custom.slug,
+      label: custom.name,
+      icon: custom.icon as IconName,
+      background: custom.color,
+      foreground: foregroundByBackground(custom.color),
+    };
+  }
+
+  const neutral = EXPENSE_CATEGORIES.otros;
+  return {
+    key: slug,
+    label: slug,
+    icon: neutral.icon,
+    background: neutral.background,
+    foreground: neutral.foreground,
+  };
+}
+
+/**
  * Household-RPC row visual resolution (W-5 — display convergence).
  *
  * Household `monthly_category_totals` rows carry their OWN category_id —

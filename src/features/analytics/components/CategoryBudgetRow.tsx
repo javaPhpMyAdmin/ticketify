@@ -9,6 +9,7 @@ import {
 } from '@/lib/format';
 import { colors, spacing, typography } from '@/theme';
 import { getCategoryColor } from '@/features/home/categories';
+import { useCategoryLabel } from '@/i18n/hooks/useCategoryLabel';
 import { budgetProgressColor } from '../category-budget-progress';
 
 export interface CategoryBudgetRowProps {
@@ -72,6 +73,16 @@ export function CategoryBudgetRow({
   // The "of spending" suffix after the percent token is localized via
   // the `analytics` namespace.
   const { t } = useTranslation('analytics');
+  const localizeCategory = useCategoryLabel();
+  // Canonical slugs render the catalog label for the active locale; custom
+  // rows keep the DB-provided name verbatim.
+  const displayName = localizeCategory(categoryKey, name);
+  // Shipped `analytics` copy: the separator and the whole progress sentence
+  // stay language-neutral at the call site (es-419 keeps its Spanish catalog).
+  const spentOfLimit =
+    typeof limit === 'number' && limit > 0
+      ? `${formatCurrency(amount, currency)}${t('budgetSpentOf')}${formatCurrency(limit, currency)}`
+      : '';
   // Catalog-resolved colors win (custom rows carry their own palette color);
   // canonical rows fall back to the stable registry — byte-identical.
   const color =
@@ -91,7 +102,7 @@ export function CategoryBudgetRow({
       </View>
       <View style={styles.body}>
         <Text style={styles.name} numberOfLines={1}>
-          {truncateCategoryName(name)}
+          {truncateCategoryName(displayName)}
         </Text>
         <Text style={styles.percent}>
           {t('percentOfSpending', { percent: formatPercentLabel(percent) })}
@@ -101,15 +112,14 @@ export function CategoryBudgetRow({
             surface a limit, a ratio, or a progress bar. */}
         {typeof limit === 'number' && limit > 0 ? (
           <>
-            <Text style={styles.limit}>
-              {formatCurrency(amount, currency)} de{' '}
-              {formatCurrency(limit, currency)}
-            </Text>
+            <Text style={styles.limit}>{spentOfLimit}</Text>
             <ProgressBar
               value={Math.min(1, amount / limit)}
               color={budgetProgressColor(amount / limit)}
               height={4}
-              accessibilityLabel={`Gastaste ${formatCurrency(amount, currency)} de ${formatCurrency(limit, currency)} en ${name}`}
+              accessibilityLabel={t('budgetProgressA11y', {
+                spent: `${spentOfLimit} (${displayName})`,
+              })}
             />
           </>
         ) : null}
@@ -124,7 +134,7 @@ export function CategoryBudgetRow({
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${name}: ${formatCurrency(amount, currency)}`}
+      accessibilityLabel={`${displayName}: ${formatCurrency(amount, currency)}`}
       style={styles.row}
     >
       {rowContent}

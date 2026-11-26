@@ -15,6 +15,9 @@ export {
   createCategoryDeleteHandler,
   hasReassignTarget,
   pickerRowForCategory,
+  categoryRowLabel,
+  reviewChipRowForCategory,
+  categoryChipsReady,
 } from './category-picker-form';
 export { ReviewItemRow } from './components/ReviewItemRow';
 export type { ReviewItemRowProps } from './components/ReviewItemRow';

@@ -9,6 +9,7 @@ import {
   countCategoryItems,
   useCategoryCatalog,
 } from '@/features/categories';
+import { useCategoryTranslator } from '@/i18n/hooks/useCategoryLabel';
 import { colors, motion, radii, spacing, typography } from '@/theme';
 import { truncateCategoryName } from '@/lib/format';
 import type { CategoryKind } from '@/types';
@@ -107,6 +108,7 @@ export function CategoryPickerModal({
   onClose,
 }: CategoryPickerModalProps) {
   const { t } = useTranslation(['tickets', 'common']);
+  const categoryTranslator = useCategoryTranslator();
   const { userId } = useSessionUser();
   const {
     catalog,
@@ -198,10 +200,13 @@ export function CategoryPickerModal({
     [userId, reassign, deleteCategory],
   );
 
-  const catalogRows = pickerRowsFromCatalog(catalog);
+  const catalogRows = pickerRowsFromCatalog(catalog, categoryTranslator);
   // Grid rows: the merged catalog (canonical-first + own). The static
   // canonical 13 keep the grid alive pre-load / read-failure.
-  const rows = catalogRows.length > 0 ? catalogRows : canonicalFallbackRows();
+  const rows =
+    catalogRows.length > 0
+      ? catalogRows
+      : canonicalFallbackRows(categoryTranslator);
 
   const validation = validateCategoryCreateInput(
     name,
@@ -351,7 +356,11 @@ export function CategoryPickerModal({
         ? {
             kind: 'blocked' as const,
             count: deleteOutcome.count,
-            targets: reassignmentTargets(catalog, pendingDelete.slug),
+            targets: reassignmentTargets(
+              catalog,
+              pendingDelete.slug,
+              categoryTranslator,
+            ),
           }
         : deleteOutcome.status === 'empty'
           ? { kind: 'confirm' as const }

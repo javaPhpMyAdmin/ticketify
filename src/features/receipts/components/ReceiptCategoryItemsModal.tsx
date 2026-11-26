@@ -2,6 +2,9 @@ import { FlatList, StyleSheet, View, type ListRenderItem } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { BottomSheet, Divider, EmptyState, Text } from '@/components';
+import type { CategoryCatalog } from '@/features/categories/catalog';
+import { resolveCategoryIdentity } from '@/features/home/categories';
+import { useCategoryLabel } from '@/i18n/hooks/useCategoryLabel';
 import { formatCurrency } from '@/lib/format';
 import { colors, spacing, typography } from '@/theme';
 
@@ -15,8 +18,12 @@ export interface ReceiptCategoryItem {
 
 export interface ReceiptCategoryItemsModalProps {
   visible: boolean;
-  /** Display label of the category, e.g. "Lácteos". */
+  /** Catalog-resolved display label (raw DB name for custom categories). */
   categoryLabel: string;
+  /** Canonical or custom slug of the tapped category. */
+  categorySlug?: string | null;
+  /** Merged catalog used to keep a custom slug's own name as the kicker. */
+  catalog?: CategoryCatalog;
   /** The category's total from THIS receipt (`category_totals[slug]`). */
   total: number;
   /** Items from this receipt filtered to the category. */
@@ -43,6 +50,8 @@ export interface ReceiptCategoryItemsModalProps {
 export function ReceiptCategoryItemsModal({
   visible,
   categoryLabel,
+  categorySlug,
+  catalog,
   total,
   items,
   currency = 'UYU',
@@ -51,6 +60,13 @@ export function ReceiptCategoryItemsModal({
   // PR 3 (`app-i18n`): sheet title, backdrop a11y, total label, and
   // empty-state copy all read from the `receipts` namespace.
   const { t } = useTranslation(['receipts']);
+  const localizeCategory = useCategoryLabel();
+  // Empty catalog after a failed read still yields the custom slug itself as
+  // the kicker; only canonical slugs are localized by `localizeCategory`.
+  const identity =
+    catalog === undefined
+      ? null
+      : resolveCategoryIdentity(catalog, categorySlug);
   const renderItem: ListRenderItem<ReceiptCategoryItem> = ({ item, index }) => (
     <View>
       {index > 0 ? <Divider /> : null}
@@ -70,7 +86,7 @@ export function ReceiptCategoryItemsModal({
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      kicker={categoryLabel}
+      kicker={localizeCategory(categorySlug, identity?.label ?? categoryLabel)}
       title={t('receipts:categoryItemsSheetTitle')}
       backdropLabel={t('receipts:categoryItemsSheetBackdropA11y')}
     >

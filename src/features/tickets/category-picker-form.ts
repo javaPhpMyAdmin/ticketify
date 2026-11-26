@@ -38,8 +38,14 @@ import {
 } from '@/features/categories/catalog';
 import {
   EXPENSE_CATEGORIES,
+  isCanonicalCategoryKey,
   resolveCategoryDisplay,
+  resolveCategoryIdentity,
 } from '@/features/home/categories';
+import {
+  localizedCategoryLabel,
+  type CategoryTranslator,
+} from '@/i18n/localizedCategoryLabel';
 
 /** DB guardrail (migration 0032): category names are VARCHAR(40). */
 export const MAX_CATEGORY_NAME_LENGTH = 40;
@@ -68,6 +74,18 @@ export interface CategoryPickerRow {
 }
 
 /**
+ * Render label for one already-resolved picker row. `pickerRowForCategory`
+ * owns the single localization (canonical slugs only), so callers render the
+ * row label verbatim and never localize it a second time.
+ */
+export function categoryRowLabel(
+  row: CategoryPickerRow | null | undefined,
+  noCategoryLabel: string,
+): string {
+  return row?.label ?? noCategoryLabel;
+}
+
+/**
  * Grid rows from the merged catalog: `Object.values` preserves the
  * canonical-first + own-appended deterministic order the merge builds.
  *
@@ -80,12 +98,15 @@ export interface CategoryPickerRow {
  */
 export function pickerRowsFromCatalog(
   catalog: CategoryCatalog,
+  translator?: CategoryTranslator | null,
 ): CategoryPickerRow[] {
   return Object.values(catalog).map((entry) => {
     const visual = resolveCategoryDisplay(catalog, entry.slug);
     return {
       slug: visual.key,
-      label: visual.label,
+      // UI-boundary mapping: canonical slugs may be localized by the caller's
+      // injected translator; custom names always keep their DB label.
+      label: localizedCategoryLabel(visual.key, visual.label, translator),
       icon: visual.icon,
       color: visual.background,
     };
@@ -97,10 +118,12 @@ export function pickerRowsFromCatalog(
  * the catalog is still loading or after a read failure. Pure fallback,
  * NOT a second fetch: `readCategoryCatalog` stays the single source.
  */
-export function canonicalFallbackRows(): CategoryPickerRow[] {
+export function canonicalFallbackRows(
+  translator?: CategoryTranslator | null,
+): CategoryPickerRow[] {
   return Object.values(EXPENSE_CATEGORIES).map((entry) => ({
     slug: entry.key,
-    label: entry.label,
+    label: localizedCategoryLabel(entry.key, entry.label, translator),
     icon: entry.icon,
     color: entry.background,
   }));
@@ -108,31 +131,76 @@ export function canonicalFallbackRows(): CategoryPickerRow[] {
 
 /**
  * PR 5 (editor wiring): the single catalog-aware row a chip/editor label
- * resolves to for a slug. Static-first, mapping `resolveCategoryDisplay`'s
- * contract onto the picker row shape the Chip renders (label + icon):
+ * resolves to for a slug. This is the SOLE localization owner for these call
+ * sites: `resolveCategoryIdentity` preserves a custom identity even with an
+ * empty catalog, and only canonical slugs reach the injected translator.
  *
- * - a canonical slug → the STATIC taxonomy row (byte-identical with every
+ * - a canonical slug → the static taxonomy row (byte-identical with every
  *   display surface; the DB mirror row's legacy visuals never leak — W-3),
- * - a custom slug → its own row (label/icon render the user's category),
- * - an unknown slug → the deterministic static 'otros' row,
- * - a null/empty selection → null (the editor default renders
- *   SIN CATEGORÍA — "No category chosen → category_id = null" never
- *   displays as the otros fallback),
- * - an empty catalog (pre-load/read-failure) → null, so the caller chains
- *   the static `getExpenseCategory(slug)` fallback exactly like the
- *   `resolveCategory ?? getExpenseCategory` consumer pattern.
+ * - a catalog-known custom slug → its own row (label/icon are the user's
+ *   category and are never translated),
+ * - an unknown custom slug → the slug itself as the label with neutral
+ *   'otros' visuals — never 'Otros'/'Other',
+ * - a null/empty selection → null (the caller renders its localized
+ *   no-category copy),
+ * - an undefined catalog → null; `{}` (the pre-load/read-failure state from
+ *   `useCategoryCatalog`) still resolves identities through the slug itself.
+ *
+ * Callers render `row.label` through `categoryRowLabel` without localizing it
+ * again; changing that would translate an already-localized canonical label.
  */
 export function pickerRowForCategory(
   catalog: CategoryCatalog | undefined,
   slug: string | null | undefined,
+  translator?: CategoryTranslator | null,
 ): CategoryPickerRow | null {
   if (!slug || !catalog) return null;
-  const visual = resolveCategoryDisplay(catalog, slug);
+  const identity = resolveCategoryIdentity(catalog, slug);
+  if (!identity) return null;
   return {
-    slug: visual.key,
-    label: visual.label,
-    icon: visual.icon,
-    color: visual.background,
+    slug: identity.key,
+    label: isCanonicalCategoryKey(slug)
+      ? localizedCategoryLabel(identity.key, identity.label, translator)
+      : identity.label,
+    icon: identity.icon,
+    color: identity.background,
+  };
+}
+
+/**
+ * The chip row the review list renders for one item category:
+ *
+ * - a canonical slug → the static taxonomy row, localized through the
+ *   injected translator (the DB mirror's legacy visuals never leak);
+ * - a custom slug present in the catalog → the row's own name/icon, verbatim —
+ *   a user-authored name is an identity, never a translation key;
+ * - a custom/unknown slug absent from the catalog (empty after load or read
+ *   failure) → the slug as the label with neutral 'otros' visuals. The static
+ *   `getExpenseCategory` registry would bucket it into 'Otros', mislabeling a
+ *   user-authored category such as `cafe-deli`;
+ * - a null/empty selection → null (the chip renders the localized no-category
+ *   copy).
+ *
+ * Only canonical slugs ever reach `localizedCategoryLabel`. Custom slugs are
+ * never translated, whether or not the catalog knows them.
+ */
+export function reviewChipRowForCategory(
+  catalog: CategoryCatalog | undefined,
+  slug: string | null | undefined,
+  translator?: CategoryTranslator | null,
+): CategoryPickerRow | null {
+  const identity = resolveCategoryIdentity(catalog, slug);
+  if (!identity) return null;
+
+  return {
+    slug: identity.key,
+    // Only a canonical slug may reach the translator. A custom row's name is
+    // an identity and stays verbatim even when a translator is available.
+    label: isCanonicalCategoryKey(slug)
+      ? localizedCategoryLabel(identity.key, identity.label, translator)
+      : identity.label,
+    icon: identity.icon,
+    color: identity.background,
   };
 }
 
@@ -295,6 +363,22 @@ export function categoryCreateNameFieldError(
 }
 
 /**
+ * Review-screen chip gate: item chips may render only once the single
+ * category-catalog read has settled. `useCategoryCatalog` reports both
+ * terminal outcomes (success AND read failure) with `isLoading === false`,
+ * so an error must still show the rows — `reviewChipRowForCategory` keeps a
+ * custom slug's own identity with neutral visuals in that case. While the
+ * read is pending, the caller shows neutral `common:loading` copy instead of
+ * guessing from an incomplete catalog.
+ *
+ * Pure so the true → false transition is executed in the node harness, not
+ * just pinned by source inspection.
+ */
+export function categoryChipsReady(isLoading: boolean): boolean {
+  return !isLoading;
+}
+
+/**
  * Dismissal gate (cancel-must-cancel): the sheet cannot be torn down
  * while the create mutation is in flight. Backdrop tap, system back and
  * the close button all route through BottomSheet's `dismissable` — an
@@ -385,8 +469,9 @@ export function isCategoryInUse(count: number): boolean {
 export function reassignmentTargets(
   catalog: CategoryCatalog,
   deletedSlug: string,
+  translator?: CategoryTranslator | null,
 ): CategoryPickerRow[] {
-  return pickerRowsFromCatalog(catalog).filter(
+  return pickerRowsFromCatalog(catalog, translator).filter(
     (row) => row.slug !== deletedSlug,
   );
 }

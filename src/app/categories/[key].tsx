@@ -7,9 +7,10 @@ import { Divider, EmptyState, Icon, Text, View } from '@/components';
 import { monthKeyToLabel, useCategoryDetail } from '@/features/home';
 import {
   isCanonicalCategoryKey,
-  resolveCategoryDisplay,
+  resolveCategoryIdentity,
 } from '@/features/home/categories';
 import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
+import { useCategoryLabel } from '@/i18n/hooks/useCategoryLabel';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrency } from '@/lib/format';
 import { useSettingsStore } from '@/stores/use-settings-store';
@@ -54,13 +55,15 @@ export default function CategoryDetailScreen() {
   // `common` namespaces — total label, pending/empty/error messages,
   // back a11y.
   const { t } = useTranslation(['analytics', 'common']);
+  const localizeCategory = useCategoryLabel();
   const householdScope = scope === 'household' ? 'household' : 'personal';
   // Display convergence (REQ-008): the merged catalog resolves the header
-  // label and icon for CUSTOM categories (canonical slugs stay on the
-  // static taxonomy via `resolveCategoryDisplay`). `useCategoryDetail`
-  // keeps aggregating totals/items unchanged.
+  // label and icon for CUSTOM categories (canonical slugs stay on the static
+  // taxonomy). A missing catalog keeps a custom slug's own identity instead
+  // of showing 'Otros'; a missing route key keeps the canonical 'otros' row.
+  // `useCategoryDetail` keeps aggregating totals/items unchanged.
   const { catalog } = useCategoryCatalog();
-  const visual = resolveCategoryDisplay(catalog, key ?? 'otros');
+  const visual = resolveCategoryIdentity(catalog, key ?? 'otros');
   // W-4: the canonical header renders EXACTLY as before the catalog existed
   // — chipBg circle + primary icon (byte-identical invariant). Only the
   // custom-category branch switches to the resolved row's visuals.
@@ -102,7 +105,9 @@ export default function CategoryDetailScreen() {
           <Icon name="arrow.left" size={24} color={colors.textPrimary} />
         </Pressable>
         <View style={styles.headerText}>
-          <Text style={styles.title}>{visual.label}</Text>
+          <Text style={styles.title}>
+            {localizeCategory(key ?? 'otros', visual.label)}
+          </Text>
           {month ? (
             <Text style={styles.subtitle}>
               {monthKeyToLabel(locale, month)}

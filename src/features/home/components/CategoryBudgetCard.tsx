@@ -17,6 +17,8 @@ import {
 } from '@/lib/format';
 import { radii, spacing, typography } from '@/theme';
 
+import { useCategoryLabel } from '@/i18n/hooks/useCategoryLabel';
+
 import { getCategoryColor } from '../categories';
 
 export interface CategoryBudgetCardProps {
@@ -73,6 +75,16 @@ export function CategoryBudgetCard({
   // The "of spending" suffix after the percent token and the item-count
   // line are localized via the `analytics` namespace.
   const { t } = useTranslation('analytics');
+  const localizeCategory = useCategoryLabel();
+  // Canonical slugs render the catalog label for the active locale; custom
+  // rows keep the DB-provided name verbatim.
+  const displayName = localizeCategory(categoryKey, name);
+  // Shipped `analytics` copy: the separator and the whole progress sentence
+  // stay language-neutral at the call site (es-419 keeps its Spanish catalog).
+  const spentOfLimit =
+    typeof limit === 'number' && limit > 0
+      ? `${formatCurrency(amount, currency)}${t('budgetSpentOf')}${formatCurrency(limit, currency)}`
+      : '';
   // Catalog-resolved colors win (custom rows carry their own palette color);
   // canonical rows fall back to the stable registry — byte-identical.
   const color =
@@ -98,7 +110,7 @@ export function CategoryBudgetCard({
         pressed && styles.pressed,
       ]}
       accessibilityRole={onPress ? 'button' : undefined}
-      accessibilityLabel={`${name}: ${formatCurrency(amount, currency)}`}
+      accessibilityLabel={`${displayName}: ${formatCurrency(amount, currency)}`}
     >
       <View
         style={[
@@ -113,7 +125,7 @@ export function CategoryBudgetCard({
           style={[styles.name, { color: color.foreground }]}
           numberOfLines={1}
         >
-          {truncateCategoryName(name)}
+          {truncateCategoryName(displayName)}
         </Text>
         <View style={styles.metaRow}>
           <Text style={[styles.percent, { color: color.foreground }]}>
@@ -128,8 +140,7 @@ export function CategoryBudgetCard({
         {typeof limit === 'number' && limit > 0 ? (
           <View style={styles.budgetSection}>
             <Text style={[styles.limitText, { color: color.foreground }]}>
-              {formatCurrency(amount, currency)} de{' '}
-              {formatCurrency(limit, currency)}
+              {spentOfLimit}
             </Text>
             <View style={styles.progressTrack}>
               <ProgressBar
@@ -137,7 +148,9 @@ export function CategoryBudgetCard({
                 color={progressColor}
                 height={4}
                 trackColor={`${color.foreground}33`}
-                accessibilityLabel={`Gastaste ${formatCurrency(amount, currency)} de ${formatCurrency(limit, currency)} en ${name}`}
+                accessibilityLabel={t('budgetProgressA11y', {
+                  spent: `${spentOfLimit} (${displayName})`,
+                })}
               />
             </View>
           </View>

@@ -20,6 +20,7 @@ import {
 } from '@/features/analytics';
 import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
 import { currentMonthKey } from '@/features/home';
+import { useCategoryLabel } from '@/i18n/hooks/useCategoryLabel';
 import {
   EXPENSE_CATEGORIES,
   resolveCategoryDisplay,
@@ -50,6 +51,7 @@ import { colors, radii, spacing, typography } from '@/theme';
  */
 export default function CategoryBudgetsScreen() {
   const { t } = useTranslation(['settings', 'common']);
+  const localizeCategory = useCategoryLabel();
   // NFR-2: month key must come from the device-local calendar
   // (`currentMonthKey`) so the saved month always equals the displayed
   // month — a UTC-derived month key diverges in UTC-x timezones at
@@ -192,6 +194,7 @@ export default function CategoryBudgetsScreen() {
             <Card style={{ backgroundColor: colors.surface }}>
               {categoryKeys.map((key, index) => {
                 const visual = resolveCategoryDisplay(catalog, key);
+                const displayName = localizeCategory(key, visual.label);
                 return (
                   <View
                     key={key}
@@ -207,7 +210,7 @@ export default function CategoryBudgetsScreen() {
                           { backgroundColor: visual.background },
                         ]}
                       />
-                      <Text style={styles.rowLabel}>{visual.label}</Text>
+                      <Text style={styles.rowLabel}>{displayName}</Text>
                     </View>
                     <TextInput
                       value={drafts[key] ?? ''}
@@ -227,7 +230,7 @@ export default function CategoryBudgetsScreen() {
                       style={styles.input}
                       accessibilityLabel={`${t(
                         'settings:categoryBudgetLabel',
-                      )} ${visual.label}`}
+                      )} ${displayName}`}
                     />
                   </View>
                 );

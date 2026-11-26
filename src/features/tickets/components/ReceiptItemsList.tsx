@@ -13,8 +13,10 @@ export interface ReceiptItemsListProps {
   bare?: boolean;
   /**
    * PR 5: the merged catalog (user + canonical). Threaded to every row so
-   * custom slug chips render their own name/icon; when absent the rows
-   * fall back to the static registry (backward compatible).
+   * catalog-known custom slugs render their own name/icon. An empty catalog
+   * or an absent slug renders the slug verbatim with neutral 'otros' visuals
+   * — never a mislabeled 'Otros' chip. Callers render a neutral loading state
+   * while the catalog is still loading.
    */
   catalog?: CategoryCatalog;
   /** Called when the user taps an item's category chip to edit it. */

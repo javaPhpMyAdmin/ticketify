@@ -46,6 +46,7 @@ import {
   reviewItemsToFeedItems,
   SAVE_ERROR_MESSAGE,
   saveReceipt,
+  categoryChipsReady,
   createCategoryDeleteHandler,
   updateReceipt,
   useReceiptDraftActions,
@@ -131,11 +132,14 @@ export default function ReviewReceiptScreen() {
   const activeLocale = useLocaleStore((s) => s.activeLocale);
   const { draft } = useReceiptDraftDraft();
   const { setStore, setPayment, upsertItem, clear, setItems } = useReceiptDraftActions();
-  // PR 5 (D6): the merged catalog lets the review chips render CUSTOM slugs
-  // with their own row (label/icon); unknown slugs keep the deterministic
-  // 'otros' fallback and a null choice stays SIN CATEGORÍA. Single fetch —
-  // the picker and the rows share the same React Query cache.
-  const { catalog } = useCategoryCatalog();
+  // PR 5 (D6): the merged catalog lets review chips render custom slugs with
+  // their own row (label/icon). While it is loading, the item list is replaced
+  // by neutral loading copy — showing chips from an incomplete catalog can
+  // mislabel a custom category as 'Otros'. After a read failure the rows keep
+  // the slug as their label with neutral 'otros' visuals; a null choice keeps
+  // the localized no-category copy from the active locale. Single fetch — the
+  // picker and rows share one React Query cache.
+  const { catalog, isLoading } = useCategoryCatalog();
   // The scan flow is the single entry point for parsing: `scan()` runs
   // the upload + parse pipeline and seeds the store with the draft. A
   // failure leaves the store untouched, so the screen shows a retry state
@@ -723,21 +727,25 @@ export default function ReviewReceiptScreen() {
                 <Text style={styles.sectionTitle}>
                   {t('tickets:reviewItemsHeader', { count: draft?.items.length ?? 0 })}
                 </Text>
-                {draft?.items ? (
-                  <ReceiptItemsList
-                    items={draft.items}
-                    currency={draft?.currency ?? currency}
-                    catalog={catalog}
-                    onPressCategory={(item) => setCategoryTarget(item)}
-                    onToggleImpulse={(item, v) =>
-                      upsertItem({ ...item, is_impulse: v })
-                    }
-                    onEditName={(item) => {
-                      setRenameError(null);
-                      setRenameTarget(item);
-                    }}
-                  />
-                ) : null}
+                {categoryChipsReady(isLoading) ? (
+                  draft?.items ? (
+                    <ReceiptItemsList
+                      items={draft.items}
+                      currency={draft?.currency ?? currency}
+                      catalog={catalog}
+                      onPressCategory={(item) => setCategoryTarget(item)}
+                      onToggleImpulse={(item, v) =>
+                        upsertItem({ ...item, is_impulse: v })
+                      }
+                      onEditName={(item) => {
+                        setRenameError(null);
+                        setRenameTarget(item);
+                      }}
+                    />
+                  ) : null
+                ) : (
+                  <Text style={styles.itemsLoading}>{t('common:loading')}</Text>
+                )}
               </View>
             </>
           )}
@@ -991,6 +999,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     ...typography.headlineMd,
     color: colors.textPrimary,
+  },
+  // Catalog readiness placeholder: neutral copy only — no guessed or
+  // translated category names while the merged catalog is still loading.
+  itemsLoading: {
+    ...typography.bodyMd,
+    color: colors.textSecondary,
   },
   footerWrap: {
     position: 'absolute',

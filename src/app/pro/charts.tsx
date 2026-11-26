@@ -74,7 +74,10 @@ import {
   useHouseholdChartSeries,
 } from '@/features/charts';
 import { useSessionUser } from '@/features/auth';
-import { resolveCategoryDisplay, resolveHouseholdCategoryVisuals } from '@/features/home/categories';
+import {
+  resolveCategoryIdentity,
+  resolveHouseholdCategoryVisuals,
+} from '@/features/home/categories';
 import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
 import { readPurchaseListByMonth } from '@/features/home/api';
 import {
@@ -88,6 +91,10 @@ import {
   useAvailableMonthKeys,
   useMonthNavigation,
 } from '@/features/home/hooks/useHomeFeed';
+import {
+  useCategoryLabel,
+  useCategoryTranslator,
+} from '@/i18n/hooks/useCategoryLabel';
 import { useScreenTitle } from '@/i18n/hooks/useScreenTitle';
 import { useLocaleStore } from '@/i18n/stores/useLocaleStore';
 import { formatCurrency, todayLocalISO, yearLabel } from '@/lib/format';
@@ -237,6 +244,8 @@ function ChartsBody() {
   // trend copy, view toggle, period selector, summary cards, section
   // headings, a11y labels.
   const { t } = useTranslation(['pro', 'analytics', 'common', 'errors']);
+  const localizeCategory = useCategoryLabel();
+  const categoryTranslator = useCategoryTranslator();
   // The home feed hook owns the `records` query and hydrates the
   // receipts store; reading the store directly is the same data path
   // the History tab takes, so all screens stay in sync.
@@ -599,17 +608,31 @@ function ChartsBody() {
       if (entries.length === 0) return null;
       const sorted = entries.sort(([, a], [, b]) => b.total - a.total);
       const [slug, { total }] = sorted[0];
-      const cat = resolveCategoryDisplay(catalog, slug);
+      // An unknown custom slug is an identity, not a 'Otros' data point: the
+      // resolver keeps the slug as its label even with an empty catalog.
+      const identity = resolveCategoryIdentity(catalog, slug);
       return {
         key: slug,
-        name: cat.label,
+        name: localizeCategory(slug, identity.label),
         amount: total,
-        icon: cat.icon,
+        icon: identity.icon,
       };
     }
-    const categories = aggregateCategoriesByMonth(activeViewerList, monthKey, catalog);
+    const categories = aggregateCategoriesByMonth(
+      activeViewerList,
+      monthKey,
+      catalog,
+      categoryTranslator,
+    );
     return categories[0] ?? null;
-  }, [activeCacheRow, activeViewerList, monthKey, catalog]);
+  }, [
+    activeCacheRow,
+    activeViewerList,
+    monthKey,
+    catalog,
+    localizeCategory,
+    categoryTranslator,
+  ]);
 
   // Check if any budgets are configured for the selected month
   const hasAnyBudgets = useMemo(
@@ -1152,7 +1175,7 @@ function ChartsBody() {
                       <CategoryBudgetRow
                         key={categoryRowKey(t.category_id, t.currency)}
                         categoryKey={t.category_slug}
-                        name={t.category_name}
+                        name={localizeCategory(t.category_slug, t.category_name)}
                         amount={t.total}
                         percent={t.percent_of_total}
                         icon={visual.icon}

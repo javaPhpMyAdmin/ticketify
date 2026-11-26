@@ -28,6 +28,7 @@ import {
 } from '@/features/home';
 import { resolveCategoryDisplay, resolveHouseholdCategoryVisuals } from '@/features/home/categories';
 import { useCategoryCatalog } from '@/features/categories/hooks/useCategoryCatalog';
+import { useCategoryLabel } from '@/i18n/hooks/useCategoryLabel';
 import {
   aggregateItemsByMonth,
   currentMonthKey,
@@ -65,6 +66,7 @@ const ANALYTICS_TAB_BAR_HEIGHT = Platform.select({
  */
 export default function AnalyticsScreen() {
   const { t } = useTranslation(['household', 'analytics', 'common']);
+  const localizeCategory = useCategoryLabel();
   const insets = useSafeAreaInsets();
   const currency = useSettingsStore((s) => s.currency);
   const { isPro } = useProEntitlement();
@@ -357,7 +359,7 @@ export default function AnalyticsScreen() {
                     <CategoryBudgetRow
                       key={categoryRowKey(t.category_id, t.currency)}
                       categoryKey={t.category_slug}
-                      name={t.category_name}
+                      name={localizeCategory(t.category_slug, t.category_name)}
                       amount={t.total}
                       percent={t.percent_of_total}
                       icon={visual.icon}
@@ -434,7 +436,7 @@ export default function AnalyticsScreen() {
                           <CategoryBudgetRow
                             key={categoryRowKey(t.category_id, t.currency)}
                             categoryKey={t.category_slug}
-                            name={t.category_name}
+                            name={localizeCategory(t.category_slug, t.category_name)}
                             amount={t.total}
                             percent={t.percent_of_total}
                             icon={visual.icon}
